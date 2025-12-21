@@ -2,9 +2,33 @@
 
 import { authClient } from "@/lib/auth-client";
 import { LikedSongs } from "./components/LikedSongs";
+import { SpotifyPlayer } from "./components/SpotifyPlayer";
+import { useEffect, useState } from "react";
+
+interface Track {
+  id: string;
+  name: string;
+  artists: { name: string }[];
+  album: {
+    name: string;
+    images: { url: string }[];
+  };
+  uri: string;
+}
 
 export default function Home() {
   const { data: session } = authClient.useSession();
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+
+  useEffect(() => {
+    if (session) {
+      fetch("/api/spotify/token")
+        .then((res) => res.json())
+        .then((data) => setAccessToken(data.accessToken))
+        .catch((err) => console.error("Error fetching token:", err));
+    }
+  }, [session]);
 
   const handleSignIn = async () => {
     await authClient.signIn.social({
@@ -27,7 +51,7 @@ export default function Home() {
           {session && (
             <button
               onClick={handleSignOut}
-              className="flex h-10 items-center justify-center rounded-full bg-black px-6 text-sm text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              className="flex h-10 items-center justify-center rounded-full bg-black px-6 text-sm text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 cursor-pointer"
             >
               Sign Out
             </button>
@@ -35,7 +59,12 @@ export default function Home() {
         </div>
 
         {session ? (
-          <LikedSongs />
+          <>
+            <LikedSongs onPlayTrack={setCurrentTrack} />
+            {accessToken && (
+              <SpotifyPlayer accessToken={accessToken} currentTrack={currentTrack} />
+            )}
+          </>
         ) : (
           <div className="flex flex-col items-center gap-6 py-32">
             <p className="text-lg text-zinc-600 dark:text-zinc-400">
@@ -43,7 +72,7 @@ export default function Home() {
             </p>
             <button
               onClick={handleSignIn}
-              className="flex h-12 items-center justify-center gap-2 rounded-full bg-[#1DB954] px-8 text-white transition-colors hover:bg-[#1ed760]"
+              className="flex h-12 items-center justify-center gap-2 rounded-full bg-[#1DB954] px-8 text-white transition-colors hover:bg-[#1ed760] cursor-pointer"
             >
               Sign in with Spotify
             </button>
