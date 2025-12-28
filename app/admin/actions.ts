@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  composer,
   spotifyArtist,
   spotifyAlbum,
   spotifyTrack,
@@ -10,9 +11,10 @@ import {
   work,
   movement,
   trackMovement,
+  recording,
 } from "@/lib/db/schema";
 import { headers } from "next/headers";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 async function checkAuth() {
   const session = await auth.api.getSession({
@@ -310,6 +312,7 @@ export async function addWorkMovementAndTrack(data: {
   movementName: string | null;
   yearComposed: number | null;
   spotifyTrackId: string;
+  spotifyAlbumId: string;
 }) {
   await checkAuth();
 
@@ -362,6 +365,20 @@ export async function addWorkMovementAndTrack(data: {
         },
       });
 
+    // Create recording ID
+    const recordingId = `${data.spotifyAlbumId}/${workId}`;
+
+    // Upsert recording (links album to work)
+    await db
+      .insert(recording)
+      .values({
+        id: recordingId,
+        spotifyAlbumId: data.spotifyAlbumId,
+        workId,
+        popularity: null, // Will be calculated later by averaging tracks
+      })
+      .onConflictDoNothing();
+
     // Upsert track-movement relationship
     await db
       .insert(trackMovement)
@@ -375,12 +392,179 @@ export async function addWorkMovementAndTrack(data: {
 
     return {
       success: true,
-      message: `Added work "${data.formalName}", movement ${data.movementNumber}, and linked to track`,
+      message: `Added work "${data.formalName}", movement ${data.movementNumber}, recording, and linked to track`,
       workId,
       movementId,
+      recordingId,
     };
   } catch (error) {
     console.error("Error adding work, movement, and track:", error);
     throw new Error("Failed to add work, movement, and track");
+  }
+}
+
+export async function getTrackMetadata(trackUri: string) {
+  const session = await checkAuth();
+
+  if (!trackUri || typeof trackUri !== "string") {
+    throw new Error("Invalid track URI");
+  }
+
+  // Extract track ID from URI (spotify:track:TRACK_ID) or URL (https://open.spotify.com/track/TRACK_ID)
+  let trackId: string | null = null;
+
+  // Try URI format first
+  const uriMatch = trackUri.match(/spotify:track:([a-zA-Z0-9]+)/);
+  if (uriMatch) {
+    trackId = uriMatch[1];
+  } else {
+    // Try URL format
+    const urlMatch = trackUri.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
+    if (urlMatch) {
+      trackId = urlMatch[1];
+    }
+  }
+
+  if (!trackId) {
+    throw new Error("Invalid Spotify track URI or URL format");
+  }
+
+  // Get Spotify access token
+  const accessToken = await getSpotifyAccessToken(session.user.id);
+
+  // Fetch track metadata from Spotify API
+  try {
+    const response = await fetch(
+      `https://api.spotify.com/v1/tracks/${trackId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || "Failed to fetch track from Spotify");
+    }
+
+    const trackData = await response.json();
+
+    // Check if artists, album, and track exist in database
+    const artistIds = trackData.artists.map((a: any) => a.id);
+
+    const [existingSpotifyArtists, existingComposers, existingAlbum, existingTrack] = await Promise.all([
+      db
+        .select()
+        .from(spotifyArtist)
+        .where(inArray(spotifyArtist.spotifyId, artistIds)),
+      db
+        .select()
+        .from(composer)
+        .where(inArray(composer.spotifyArtistId, artistIds)),
+      db
+        .select()
+        .from(spotifyAlbum)
+        .where(eq(spotifyAlbum.spotifyId, trackData.album.id)),
+      db
+        .select()
+        .from(spotifyTrack)
+        .where(eq(spotifyTrack.spotifyId, trackData.id)),
+    ]);
+
+    const spotifyArtistMap = new Map(
+      existingSpotifyArtists.map((a) => [a.spotifyId, a])
+    );
+    const composerMap = new Map(
+      existingComposers.map((c) => [c.spotifyArtistId, c])
+    );
+
+    // Fetch track movements and related data if track exists
+    let trackMovements: any[] = [];
+    let movementsData: any[] = [];
+    let worksData: any[] = [];
+    let composersData: any[] = [];
+    let recordingsData: any[] = [];
+
+    if (existingTrack.length > 0) {
+      const trackMovementRecords = await db
+        .select()
+        .from(trackMovement)
+        .where(eq(trackMovement.spotifyTrackId, trackData.id));
+
+      if (trackMovementRecords.length > 0) {
+        trackMovements = trackMovementRecords;
+
+        const movementIds = trackMovementRecords.map((tm) => tm.movementId);
+        movementsData = await db
+          .select()
+          .from(movement)
+          .where(inArray(movement.id, movementIds));
+
+        const workIds = movementsData.map((m) => m.workId);
+        if (workIds.length > 0) {
+          worksData = await db
+            .select()
+            .from(work)
+            .where(inArray(work.id, workIds));
+
+          const composerIds = worksData.map((w) => w.composerId);
+          if (composerIds.length > 0) {
+            composersData = await db
+              .select()
+              .from(composer)
+              .where(inArray(composer.id, composerIds));
+          }
+
+          // Fetch recordings for these works and this album
+          recordingsData = await db
+            .select()
+            .from(recording)
+            .where(
+              inArray(recording.workId, workIds)
+            );
+        }
+      }
+    }
+
+    return {
+      id: trackData.id,
+      name: trackData.name,
+      uri: trackData.uri,
+      duration_ms: trackData.duration_ms,
+      track_number: trackData.track_number,
+      popularity: trackData.popularity,
+      inSpotifyTracksTable: existingTrack.length > 0,
+      artists: trackData.artists.map((artist: any) => ({
+        id: artist.id,
+        name: artist.name,
+        uri: artist.uri,
+        inSpotifyArtistsTable: spotifyArtistMap.has(artist.id),
+        inComposersTable: composerMap.has(artist.id),
+        composerId: composerMap.get(artist.id)?.id,
+      })),
+      album: {
+        id: trackData.album.id,
+        name: trackData.album.name,
+        uri: trackData.album.uri,
+        release_date: trackData.album.release_date,
+        popularity: trackData.album.popularity,
+        images: trackData.album.images,
+        inSpotifyAlbumsTable: existingAlbum.length > 0,
+      },
+      dbData: {
+        track: existingTrack[0] || null,
+        album: existingAlbum[0] || null,
+        artists: existingSpotifyArtists,
+        composers: composersData,
+        trackMovements: trackMovements,
+        movements: movementsData,
+        works: worksData,
+        recordings: recordingsData,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching track metadata:", error);
+    throw new Error("Failed to fetch track metadata");
   }
 }

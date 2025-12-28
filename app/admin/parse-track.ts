@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const classicalMetadataSchema = z.object({
   isClassical: z.boolean(),
-  formalName: z.string().describe("The formal name of the piece, e.g. 'Piano Concerto No. 3 in D minor'"),
+  formalName: z.string().describe("The formal title of the entire work, e.g. 'Piano Concerto No. 3 in D minor', excluding catalog numbers or movement names"),
   nickname: z.string().nullable().describe("Popular nickname like 'Moonlight Sonata', null if none"),
   catalogSystem: z.string().nullable().describe("Catalog system: Op, RV, BWV, K, Kk, Hob, D, S, etc. Null if not classical or no catalog number"),
   catalogNumber: z.string().nullable().describe("Catalog number like '30', '30/3', '582', etc. Null if none"),

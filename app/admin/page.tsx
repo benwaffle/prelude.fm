@@ -9,6 +9,7 @@ import {
   addComposer,
   checkWorkAndMovement,
   addWorkMovementAndTrack,
+  getTrackMetadata,
 } from "./actions";
 import { parseTrackMetadata, type ClassicalMetadata } from "./parse-track";
 
@@ -51,12 +52,15 @@ interface SpotifyTrack {
     trackMovements: any[];
     movements: any[];
     works: any[];
+    recordings: any[];
   };
 }
 
 export default function AdminPage() {
   const { data: session } = authClient.useSession();
-  const [trackUri, setTrackUri] = useState("");
+  const [trackUrisInput, setTrackUrisInput] = useState("");
+  const [trackUris, setTrackUris] = useState<string[]>([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [metadata, setMetadata] = useState<SpotifyTrack | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +83,11 @@ export default function AdminPage() {
   // Check if user is benwaffle
   const isAdmin = session?.user?.name === "benwaffle";
 
+  const parseTrackUris = (input: string): string[] => {
+    const lines = input.trim().split('\n').filter(line => line.trim());
+    return lines;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -87,21 +96,23 @@ export default function AdminPage() {
     setParsedMetadata(null);
     setWorkMovementStatus(null);
 
+    // Parse input into array of track URIs
+    const uris = parseTrackUris(trackUrisInput);
+
+    if (uris.length === 0) {
+      setError("Please enter at least one Spotify track URI or URL");
+      setLoading(false);
+      return;
+    }
+
+    setTrackUris(uris);
+    setCurrentTrackIndex(0);
+
+    // Load first track
+    const trackUri = uris[0];
+
     try {
-      const response = await fetch("/api/spotify/track-metadata", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ trackUri }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to fetch metadata");
-      }
-
-      const data = await response.json();
+      const data = await getTrackMetadata(trackUri);
       setMetadata(data);
 
       // Parse track metadata with AI
@@ -159,20 +170,7 @@ export default function AdminPage() {
       await addComposer(artistId, artistName);
 
       // Refresh metadata to update status
-      if (trackUri) {
-        const refreshResponse = await fetch("/api/spotify/track-metadata", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ trackUri }),
-        });
-
-        if (refreshResponse.ok) {
-          const data = await refreshResponse.json();
-          setMetadata(data);
-        }
-      }
+      await refreshMetadata();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -180,20 +178,82 @@ export default function AdminPage() {
     }
   };
 
-  const refreshMetadata = async () => {
-    if (!trackUri) return;
+  const loadTrack = async (index: number) => {
+    if (trackUris.length === 0 || index < 0 || index >= trackUris.length) return;
 
-    const refreshResponse = await fetch("/api/spotify/track-metadata", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ trackUri }),
-    });
+    setLoading(true);
+    setError(null);
+    setMetadata(null);
+    setParsedMetadata(null);
+    setWorkMovementStatus(null);
+    setCurrentTrackIndex(index);
 
-    if (refreshResponse.ok) {
-      const data = await refreshResponse.json();
+    const trackUri = trackUris[index];
+
+    try {
+      const data = await getTrackMetadata(trackUri);
       setMetadata(data);
+
+      // Parse track metadata with AI
+      setParsing(true);
+      try {
+        const artistNames = data.artists.map((a: any) => a.name);
+        const parsed = await parseTrackMetadata(data.name, artistNames);
+        setParsedMetadata(parsed);
+
+        // Check if work and movement exist in DB
+        if (
+          parsed.isClassical &&
+          parsed.catalogSystem &&
+          parsed.catalogNumber &&
+          parsed.movement !== null
+        ) {
+          // Find composer from artists
+          const composerArtist = data.artists.find((a: any) => a.inComposersTable);
+          if (composerArtist?.composerId) {
+            setCheckingWorkMovement(true);
+            try {
+              const status = await checkWorkAndMovement(
+                composerArtist.composerId,
+                parsed.catalogSystem,
+                parsed.catalogNumber,
+                parsed.movement
+              );
+              setWorkMovementStatus(status);
+            } catch (err) {
+              console.error("Failed to check work/movement:", err);
+            } finally {
+              setCheckingWorkMovement(false);
+            }
+          }
+        }
+      } catch (parseErr) {
+        console.error("Failed to parse track metadata:", parseErr);
+        // Don't throw - parsing is optional
+      } finally {
+        setParsing(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshMetadata = async () => {
+    if (trackUris.length === 0) return;
+    await loadTrack(currentTrackIndex);
+  };
+
+  const handlePrevious = () => {
+    if (currentTrackIndex > 0) {
+      loadTrack(currentTrackIndex - 1);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentTrackIndex < trackUris.length - 1) {
+      loadTrack(currentTrackIndex + 1);
     }
   };
 
@@ -306,6 +366,7 @@ export default function AdminPage() {
         movementName: parsedMetadata.movementName,
         yearComposed: parsedMetadata.yearComposed,
         spotifyTrackId: metadata.id,
+        spotifyAlbumId: metadata.album.id,
       });
 
       setSuccessMessage(result.message);
@@ -362,18 +423,17 @@ export default function AdminPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <label
-              htmlFor="trackUri"
+              htmlFor="trackUris"
               className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
             >
-              Spotify Track URI or URL
+              Spotify Track URI(s) or URL(s) (one per line)
             </label>
-            <input
-              id="trackUri"
-              type="text"
-              value={trackUri}
-              onChange={(e) => setTrackUri(e.target.value)}
-              placeholder="spotify:track:... or https://open.spotify.com/track/..."
-              className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2 text-black dark:text-white"
+            <textarea
+              id="trackUris"
+              value={trackUrisInput}
+              onChange={(e) => setTrackUrisInput(e.target.value)}
+              placeholder="spotify:track:... or https://open.spotify.com/track/...&#10;One URI/URL per line"
+              className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2 text-black dark:text-white min-h-[100px]"
               required
             />
           </div>
@@ -383,9 +443,31 @@ export default function AdminPage() {
             disabled={loading}
             className="flex h-12 items-center justify-center rounded-full bg-black px-8 text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 cursor-pointer"
           >
-            {loading ? "Loading..." : "Fetch Metadata"}
+            {loading ? "Loading..." : "Load Tracks"}
           </button>
         </form>
+
+        {trackUris.length > 0 && (
+          <div className="flex items-center justify-between rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-4 py-3">
+            <button
+              onClick={handlePrevious}
+              disabled={currentTrackIndex === 0 || loading}
+              className="px-4 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50 cursor-pointer"
+            >
+              ← Previous
+            </button>
+            <span className="text-sm font-medium text-black dark:text-white">
+              Track {currentTrackIndex + 1} of {trackUris.length}
+            </span>
+            <button
+              onClick={handleNext}
+              disabled={currentTrackIndex === trackUris.length - 1 || loading}
+              className="px-4 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50 cursor-pointer"
+            >
+              Next →
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-red-700 dark:text-red-300">
@@ -426,6 +508,7 @@ export default function AdminPage() {
                     <h3 className="text-md font-semibold text-black dark:text-zinc-50 mb-2">Works & Movements</h3>
                     {metadata.dbData.works.map((w: any) => {
                       const workMovements = metadata.dbData!.movements.filter((m: any) => m.workId === w.id);
+                      const workRecordings = metadata.dbData!.recordings.filter((r: any) => r.workId === w.id);
                       return (
                         <div key={w.id} className="mb-3 pl-3 border-l-2 border-green-400 dark:border-green-600">
                           <div className="text-sm font-medium text-black dark:text-white">
@@ -436,6 +519,11 @@ export default function AdminPage() {
                             {w.yearComposed && ` (${w.yearComposed})`}
                             {w.form && ` - ${w.form}`}
                           </div>
+                          {workRecordings.length > 0 && (
+                            <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                              {workRecordings.length} recording{workRecordings.length !== 1 ? 's' : ''} in database
+                            </div>
+                          )}
                           {workMovements.length > 0 && (
                             <div className="mt-2">
                               {workMovements.map((m: any) => {
