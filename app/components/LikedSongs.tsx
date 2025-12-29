@@ -2,29 +2,14 @@
 
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+import { createSpotifySdk } from "@/lib/spotify-sdk";
+import type { MaxInt, SavedTrack, Track as SpotifyTrack } from "@spotify/web-api-ts-sdk";
 import { getMatchedTracks, type MatchedTrack } from "../actions/spotify";
 
-interface Track {
-  id: string;
-  name: string;
-  artists: { name: string }[];
-  album: {
-    name: string;
-    images: { url: string }[];
-  };
-  uri: string;
-}
+type Track = SpotifyTrack;
+type LikedTrack = SavedTrack;
 
-interface LikedTrack {
-  track: Track;
-  added_at: string;
-}
-
-interface SpotifyLikedSongsPage {
-  items: LikedTrack[];
-  next: string | null;
-  total: number;
-}
+const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
 
 interface LikedSongsProps {
   accessToken: string;
@@ -151,21 +136,22 @@ export function LikedSongs({ accessToken, onPlayTrack, currentTrack }: LikedSong
           return;
         }
 
-        let url: string | null = "https://api.spotify.com/v1/me/tracks?limit=50";
+        const spotify = createSpotifySdk(accessToken, spotifyClientId);
+        const limit = 50 as MaxInt<50>;
         const allTracks: LikedTrack[] = [];
+        let offset = 0;
+        let hasNext = true;
 
-        while (url) {
-          const response: Response = await fetch(url, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
-          if (!response.ok) {
-            throw new Error("Failed to fetch liked songs");
-          }
-          const data: SpotifyLikedSongsPage = await response.json();
-          allTracks.push(...data.items);
+        while (hasNext) {
+          const page = await spotify.currentUser.tracks.savedTracks(limit, offset);
+          allTracks.push(...page.items);
           setTracks([...allTracks]);
-          setTotal(data.total);
-          url = data.next;
+          setTotal(page.total);
+          hasNext = Boolean(page.next);
+          offset += page.items.length;
+          if (page.items.length === 0) {
+            break;
+          }
         }
 
         // Cache the results

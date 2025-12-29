@@ -15,6 +15,8 @@ import {
 } from "@/lib/db/schema";
 import { headers } from "next/headers";
 import { eq, and, inArray, type InferSelectModel } from "drizzle-orm";
+import { createSpotifySdk } from "@/lib/spotify-sdk";
+import type { Image as SpotifyImage, Track as SpotifyTrack } from "@spotify/web-api-ts-sdk";
 
 // Export types for use in UI components
 export type SpotifyTrackRow = InferSelectModel<typeof spotifyTrack>;
@@ -25,39 +27,6 @@ export type WorkRow = InferSelectModel<typeof work>;
 export type MovementRow = InferSelectModel<typeof movement>;
 export type TrackMovementRow = InferSelectModel<typeof trackMovement>;
 export type RecordingRow = InferSelectModel<typeof recording>;
-
-// Spotify API response types
-interface SpotifyImage {
-  url: string;
-  width: number;
-  height: number;
-}
-
-interface SpotifyApiArtist {
-  id: string;
-  name: string;
-  uri: string;
-}
-
-interface SpotifyApiAlbum {
-  id: string;
-  name: string;
-  uri: string;
-  release_date: string;
-  popularity: number;
-  images: SpotifyImage[];
-}
-
-interface SpotifyApiTrack {
-  id: string;
-  name: string;
-  uri: string;
-  duration_ms: number;
-  track_number: number;
-  popularity: number;
-  artists: SpotifyApiArtist[];
-  album: SpotifyApiAlbum;
-}
 
 // Return type for getBatchTrackMetadata
 export interface TrackMetadata {
@@ -140,18 +109,13 @@ export async function addAlbumToDatabase(albumData: {
 
   try {
     const accessToken = await getSpotifyAccessToken(session.user.id);
+    const spotify = createServerSpotifyClient(accessToken);
 
     const year = albumData.release_date
       ? parseInt(albumData.release_date.split("-")[0])
       : null;
 
-    const albumResponse = await fetch(
-      `https://api.spotify.com/v1/albums/${albumData.id}`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
-    const fullAlbumData = await albumResponse.json();
+    const fullAlbumData = await spotify.albums.get(albumData.id);
 
     await db
       .insert(spotifyAlbum)
@@ -182,20 +146,23 @@ export async function addAlbumToDatabase(albumData: {
   }
 }
 
+function createServerSpotifyClient(accessToken: string) {
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  if (!clientId) {
+    throw new Error("SPOTIFY_CLIENT_ID is not configured");
+  }
+  return createSpotifySdk(accessToken, clientId);
+}
+
 export async function addArtistsToDatabase(artists: { id: string; name: string }[]) {
   const session = await checkAuth();
 
   try {
     const accessToken = await getSpotifyAccessToken(session.user.id);
+    const spotify = createServerSpotifyClient(accessToken);
 
     for (const artist of artists) {
-      const artistResponse = await fetch(
-        `https://api.spotify.com/v1/artists/${artist.id}`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }
-      );
-      const artistData = await artistResponse.json();
+      const artistData = await spotify.artists.get(artist.id);
 
       await db
         .insert(spotifyArtist)
@@ -623,29 +590,16 @@ export async function getBatchTrackMetadata(trackUris: string[]) {
 
   // Get Spotify access token
   const accessToken = await getSpotifyAccessToken(session.user.id);
+  const spotify = createServerSpotifyClient(accessToken);
 
   // Fetch tracks in batches of 50 (Spotify API limit)
   const batchSize = 50;
-  const allTrackData: SpotifyApiTrack[] = [];
+  const allTrackData: SpotifyTrack[] = [];
 
   for (let i = 0; i < trackIds.length; i += batchSize) {
     const batchIds = trackIds.slice(i, i + batchSize);
-    const response = await fetch(
-      `https://api.spotify.com/v1/tracks?ids=${batchIds.join(',')}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || "Failed to fetch tracks from Spotify");
-    }
-
-    const data = await response.json();
-    allTrackData.push(...data.tracks);
+    const tracks = await spotify.tracks.get(batchIds);
+    allTrackData.push(...tracks);
   }
 
   // Get all unique artist IDs and album IDs
@@ -827,24 +781,11 @@ export async function getTrackMetadata(trackUri: string) {
 
   // Get Spotify access token
   const accessToken = await getSpotifyAccessToken(session.user.id);
+  const spotify = createServerSpotifyClient(accessToken);
 
   // Fetch track metadata from Spotify API
   try {
-    const response = await fetch(
-      `https://api.spotify.com/v1/tracks/${trackId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || "Failed to fetch track from Spotify");
-    }
-
-    const trackData: SpotifyApiTrack = await response.json();
+    const trackData = await spotify.tracks.get(trackId);
 
     // Check if artists, album, and track exist in database
     const artistIds = trackData.artists.map((a) => a.id);

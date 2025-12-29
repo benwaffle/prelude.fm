@@ -11,6 +11,9 @@ importers:
       '@libsql/client':
         specifier: ^0.15.15
         version: 0.15.15
+      '@spotify/web-api-ts-sdk':
+        specifier: ^1.2.0
+        version: 1.2.0
       ai:
         specifier: ^6.0.3
         version: 6.0.3(zod@4.2.1)
@@ -837,6 +840,9 @@ packages:
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
+
+  '@spotify/web-api-ts-sdk@1.2.0':
+    resolution: {integrity: sha512-JUaebva3Ohwo5I5tuTqyW/FKGOMbb40YevJMySAOINRxP7qQ/AMjBzfJx0zeO6yS+wAPfQSoGNsZaUggHw8vsA==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -3347,6 +3353,8 @@ snapshots:
   '@opentelemetry/api@1.9.0': {}
 
   '@rtsao/scc@1.1.0': {}
+
+  '@spotify/web-api-ts-sdk@1.2.0': {}
 
   '@standard-schema/spec@1.1.0': {}
 

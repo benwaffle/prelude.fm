@@ -5,17 +5,9 @@ import { LikedSongs } from "./components/LikedSongs";
 import { SpotifyPlayer } from "./components/SpotifyPlayer";
 import { useEffect, useState } from "react";
 import { getSpotifyToken } from "./actions/spotify";
+import type { Track as SpotifyTrack } from "@spotify/web-api-ts-sdk";
 
-interface Track {
-  id: string;
-  name: string;
-  artists: { name: string }[];
-  album: {
-    name: string;
-    images: { url: string }[];
-  };
-  uri: string;
-}
+type Track = SpotifyTrack;
 
 export default function Home() {
   const { data: session } = authClient.useSession();

@@ -2,17 +2,12 @@
 
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+import { createSpotifySdk } from "@/lib/spotify-sdk";
+import type { Track as SpotifyTrack } from "@spotify/web-api-ts-sdk";
 
-interface Track {
-  id: string;
-  name: string;
-  artists: { name: string }[];
-  album: {
-    name: string;
-    images: { url: string }[];
-  };
-  uri: string;
-}
+type Track = SpotifyTrack;
+
+const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
 
 interface SpotifyPlayerProps {
   accessToken: string;
@@ -111,22 +106,12 @@ export function SpotifyPlayer({ accessToken, currentTrack }: SpotifyPlayerProps)
 
     const playTrack = async () => {
       try {
-        const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            uris: [currentTrack.uri],
-          }),
-        });
-
-        if (response.ok) {
-          setIsPaused(false);
-        }
+        const spotify = createSpotifySdk(accessToken, spotifyClientId);
+        await spotify.player.startResumePlayback(deviceId, undefined, [currentTrack.uri]);
+        setIsPaused(false);
       } catch (error) {
         console.error("Error playing track:", error);
+        setIsPaused(true);
       }
     };
 
