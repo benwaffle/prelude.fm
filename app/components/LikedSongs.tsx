@@ -29,9 +29,10 @@ interface SpotifyLikedSongsPage {
 interface LikedSongsProps {
   accessToken: string;
   onPlayTrack: (track: Track) => void;
+  currentTrack: Track | null;
 }
 
-export function LikedSongs({ accessToken, onPlayTrack }: LikedSongsProps) {
+export function LikedSongs({ accessToken, onPlayTrack, currentTrack }: LikedSongsProps) {
   const [tracks, setTracks] = useState<LikedTrack[]>([]);
   const [matchedTracks, setMatchedTracks] = useState<MatchedTrack[]>([]);
   const [loading, setLoading] = useState(true);
@@ -250,10 +251,14 @@ export function LikedSongs({ accessToken, onPlayTrack }: LikedSongsProps) {
     track,
     displayName,
     hideComposer,
+    hideArtwork,
+    isPlaying,
   }: {
     track: Track;
     displayName?: string;
     hideComposer?: string;
+    hideArtwork?: boolean;
+    isPlaying?: boolean;
   }) => {
     const artists = hideComposer
       ? track.artists.filter((a) => a.name !== hideComposer)
@@ -262,9 +267,15 @@ export function LikedSongs({ accessToken, onPlayTrack }: LikedSongsProps) {
     return (
       <button
         onClick={() => onPlayTrack(track)}
-        className="w-full flex items-center gap-3 p-2 rounded bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-left cursor-pointer"
+        className={`w-full flex items-center gap-3 p-2 text-left cursor-pointer ${
+          hideArtwork ? "" : "rounded"
+        } ${
+          isPlaying
+            ? "bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/40"
+            : "bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800"
+        }`}
       >
-        {track.album.images[0] && (
+        {!hideArtwork && track.album.images[0] && (
           <Image
             src={track.album.images[0].url}
             alt={track.album.name}
@@ -314,38 +325,105 @@ export function LikedSongs({ accessToken, onPlayTrack }: LikedSongsProps) {
             {checkingMatches ? "..." : `${matchedTrackIds.size} tracks, ${matchedByWork.size} works`}
           </span>
         </div>
-        <div className="space-y-4">
-          {Array.from(matchedByWork.values()).map(({ work, tracks: workTracks }) => (
-            <div key={work.id} className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
-                <p className="text-sm text-black dark:text-zinc-100 truncate">
-                  <span className="font-medium">{work.composerName}</span>
-                  <span className="text-zinc-400 mx-1.5">&middot;</span>
-                  <span>{work.title}</span>
-                  {work.nickname && <span className="text-zinc-500"> &ldquo;{work.nickname}&rdquo;</span>}
-                  {work.catalogSystem && work.catalogNumber && (
-                    <span className="text-zinc-500">, {work.catalogSystem} {work.catalogNumber}</span>
-                  )}
-                </p>
-              </div>
-              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {[...workTracks]
-                  .sort((a, b) => {
-                    const movA = trackMovementMap.get(a.track.id) ?? 0;
-                    const movB = trackMovementMap.get(b.track.id) ?? 0;
-                    return movA - movB;
-                  })
-                  .map(({ track }) => (
-                    <TrackRow
-                      key={track.id}
-                      track={track}
-                      displayName={trackMovementNameMap.get(track.id) ?? undefined}
-                      hideComposer={work.composerName}
+        <div className="space-y-1">
+          {Array.from(matchedByWork.values()).map(({ work, tracks: workTracks }) => {
+            if (workTracks.length === 1) {
+              // Single-track work - compact view with styled text
+              const { track } = workTracks[0];
+              const movementDisplay = trackMovementNameMap.get(track.id);
+              const artists = track.artists.filter((a) => a.name !== work.composerName);
+              const isPlaying = currentTrack?.id === track.id;
+              return (
+                <button
+                  key={work.id}
+                  onClick={() => onPlayTrack(track)}
+                  className={`w-full flex items-center gap-3 p-2 rounded text-left cursor-pointer ${
+                    isPlaying
+                      ? "bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/40"
+                      : "bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  {track.album.images[0] && (
+                    <Image
+                      src={track.album.images[0].url}
+                      alt={track.album.name}
+                      width={40}
+                      height={40}
+                      className="rounded"
                     />
-                  ))}
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-black dark:text-zinc-50 truncate">
+                      <span className="font-medium">{work.composerName}</span>
+                      <span className="text-zinc-400 mx-1.5">&middot;</span>
+                      <span>{work.title}</span>
+                      {work.nickname && <span className="text-zinc-500"> &ldquo;{work.nickname}&rdquo;</span>}
+                      {work.catalogSystem && work.catalogNumber && (
+                        <span className="text-zinc-500">, {work.catalogSystem} {work.catalogNumber}</span>
+                      )}
+                      {movementDisplay && (
+                        <>
+                          <span className="text-zinc-400 mx-1.5">&middot;</span>
+                          <span>{movementDisplay}</span>
+                        </>
+                      )}
+                    </p>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
+                      {artists.length > 0 ? `${artists.map((a) => a.name).join(", ")} • ` : ""}{track.album.name}
+                    </p>
+                  </div>
+                </button>
+              );
+            }
+
+            // Multi-track work - with header
+            const firstTrack = workTracks[0].track;
+            return (
+              <div key={work.id} className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden my-3">
+                <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-3">
+                  {firstTrack.album.images[0] && (
+                    <Image
+                      src={firstTrack.album.images[0].url}
+                      alt={firstTrack.album.name}
+                      width={48}
+                      height={48}
+                      className="rounded"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-black dark:text-zinc-100 truncate">
+                      <span className="font-medium">{work.composerName}</span>
+                      <span className="text-zinc-400 mx-1.5">&middot;</span>
+                      <span>{work.title}</span>
+                      {work.nickname && <span className="text-zinc-500"> &ldquo;{work.nickname}&rdquo;</span>}
+                      {work.catalogSystem && work.catalogNumber && (
+                        <span className="text-zinc-500">, {work.catalogSystem} {work.catalogNumber}</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-zinc-500 truncate">{firstTrack.album.name}</p>
+                  </div>
+                </div>
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {[...workTracks]
+                    .sort((a, b) => {
+                      const movA = trackMovementMap.get(a.track.id) ?? 0;
+                      const movB = trackMovementMap.get(b.track.id) ?? 0;
+                      return movA - movB;
+                    })
+                    .map(({ track }) => (
+                      <TrackRow
+                        key={track.id}
+                        track={track}
+                        displayName={trackMovementNameMap.get(track.id) ?? undefined}
+                        hideComposer={work.composerName}
+                        hideArtwork
+                        isPlaying={currentTrack?.id === track.id}
+                      />
+                    ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {!checkingMatches && matchedByWork.size === 0 && (
             <p className="text-sm text-zinc-500 py-4">
               No matched tracks yet
@@ -373,7 +451,7 @@ export function LikedSongs({ accessToken, onPlayTrack }: LikedSongsProps) {
         {!unmatchedCollapsed && (
           <div className="space-y-1">
             {unmatchedTracksList.map(({ track }) => (
-              <TrackRow key={track.id} track={track} />
+              <TrackRow key={track.id} track={track} isPlaying={currentTrack?.id === track.id} />
             ))}
           </div>
         )}

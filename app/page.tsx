@@ -61,7 +61,7 @@ export default function Home() {
         {session ? (
           accessToken ? (
             <>
-              <LikedSongs accessToken={accessToken} onPlayTrack={setCurrentTrack} />
+              <LikedSongs accessToken={accessToken} onPlayTrack={setCurrentTrack} currentTrack={currentTrack} />
               <SpotifyPlayer accessToken={accessToken} currentTrack={currentTrack} />
             </>
           ) : (
