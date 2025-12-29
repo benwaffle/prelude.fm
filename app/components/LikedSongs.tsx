@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+import { getMatchedTracks, type MatchedTrack } from "../actions/spotify";
 
 interface Track {
   id: string;
@@ -19,16 +20,26 @@ interface LikedTrack {
   added_at: string;
 }
 
+interface SpotifyLikedSongsPage {
+  items: LikedTrack[];
+  next: string | null;
+  total: number;
+}
+
 interface LikedSongsProps {
+  accessToken: string;
   onPlayTrack: (track: Track) => void;
 }
 
-export function LikedSongs({ onPlayTrack }: LikedSongsProps) {
+export function LikedSongs({ accessToken, onPlayTrack }: LikedSongsProps) {
   const [tracks, setTracks] = useState<LikedTrack[]>([]);
+  const [matchedTracks, setMatchedTracks] = useState<MatchedTrack[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkingMatches, setCheckingMatches] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [unmatchedCollapsed, setUnmatchedCollapsed] = useState(true);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -114,6 +125,19 @@ export function LikedSongs({ onPlayTrack }: LikedSongsProps) {
       }
     }
 
+    async function checkMatches(allTracks: LikedTrack[]) {
+      setCheckingMatches(true);
+      try {
+        const trackIds = allTracks.map((t) => t.track.id);
+        const matched = await getMatchedTracks(trackIds);
+        setMatchedTracks(matched);
+      } catch (err) {
+        console.error("Failed to check matches:", err);
+      } finally {
+        setCheckingMatches(false);
+      }
+    }
+
     async function fetchAllLikedSongs() {
       try {
         // Try to load from cache first
@@ -122,6 +146,7 @@ export function LikedSongs({ onPlayTrack }: LikedSongsProps) {
           setTracks(cached);
           setTotal(cached.length);
           setLoading(false);
+          checkMatches(cached);
           return;
         }
 
@@ -129,13 +154,13 @@ export function LikedSongs({ onPlayTrack }: LikedSongsProps) {
         const allTracks: LikedTrack[] = [];
 
         while (url) {
-          const response = await fetch(
-            `/api/spotify/liked-songs?url=${encodeURIComponent(url)}`
-          );
+          const response: Response = await fetch(url, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
           if (!response.ok) {
             throw new Error("Failed to fetch liked songs");
           }
-          const data = await response.json();
+          const data: SpotifyLikedSongsPage = await response.json();
           allTracks.push(...data.items);
           setTracks([...allTracks]);
           setTotal(data.total);
@@ -144,6 +169,9 @@ export function LikedSongs({ onPlayTrack }: LikedSongsProps) {
 
         // Cache the results
         await setCache(allTracks, allTracks.length);
+
+        // Check which tracks are matched
+        checkMatches(allTracks);
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
       } finally {
@@ -152,7 +180,7 @@ export function LikedSongs({ onPlayTrack }: LikedSongsProps) {
     }
 
     fetchAllLikedSongs();
-  }, []);
+  }, [accessToken]);
 
   if (loading && tracks.length === 0) {
     return (
@@ -178,6 +206,85 @@ export function LikedSongs({ onPlayTrack }: LikedSongsProps) {
     return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
   });
 
+  // Convert number to roman numeral
+  const toRoman = (num: number): string => {
+    const romanNumerals: [number, string][] = [
+      [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]
+    ];
+    let result = "";
+    for (const [value, symbol] of romanNumerals) {
+      while (num >= value) {
+        result += symbol;
+        num -= value;
+      }
+    }
+    return result;
+  };
+
+  // Create maps of trackId -> work info, movement number, and movement name
+  const trackWorkMap = new Map(matchedTracks.map((m) => [m.trackId, m.work]));
+  const trackMovementMap = new Map(matchedTracks.map((m) => [m.trackId, m.movementNumber]));
+  const trackMovementNameMap = new Map(matchedTracks.map((m) => [
+    m.trackId,
+    m.movementName ? `${toRoman(m.movementNumber)}. ${m.movementName}` : `${toRoman(m.movementNumber)}.`
+  ]));
+  const matchedTrackIds = new Set(matchedTracks.map((m) => m.trackId));
+
+  // Group matched tracks by work
+  const matchedByWork = new Map<number, { work: MatchedTrack["work"]; tracks: LikedTrack[] }>();
+  for (const likedTrack of sortedTracks) {
+    const work = trackWorkMap.get(likedTrack.track.id);
+    if (work) {
+      const existing = matchedByWork.get(work.id);
+      if (existing) {
+        existing.tracks.push(likedTrack);
+      } else {
+        matchedByWork.set(work.id, { work, tracks: [likedTrack] });
+      }
+    }
+  }
+
+  const unmatchedTracksList = sortedTracks.filter((t) => !matchedTrackIds.has(t.track.id));
+
+  const TrackRow = ({
+    track,
+    displayName,
+    hideComposer,
+  }: {
+    track: Track;
+    displayName?: string;
+    hideComposer?: string;
+  }) => {
+    const artists = hideComposer
+      ? track.artists.filter((a) => a.name !== hideComposer)
+      : track.artists;
+
+    return (
+      <button
+        onClick={() => onPlayTrack(track)}
+        className="w-full flex items-center gap-3 p-2 rounded bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-left cursor-pointer"
+      >
+        {track.album.images[0] && (
+          <Image
+            src={track.album.images[0].url}
+            alt={track.album.name}
+            width={40}
+            height={40}
+            className="rounded"
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-black dark:text-zinc-50 truncate">
+            {displayName ?? track.name}
+          </p>
+          <p className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
+            {artists.length > 0 ? `${artists.map((a) => a.name).join(", ")} • ` : ""}{track.album.name}
+          </p>
+        </div>
+      </button>
+    );
+  };
+
   return (
     <div className="w-full max-w-4xl">
       <div className="flex items-center justify-between mb-4">
@@ -189,39 +296,87 @@ export function LikedSongs({ onPlayTrack }: LikedSongsProps) {
             onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
             className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-zinc-50 transition-colors cursor-pointer"
           >
-            Date Added: {sortOrder === "desc" ? "Newest First" : "Oldest First"}
+            {sortOrder === "desc" ? "Newest First" : "Oldest First"}
           </button>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             {loading ? `Loading ${tracks.length} of ${total}...` : `${tracks.length} songs`}
           </p>
         </div>
       </div>
-      <div className="space-y-1 pb-24">
-        {sortedTracks.map(({ track }) => (
-          <button
-            key={track.id}
-            onClick={() => onPlayTrack(track)}
-            className="w-full flex items-center gap-3 p-2 rounded bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors text-left cursor-pointer"
-          >
-            {track.album.images[0] && (
-              <Image
-                src={track.album.images[0].url}
-                alt={track.album.name}
-                width={40}
-                height={40}
-                className="rounded"
-              />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-black dark:text-zinc-50 truncate">
-                {track.name}
-              </p>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
-                {track.artists.map((a) => a.name).join(", ")} • {track.album.name}
-              </p>
+
+      {/* Matched tracks section - grouped by work */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Matched
+          </h3>
+          <span className="text-xs text-zinc-500">
+            {checkingMatches ? "..." : `${matchedTrackIds.size} tracks, ${matchedByWork.size} works`}
+          </span>
+        </div>
+        <div className="space-y-4">
+          {Array.from(matchedByWork.values()).map(({ work, tracks: workTracks }) => (
+            <div key={work.id} className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+                <p className="text-sm text-black dark:text-zinc-100 truncate">
+                  <span className="font-medium">{work.composerName}</span>
+                  <span className="text-zinc-400 mx-1.5">&middot;</span>
+                  <span>{work.title}</span>
+                  {work.nickname && <span className="text-zinc-500"> &ldquo;{work.nickname}&rdquo;</span>}
+                  {work.catalogSystem && work.catalogNumber && (
+                    <span className="text-zinc-500">, {work.catalogSystem} {work.catalogNumber}</span>
+                  )}
+                </p>
+              </div>
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {[...workTracks]
+                  .sort((a, b) => {
+                    const movA = trackMovementMap.get(a.track.id) ?? 0;
+                    const movB = trackMovementMap.get(b.track.id) ?? 0;
+                    return movA - movB;
+                  })
+                  .map(({ track }) => (
+                    <TrackRow
+                      key={track.id}
+                      track={track}
+                      displayName={trackMovementNameMap.get(track.id) ?? undefined}
+                      hideComposer={work.composerName}
+                    />
+                  ))}
+              </div>
             </div>
-          </button>
-        ))}
+          ))}
+          {!checkingMatches && matchedByWork.size === 0 && (
+            <p className="text-sm text-zinc-500 py-4">
+              No matched tracks yet
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Unmatched tracks section */}
+      <div className="pb-24">
+        <button
+          onClick={() => setUnmatchedCollapsed(!unmatchedCollapsed)}
+          className="flex items-center gap-2 mb-2 cursor-pointer"
+        >
+          <span className="text-sm text-zinc-500">
+            {unmatchedCollapsed ? "▶" : "▼"}
+          </span>
+          <h3 className="text-sm font-medium text-zinc-500">
+            Unmatched
+          </h3>
+          <span className="text-xs text-zinc-500">
+            {checkingMatches ? "..." : unmatchedTracksList.length}
+          </span>
+        </button>
+        {!unmatchedCollapsed && (
+          <div className="space-y-1">
+            {unmatchedTracksList.map(({ track }) => (
+              <TrackRow key={track.id} track={track} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { authClient } from "@/lib/auth-client";
 import { LikedSongs } from "./components/LikedSongs";
 import { SpotifyPlayer } from "./components/SpotifyPlayer";
 import { useEffect, useState } from "react";
+import { getSpotifyToken } from "./actions/spotify";
 
 interface Track {
   id: string;
@@ -23,9 +24,8 @@ export default function Home() {
 
   useEffect(() => {
     if (session) {
-      fetch("/api/spotify/token")
-        .then((res) => res.json())
-        .then((data) => setAccessToken(data.accessToken))
+      getSpotifyToken()
+        .then((token) => setAccessToken(token))
         .catch((err) => console.error("Error fetching token:", err));
     }
   }, [session]);
@@ -59,12 +59,16 @@ export default function Home() {
         </div>
 
         {session ? (
-          <>
-            <LikedSongs onPlayTrack={setCurrentTrack} />
-            {accessToken && (
+          accessToken ? (
+            <>
+              <LikedSongs accessToken={accessToken} onPlayTrack={setCurrentTrack} />
               <SpotifyPlayer accessToken={accessToken} currentTrack={currentTrack} />
-            )}
-          </>
+            </>
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>
+            </div>
+          )
         ) : (
           <div className="flex flex-col items-center gap-6 py-32">
             <p className="text-lg text-zinc-600 dark:text-zinc-400">
