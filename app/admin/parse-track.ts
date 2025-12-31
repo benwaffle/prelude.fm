@@ -8,13 +8,13 @@ const classicalMetadataSchema = z.object({
   composerName: z.string().nullable().describe("The name of the composer (e.g. 'Johann Sebastian Bach', 'Wolfgang Amadeus Mozart'). Should match one of the artist names provided. Null if not classical or unknown"),
   formalName: z.string().describe("The formal title of the entire work, e.g. 'Piano Concerto No. 3 in D minor', excluding catalog numbers or movement names"),
   nickname: z.string().nullable().describe("Popular nickname like 'Moonlight Sonata', null if none"),
-  catalogSystem: z.string().nullable().describe("Catalog system: Op, RV, BWV, K, Kk, Hob, D, S, etc. Null if not classical or no catalog number"),
+  catalogSystem: z.string().nullable().describe("Catalog system: Op, RV, BWV, K, Kk, Hob, D, S, etc. Null if not classical or no catalog number. For Vivaldi works with multiple catalog numbers use RV"),
   catalogNumber: z.string().nullable().describe("Catalog number like '30', '30/3', '582', etc. Null if none"),
   key: z.string().nullable().describe("Musical key like 'D minor', 'C major', or null if unknown or not applicable"),
   form: z.string().nullable().describe("Musical form: 'concerto', 'sonata', 'symphony', 'fugue', 'prelude', etc. Null if not classical"),
   movement: z.number().nullable().describe("Movement number (1, 2, 3, etc.), null if not applicable or unknown"),
   movementName: z.string().nullable().describe("Movement name like 'Finale: Alla breve', 'Allegro', null if unknown"),
-  yearComposed: z.number().nullable().describe("Year the piece was composed, null if unknown"),
+  yearComposed: z.number().nullable().describe("Year the piece was composed, if known by the LLM (not expected to be in the title)"),
 });
 
 export type ClassicalMetadata = z.infer<typeof classicalMetadataSchema>;
