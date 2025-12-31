@@ -26,11 +26,15 @@ interface SpotifyPlayerContextValue {
   isPaused: boolean;
   currentTrack: Track | null;
   deviceId: string | null;
+  volume: number;
   play: (uris: string[]) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   togglePlay: () => Promise<void>;
   seek: (positionMs: number) => Promise<void>;
+  previousTrack: () => Promise<void>;
+  nextTrack: () => Promise<void>;
+  setVolume: (volume: number) => Promise<void>;
   getProgress: () => PlaybackProgress;
   subscribeToProgress: (callback: (progress: PlaybackProgress) => void) => () => void;
 }
@@ -51,6 +55,7 @@ export function SpotifyPlayerProvider({
     isPaused: true,
     currentTrack: null as Track | null,
     deviceId: null as string | null,
+    volume: 0.5,
   });
 
   const playerRef = useRef<Spotify.Player | null>(null);
@@ -152,6 +157,19 @@ export function SpotifyPlayerProvider({
     await playerRef.current?.seek(positionMs);
   }, []);
 
+  const previousTrack = useCallback(async () => {
+    await playerRef.current?.previousTrack();
+  }, []);
+
+  const nextTrack = useCallback(async () => {
+    await playerRef.current?.nextTrack();
+  }, []);
+
+  const setVolume = useCallback(async (volume: number) => {
+    await playerRef.current?.setVolume(volume);
+    setState((s) => ({ ...s, volume }));
+  }, []);
+
   const getProgress = useCallback((): PlaybackProgress => {
     const p = progressRef.current;
     if (p.paused) {
@@ -182,6 +200,9 @@ export function SpotifyPlayerProvider({
     resume,
     togglePlay,
     seek,
+    previousTrack,
+    nextTrack,
+    setVolume,
     getProgress,
     subscribeToProgress,
   };
