@@ -1,6 +1,4 @@
-- [ ] don't pass whole spotify api url to /api/spotify/liked-songs
 - [ ] make the AI fill in the work number if missing
 - [ ] use a DB MCP/turso cli + wikipedia/other sites to fill out the composers + works data
 - [ ] use shadcn sonner so alerts show up in view
 - [ ] handle multiple catalog numbers for a track like "Violin Concerto in E Minor, Op. 4 No. 2, RV 279: I. Allegro"
-- [ ] use TS spotify sdk - https://developer.spotify.com/blog/2023-07-03-typescript-sdk
