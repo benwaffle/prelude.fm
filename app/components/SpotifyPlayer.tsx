@@ -118,9 +118,9 @@ export function SpotifyPlayer() {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 p-3">
-      <div className="max-w-5xl mx-auto flex items-center gap-4">
+      <div className="mx-auto flex items-center gap-4">
         {/* Track info */}
-        <div className="flex items-center gap-3 w-56 min-w-0">
+        <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
           {currentTrack ? (
             <>
               {currentTrack.album?.images?.[0]?.url && (
@@ -149,7 +149,7 @@ export function SpotifyPlayer() {
         </div>
 
         {/* Playback controls */}
-        <div className="flex-1 flex flex-col items-center gap-1">
+        <div className="flex flex-col items-center gap-1">
           <div className="flex items-center gap-3">
             {/* Previous */}
             <button
@@ -192,7 +192,7 @@ export function SpotifyPlayer() {
           </div>
 
           {/* Progress bar */}
-          <div className="w-full max-w-md flex items-center gap-2">
+          <div className="w-[500px] flex items-center gap-2">
             <span
               ref={currentTimeRef}
               className="text-xs text-zinc-400 w-10 text-right tabular-nums"
@@ -217,7 +217,7 @@ export function SpotifyPlayer() {
         </div>
 
         {/* Volume control */}
-        <div className="w-32 flex items-center justify-end gap-2 relative">
+        <div className="flex-1 flex items-center justify-end gap-2">
           <button
             onClick={() => setVolume(volume === 0 ? 0.5 : 0)}
             className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"

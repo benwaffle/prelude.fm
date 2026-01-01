@@ -2,6 +2,7 @@
 
 import { authClient } from "@/lib/auth-client";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { getBatchTrackMetadata, type TrackMetadata } from "./actions";
 import { getMatchQueue, updateMatchQueueStatus } from "../actions/spotify";
 import { AlbumTracksTable } from "./AlbumTracksTable";
@@ -195,9 +196,17 @@ export default function AdminPageNew() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black p-8">
       <main className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold text-black dark:text-zinc-50 mb-8">
-          Admin - Batch Track Metadata
-        </h1>
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-4xl font-bold text-black dark:text-zinc-50">
+            Admin - Batch Track Metadata
+          </h1>
+          <Link
+            href="/"
+            className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+          >
+            &larr; Back to Player
+          </Link>
+        </div>
 
         {/* Match Queue Section */}
         <div className="mb-8 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">

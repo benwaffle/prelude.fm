@@ -6,14 +6,14 @@ import type { SavedTrack, SimplifiedArtist } from "@spotify/web-api-ts-sdk";
 import { getMatchedTracks, submitToMatchQueue, type MatchedTrack } from "../actions/spotify";
 import { useSpotifyPlayer } from "@/lib/spotify-player-context";
 import { useLikedSongs } from "@/lib/use-liked-songs";
-import { TrackRow } from "./TrackRow";
+import { MovementRow } from "./MovementRow";
 
 interface LikedSongsProps {
   accessToken: string;
 }
 
 export function LikedSongs({ accessToken }: LikedSongsProps) {
-  const { currentTrack } = useSpotifyPlayer();
+  const { currentTrack, play } = useSpotifyPlayer();
   const { tracks, loading, error, total } = useLikedSongs(accessToken);
   const [matchedTracks, setMatchedTracks] = useState<MatchedTrack[]>([]);
   const [checkingMatches, setCheckingMatches] = useState(false);
@@ -156,9 +156,20 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
               )
             );
 
+            // Sort tracks by movement number for playback
+            const sortedWorkTracks = [...workTracks].sort((a, b) => {
+              const movA = trackMovementMap.get(a.track.id) ?? 0;
+              const movB = trackMovementMap.get(b.track.id) ?? 0;
+              return movA - movB;
+            });
+            const workUris = sortedWorkTracks.map(({ track }) => track.uri);
+
             return (
               <div key={work.id} className="contents">
-                <div className="px-3 py-3 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-r md:pr-10">
+                <button
+                  onClick={() => play(workUris)}
+                  className="px-3 py-3 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-r md:pr-10 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
                   {firstTrack.album.images[0] && (
                     <Image
                       src={firstTrack.album.images[0].url}
@@ -188,7 +199,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                       )}
                     </p>
                   </div>
-                </div>
+                </button>
                 <div className="divide-y divide-zinc-200 dark:divide-zinc-700 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-l">
                   {[...workTracks]
                       .sort((a, b) => {
@@ -197,7 +208,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                         return movA - movB;
                       })
                       .map(({ track }) => (
-                        <TrackRow
+                        <MovementRow
                           key={track.id}
                           track={track}
                           displayName={trackMovementNameMap.get(track.id) ?? undefined}
@@ -237,7 +248,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
         {!unmatchedCollapsed && (
           <div className="space-y-1">
             {unmatchedTracksList.map(({ track }) => (
-              <TrackRow key={track.id} track={track} isPlaying={currentTrack?.id === track.id} />
+              <MovementRow key={track.id} track={track} isPlaying={currentTrack?.id === track.id} />
             ))}
           </div>
         )}

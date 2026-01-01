@@ -11,7 +11,7 @@ function formatDuration(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-interface TrackRowProps {
+interface MovementRowProps {
   track: Track;
   displayName?: string;
   hideComposer?: string;
@@ -19,13 +19,13 @@ interface TrackRowProps {
   isPlaying?: boolean;
 }
 
-export function TrackRow({
+export function MovementRow({
   track,
   displayName,
   hideComposer,
   hideArtwork,
   isPlaying,
-}: TrackRowProps) {
+}: MovementRowProps) {
   const { play } = useSpotifyPlayer();
 
   const artists = hideComposer

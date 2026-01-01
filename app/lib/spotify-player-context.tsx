@@ -55,7 +55,7 @@ export function SpotifyPlayerProvider({
     isPaused: true,
     currentTrack: null as Track | null,
     deviceId: null as string | null,
-    volume: 0.5,
+    volume: 1,
   });
 
   const playerRef = useRef<Spotify.Player | null>(null);
@@ -83,7 +83,7 @@ export function SpotifyPlayerProvider({
       const player = new window.Spotify.Player({
         name: "Classical Music Streaming",
         getOAuthToken: (cb) => cb(accessToken),
-        volume: 0.5,
+        volume: 1,
       });
 
       player.addListener("ready", ({ device_id }) => {
