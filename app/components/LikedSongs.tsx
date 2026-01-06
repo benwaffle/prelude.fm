@@ -207,16 +207,22 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                         const movB = trackMovementMap.get(b.track.id) ?? 0;
                         return movA - movB;
                       })
-                      .map(({ track }) => (
-                        <MovementRow
-                          key={track.id}
-                          track={track}
-                          displayName={trackMovementNameMap.get(track.id) ?? undefined}
-                          hideComposer={work.composerName}
-                          hideArtwork
-                          isPlaying={currentTrack?.id === track.id}
-                        />
-                      ))}
+                      .map(({ track }, index, sortedArray) => {
+                        // Get all subsequent tracks after this one
+                        const queueTracks = sortedArray.slice(index + 1).map(item => item.track);
+                        
+                        return (
+                          <MovementRow
+                            key={track.id}
+                            track={track}
+                            displayName={trackMovementNameMap.get(track.id) ?? undefined}
+                            hideComposer={work.composerName}
+                            hideArtwork
+                            isPlaying={currentTrack?.id === track.id}
+                            queueTracks={queueTracks}
+                          />
+                        );
+                      })}
                 </div>
               </div>
             );
