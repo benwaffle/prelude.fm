@@ -210,7 +210,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                       .map(({ track }, index, sortedArray) => {
                         // Get all subsequent tracks after this one
                         const queueTracks = sortedArray.slice(index + 1).map(item => item.track);
-                        
+
                         return (
                           <MovementRow
                             key={track.id}
