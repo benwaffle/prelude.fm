@@ -500,13 +500,19 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
                 </td>
                 <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
                   {(() => {
-                    const composerInDb = metadata.composerName && track.artists.find(a => a.name === metadata.composerName)?.inComposersTable;
+                    // Check if selected composer is in DB
+                    const selectedComposerInDb = metadata.composerName && track.artists.find(a => a.name === metadata.composerName)?.inComposersTable;
+                    // Check if any artist is a known composer (for auto-detection)
+                    const knownComposerArtist = track.artists.find(a => a.inComposersTable);
+                    // Use known composer if no composer is set yet
+                    const effectiveComposer = metadata.composerName || knownComposerArtist?.name || '';
+                    const composerInDb = effectiveComposer && track.artists.find(a => a.name === effectiveComposer)?.inComposersTable;
 
                     if (!canEdit || composerInDb) {
                       // Read-only: either not editable or composer already in DB
                       return (
                         <div className="flex items-center gap-2">
-                          <span>{metadata.composerName || '-'}</span>
+                          <span>{effectiveComposer || '-'}</span>
                           {composerInDb && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
                               ✓
@@ -639,28 +645,75 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
                       );
                     }
 
-                    // Work exists in DB - show dropdown of existing movements
+                    // Work exists in DB - show dropdown of existing movements plus option to add new
                     if (workInDb && availableMovements.length > 0) {
+                      const existingNumbers = new Set(availableMovements.map(m => m.number));
+                      // Use the original LLM-parsed movement for the "new" option
+                      const parsedMovement = track.parsed?.movement;
+                      const parsedMovementName = track.parsed?.movementName;
+                      const hasParsedNewMovement = parsedMovement != null && !existingNumbers.has(parsedMovement);
+                      const isCurrentMovementNew = metadata.movement != null && !existingNumbers.has(metadata.movement);
+
                       return (
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={metadata.movement ?? ''}
-                            onChange={(e) => updateEditedMetadata(track.id, 'movement', e.target.value ? parseInt(e.target.value) : null)}
-                            className="flex-1 min-w-0 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
-                          >
-                            <option value="">Select...</option>
-                            {availableMovements
-                              .sort((a, b) => a.number - b.number)
-                              .map(mvt => (
-                                <option key={mvt.number} value={mvt.number}>
-                                  {toRoman(mvt.number)}.{mvt.title ? ` ${mvt.title}` : ''}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={metadata.movement ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '__new__') {
+                                  // Clear to allow typing a new number
+                                  updateEditedMetadata(track.id, 'movement', null);
+                                } else {
+                                  updateEditedMetadata(track.id, 'movement', val ? parseInt(val) : null);
+                                }
+                              }}
+                              className="flex-1 min-w-0 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                            >
+                              <option value="">Select...</option>
+                              {availableMovements
+                                .sort((a, b) => a.number - b.number)
+                                .map(mvt => (
+                                  <option key={mvt.number} value={mvt.number}>
+                                    {toRoman(mvt.number)}.{mvt.title ? ` ${mvt.title}` : ''}
+                                  </option>
+                                ))}
+                              {hasParsedNewMovement && (
+                                <option value={parsedMovement}>
+                                  {toRoman(parsedMovement)}.{parsedMovementName ? ` ${parsedMovementName}` : ''} (new)
                                 </option>
-                              ))}
-                          </select>
-                          {metadata.movement != null && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 shrink-0">
-                              ✓
-                            </span>
+                              )}
+                              <option value="__new__">+ Add new...</option>
+                            </select>
+                            {metadata.movement != null && (
+                              isCurrentMovementNew ? (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shrink-0">
+                                  new
+                                </span>
+                              ) : (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 shrink-0">
+                                  ✓
+                                </span>
+                              )
+                            )}
+                          </div>
+                          {isCurrentMovementNew && (
+                            <div className="flex gap-1">
+                              <input
+                                type="number"
+                                value={metadata.movement ?? ''}
+                                onChange={(e) => updateEditedMetadata(track.id, 'movement', e.target.value ? parseInt(e.target.value) : null)}
+                                placeholder="#"
+                                className="w-12 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                              />
+                              <input
+                                type="text"
+                                value={metadata.movementName}
+                                onChange={(e) => updateEditedMetadata(track.id, 'movementName', e.target.value)}
+                                placeholder="Movement name"
+                                className="flex-1 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                              />
+                            </div>
                           )}
                         </div>
                       );

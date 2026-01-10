@@ -8,7 +8,7 @@ const classicalMetadataSchema = z.object({
   composerName: z.string().nullable().describe("The name of the composer (e.g. 'Johann Sebastian Bach', 'Wolfgang Amadeus Mozart'). Should match one of the artist names provided. Null if not classical or unknown"),
   formalName: z.string().describe("The formal title of the entire work, e.g. 'Piano Concerto No. 3 in D minor', excluding catalog numbers or movement names"),
   nickname: z.string().nullable().describe("Popular nickname like 'Moonlight Sonata', null if none"),
-  catalogSystem: z.string().nullable().describe("Catalog system: Op, RV, BWV, K, Kk, Hob, D, S, etc. Null if not classical or no catalog number. For Vivaldi works with multiple catalog numbers use RV"),
+  catalogSystem: z.string().nullable().describe("Catalog system: Op, RV, BWV, K, Kk, Hob, D, S, etc. Null if not classical or no catalog number. If the work has multiple catalog numbers, pick the most popular one (e.g. for Vivaldi, with Op and RV, pick RV)"),
   catalogNumber: z.string().nullable().describe("Catalog number like '30', '30/3', '582', etc. Null if none"),
   key: z.string().nullable().describe("Musical key like 'D minor', 'C major', or null if unknown or not applicable"),
   form: z.string().nullable().describe("Musical form: 'concerto', 'sonata', 'symphony', 'fugue', 'prelude', etc. Null if not classical"),
@@ -43,6 +43,20 @@ export async function parseTrackMetadata(trackName: string, artistNames?: string
   return output;
 }
 
+const emptyMetadata: ClassicalMetadata = {
+  isClassical: false,
+  composerName: null,
+  formalName: "",
+  nickname: null,
+  catalogSystem: null,
+  catalogNumber: null,
+  key: null,
+  form: null,
+  movement: null,
+  movementName: null,
+  yearComposed: null,
+};
+
 export async function parseBatchTrackMetadata(
   tracks: Array<{ trackName: string; artistNames: string[] }>
 ): Promise<ClassicalMetadata[]> {
@@ -52,9 +66,14 @@ export async function parseBatchTrackMetadata(
 
   for (let i = 0; i < tracks.length; i += batchSize) {
     const batch = tracks.slice(i, i + batchSize);
-    const batchPromises = batch.map(({ trackName, artistNames }) =>
-      parseTrackMetadata(trackName, artistNames)
-    );
+    const batchPromises = batch.map(async ({ trackName, artistNames }) => {
+      try {
+        return await parseTrackMetadata(trackName, artistNames);
+      } catch (err) {
+        console.error(`Failed to parse track "${trackName}":`, err);
+        return emptyMetadata;
+      }
+    });
 
     const batchResults = await Promise.all(batchPromises);
     results.push(...batchResults);
