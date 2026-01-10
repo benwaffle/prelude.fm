@@ -100,9 +100,13 @@ export default function AdminPageNew() {
       }, {} as Record<string, AlbumGroup>);
 
       // Sort albums by priority (known composers / catalog numbers first)
-      const sortedGroups = Object.values(grouped).sort((a, b) => {
-        return getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks);
-      });
+      // and sort tracks within each album by track number
+      const sortedGroups = Object.values(grouped)
+        .map(group => ({
+          ...group,
+          tracks: group.tracks.sort((a, b) => a.disc_number - b.disc_number || a.track_number - b.track_number),
+        }))
+        .sort((a, b) => getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks));
 
       setAlbumGroups(sortedGroups);
     } catch (err) {
@@ -161,9 +165,13 @@ export default function AdminPageNew() {
       }, {} as Record<string, AlbumGroup>);
 
       // Sort albums by priority (known composers / catalog numbers first)
-      const sortedGroups = Object.values(grouped).sort((a, b) => {
-        return getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks);
-      });
+      // and sort tracks within each album by track number
+      const sortedGroups = Object.values(grouped)
+        .map(group => ({
+          ...group,
+          tracks: group.tracks.sort((a, b) => a.disc_number - b.disc_number || a.track_number - b.track_number),
+        }))
+        .sort((a, b) => getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks));
 
       setAlbumGroups(sortedGroups);
     } catch (err) {

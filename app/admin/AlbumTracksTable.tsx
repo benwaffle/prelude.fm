@@ -3,16 +3,12 @@ import Image from "next/image";
 import {
   getBatchTrackMetadata,
   getAlbumTrackIds,
-  addWorkMovementAndTrack,
-  addAlbumToDatabase,
-  addArtistsToDatabase,
-  addTrackToDatabase,
-  addComposer,
+  saveTrackWithMetadata,
   deleteTrackMetadata,
   checkWorksExist,
   type TrackMetadata,
 } from "./actions";
-import { parseBatchTrackMetadata, type ClassicalMetadata } from "./parse-track";
+import { parseAlbumTracks, type ClassicalMetadata } from "./parse-track";
 
 interface TrackData extends TrackMetadata {
   parsed?: ClassicalMetadata;
@@ -41,9 +37,6 @@ interface EditableMetadata {
   movementName: string;
 }
 
-// Regex to detect catalog numbers in track titles
-const CATALOG_REGEX = /\b(Op\.?|BWV|K\.?|RV|Hob\.?|D\.?|S\.?|WoO|HWV|WAB|TrV|AV|VB)\s*\d+/i;
-
 export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onTrackSaved }: AlbumTracksTableProps) {
   const [tracks, setTracks] = useState<TrackData[]>(initialTracks);
   const [analyzing, setAnalyzing] = useState(false);
@@ -53,28 +46,11 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
   // Record of "CatalogSystem:CatalogNumber" -> { workId, movements: { number, title }[] }
   const [existingWorks, setExistingWorks] = useState<Record<string, { workId: number; movements: { number: number; title: string | null }[] }>>({});
 
-  // Sort tracks: prioritize known composers and catalog numbers in title
+  // Sort tracks by album order (disc number, then track number)
   const sortedTracks = useMemo(() => {
-    return [...tracks].sort((a, b) => {
-      // Check if any artist is a known composer
-      const aHasKnownComposer = a.artists.some(artist => artist.inComposersTable);
-      const bHasKnownComposer = b.artists.some(artist => artist.inComposersTable);
-
-      // Check if title contains a catalog number
-      const aHasCatalog = CATALOG_REGEX.test(a.name);
-      const bHasCatalog = CATALOG_REGEX.test(b.name);
-
-      // Calculate priority score (higher = more priority)
-      const aScore = (aHasKnownComposer ? 2 : 0) + (aHasCatalog ? 1 : 0);
-      const bScore = (bHasKnownComposer ? 2 : 0) + (bHasCatalog ? 1 : 0);
-
-      if (aScore !== bScore) {
-        return bScore - aScore; // Higher score first
-      }
-
-      // Keep original track order for same priority
-      return a.track_number - b.track_number;
-    });
+    return [...tracks].sort((a, b) =>
+      a.disc_number - b.disc_number || a.track_number - b.track_number
+    );
   }, [tracks]);
 
   // Helper to check if track has metadata (linked to work/movement)
@@ -145,14 +121,6 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
     return track.parsed?.composerName || track.dbData?.composers[0]?.name || null;
   };
 
-  // Helper to check if composer exists in DB
-  const composerExistsInDb = (track: TrackData) => {
-    const composerName = getComposerName(track);
-    if (!composerName) return false;
-    const composerArtist = track.artists.find(a => a.name === composerName);
-    return composerArtist?.inComposersTable || false;
-  };
-
   // Helper to check if work exists in DB
   const workExistsInDb = (track: TrackData) => {
     const metadata = getEditableMetadata(track);
@@ -219,7 +187,10 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
     setAnalyzing(true);
 
     try {
-      const unknownTracks = tracks.filter(t => !hasMetadata(t));
+      // Filter unknown tracks and sort by album order for LLM context
+      const unknownTracks = tracks
+        .filter(t => !hasMetadata(t))
+        .sort((a, b) => a.disc_number - b.disc_number || a.track_number - b.track_number);
 
       if (unknownTracks.length === 0) {
         onError?.("All tracks in this album are already in the database");
@@ -231,7 +202,8 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
         artistNames: t.artists.map(a => a.name),
       }));
 
-      const parsedResults = await parseBatchTrackMetadata(parseInput);
+      // Send all album tracks to LLM together for better context
+      const parsedResults = await parseAlbumTracks(album.name, parseInput);
 
       setTracks(prev => prev.map(track => {
         const unknownIndex = unknownTracks.findIndex(ut => ut.id === track.id);
@@ -289,48 +261,13 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
     }
 
     setSavingTracks(prev => new Set(prev).add(track.id));
+    const startTime = performance.now();
 
     try {
       const composerArtist = track.artists.find(a => a.name === metadata.composerName);
 
       if (!composerArtist) {
         throw new Error(`Could not find composer artist: ${metadata.composerName}`);
-      }
-
-      if (!track.album.inSpotifyAlbumsTable) {
-        await addAlbumToDatabase({
-          id: track.album.id,
-          name: track.album.name,
-          release_date: track.album.release_date,
-          popularity: track.album.popularity,
-          images: track.album.images,
-        });
-      }
-
-      const artistsToSave = track.artists.filter(a => !a.inSpotifyArtistsTable);
-      if (artistsToSave.length > 0) {
-        await addArtistsToDatabase(
-          artistsToSave.map(a => ({ id: a.id, name: a.name }))
-        );
-      }
-
-      let composerId = composerArtist.composerId;
-      if (!composerId) {
-        const result = await addComposer(composerArtist.id, metadata.composerName);
-        composerId = result.composer.id;
-      }
-
-      if (!track.inSpotifyTracksTable) {
-        await addTrackToDatabase({
-          id: track.id,
-          name: track.name,
-          uri: track.uri,
-          duration_ms: track.duration_ms,
-          track_number: track.track_number,
-          popularity: track.popularity,
-          albumId: track.album.id,
-          artists: track.artists.map(a => ({ id: a.id, name: a.name })),
-        });
       }
 
       let movementNumber = metadata.movement;
@@ -357,24 +294,61 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
         }
       }
 
-      await addWorkMovementAndTrack({
-        composerId,
-        formalName: metadata.formalName,
-        nickname: metadata.nickname || null,
-        catalogSystem: metadata.catalogSystem || null,
-        catalogNumber: metadata.catalogNumber || null,
-        key: track.parsed?.key || null,
-        form: track.parsed?.form || null,
-        movementNumber,
-        movementName: metadata.movementName || null,
-        yearComposed: track.parsed?.yearComposed || null,
-        spotifyTrackId: track.id,
-        spotifyAlbumId: track.album.id,
+      // Single consolidated server action
+      await saveTrackWithMetadata({
+        album: {
+          id: track.album.id,
+          name: track.album.name,
+          release_date: track.album.release_date,
+          popularity: track.album.popularity,
+          images: track.album.images,
+          inSpotifyAlbumsTable: track.album.inSpotifyAlbumsTable,
+        },
+        track: {
+          id: track.id,
+          name: track.name,
+          uri: track.uri,
+          duration_ms: track.duration_ms,
+          track_number: track.track_number,
+          popularity: track.popularity,
+          inSpotifyTracksTable: track.inSpotifyTracksTable,
+        },
+        artists: track.artists.map(a => ({
+          id: a.id,
+          name: a.name,
+          inSpotifyArtistsTable: a.inSpotifyArtistsTable,
+          composerId: a.composerId,
+        })),
+        metadata: {
+          composerArtistId: composerArtist.id,
+          composerName: metadata.composerName,
+          formalName: metadata.formalName,
+          nickname: metadata.nickname || null,
+          catalogSystem: metadata.catalogSystem || null,
+          catalogNumber: metadata.catalogNumber || null,
+          key: track.parsed?.key || null,
+          form: track.parsed?.form || null,
+          movementNumber,
+          movementName: metadata.movementName || null,
+          yearComposed: track.parsed?.yearComposed || null,
+        },
       });
+      console.log(`[SaveTrack] completed in ${(performance.now() - startTime).toFixed(0)}ms`);
 
-      const updatedTrackData = await getBatchTrackMetadata([track.uri]);
+      // Update local state to mark as linked (skip refetch)
       setTracks(prev => prev.map(t =>
-        t.id === track.id ? { ...updatedTrackData[0], parsed: track.parsed } : t
+        t.id === track.id
+          ? {
+              ...t,
+              inSpotifyTracksTable: true,
+              album: { ...t.album, inSpotifyAlbumsTable: true },
+              artists: t.artists.map(a => ({ ...a, inSpotifyArtistsTable: true })),
+              dbData: {
+                ...t.dbData,
+                trackMovements: [{ spotifyTrackId: track.id, movementId: 0, startMs: null, endMs: null }],
+              },
+            }
+          : t
       ));
 
       onSuccess?.(`Saved: ${track.name}`);
@@ -500,8 +474,6 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
                 </td>
                 <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
                   {(() => {
-                    // Check if selected composer is in DB
-                    const selectedComposerInDb = metadata.composerName && track.artists.find(a => a.name === metadata.composerName)?.inComposersTable;
                     // Check if any artist is a known composer (for auto-detection)
                     const knownComposerArtist = track.artists.find(a => a.inComposersTable);
                     // Use known composer if no composer is set yet

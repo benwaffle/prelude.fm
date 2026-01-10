@@ -19,65 +19,54 @@ const classicalMetadataSchema = z.object({
 
 export type ClassicalMetadata = z.infer<typeof classicalMetadataSchema>;
 
-export async function parseTrackMetadata(trackName: string, artistNames?: string[]): Promise<ClassicalMetadata> {
-  const artistsText = artistNames && artistNames.length > 0
-    ? artistNames.length === 1
-      ? ` by ${artistNames[0]}`
-      : ` by ${artistNames.join(", ")}`
+// Schema for album batch parsing - returns array of metadata for each track
+const albumBatchSchema = z.object({
+  tracks: z.array(classicalMetadataSchema).describe("Metadata for each track in the same order as provided"),
+});
+
+// Parse all tracks from an album together for better context
+export async function parseAlbumTracks(
+  albumName: string,
+  tracks: Array<{ trackName: string; artistNames: string[] }>
+): Promise<ClassicalMetadata[]> {
+  if (tracks.length === 0) {
+    return [];
+  }
+
+  // Collect all unique artist names across all tracks
+  const allArtists = [...new Set(tracks.flatMap(t => t.artistNames))];
+  const artistsText = allArtists.length > 0
+    ? `\nArtists on album: ${allArtists.join(", ")}`
     : "";
 
-  const prompt = `Parse this classical music track name: "${trackName}"${artistsText}`;
+  // Format track list
+  const trackList = tracks
+    .map((t, i) => `${i + 1}. "${t.trackName}"${t.artistNames.length > 0 ? ` (${t.artistNames.join(", ")})` : ""}`)
+    .join("\n");
 
-  console.log("AI Prompt:", prompt);
+  const prompt = `Parse these classical music tracks from the album "${albumName}":${artistsText}
+
+${trackList}
+
+Return metadata for each track in the same order. Tracks from the same work should have consistent catalog numbers and formal names. Use the album and track context to disambiguate sparse track titles like "I. Allegro" or "Andante".`;
+
+  console.log("AI Album Batch Prompt:", prompt);
 
   const { output } = await generateText({
     model: "openai/gpt-5-mini",
     prompt,
     output: Output.object({
-      schema: classicalMetadataSchema
-    })
+      schema: albumBatchSchema,
+    }),
   });
 
-  console.log("AI Response:", JSON.stringify(output, null, 2));
+  console.log("AI Album Batch Response:", JSON.stringify(output, null, 2));
 
-  return output;
-}
-
-const emptyMetadata: ClassicalMetadata = {
-  isClassical: false,
-  composerName: null,
-  formalName: "",
-  nickname: null,
-  catalogSystem: null,
-  catalogNumber: null,
-  key: null,
-  form: null,
-  movement: null,
-  movementName: null,
-  yearComposed: null,
-};
-
-export async function parseBatchTrackMetadata(
-  tracks: Array<{ trackName: string; artistNames: string[] }>
-): Promise<ClassicalMetadata[]> {
-  // Process tracks in parallel (but limit concurrency to avoid rate limits)
-  const batchSize = 10;
-  const results: ClassicalMetadata[] = [];
-
-  for (let i = 0; i < tracks.length; i += batchSize) {
-    const batch = tracks.slice(i, i + batchSize);
-    const batchPromises = batch.map(async ({ trackName, artistNames }) => {
-      try {
-        return await parseTrackMetadata(trackName, artistNames);
-      } catch (err) {
-        console.error(`Failed to parse track "${trackName}":`, err);
-        return emptyMetadata;
-      }
-    });
-
-    const batchResults = await Promise.all(batchPromises);
-    results.push(...batchResults);
+  if (output.tracks.length !== tracks.length) {
+    throw new Error(
+      `Expected ${tracks.length} tracks but LLM returned ${output.tracks.length}`
+    );
   }
 
-  return results;
+  return output.tracks;
 }

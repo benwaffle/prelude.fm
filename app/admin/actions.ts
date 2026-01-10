@@ -34,6 +34,7 @@ export interface TrackMetadata {
   name: string;
   uri: string;
   duration_ms: number;
+  disc_number: number;
   track_number: number;
   popularity: number;
   inSpotifyTracksTable: boolean;
@@ -98,6 +99,211 @@ async function getSpotifyAccessToken(userId: string) {
   return tokenResponse.accessToken;
 }
 
+// Consolidated action to save a track with all metadata in one round-trip
+export async function saveTrackWithMetadata(data: {
+  album: {
+    id: string;
+    name: string;
+    release_date: string;
+    popularity: number;
+    images: { url: string; width: number; height: number }[];
+    inSpotifyAlbumsTable: boolean;
+  };
+  track: {
+    id: string;
+    name: string;
+    uri: string;
+    duration_ms: number;
+    track_number: number;
+    popularity: number;
+    inSpotifyTracksTable: boolean;
+  };
+  artists: { id: string; name: string; inSpotifyArtistsTable: boolean; composerId?: number }[];
+  metadata: {
+    composerArtistId: string;
+    composerName: string;
+    formalName: string;
+    nickname: string | null;
+    catalogSystem: string | null;
+    catalogNumber: string | null;
+    key: string | null;
+    form: string | null;
+    movementNumber: number;
+    movementName: string | null;
+    yearComposed: number | null;
+  };
+}) {
+  await checkAuth();
+
+  const { album, track, artists, metadata } = data;
+
+  // Step 1: Insert album and artists in parallel (independent operations)
+  const albumPromise = !album.inSpotifyAlbumsTable
+    ? db.insert(spotifyAlbum).values({
+        spotifyId: album.id,
+        title: album.name,
+        year: album.release_date ? parseInt(album.release_date.split("-")[0]) : null,
+        images: album.images,
+        popularity: album.popularity || null,
+      }).onConflictDoUpdate({
+        target: spotifyAlbum.spotifyId,
+        set: { title: album.name, popularity: album.popularity || null },
+      })
+    : Promise.resolve();
+
+  const artistsToSave = artists.filter(a => !a.inSpotifyArtistsTable);
+  const artistPromises = artistsToSave.map(artist =>
+    db.insert(spotifyArtist).values({
+      spotifyId: artist.id,
+      name: artist.name,
+      popularity: null,
+      images: null,
+    }).onConflictDoNothing()
+  );
+
+  await Promise.all([albumPromise, ...artistPromises]);
+
+  // Step 2: Get or create composer
+  const composerArtist = artists.find(a => a.id === metadata.composerArtistId);
+  let composerId = composerArtist?.composerId;
+
+  if (!composerId) {
+    const [existing] = await db
+      .select()
+      .from(composer)
+      .where(eq(composer.spotifyArtistId, metadata.composerArtistId))
+      .limit(1);
+
+    if (existing) {
+      composerId = existing.id;
+    } else {
+      const result = await db.insert(composer).values({
+        name: metadata.composerName,
+        spotifyArtistId: metadata.composerArtistId,
+      }).returning({ id: composer.id });
+      composerId = result[0].id;
+    }
+  }
+
+  // Step 3: Insert track (depends on album being inserted)
+  if (!track.inSpotifyTracksTable) {
+    await db.insert(spotifyTrack).values({
+      spotifyId: track.id,
+      title: track.name,
+      trackNumber: track.track_number,
+      durationMs: track.duration_ms,
+      popularity: track.popularity,
+      spotifyAlbumId: album.id,
+    }).onConflictDoNothing();
+
+    // Insert track-artist relationships in parallel
+    await Promise.all(
+      artists.map(artist =>
+        db.insert(trackArtists).values({
+          spotifyTrackId: track.id,
+          spotifyArtistId: artist.id,
+        }).onConflictDoNothing()
+      )
+    );
+  }
+
+  // Step 4: Upsert work
+  let workId: number;
+  let existingWork;
+
+  if (metadata.catalogSystem && metadata.catalogNumber) {
+    [existingWork] = await db
+      .select()
+      .from(work)
+      .where(
+        and(
+          eq(work.composerId, composerId),
+          eq(work.catalogSystem, metadata.catalogSystem),
+          eq(work.catalogNumber, metadata.catalogNumber)
+        )
+      )
+      .limit(1);
+  } else {
+    [existingWork] = await db
+      .select()
+      .from(work)
+      .where(
+        and(
+          eq(work.composerId, composerId),
+          eq(work.title, metadata.formalName)
+        )
+      )
+      .limit(1);
+  }
+
+  if (existingWork) {
+    await db.update(work).set({
+      title: metadata.formalName,
+      nickname: metadata.nickname,
+      catalogSystem: metadata.catalogSystem,
+      catalogNumber: metadata.catalogNumber,
+      yearComposed: metadata.yearComposed,
+      form: metadata.form,
+    }).where(eq(work.id, existingWork.id));
+    workId = existingWork.id;
+  } else {
+    const workResult = await db.insert(work).values({
+      composerId,
+      title: metadata.formalName,
+      nickname: metadata.nickname,
+      catalogSystem: metadata.catalogSystem,
+      catalogNumber: metadata.catalogNumber,
+      yearComposed: metadata.yearComposed,
+      form: metadata.form,
+    }).returning({ id: work.id });
+    workId = workResult[0].id;
+  }
+
+  // Step 5: Upsert movement
+  let movementId: number;
+  const [existingMovement] = await db
+    .select()
+    .from(movement)
+    .where(and(eq(movement.workId, workId), eq(movement.number, metadata.movementNumber)))
+    .limit(1);
+
+  if (existingMovement) {
+    await db.update(movement).set({ title: metadata.movementName }).where(eq(movement.id, existingMovement.id));
+    movementId = existingMovement.id;
+  } else {
+    const movementResult = await db.insert(movement).values({
+      workId,
+      number: metadata.movementNumber,
+      title: metadata.movementName,
+    }).returning({ id: movement.id });
+    movementId = movementResult[0].id;
+  }
+
+  // Step 6: Upsert recording and track-movement in parallel
+  const [existingRecording] = await db
+    .select()
+    .from(recording)
+    .where(and(eq(recording.spotifyAlbumId, album.id), eq(recording.workId, workId)))
+    .limit(1);
+
+  const recordingId = existingRecording?.id ?? (
+    await db.insert(recording).values({
+      spotifyAlbumId: album.id,
+      workId,
+      popularity: null,
+    }).returning({ id: recording.id })
+  )[0].id;
+
+  await db.insert(trackMovement).values({
+    spotifyTrackId: track.id,
+    movementId,
+    startMs: null,
+    endMs: null,
+  }).onConflictDoNothing();
+
+  return { success: true, workId, movementId, recordingId, composerId };
+}
+
 export async function addAlbumToDatabase(albumData: {
   id: string;
   name: string;
@@ -105,17 +311,12 @@ export async function addAlbumToDatabase(albumData: {
   popularity: number;
   images: { url: string; width: number; height: number }[];
 }) {
-  const session = await checkAuth();
+  await checkAuth();
 
   try {
-    const accessToken = await getSpotifyAccessToken(session.user.id);
-    const spotify = createServerSpotifyClient(accessToken);
-
     const year = albumData.release_date
       ? parseInt(albumData.release_date.split("-")[0])
       : null;
-
-    const fullAlbumData = await spotify.albums.get(albumData.id);
 
     await db
       .insert(spotifyAlbum)
@@ -124,7 +325,7 @@ export async function addAlbumToDatabase(albumData: {
         title: albumData.name,
         year,
         images: albumData.images,
-        popularity: fullAlbumData.popularity || null,
+        popularity: albumData.popularity || null,
       })
       .onConflictDoUpdate({
         target: spotifyAlbum.spotifyId,
@@ -132,7 +333,7 @@ export async function addAlbumToDatabase(albumData: {
           title: albumData.name,
           year,
           images: albumData.images,
-          popularity: fullAlbumData.popularity || null,
+          popularity: albumData.popularity || null,
         },
       });
 
@@ -155,32 +356,28 @@ function createServerSpotifyClient(accessToken: string) {
 }
 
 export async function addArtistsToDatabase(artists: { id: string; name: string }[]) {
-  const session = await checkAuth();
+  await checkAuth();
 
   try {
-    const accessToken = await getSpotifyAccessToken(session.user.id);
-    const spotify = createServerSpotifyClient(accessToken);
-
-    for (const artist of artists) {
-      const artistData = await spotify.artists.get(artist.id);
-
-      await db
-        .insert(spotifyArtist)
-        .values({
-          spotifyId: artist.id,
-          name: artist.name,
-          popularity: artistData.popularity || null,
-          images: artistData.images || null,
-        })
-        .onConflictDoUpdate({
-          target: spotifyArtist.spotifyId,
-          set: {
+    // Insert all artists in parallel - skip Spotify API call, we only need names
+    await Promise.all(
+      artists.map((artist) =>
+        db
+          .insert(spotifyArtist)
+          .values({
+            spotifyId: artist.id,
             name: artist.name,
-            popularity: artistData.popularity || null,
-            images: artistData.images || null,
-          },
-        });
-    }
+            popularity: null,
+            images: null,
+          })
+          .onConflictDoUpdate({
+            target: spotifyArtist.spotifyId,
+            set: {
+              name: artist.name,
+            },
+          })
+      )
+    );
 
     return {
       success: true,
@@ -784,6 +981,7 @@ export async function getBatchTrackMetadata(trackUris: string[]) {
     name: trackData.name,
     uri: trackData.uri,
     duration_ms: trackData.duration_ms,
+    disc_number: trackData.disc_number,
     track_number: trackData.track_number,
     popularity: trackData.popularity,
     inSpotifyTracksTable: trackMap.has(trackData.id),
@@ -954,6 +1152,7 @@ export async function getTrackMetadata(trackUri: string) {
       name: trackData.name,
       uri: trackData.uri,
       duration_ms: trackData.duration_ms,
+      disc_number: trackData.disc_number,
       track_number: trackData.track_number,
       popularity: trackData.popularity,
       inSpotifyTracksTable: existingTrack.length > 0,
