@@ -1,4 +1,6 @@
 - [ ] make the AI fill in the work number if missing
+- [ ] send whole albums to the LLM
+- [ ] in admin page, automatically link the artist if found in composers table
 - [ ] use a DB MCP/turso cli + wikipedia/other sites to fill out the composers + works data
 - [ ] use shadcn sonner so alerts show up in view
 - [ ] handle multiple catalog numbers for a track like "Violin Concerto in E Minor, Op. 4 No. 2, RV 279: I. Allegro"

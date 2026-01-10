@@ -32,10 +32,10 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full flex-col items-center gap-8 py-16 px-4 sm:px-8">
+      <main className="flex min-h-screen w-full flex-col items-center gap-8 py-6 px-4 sm:px-8">
         <div className="w-full flex items-center justify-between">
           <h1 className="text-4xl font-bold text-black dark:text-zinc-50">
-            Classical Music Streaming
+            prelude.fm
           </h1>
           {session && (
             <button

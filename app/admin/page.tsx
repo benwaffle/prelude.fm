@@ -198,7 +198,7 @@ export default function AdminPageNew() {
       <main className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-4xl font-bold text-black dark:text-zinc-50">
-            Admin - Batch Track Metadata
+            admin
           </h1>
           <Link
             href="/"

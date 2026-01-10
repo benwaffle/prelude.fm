@@ -623,6 +623,27 @@ export async function deleteTrackMetadata(spotifyTrackId: string) {
   }
 }
 
+export async function getAlbumTrackIds(albumId: string): Promise<string[]> {
+  const session = await checkAuth();
+  const accessToken = await getSpotifyAccessToken(session.user.id);
+  const spotify = createServerSpotifyClient(accessToken);
+
+  const trackIds: string[] = [];
+  let offset = 0;
+  const limit = 50;
+
+  // Fetch all tracks from the album (paginated)
+  while (true) {
+    const albumTracks = await spotify.albums.tracks(albumId, undefined, limit, offset);
+    trackIds.push(...albumTracks.items.map((t) => t.id));
+
+    if (albumTracks.next === null) break;
+    offset += limit;
+  }
+
+  return trackIds;
+}
+
 export async function getBatchTrackMetadata(trackUris: string[]) {
   const session = await checkAuth();
 

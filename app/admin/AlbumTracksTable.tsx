@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import Image from "next/image";
 import {
   getBatchTrackMetadata,
+  getAlbumTrackIds,
   addWorkMovementAndTrack,
   addAlbumToDatabase,
   addArtistsToDatabase,
@@ -46,6 +47,7 @@ const CATALOG_REGEX = /\b(Op\.?|BWV|K\.?|RV|Hob\.?|D\.?|S\.?|WoO|HWV|WAB|TrV|AV|
 export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onTrackSaved }: AlbumTracksTableProps) {
   const [tracks, setTracks] = useState<TrackData[]>(initialTracks);
   const [analyzing, setAnalyzing] = useState(false);
+  const [loadingAlbum, setLoadingAlbum] = useState(false);
   const [savingTracks, setSavingTracks] = useState<Set<string>>(new Set());
   const [editedMetadata, setEditedMetadata] = useState<Record<string, EditableMetadata>>({});
   // Record of "CatalogSystem:CatalogNumber" -> { workId, movements: { number, title }[] }
@@ -255,6 +257,29 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
     }
   };
 
+  const handleLoadFullAlbum = async () => {
+    setLoadingAlbum(true);
+    try {
+      const allTrackIds = await getAlbumTrackIds(album.id);
+      const existingIds = new Set(tracks.map(t => t.id));
+      const newTrackIds = allTrackIds.filter(id => !existingIds.has(id));
+
+      if (newTrackIds.length === 0) {
+        onSuccess?.("All album tracks are already loaded");
+        return;
+      }
+
+      const newTrackUris = newTrackIds.map(id => `spotify:track:${id}`);
+      const newTracks = await getBatchTrackMetadata(newTrackUris);
+      setTracks(prev => [...prev, ...newTracks]);
+      onSuccess?.(`Added ${newTracks.length} tracks from album`);
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Failed to load album tracks");
+    } finally {
+      setLoadingAlbum(false);
+    }
+  };
+
   const handleSaveTrack = async (track: TrackData) => {
     const metadata = getEditableMetadata(track);
 
@@ -412,15 +437,24 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
             {album.release_date?.split('-')[0]} · {tracks.length} track{tracks.length !== 1 ? 's' : ''}
           </div>
         </div>
-        {unknownCount > 0 && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleAnalyze}
-            disabled={analyzing}
-            className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            onClick={handleLoadFullAlbum}
+            disabled={loadingAlbum}
+            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-50"
           >
-            {analyzing ? "Analyzing..." : `Analyze ${unknownCount}`}
+            {loadingAlbum ? "Loading..." : "Load Full Album"}
           </button>
-        )}
+          {unknownCount > 0 && (
+            <button
+              onClick={handleAnalyze}
+              disabled={analyzing}
+              className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {analyzing ? "Analyzing..." : `Analyze ${unknownCount}`}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tracks table */}

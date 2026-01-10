@@ -81,7 +81,7 @@ export function SpotifyPlayerProvider({
 
     window.onSpotifyWebPlaybackSDKReady = () => {
       const player = new window.Spotify.Player({
-        name: "Classical Music Streaming",
+        name: "prelude.fm",
         getOAuthToken: (cb) => cb(accessToken),
         volume: 1,
       });
