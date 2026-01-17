@@ -10,6 +10,15 @@ import {
 } from "./actions";
 import { parseAlbumTracks, type ClassicalMetadata } from "./parse-track";
 
+function Spinner({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
 interface TrackData extends TrackMetadata {
   parsed?: ClassicalMetadata;
 }
@@ -41,6 +50,7 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
   const [tracks, setTracks] = useState<TrackData[]>(initialTracks);
   const [analyzing, setAnalyzing] = useState(false);
   const [loadingAlbum, setLoadingAlbum] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
   const [savingTracks, setSavingTracks] = useState<Set<string>>(new Set());
   const [editedMetadata, setEditedMetadata] = useState<Record<string, EditableMetadata>>({});
   // Record of "CatalogSystem:CatalogNumber" -> { workId, movements: { number, title }[] }
@@ -326,7 +336,6 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
           nickname: metadata.nickname || null,
           catalogSystem: metadata.catalogSystem || null,
           catalogNumber: metadata.catalogNumber || null,
-          key: track.parsed?.key || null,
           form: track.parsed?.form || null,
           movementNumber,
           movementName: metadata.movementName || null,
@@ -390,6 +399,38 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
 
   const unknownCount = tracks.filter(t => !hasMetadata(t)).length;
 
+  // Tracks that are ready to save (have parsed/edited metadata, not already linked)
+  const readyTracks = tracks.filter(t => {
+    if (hasMetadata(t)) return false;
+    const metadata = getEditableMetadata(t);
+    return metadata.composerName && metadata.formalName;
+  });
+
+  const handleSaveAll = async () => {
+    if (readyTracks.length === 0) return;
+
+    setSavingAll(true);
+    let savedCount = 0;
+    let errorCount = 0;
+
+    for (const track of readyTracks) {
+      try {
+        await handleSaveTrack(track);
+        savedCount++;
+      } catch {
+        errorCount++;
+      }
+    }
+
+    setSavingAll(false);
+
+    if (errorCount > 0) {
+      onSuccess?.(`Saved ${savedCount} tracks, ${errorCount} failed`);
+    } else {
+      onSuccess?.(`Saved ${savedCount} tracks`);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
       {/* Album header */}
@@ -415,17 +456,29 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
           <button
             onClick={handleLoadFullAlbum}
             disabled={loadingAlbum}
-            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-50"
+            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-1.5"
           >
+            {loadingAlbum && <Spinner />}
             {loadingAlbum ? "Loading..." : "Load Full Album"}
           </button>
           {unknownCount > 0 && (
             <button
               onClick={handleAnalyze}
               disabled={analyzing}
-              className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
             >
+              {analyzing && <Spinner />}
               {analyzing ? "Analyzing..." : `Analyze ${unknownCount}`}
+            </button>
+          )}
+          {readyTracks.length > 0 && (
+            <button
+              onClick={handleSaveAll}
+              disabled={savingAll || savingTracks.size > 0}
+              className="px-3 py-1.5 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {savingAll && <Spinner />}
+              {savingAll ? "Saving..." : `Save All (${readyTracks.length})`}
             </button>
           )}
         </div>
@@ -527,18 +580,25 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
                       return (
                         <div className="flex items-center gap-2">
                           {metadata.catalogSystem || metadata.catalogNumber || metadata.formalName ? (
-                            <>
-                              <span>
-                                {metadata.catalogSystem} {metadata.catalogNumber}
-                                {metadata.nickname && ` "${metadata.nickname}"`}
-                                {!metadata.catalogSystem && !metadata.catalogNumber && metadata.formalName}
-                              </span>
-                              {workInDb && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-                                  ✓
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span>
+                                  {metadata.catalogSystem} {metadata.catalogNumber}
+                                  {metadata.nickname && ` "${metadata.nickname}"`}
+                                  {!metadata.catalogSystem && !metadata.catalogNumber && metadata.formalName}
+                                </span>
+                                {workInDb && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                                    ✓
+                                  </span>
+                                )}
+                              </div>
+                              {(metadata.catalogSystem || metadata.catalogNumber) && metadata.formalName && (
+                                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                                  {metadata.formalName}
                                 </span>
                               )}
-                            </>
+                            </div>
                           ) : '-'}
                         </div>
                       );
@@ -739,16 +799,18 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
                     <button
                       onClick={() => handleSaveTrack(track)}
                       disabled={savingTracks.has(track.id)}
-                      className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                     >
+                      {savingTracks.has(track.id) && <Spinner className="w-3 h-3" />}
                       {savingTracks.has(track.id) ? "Saving..." : "Save"}
                     </button>
                   ) : isLinked ? (
                     <button
                       onClick={() => handleUnlink(track)}
                       disabled={savingTracks.has(track.id)}
-                      className="text-xs px-3 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-xs px-3 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                     >
+                      {savingTracks.has(track.id) && <Spinner className="w-3 h-3" />}
                       {savingTracks.has(track.id) ? "Unlinking..." : "Unlink"}
                     </button>
                   ) : null}

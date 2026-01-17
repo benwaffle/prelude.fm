@@ -126,7 +126,6 @@ export async function saveTrackWithMetadata(data: {
     nickname: string | null;
     catalogSystem: string | null;
     catalogNumber: string | null;
-    key: string | null;
     form: string | null;
     movementNumber: number;
     movementName: string | null;
@@ -639,7 +638,6 @@ export async function addWorkMovementAndTrack(data: {
   nickname: string | null;
   catalogSystem: string | null;
   catalogNumber: string | null;
-  key: string | null;
   form: string | null;
   movementNumber: number;
   movementName: string | null;
