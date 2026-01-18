@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import type { SavedTrack, SimplifiedArtist, Track } from "@spotify/web-api-ts-sdk";
-import { getMatchedTracks, submitToMatchQueue, type MatchedTrack } from "../actions/spotify";
+import { getMatchedTracks, getKnownComposerArtists, submitToMatchQueue, type MatchedTrack } from "@/app/actions/spotify";
 import { useSpotifyPlayer } from "@/lib/spotify-player-context";
 import { useLikedSongs } from "@/lib/use-liked-songs";
 import { MovementRow } from "./MovementRow";
@@ -16,6 +16,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   const { currentTrack, play } = useSpotifyPlayer();
   const { tracks, loading, error, total } = useLikedSongs(accessToken);
   const [matchedTracks, setMatchedTracks] = useState<MatchedTrack[]>([]);
+  const [knownComposerMap, setKnownComposerMap] = useState<Map<string, string>>(new Map()); // artistId -> composerName
   const [checkingMatches, setCheckingMatches] = useState(false);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [unmatchedCollapsed, setUnmatchedCollapsed] = useState(true);
@@ -32,6 +33,19 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
         const trackIds = tracks.map((t) => t.track.id);
         const matched = await getMatchedTracks(trackIds);
         setMatchedTracks(matched);
+
+        // Get all artist IDs from all tracks to check for known composers
+        const allArtistIds = new Set<string>();
+        for (const { track } of tracks) {
+          for (const artist of track.artists) {
+            allArtistIds.add(artist.id);
+          }
+        }
+
+        // Look up known composers
+        const knownComposers = await getKnownComposerArtists(Array.from(allArtistIds));
+        const composerMap = new Map(knownComposers.map((c) => [c.artistId, c.composerName]));
+        setKnownComposerMap(composerMap);
 
         // Submit unmatched tracks to the queue
         const matchedIds = new Set(matched.map((m) => m.trackId));
@@ -114,11 +128,49 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
     }
   }
 
-  const unmatchedTracksList = sortedTracks.filter((t) => !matchedTrackIds.has(t.track.id));
+  // Helper to get known composer for a track (first matching artist)
+  const getTrackComposer = (track: Track): string | null => {
+    for (const artist of track.artists) {
+      const composerName = knownComposerMap.get(artist.id);
+      if (composerName) return composerName;
+    }
+    return null;
+  };
+
+  // Split unmatched tracks into those with known composers and truly unmatched
+  const tracksWithKnownComposer: SavedTrack[] = [];
+  const unmatchedTracksList: SavedTrack[] = [];
+
+  for (const likedTrack of sortedTracks) {
+    if (matchedTrackIds.has(likedTrack.track.id)) continue;
+
+    const composerName = getTrackComposer(likedTrack.track);
+    if (composerName) {
+      tracksWithKnownComposer.push(likedTrack);
+    } else {
+      unmatchedTracksList.push(likedTrack);
+    }
+  }
+
+  // Group tracks with known composers by album
+  const knownComposerByAlbum = new Map<string, { albumName: string; albumImage: string | undefined; tracks: SavedTrack[] }>();
+  for (const likedTrack of tracksWithKnownComposer) {
+    const albumId = likedTrack.track.album.id;
+    const existing = knownComposerByAlbum.get(albumId);
+    if (existing) {
+      existing.tracks.push(likedTrack);
+    } else {
+      knownComposerByAlbum.set(albumId, {
+        albumName: likedTrack.track.album.name,
+        albumImage: likedTrack.track.album.images[0]?.url,
+        tracks: [likedTrack],
+      });
+    }
+  }
 
   // Create a flat list of all tracks in display order for queueing
-  const allTracksInOrder: Array<{ track: Track; workId?: number }> = [];
-  
+  const allTracksInOrder: Array<{ track: Track; workId?: number; composerName?: string }> = [];
+
   // Add matched tracks by work (sorted by movement number within each work)
   for (const { work, tracks: workTracks } of matchedByWork.values()) {
     const sortedWorkTracks = [...workTracks].sort((a, b) => {
@@ -130,7 +182,13 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
       allTracksInOrder.push({ track: savedTrack.track, workId: work.id });
     }
   }
-  
+
+  // Add tracks with known composers
+  for (const savedTrack of tracksWithKnownComposer) {
+    const composerName = getTrackComposer(savedTrack.track)!;
+    allTracksInOrder.push({ track: savedTrack.track, composerName });
+  }
+
   // Add unmatched tracks
   for (const savedTrack of unmatchedTracksList) {
     allTracksInOrder.push({ track: savedTrack.track });
@@ -162,7 +220,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
             Matched
           </h3>
           <span className="text-xs text-zinc-500">
-            {checkingMatches ? "..." : `${matchedTrackIds.size} tracks, ${matchedByWork.size} works`}
+            {checkingMatches ? "..." : `${matchedTrackIds.size + tracksWithKnownComposer.length} tracks, ${matchedByWork.size} works`}
           </span>
         </div>
         <div className="divide-y divide-zinc-200 dark:divide-zinc-700 md:divide-y-0 md:grid md:grid-cols-[minmax(0,_1fr)_max-content] md:border md:border-zinc-200 md:dark:border-zinc-700">
@@ -258,7 +316,100 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
               </div>
             );
           })}
-          {!checkingMatches && matchedByWork.size === 0 && (
+          {/* Tracks with known composers (but no specific work match) - grouped by album */}
+          {Array.from(knownComposerByAlbum.entries()).map(([albumId, { albumName, albumImage, tracks: albumTracks }]) => {
+            const firstTrack = albumTracks[0].track;
+            const composerName = getTrackComposer(firstTrack)!;
+            const isSingleTrack = albumTracks.length === 1;
+
+            // Get URIs for playing
+            const firstTrackIndex = allTracksInOrder.findIndex(t => t.track.id === firstTrack.id);
+            const albumAndSubsequentUris = firstTrackIndex >= 0
+              ? allTracksInOrder.slice(firstTrackIndex, firstTrackIndex + 50).map(item => item.track.uri)
+              : albumTracks.map(({ track }) => track.uri);
+
+            if (isSingleTrack) {
+              // Single track: inline display
+              return (
+                <button
+                  key={albumId}
+                  onClick={() => play(albumAndSubsequentUris)}
+                  className="col-span-2 px-3 py-3 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  {albumImage && (
+                    <Image
+                      src={albumImage}
+                      alt={albumName}
+                      width={48}
+                      height={48}
+                      className="rounded"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-black dark:text-zinc-100 truncate">
+                      <span className="font-medium">{composerName}</span>
+                      <span className="text-zinc-400 mx-1.5">&middot;</span>
+                      <span>{firstTrack.name}</span>
+                    </p>
+                    <p className="text-xs text-zinc-500 truncate">
+                      {albumName}
+                    </p>
+                  </div>
+                  {currentTrack?.id === firstTrack.id && (
+                    <span className="text-xs text-green-500">▶</span>
+                  )}
+                </button>
+              );
+            }
+
+            // Multiple tracks: header with tracks below
+            return (
+              <div key={albumId} className="col-span-2 border-b border-zinc-200 dark:border-zinc-700">
+                <button
+                  onClick={() => play(albumAndSubsequentUris)}
+                  className="w-full px-3 py-3 flex items-center gap-3 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  {albumImage && (
+                    <Image
+                      src={albumImage}
+                      alt={albumName}
+                      width={48}
+                      height={48}
+                      className="rounded"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-black dark:text-zinc-100 truncate">
+                      <span className="font-medium">{composerName}</span>
+                    </p>
+                    <p className="text-xs text-zinc-500 truncate">
+                      {albumName}
+                    </p>
+                  </div>
+                </button>
+                <div className="divide-y divide-zinc-200 dark:divide-zinc-700 ml-15">
+                  {[...albumTracks].sort((a, b) => a.track.track_number - b.track.track_number).map(({ track }) => {
+                    const trackIndex = allTracksInOrder.findIndex(t => t.track.id === track.id);
+                    const queueTracks = trackIndex >= 0
+                      ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
+                      : [];
+
+                    return (
+                      <MovementRow
+                        key={track.id}
+                        track={track}
+                        hideComposer={composerName}
+                        hideArtwork
+                        isPlaying={currentTrack?.id === track.id}
+                        queueTracks={queueTracks}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {!checkingMatches && matchedByWork.size === 0 && tracksWithKnownComposer.length === 0 && (
             <p className="text-sm text-zinc-500 py-4">
               No matched tracks yet
             </p>

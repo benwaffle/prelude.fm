@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { trackMovement, matchQueue } from "@/lib/db/schema";
+import { trackMovement, matchQueue, movement, work, composer, spotifyArtist } from "@/lib/db/schema";
 import { headers } from "next/headers";
 import { inArray, eq, sql } from "drizzle-orm";
 
@@ -46,8 +46,6 @@ export interface MatchedTrack {
 
 export async function getMatchedTracks(trackIds: string[]): Promise<MatchedTrack[]> {
   if (trackIds.length === 0) return [];
-
-  const { movement, work, composer } = await import("@/lib/db/schema");
 
   const results = await db
     .select({
@@ -147,4 +145,24 @@ export async function updateMatchQueueStatus(trackIds: string[], status: "matche
     .update(matchQueue)
     .set({ status })
     .where(inArray(matchQueue.spotifyId, trackIds));
+}
+
+export interface KnownComposerTrack {
+  artistId: string;
+  composerName: string;
+}
+
+export async function getKnownComposerArtists(artistIds: string[]): Promise<KnownComposerTrack[]> {
+  if (artistIds.length === 0) return [];
+
+  const results = await db
+    .select({
+      artistId: spotifyArtist.spotifyId,
+      composerName: composer.name,
+    })
+    .from(composer)
+    .innerJoin(spotifyArtist, eq(composer.spotifyArtistId, spotifyArtist.spotifyId))
+    .where(inArray(spotifyArtist.spotifyId, artistIds));
+
+  return results;
 }
