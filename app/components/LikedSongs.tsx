@@ -183,13 +183,13 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
               return movA - movB;
             });
             
-            // When clicking work header, queue this work's tracks + all subsequent tracks
+            // When clicking work header, queue this work's tracks + up to 50 subsequent tracks
             const firstTrackInWork = sortedWorkTracks[0]?.track;
             const firstTrackIndex = firstTrackInWork 
               ? allTracksInOrder.findIndex(t => t.track.id === firstTrackInWork.id)
               : -1;
             const workAndSubsequentUris = firstTrackIndex >= 0
-              ? allTracksInOrder.slice(firstTrackIndex).map(item => item.track.uri)
+              ? allTracksInOrder.slice(firstTrackIndex, firstTrackIndex + 50).map(item => item.track.uri)
               : sortedWorkTracks.map(({ track }) => track.uri);
 
             return (
@@ -236,10 +236,10 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                         return movA - movB;
                       })
                       .map(({ track }) => {
-                        // Find this track's position in the global list and queue everything after it
+                        // Find this track's position in the global list and queue up to 50 tracks after it
                         const trackIndex = allTracksInOrder.findIndex(t => t.track.id === track.id);
                         const queueTracks = trackIndex >= 0 
-                          ? allTracksInOrder.slice(trackIndex + 1).map(item => item.track)
+                          ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
                           : [];
 
                         return (
@@ -285,10 +285,10 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
         {!unmatchedCollapsed && (
           <div className="space-y-1">
             {unmatchedTracksList.map(({ track }) => {
-              // Find this track's position in the global list and queue everything after it
+              // Find this track's position in the global list and queue up to 50 tracks after it
               const trackIndex = allTracksInOrder.findIndex(t => t.track.id === track.id);
               const queueTracks = trackIndex >= 0 
-                ? allTracksInOrder.slice(trackIndex + 1).map(item => item.track)
+                ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
                 : [];
               
               return (
