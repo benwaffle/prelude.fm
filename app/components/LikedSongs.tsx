@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
-import type { SavedTrack, SimplifiedArtist } from "@spotify/web-api-ts-sdk";
+import type { SavedTrack, SimplifiedArtist, Track } from "@spotify/web-api-ts-sdk";
 import { getMatchedTracks, submitToMatchQueue, type MatchedTrack } from "../actions/spotify";
 import { useSpotifyPlayer } from "@/lib/spotify-player-context";
 import { useLikedSongs } from "@/lib/use-liked-songs";
@@ -116,6 +116,26 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
 
   const unmatchedTracksList = sortedTracks.filter((t) => !matchedTrackIds.has(t.track.id));
 
+  // Create a flat list of all tracks in display order for queueing
+  const allTracksInOrder: Array<{ track: Track; workId?: number }> = [];
+  
+  // Add matched tracks by work (sorted by movement number within each work)
+  for (const { work, tracks: workTracks } of matchedByWork.values()) {
+    const sortedWorkTracks = [...workTracks].sort((a, b) => {
+      const movA = trackMovementMap.get(a.track.id) ?? 0;
+      const movB = trackMovementMap.get(b.track.id) ?? 0;
+      return movA - movB;
+    });
+    for (const savedTrack of sortedWorkTracks) {
+      allTracksInOrder.push({ track: savedTrack.track, workId: work.id });
+    }
+  }
+  
+  // Add unmatched tracks
+  for (const savedTrack of unmatchedTracksList) {
+    allTracksInOrder.push({ track: savedTrack.track });
+  }
+
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-4">
@@ -162,12 +182,20 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
               const movB = trackMovementMap.get(b.track.id) ?? 0;
               return movA - movB;
             });
-            const workUris = sortedWorkTracks.map(({ track }) => track.uri);
+            
+            // When clicking work header, queue this work's tracks + up to 50 subsequent tracks
+            const firstTrackInWork = sortedWorkTracks[0]?.track;
+            const firstTrackIndex = firstTrackInWork 
+              ? allTracksInOrder.findIndex(t => t.track.id === firstTrackInWork.id)
+              : -1;
+            const workAndSubsequentUris = firstTrackIndex >= 0
+              ? allTracksInOrder.slice(firstTrackIndex, firstTrackIndex + 50).map(item => item.track.uri)
+              : sortedWorkTracks.map(({ track }) => track.uri);
 
             return (
               <div key={work.id} className="contents">
                 <button
-                  onClick={() => play(workUris)}
+                  onClick={() => play(workAndSubsequentUris)}
                   className="px-3 py-3 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-r md:pr-10 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                 >
                   {firstTrack.album.images[0] && (
@@ -207,16 +235,25 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                         const movB = trackMovementMap.get(b.track.id) ?? 0;
                         return movA - movB;
                       })
-                      .map(({ track }) => (
-                        <MovementRow
-                          key={track.id}
-                          track={track}
-                          displayName={trackMovementNameMap.get(track.id) ?? undefined}
-                          hideComposer={work.composerName}
-                          hideArtwork
-                          isPlaying={currentTrack?.id === track.id}
-                        />
-                      ))}
+                      .map(({ track }) => {
+                        // Find this track's position in the global list and queue up to 50 tracks after it
+                        const trackIndex = allTracksInOrder.findIndex(t => t.track.id === track.id);
+                        const queueTracks = trackIndex >= 0 
+                          ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
+                          : [];
+
+                        return (
+                          <MovementRow
+                            key={track.id}
+                            track={track}
+                            displayName={trackMovementNameMap.get(track.id) ?? undefined}
+                            hideComposer={work.composerName}
+                            hideArtwork
+                            isPlaying={currentTrack?.id === track.id}
+                            queueTracks={queueTracks}
+                          />
+                        );
+                      })}
                 </div>
               </div>
             );
@@ -247,9 +284,22 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
         </button>
         {!unmatchedCollapsed && (
           <div className="space-y-1">
-            {unmatchedTracksList.map(({ track }) => (
-              <MovementRow key={track.id} track={track} isPlaying={currentTrack?.id === track.id} />
-            ))}
+            {unmatchedTracksList.map(({ track }) => {
+              // Find this track's position in the global list and queue up to 50 tracks after it
+              const trackIndex = allTracksInOrder.findIndex(t => t.track.id === track.id);
+              const queueTracks = trackIndex >= 0 
+                ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
+                : [];
+              
+              return (
+                <MovementRow 
+                  key={track.id} 
+                  track={track} 
+                  isPlaying={currentTrack?.id === track.id}
+                  queueTracks={queueTracks}
+                />
+              );
+            })}
           </div>
         )}
       </div>

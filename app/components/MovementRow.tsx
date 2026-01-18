@@ -17,6 +17,7 @@ interface MovementRowProps {
   hideComposer?: string;
   hideArtwork?: boolean;
   isPlaying?: boolean;
+  queueTracks?: Track[];
 }
 
 export function MovementRow({
@@ -25,6 +26,7 @@ export function MovementRow({
   hideComposer,
   hideArtwork,
   isPlaying,
+  queueTracks = [],
 }: MovementRowProps) {
   const { play } = useSpotifyPlayer();
 
@@ -39,7 +41,7 @@ export function MovementRow({
 
   return (
     <button
-      onClick={() => play([track.uri])}
+      onClick={() => play([track.uri, ...queueTracks.map(t => t.uri)])}
       className={`w-full flex items-center gap-3 p-2 text-left cursor-pointer ${
         hideArtwork ? "" : "rounded"
       } ${
