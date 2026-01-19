@@ -30,3 +30,7 @@ The user should be able to click on a track's catalog number to see other record
 The user should be able to click on a track's composer to see popular works.
 
 The user should be able to search for composer or work.
+
+## Tools
+
+Use `turso db shell spotify-classical "<query>"` to execute SQL queries

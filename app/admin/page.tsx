@@ -3,9 +3,12 @@
 import { authClient } from "@/lib/auth-client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getBatchTrackMetadata, type TrackMetadata } from "./actions";
-import { getMatchQueue, updateMatchQueueStatus } from "../actions/spotify";
-import { AlbumTracksTable } from "./AlbumTracksTable";
+import { getAdminStats } from "./actions";
+import { TracksTab } from "./tabs/TracksTab";
+import { ComposersTab } from "./tabs/ComposersTab";
+import { WorksTab } from "./tabs/WorksTab";
+
+type TabType = "tracks" | "composers" | "works";
 
 function Spinner({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -16,177 +19,32 @@ function Spinner({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
-interface AlbumGroup {
-  album: {
-    id: string;
-    name: string;
-    release_date: string;
-    images: { url: string; width: number; height: number }[];
-  };
-  tracks: TrackMetadata[];
-}
-
-const QUEUE_PAGE_SIZE = 100;
-
-// Regex to detect catalog numbers in track titles
-const CATALOG_REGEX = /\b(Op\.?|BWV|K\.?|RV|Hob\.?|D\.?|S\.?|WoO|HWV|WAB|TrV|AV|VB)\s*\d+/i;
-
-// Calculate priority score for an album based on its tracks
-function getAlbumPriorityScore(tracks: TrackMetadata[]): number {
-  let maxScore = 0;
-  for (const track of tracks) {
-    const hasKnownComposer = track.artists.some(a => a.inComposersTable);
-    const hasCatalog = CATALOG_REGEX.test(track.name);
-    const score = (hasKnownComposer ? 2 : 0) + (hasCatalog ? 1 : 0);
-    if (score > maxScore) maxScore = score;
-    if (maxScore === 3) break; // Max possible score
-  }
-  return maxScore;
-}
-
-export default function AdminPageNew() {
+export default function AdminPage() {
   const { data: session } = authClient.useSession();
-  const [trackUrisInput, setTrackUrisInput] = useState("");
-  const [albumGroups, setAlbumGroups] = useState<AlbumGroup[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [queueTotal, setQueueTotal] = useState(0);
-  const [queueOffset, setQueueOffset] = useState(0);
-  const [loadingQueue, setLoadingQueue] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("tracks");
+  const [stats, setStats] = useState<{
+    pendingTracks: number;
+    unlinkedArtists: number;
+    totalWorks: number;
+  } | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   const isAdmin = session?.user?.name === "benwaffle";
 
-  // Load queue count on mount
   useEffect(() => {
     if (!isAdmin) return;
-    loadQueueCount();
+    loadStats();
   }, [isAdmin]);
 
-  const loadQueueCount = async () => {
-    setLoadingQueue(true);
+  const loadStats = async () => {
+    setLoadingStats(true);
     try {
-      const result = await getMatchQueue(0, 0); // Just get count
-      setQueueTotal(result.total);
+      const result = await getAdminStats();
+      setStats(result);
     } catch (err) {
-      console.error("Failed to load queue:", err);
+      console.error("Failed to load stats:", err);
     } finally {
-      setLoadingQueue(false);
-    }
-  };
-
-  const handleLoadFromQueue = async (offset = 0) => {
-    if (queueTotal === 0) return;
-
-    setLoading(true);
-    setError(null);
-    setSuccessMessage(null);
-    setQueueOffset(offset);
-
-    try {
-      const result = await getMatchQueue(QUEUE_PAGE_SIZE, offset);
-      setQueueTotal(result.total);
-
-      const trackIds = result.items.map((item) => `spotify:track:${item.spotifyId}`);
-      const trackData = await getBatchTrackMetadata(trackIds);
-
-      // Group tracks by album
-      const grouped = trackData.reduce((acc, track) => {
-        const albumId = track.album.id;
-        if (!acc[albumId]) {
-          acc[albumId] = {
-            album: {
-              id: track.album.id,
-              name: track.album.name,
-              release_date: track.album.release_date,
-              images: track.album.images,
-            },
-            tracks: [],
-          };
-        }
-        acc[albumId].tracks.push(track);
-        return acc;
-      }, {} as Record<string, AlbumGroup>);
-
-      // Sort albums by priority (known composers / catalog numbers first)
-      // and sort tracks within each album by track number
-      const sortedGroups = Object.values(grouped)
-        .map(group => ({
-          ...group,
-          tracks: group.tracks.sort((a, b) => a.disc_number - b.disc_number || a.track_number - b.track_number),
-        }))
-        .sort((a, b) => getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks));
-
-      setAlbumGroups(sortedGroups);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleTrackSaved = async (trackId: string) => {
-    // Update queue status when track is saved
-    try {
-      await updateMatchQueueStatus([trackId], "matched");
-      setQueueTotal((prev) => Math.max(0, prev - 1));
-    } catch (err) {
-      console.error("Failed to update queue status:", err);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccessMessage(null);
-
-    try {
-      const uris = trackUrisInput
-        .trim()
-        .split('\n')
-        .filter(line => line.trim());
-
-      if (uris.length === 0) {
-        setError("Please enter at least one Spotify track URI or URL");
-        setLoading(false);
-        return;
-      }
-
-      const trackData = await getBatchTrackMetadata(uris);
-
-      // Group tracks by album
-      const grouped = trackData.reduce((acc, track) => {
-        const albumId = track.album.id;
-        if (!acc[albumId]) {
-          acc[albumId] = {
-            album: {
-              id: track.album.id,
-              name: track.album.name,
-              release_date: track.album.release_date,
-              images: track.album.images,
-            },
-            tracks: [],
-          };
-        }
-        acc[albumId].tracks.push(track);
-        return acc;
-      }, {} as Record<string, AlbumGroup>);
-
-      // Sort albums by priority (known composers / catalog numbers first)
-      // and sort tracks within each album by track number
-      const sortedGroups = Object.values(grouped)
-        .map(group => ({
-          ...group,
-          tracks: group.tracks.sort((a, b) => a.disc_number - b.disc_number || a.track_number - b.track_number),
-        }))
-        .sort((a, b) => getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks));
-
-      setAlbumGroups(sortedGroups);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
+      setLoadingStats(false);
     }
   };
 
@@ -210,10 +68,16 @@ export default function AdminPageNew() {
     );
   }
 
+  const tabs: { id: TabType; label: string; count?: number }[] = [
+    { id: "tracks", label: "Tracks" },
+    { id: "composers", label: "Composers", count: stats?.unlinkedArtists },
+    { id: "works", label: "Works", count: stats?.totalWorks },
+  ];
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black p-8">
       <main className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <h1 className="text-4xl font-bold text-black dark:text-zinc-50">
             admin
           </h1>
@@ -225,118 +89,44 @@ export default function AdminPageNew() {
           </Link>
         </div>
 
-        {/* Match Queue Section */}
-        <div className="mb-8 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-black dark:text-white">
-                Match Queue
-              </h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                {loadingQueue ? "Loading..." : `${queueTotal} pending tracks`}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
+        {/* Tab Navigation */}
+        <div className="border-b border-zinc-200 dark:border-zinc-700 mb-6">
+          <nav className="flex gap-1" aria-label="Tabs">
+            {tabs.map((tab) => (
               <button
-                onClick={loadQueueCount}
-                disabled={loadingQueue}
-                className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === tab.id
+                    ? "border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400"
+                    : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-600"
+                }`}
               >
-                Refresh
+                {tab.label}
+                {tab.count !== undefined && (
+                  <span
+                    className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+                      activeTab === tab.id
+                        ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                    }`}
+                  >
+                    {loadingStats ? <Spinner className="w-3 h-3 inline" /> : tab.count}
+                  </span>
+                )}
               </button>
-              <button
-                onClick={() => handleLoadFromQueue(0)}
-                disabled={loading || queueTotal === 0}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {loading && <Spinner />}
-                {loading ? "Loading..." : `Load ${Math.min(QUEUE_PAGE_SIZE, queueTotal)} Tracks`}
-              </button>
-            </div>
-          </div>
-          {/* Pagination controls */}
-          {albumGroups.length > 0 && queueTotal > QUEUE_PAGE_SIZE && (
-            <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
-              <button
-                onClick={() => handleLoadFromQueue(Math.max(0, queueOffset - QUEUE_PAGE_SIZE))}
-                disabled={loading || queueOffset === 0}
-                className="px-3 py-1 text-sm rounded border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                {queueOffset + 1}–{Math.min(queueOffset + QUEUE_PAGE_SIZE, queueTotal)} of {queueTotal}
-              </span>
-              <button
-                onClick={() => handleLoadFromQueue(queueOffset + QUEUE_PAGE_SIZE)}
-                disabled={loading || queueOffset + QUEUE_PAGE_SIZE >= queueTotal}
-                className="px-3 py-1 text-sm rounded border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          )}
+            ))}
+          </nav>
         </div>
 
-        <div className="mb-4 text-center text-sm text-zinc-500">— or —</div>
-
-        <form onSubmit={handleSubmit} className="mb-8">
-          <div className="flex flex-col gap-2 mb-4">
-            <label
-              htmlFor="trackUris"
-              className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
-            >
-              Spotify Track URI(s) or URL(s) (one per line)
-            </label>
-            <textarea
-              id="trackUris"
-              value={trackUrisInput}
-              onChange={(e) => setTrackUrisInput(e.target.value)}
-              placeholder="spotify:track:... or https://open.spotify.com/track/...&#10;One URI/URL per line"
-              className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2 text-black dark:text-white min-h-[150px]"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-3 rounded-lg bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2"
-          >
-            {loading && <Spinner />}
-            {loading ? "Loading..." : "Load Tracks"}
-          </button>
-        </form>
-
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-red-700 dark:text-red-300">
-            {error}
-          </div>
-        )}
-
-        {successMessage && (
-          <div className="mb-4 rounded-lg border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-4 py-3 text-green-700 dark:text-green-300">
-            {successMessage}
-          </div>
-        )}
-
-        {albumGroups.length > 0 && (
-          <>
-            {/* Albums with tracks */}
-            <div className="space-y-6">
-              {albumGroups.map(({ album, tracks }) => (
-                <AlbumTracksTable
-                  key={album.id}
-                  album={album}
-                  initialTracks={tracks}
-                  onError={setError}
-                  onSuccess={setSuccessMessage}
-                  onTrackSaved={handleTrackSaved}
-                />
-              ))}
-            </div>
-          </>
-        )}
+        {/* Tab Content */}
+        <div>
+          {activeTab === "tracks" && (
+            <TracksTab onSwitchTab={(tab) => setActiveTab(tab)} />
+          )}
+          {activeTab === "composers" && <ComposersTab />}
+          {activeTab === "works" && <WorksTab />}
+        </div>
       </main>
     </div>
   );
