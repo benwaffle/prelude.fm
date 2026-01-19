@@ -3,11 +3,13 @@ import Image from "next/image";
 import {
   getBatchTrackMetadata,
   getAlbumTrackIds,
+  type TrackMetadata,
+} from "./actions/spotify-tracks";
+import {
   saveTrackWithMetadata,
   deleteTrackMetadata,
   checkWorksExist,
-  type TrackMetadata,
-} from "./actions";
+} from "./actions/ingest-metadata";
 import { parseAlbumTracks, type ClassicalMetadata } from "./parse-track";
 import { Spinner } from "./components/Spinner";
 import { toRoman } from "./lib/format";

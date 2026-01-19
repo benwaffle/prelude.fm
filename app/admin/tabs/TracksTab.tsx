@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getBatchTrackMetadata, type TrackMetadata } from "../actions";
+import { getBatchTrackMetadata, type TrackMetadata } from "../actions/spotify-tracks";
 import { getMatchQueue, updateMatchQueueStatus } from "../../actions/spotify";
 import { AlbumTracksTable } from "../AlbumTracksTable";
 import { Spinner } from "../components/Spinner";

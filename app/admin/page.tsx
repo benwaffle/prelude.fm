@@ -3,7 +3,7 @@
 import { authClient } from "@/lib/auth-client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getAdminStats } from "./actions";
+import { getAdminStats } from "./actions/admin-stats";
 import { Spinner } from "./components/Spinner";
 import { TracksTab } from "./tabs/TracksTab";
 import { ComposersTab } from "./tabs/ComposersTab";

@@ -5,17 +5,19 @@ import Image from "next/image";
 import {
   getComposersWithStats,
   updateComposerDetails,
+  createComposerWithSpotify,
+} from "../actions/composer-management";
+import type { ComposerRow } from "../actions/schema-types";
+import {
   searchSpotifyArtistForImport,
   searchSpotifyArtists,
   refreshSpotifyArtistMetadataMissing,
-  createComposerWithSpotify,
   searchSpotifyPlaylists,
   getPlaylistArtists,
-  type ComposerRow,
   type SpotifyArtistSearchResult,
   type SpotifyPlaylistSearchResult,
   type PlaylistArtistInfo,
-} from "../actions";
+} from "../actions/spotify-search";
 import { Spinner } from "../components/Spinner";
 import { Notice } from "../components/Notice";
 import { Modal } from "../components/Modal";
@@ -408,80 +410,85 @@ export function ComposersTab() {
 
       {/* Edit Composer Modal */}
       {editingComposer && (
-        <Modal className="max-w-md">
-            <h3 className="text-lg font-semibold text-black dark:text-white mb-4">
-              Edit Composer
-            </h3>
+        <Modal
+          isOpen={Boolean(editingComposer)}
+          onClose={() => setEditingComposer(null)}
+          className="max-w-md"
+        >
+          <h3 className="text-lg font-semibold text-black dark:text-white mb-4">
+            Edit Composer
+          </h3>
 
-            <div className="space-y-4">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Name *
+              </label>
+              <input
+                type="text"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Name *
+                  Birth Year
                 </label>
                 <input
-                  type="text"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  type="number"
+                  value={editForm.birthYear}
+                  onChange={(e) => setEditForm({ ...editForm, birthYear: e.target.value })}
+                  placeholder="1770"
                   className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Birth Year
-                  </label>
-                  <input
-                    type="number"
-                    value={editForm.birthYear}
-                    onChange={(e) => setEditForm({ ...editForm, birthYear: e.target.value })}
-                    placeholder="1770"
-                    className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Death Year
-                  </label>
-                  <input
-                    type="number"
-                    value={editForm.deathYear}
-                    onChange={(e) => setEditForm({ ...editForm, deathYear: e.target.value })}
-                    placeholder="1827"
-                    className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
-                  />
-                </div>
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Biography
+                  Death Year
                 </label>
-                <textarea
-                  value={editForm.biography}
-                  onChange={(e) => setEditForm({ ...editForm, biography: e.target.value })}
-                  rows={3}
+                <input
+                  type="number"
+                  value={editForm.deathYear}
+                  onChange={(e) => setEditForm({ ...editForm, deathYear: e.target.value })}
+                  placeholder="1827"
                   className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => setEditingComposer(null)}
-                className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUpdateComposer}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-              >
-                {saving && <Spinner />}
-                {saving ? "Saving..." : "Save"}
-              </button>
+
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Biography
+              </label>
+              <textarea
+                value={editForm.biography}
+                onChange={(e) => setEditForm({ ...editForm, biography: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
+              />
             </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              onClick={() => setEditingComposer(null)}
+              className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpdateComposer}
+              disabled={saving}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving && <Spinner />}
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
         </Modal>
       )}
 

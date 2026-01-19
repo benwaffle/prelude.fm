@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   searchWorks,
-  searchComposers,
   getWorkWithDetails,
   createWork,
   updateWorkDetails,
@@ -11,10 +10,9 @@ import {
   updateMovementDetails,
   deleteMovement,
   type WorkWithDetails,
-  type ComposerRow,
-  type MovementRow,
-  type RecordingRow,
-} from "../actions";
+} from "../actions/work-management";
+import { searchComposers } from "../actions/composer-management";
+import type { ComposerRow, MovementRow, RecordingRow } from "../actions/schema-types";
 import { Spinner } from "../components/Spinner";
 import { Notice } from "../components/Notice";
 import { Modal } from "../components/Modal";
@@ -306,46 +304,21 @@ export function WorksTab() {
 
       {/* Create/Edit Work Modal */}
       {(showCreateModal || editingWork) && (
-        <Modal className="max-w-lg">
-            <h3 className="text-lg font-semibold text-black dark:text-white mb-4">
-              {editingWork ? "Edit Work" : "Create Work"}
-            </h3>
+        <Modal
+          isOpen={Boolean(showCreateModal || editingWork)}
+          onClose={() => {
+            setShowCreateModal(false);
+            setEditingWork(null);
+          }}
+          className="max-w-lg"
+        >
+          <h3 className="text-lg font-semibold text-black dark:text-white mb-4">
+            {editingWork ? "Edit Work" : "Create Work"}
+          </h3>
 
             <div className="space-y-4">
-              {!editingWork && (
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Composer *
-                  </label>
-                  <select
-                    value={workForm.composerId}
-                    onChange={(e) => setWorkForm({ ...workForm, composerId: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
-                  >
-                    <option value="">Select composer...</option>
-                    {composers.map((comp) => (
-                      <option key={comp.id} value={comp.id}>
-                        {comp.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Title *
-                </label>
-                <input
-                  type="text"
-                  value={workForm.title}
-                  onChange={(e) => setWorkForm({ ...workForm, title: e.target.value })}
-                  placeholder="Piano Sonata No. 14 in C-sharp minor"
-                  className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
+
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
                     Catalog System
@@ -411,35 +384,42 @@ export function WorksTab() {
                   />
                 </div>
               </div>
-            </div>
+          </div>
 
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setEditingWork(null);
-                  resetWorkForm();
-                }}
-                className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={editingWork ? handleUpdateWork : handleCreateWork}
-                disabled={saving || !workForm.title.trim() || (!editingWork && !workForm.composerId)}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-              >
-                {saving && <Spinner />}
-                {saving ? "Saving..." : editingWork ? "Save" : "Create"}
-              </button>
-            </div>
-        </Modal>
-      )}
+          <div className="flex justify-end gap-2 mt-6">
+          <button
+            onClick={() => {
+              setShowCreateModal(false);
+              setEditingWork(null);
+              resetWorkForm();
+            }}
+            className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={editingWork ? handleUpdateWork : handleCreateWork}
+            disabled={saving || !workForm.title.trim() || (!editingWork && !workForm.composerId)}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving && <Spinner />}
+            {saving ? "Saving..." : editingWork ? "Save" : "Create"}
+          </button>
+        </div>
+      </Modal>
+    )}
+
 
       {/* Work Details Panel */}
       {selectedWork && (
-        <Modal className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-start mb-4">
+        <Modal
+          isOpen={Boolean(selectedWork)}
+          onClose={() => setSelectedWork(null)}
+          className="max-w-2xl max-h-[80vh] overflow-y-auto"
+          >
+          <div className="flex justify-between items-start mb-4">
+
+
               <div>
                 <h3 className="text-lg font-semibold text-black dark:text-white">
                   {selectedWork.work.title}
@@ -464,8 +444,9 @@ export function WorksTab() {
               </button>
             </div>
 
-            {/* Work metadata */}
-            <div className="mb-6 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-sm">
+          {/* Work metadata */}
+          <div className="mb-6 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-sm">
+
               <div className="grid grid-cols-2 gap-2">
                 {selectedWork.work.form && (
                   <div>
