@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   searchWorks,
   searchComposers,
@@ -80,28 +80,24 @@ export function WorksTab() {
   // Saving states
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadComposers();
-    loadWorks();
-  }, []);
-
-  const loadComposers = async () => {
+  const loadComposers = useCallback(async () => {
     try {
       const results = await searchComposers("");
       setComposers(results);
     } catch (err) {
       console.error("Failed to load composers:", err);
     }
-  };
+  }, []);
 
-  const loadWorks = async () => {
+  const loadWorks = useCallback(async (options?: { query?: string; composerId?: number; catalogSystem?: string }) => {
+    const { query, composerId, catalogSystem } = options ?? {};
     setLoading(true);
     setError(null);
     try {
       const result = await searchWorks(
-        searchQuery || undefined,
-        filterComposerId,
-        filterCatalogSystem || undefined
+        query || undefined,
+        composerId,
+        catalogSystem || undefined
       );
       setWorks(result.items);
       setTotalWorks(result.total);
@@ -110,10 +106,19 @@ export function WorksTab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadComposers();
+    loadWorks();
+  }, [loadComposers, loadWorks]);
 
   const handleSearch = () => {
-    loadWorks();
+    loadWorks({
+      query: searchQuery || undefined,
+      composerId: filterComposerId,
+      catalogSystem: filterCatalogSystem || undefined,
+    });
   };
 
   const handleViewWorkDetails = async (workId: number) => {
@@ -149,7 +154,11 @@ export function WorksTab() {
       setSuccessMessage(`Created work: ${workForm.title}`);
       setShowCreateModal(false);
       resetWorkForm();
-      await loadWorks();
+      await loadWorks({
+        query: searchQuery || undefined,
+        composerId: filterComposerId,
+        catalogSystem: filterCatalogSystem || undefined,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create work");
     } finally {
@@ -176,7 +185,11 @@ export function WorksTab() {
       setSuccessMessage(`Updated work: ${workForm.title}`);
       setEditingWork(null);
       resetWorkForm();
-      await loadWorks();
+      await loadWorks({
+        query: searchQuery || undefined,
+        composerId: filterComposerId,
+        catalogSystem: filterCatalogSystem || undefined,
+      });
 
       // Refresh details if viewing this work
       if (selectedWork?.work.id === editingWork.id) {
@@ -467,7 +480,7 @@ export function WorksTab() {
                     <> · {selectedWork.work.catalogSystem} {selectedWork.work.catalogNumber}</>
                   )}
                   {selectedWork.work.nickname && (
-                    <> · "{selectedWork.work.nickname}"</>
+                    <> · &quot;{selectedWork.work.nickname}&quot;</>
                   )}
                 </p>
               </div>
@@ -752,7 +765,7 @@ export function WorksTab() {
                   <td className="px-4 py-3">
                     <div className="text-black dark:text-white">{work.title}</div>
                     {work.nickname && (
-                      <div className="text-xs text-zinc-500">"{work.nickname}"</div>
+                      <div className="text-xs text-zinc-500">&quot;{work.nickname}&quot;</div>
                     )}
                   </td>
                   <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">

@@ -113,6 +113,17 @@ export async function submitToMatchQueue(trackIds: string[]): Promise<{ submitte
   return { submitted: newTrackIds.length };
 }
 
+export async function getQueuedTrackIds(trackIds: string[]): Promise<string[]> {
+  if (trackIds.length === 0) return [];
+
+  const results = await db
+    .select({ spotifyId: matchQueue.spotifyId })
+    .from(matchQueue)
+    .where(inArray(matchQueue.spotifyId, trackIds));
+
+  return results.map((r) => r.spotifyId);
+}
+
 export async function getMatchQueue(
   limit = 50,
   offset = 0

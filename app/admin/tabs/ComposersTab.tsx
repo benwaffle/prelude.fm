@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import {
   getComposersWithStats,
   updateComposerDetails,
@@ -546,9 +547,11 @@ export function ComposersTab() {
                     className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-left"
                   >
                     {playlist.images[0] && (
-                      <img
+                      <Image
                         src={playlist.images[0].url}
                         alt=""
+                        width={playlist.images[0].width ?? 48}
+                        height={playlist.images[0].height ?? 48}
                         className="w-12 h-12 rounded"
                       />
                     )}

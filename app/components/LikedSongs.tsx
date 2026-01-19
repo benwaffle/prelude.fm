@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import type { SavedTrack, SimplifiedArtist, Track } from "@spotify/web-api-ts-sdk";
-import { getMatchedTracks, getKnownComposerArtists, submitToMatchQueue, type MatchedTrack } from "@/app/actions/spotify";
+import { getMatchedTracks, getKnownComposerArtists, submitToMatchQueue, getQueuedTrackIds, type MatchedTrack } from "@/app/actions/spotify";
 import { useSpotifyPlayer } from "@/lib/spotify-player-context";
 import { useLikedSongs } from "@/lib/use-liked-songs";
 import { MovementRow } from "./MovementRow";
@@ -20,6 +20,8 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   const [checkingMatches, setCheckingMatches] = useState(false);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [unmatchedCollapsed, setUnmatchedCollapsed] = useState(true);
+  const [markingTracks, setMarkingTracks] = useState<Set<string>>(new Set());
+  const [queuedTrackIds, setQueuedTrackIds] = useState<Set<string>>(new Set());
   const hasCheckedMatches = useRef(false);
 
   // Check matches when tracks are loaded
@@ -47,11 +49,20 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
         const composerMap = new Map(knownComposers.map((c) => [c.artistId, c.composerName]));
         setKnownComposerMap(composerMap);
 
-        // Submit unmatched tracks to the queue
+        const queuedIds = await getQueuedTrackIds(trackIds);
+        setQueuedTrackIds(new Set(queuedIds));
+
+        // Submit only unmatched tracks that have a known composer artist
         const matchedIds = new Set(matched.map((m) => m.trackId));
-        const unmatchedIds = trackIds.filter((id) => !matchedIds.has(id));
-        if (unmatchedIds.length > 0) {
-          const result = await submitToMatchQueue(unmatchedIds);
+        const knownComposerArtistIds = new Set(knownComposers.map((c) => c.artistId));
+        const eligibleUnmatchedIds = tracks
+          .filter(({ track }) =>
+            !matchedIds.has(track.id) &&
+            track.artists.some((artist) => knownComposerArtistIds.has(artist.id))
+          )
+          .map(({ track }) => track.id);
+        if (eligibleUnmatchedIds.length > 0) {
+          const result = await submitToMatchQueue(eligibleUnmatchedIds);
           if (result.submitted > 0) {
             console.log(`Submitted ${result.submitted} tracks to match queue`);
           }
@@ -65,6 +76,29 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
 
     checkMatches();
   }, [tracks]);
+
+  const handleMarkAsClassical = async (trackId: string) => {
+    setMarkingTracks(prev => new Set(prev).add(trackId));
+    try {
+      const result = await submitToMatchQueue([trackId]);
+      if (result.submitted > 0) {
+        console.log(`Submitted ${result.submitted} tracks to match queue`);
+      }
+      setQueuedTrackIds(prev => {
+        const next = new Set(prev);
+        next.add(trackId);
+        return next;
+      });
+    } catch (err) {
+      console.error("Failed to submit track to match queue:", err);
+    } finally {
+      setMarkingTracks(prev => {
+        const next = new Set(prev);
+        next.delete(trackId);
+        return next;
+      });
+    }
+  };
 
   if (loading && tracks.length === 0) {
     return (
@@ -441,14 +475,25 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
               const queueTracks = trackIndex >= 0 
                 ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
                 : [];
+              const isMarking = markingTracks.has(track.id);
+              const isQueued = queuedTrackIds.has(track.id);
               
               return (
-                <MovementRow 
-                  key={track.id} 
-                  track={track} 
-                  isPlaying={currentTrack?.id === track.id}
-                  queueTracks={queueTracks}
-                />
+                <div key={track.id} className="group relative">
+                  <MovementRow 
+                    track={track} 
+                    isPlaying={currentTrack?.id === track.id}
+                    queueTracks={queueTracks}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleMarkAsClassical(track.id)}
+                    disabled={isMarking || isQueued}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    {isMarking ? "Marking..." : isQueued ? "Queued" : "Mark as classical"}
+                  </button>
+                </div>
               );
             })}
           </div>

@@ -126,11 +126,6 @@ export function AlbumTracksTable({ album, initialTracks, onError, onSuccess, onT
     });
   };
 
-  // Helper to get composer name (from parsed or DB)
-  const getComposerName = (track: TrackData) => {
-    return track.parsed?.composerName || track.dbData?.composers[0]?.name || null;
-  };
-
   // Helper to check if work exists in DB
   const workExistsInDb = (track: TrackData) => {
     const metadata = getEditableMetadata(track);
