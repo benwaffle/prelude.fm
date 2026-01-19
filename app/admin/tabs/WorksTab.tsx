@@ -15,15 +15,8 @@ import {
   type MovementRow,
   type RecordingRow,
 } from "../actions";
-
-function Spinner({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-    </svg>
-  );
-}
+import { Spinner } from "../components/Spinner";
+import { toRoman } from "../lib/format";
 
 interface WorkDetails {
   work: {
@@ -301,20 +294,6 @@ export function WorksTab() {
       yearComposed: "",
       form: "",
     });
-  };
-
-  const toRoman = (num: number): string => {
-    const romanNumerals: [number, string][] = [
-      [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]
-    ];
-    let result = "";
-    for (const [value, symbol] of romanNumerals) {
-      while (num >= value) {
-        result += symbol;
-        num -= value;
-      }
-    }
-    return result;
   };
 
   return (

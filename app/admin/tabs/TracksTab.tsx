@@ -4,15 +4,7 @@ import { useState, useEffect } from "react";
 import { getBatchTrackMetadata, type TrackMetadata } from "../actions";
 import { getMatchQueue, updateMatchQueueStatus } from "../../actions/spotify";
 import { AlbumTracksTable } from "../AlbumTracksTable";
-
-function Spinner({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-    </svg>
-  );
-}
+import { Spinner } from "../components/Spinner";
 
 interface AlbumGroup {
   album: {
@@ -29,6 +21,9 @@ const QUEUE_PAGE_SIZE = 100;
 // Regex to detect catalog numbers in track titles
 const CATALOG_REGEX = /\b(Op\.?|BWV|K\.?|RV|Hob\.?|D\.?|S\.?|WoO|HWV|WAB|TrV|AV|VB)\s*\d+/i;
 
+const compareTrackOrder = (a: TrackMetadata, b: TrackMetadata) =>
+  a.disc_number - b.disc_number || a.track_number - b.track_number;
+
 // Calculate priority score for an album based on its tracks
 function getAlbumPriorityScore(tracks: TrackMetadata[]): number {
   let maxScore = 0;
@@ -40,6 +35,32 @@ function getAlbumPriorityScore(tracks: TrackMetadata[]): number {
     if (maxScore === 3) break; // Max possible score
   }
   return maxScore;
+}
+
+function buildAlbumGroups(trackData: TrackMetadata[]): AlbumGroup[] {
+  const grouped = trackData.reduce((acc, track) => {
+    const albumId = track.album.id;
+    if (!acc[albumId]) {
+      acc[albumId] = {
+        album: {
+          id: track.album.id,
+          name: track.album.name,
+          release_date: track.album.release_date,
+          images: track.album.images,
+        },
+        tracks: [],
+      };
+    }
+    acc[albumId].tracks.push(track);
+    return acc;
+  }, {} as Record<string, AlbumGroup>);
+
+  return Object.values(grouped)
+    .map(group => ({
+      ...group,
+      tracks: group.tracks.sort(compareTrackOrder),
+    }))
+    .sort((a, b) => getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks));
 }
 
 interface TracksTabProps {
@@ -87,35 +108,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
 
       const trackIds = result.items.map((item) => `spotify:track:${item.spotifyId}`);
       const trackData = await getBatchTrackMetadata(trackIds);
-
-      // Group tracks by album
-      const grouped = trackData.reduce((acc, track) => {
-        const albumId = track.album.id;
-        if (!acc[albumId]) {
-          acc[albumId] = {
-            album: {
-              id: track.album.id,
-              name: track.album.name,
-              release_date: track.album.release_date,
-              images: track.album.images,
-            },
-            tracks: [],
-          };
-        }
-        acc[albumId].tracks.push(track);
-        return acc;
-      }, {} as Record<string, AlbumGroup>);
-
-      // Sort albums by priority (known composers / catalog numbers first)
-      // and sort tracks within each album by track number
-      const sortedGroups = Object.values(grouped)
-        .map(group => ({
-          ...group,
-          tracks: group.tracks.sort((a, b) => a.disc_number - b.disc_number || a.track_number - b.track_number),
-        }))
-        .sort((a, b) => getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks));
-
-      setAlbumGroups(sortedGroups);
+      setAlbumGroups(buildAlbumGroups(trackData));
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -152,35 +145,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       }
 
       const trackData = await getBatchTrackMetadata(uris);
-
-      // Group tracks by album
-      const grouped = trackData.reduce((acc, track) => {
-        const albumId = track.album.id;
-        if (!acc[albumId]) {
-          acc[albumId] = {
-            album: {
-              id: track.album.id,
-              name: track.album.name,
-              release_date: track.album.release_date,
-              images: track.album.images,
-            },
-            tracks: [],
-          };
-        }
-        acc[albumId].tracks.push(track);
-        return acc;
-      }, {} as Record<string, AlbumGroup>);
-
-      // Sort albums by priority (known composers / catalog numbers first)
-      // and sort tracks within each album by track number
-      const sortedGroups = Object.values(grouped)
-        .map(group => ({
-          ...group,
-          tracks: group.tracks.sort((a, b) => a.disc_number - b.disc_number || a.track_number - b.track_number),
-        }))
-        .sort((a, b) => getAlbumPriorityScore(b.tracks) - getAlbumPriorityScore(a.tracks));
-
-      setAlbumGroups(sortedGroups);
+      setAlbumGroups(buildAlbumGroups(trackData));
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
