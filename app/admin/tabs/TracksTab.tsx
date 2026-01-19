@@ -5,6 +5,7 @@ import { getBatchTrackMetadata, type TrackMetadata } from "../actions";
 import { getMatchQueue, updateMatchQueueStatus } from "../../actions/spotify";
 import { AlbumTracksTable } from "../AlbumTracksTable";
 import { Spinner } from "../components/Spinner";
+import { Notice } from "../components/Notice";
 
 interface AlbumGroup {
   album: {
@@ -260,15 +261,15 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       </form>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-red-700 dark:text-red-300">
+        <Notice variant="error" className="mb-4">
           {error}
-        </div>
+        </Notice>
       )}
 
       {successMessage && (
-        <div className="mb-4 rounded-lg border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-4 py-3 text-green-700 dark:text-green-300">
+        <Notice variant="success" className="mb-4">
           {successMessage}
-        </div>
+        </Notice>
       )}
 
       {albumGroups.length > 0 && (

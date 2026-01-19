@@ -17,6 +17,8 @@ import {
   type PlaylistArtistInfo,
 } from "../actions";
 import { Spinner } from "../components/Spinner";
+import { Notice } from "../components/Notice";
+import { Modal } from "../components/Modal";
 
 type ComposerWithStats = ComposerRow & {
   workCount: number;
@@ -400,22 +402,13 @@ export function ComposersTab() {
 
   return (
     <div className="space-y-8">
-      {error && (
-        <div className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-red-700 dark:text-red-300">
-          {error}
-        </div>
-      )}
+      {error && <Notice variant="error">{error}</Notice>}
 
-      {successMessage && (
-        <div className="rounded-lg border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-4 py-3 text-green-700 dark:text-green-300">
-          {successMessage}
-        </div>
-      )}
+      {successMessage && <Notice variant="success">{successMessage}</Notice>}
 
       {/* Edit Composer Modal */}
       {editingComposer && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-zinc-900 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+        <Modal className="max-w-md">
             <h3 className="text-lg font-semibold text-black dark:text-white mb-4">
               Edit Composer
             </h3>
@@ -489,8 +482,7 @@ export function ComposersTab() {
                 {saving ? "Saving..." : "Save"}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Playlist Search Section */}
