@@ -288,14 +288,14 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
               <div key={work.id} className="contents">
                 <button
                   onClick={() => play(workAndSubsequentUris)}
-                  className="px-3 py-3 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-r md:pr-10 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  className="px-2 py-2 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-r md:pr-10 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                 >
                   {firstTrack.album.images[0] && (
                     <Image
                       src={firstTrack.album.images[0].url}
                       alt={firstTrack.album.name}
-                      width={48}
-                      height={48}
+                      width={56}
+                      height={56}
                       className="rounded"
                     />
                   )}
