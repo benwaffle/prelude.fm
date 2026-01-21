@@ -40,12 +40,24 @@ export default function AdminPage() {
     }
   };
 
+  const handleSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "spotify",
+      callbackURL: "/admin",
+    });
+  };
+
   if (!session) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <p className="text-lg text-zinc-600 dark:text-zinc-400">
-          Please sign in to access this page
-        </p>
+        <div className="flex flex-col items-center gap-6">
+          <button
+            onClick={handleSignIn}
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-[#1DB954] px-8 text-white transition-colors hover:bg-[#1ed760] cursor-pointer"
+          >
+            Sign in with Spotify
+          </button>
+        </div>
       </div>
     );
   }

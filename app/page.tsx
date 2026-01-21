@@ -60,9 +60,6 @@ export default function Home() {
           )
         ) : (
           <div className="flex flex-col items-center gap-6 py-32">
-            <p className="text-lg text-zinc-600 dark:text-zinc-400">
-              Sign in with Spotify to get started
-            </p>
             <button
               onClick={handleSignIn}
               className="flex h-12 items-center justify-center gap-2 rounded-full bg-[#1DB954] px-8 text-white transition-colors hover:bg-[#1ed760] cursor-pointer"
