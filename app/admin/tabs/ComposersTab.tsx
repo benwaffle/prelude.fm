@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import Image from "next/image";
+import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import {
   getComposersWithStats,
   updateComposerDetails,
   createComposerWithSpotify,
-} from "../actions/composer-management";
-import type { ComposerRow } from "../actions/schema-types";
+} from '../actions/composer-management';
+import type { ComposerRow } from '../actions/schema-types';
 import {
   searchSpotifyArtistForImport,
   searchSpotifyArtists,
@@ -17,10 +17,10 @@ import {
   type SpotifyArtistSearchResult,
   type SpotifyPlaylistSearchResult,
   type PlaylistArtistInfo,
-} from "../actions/spotify-search";
-import { Spinner } from "../components/Spinner";
-import { Notice } from "../components/Notice";
-import { Modal } from "../components/Modal";
+} from '../actions/spotify-search';
+import { Spinner } from '../components/Spinner';
+import { Notice } from '../components/Notice';
+import { Modal } from '../components/Modal';
 
 type ComposerWithStats = ComposerRow & {
   workCount: number;
@@ -37,45 +37,49 @@ export function ComposersTab() {
   // Edit state
   const [editingComposer, setEditingComposer] = useState<ComposerRow | null>(null);
   const [editForm, setEditForm] = useState({
-    name: "",
-    birthYear: "",
-    deathYear: "",
-    biography: "",
+    name: '',
+    birthYear: '',
+    deathYear: '',
+    biography: '',
   });
 
   // Saving states
   const [saving, setSaving] = useState(false);
 
   // Import from JSON state
-  const [jsonInput, setJsonInput] = useState("");
-  const [importResults, setImportResults] = useState<Array<{
-    input: { name: string; birthYear?: number; deathYear?: number };
-    results: SpotifyArtistSearchResult[];
-    existingComposerId?: number;
-    selectedArtistId?: string;
-  }>>([]);
+  const [jsonInput, setJsonInput] = useState('');
+  const [importResults, setImportResults] = useState<
+    Array<{
+      input: { name: string; birthYear?: number; deathYear?: number };
+      results: SpotifyArtistSearchResult[];
+      existingComposerId?: number;
+      selectedArtistId?: string;
+    }>
+  >([]);
   const [searchingSpotify, setSearchingSpotify] = useState(false);
   const [savingImport, setSavingImport] = useState(false);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
 
   // Spotify artist search state
-  const [spotifySearchQuery, setSpotifySearchQuery] = useState("");
+  const [spotifySearchQuery, setSpotifySearchQuery] = useState('');
   const [spotifySearchResults, setSpotifySearchResults] = useState<SpotifyArtistSearchResult[]>([]);
   const [searchingSpotifyArtists, setSearchingSpotifyArtists] = useState(false);
   const [savingSpotifyArtists, setSavingSpotifyArtists] = useState<Set<string>>(new Set());
 
   // Playlist search state
-  const [playlistSearchQuery, setPlaylistSearchQuery] = useState("");
+  const [playlistSearchQuery, setPlaylistSearchQuery] = useState('');
   const [playlistResults, setPlaylistResults] = useState<SpotifyPlaylistSearchResult[]>([]);
   const [searchingPlaylists, setSearchingPlaylists] = useState(false);
-  const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylistSearchResult | null>(null);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylistSearchResult | null>(
+    null,
+  );
   const [playlistArtists, setPlaylistArtists] = useState<PlaylistArtistInfo[]>([]);
   const [loadingPlaylistArtists, setLoadingPlaylistArtists] = useState(false);
   const [selectedPlaylistArtists, setSelectedPlaylistArtists] = useState<Set<string>>(new Set());
   const [savingPlaylistComposers, setSavingPlaylistComposers] = useState(false);
   const [refreshingArtists, setRefreshingArtists] = useState(false);
-  const [composerSortBy, setComposerSortBy] = useState<"name" | "popularity">("name");
-  const [composerSortDir, setComposerSortDir] = useState<"asc" | "desc">("asc");
+  const [composerSortBy, setComposerSortBy] = useState<'name' | 'popularity'>('name');
+  const [composerSortDir, setComposerSortDir] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     loadData();
@@ -88,7 +92,7 @@ export function ComposersTab() {
       const composersResult = await getComposersWithStats();
       setComposers(composersResult);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -110,10 +114,10 @@ export function ComposersTab() {
 
       setSuccessMessage(`Updated composer: ${editForm.name}`);
       setEditingComposer(null);
-      setEditForm({ name: "", birthYear: "", deathYear: "", biography: "" });
+      setEditForm({ name: '', birthYear: '', deathYear: '', biography: '' });
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update composer");
+      setError(err instanceof Error ? err.message : 'Failed to update composer');
     } finally {
       setSaving(false);
     }
@@ -123,22 +127,28 @@ export function ComposersTab() {
     setEditingComposer(comp);
     setEditForm({
       name: comp.name,
-      birthYear: comp.birthYear?.toString() || "",
-      deathYear: comp.deathYear?.toString() || "",
-      biography: comp.biography || "",
+      birthYear: comp.birthYear?.toString() || '',
+      deathYear: comp.deathYear?.toString() || '',
+      biography: comp.biography || '',
     });
   };
 
   // Import from JSON handlers
   const handleSearchFromJson = async () => {
     try {
-      const parsed = JSON.parse(jsonInput) as Array<{ name: string; born?: number; died?: number; birthYear?: number; deathYear?: number }>;
+      const parsed = JSON.parse(jsonInput) as Array<{
+        name: string;
+        born?: number;
+        died?: number;
+        birthYear?: number;
+        deathYear?: number;
+      }>;
       if (!Array.isArray(parsed)) {
-        setError("JSON must be an array of composers");
+        setError('JSON must be an array of composers');
         return;
       }
 
-      const names = parsed.map(c => ({
+      const names = parsed.map((c) => ({
         name: c.name,
         birthYear: c.born ?? c.birthYear,
         deathYear: c.died ?? c.deathYear,
@@ -166,30 +176,32 @@ export function ComposersTab() {
         nonExistingCount++;
         const withSelection = {
           ...result,
-          selectedArtistId: result.results.length > 0 && result.results[0].name.toLowerCase() === result.input.name.toLowerCase()
-            ? result.results[0].id
-            : undefined,
+          selectedArtistId:
+            result.results.length > 0 &&
+            result.results[0].name.toLowerCase() === result.input.name.toLowerCase()
+              ? result.results[0].id
+              : undefined,
         };
-        setImportResults(prev => [...prev, withSelection]);
+        setImportResults((prev) => [...prev, withSelection]);
         setImportProgress({ current: processedCount, total: names.length });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid JSON");
+      setError(err instanceof Error ? err.message : 'Invalid JSON');
     } finally {
       setSearchingSpotify(false);
     }
   };
 
   const handleSelectArtist = (index: number, artistId: string | undefined) => {
-    setImportResults(prev => prev.map((r, i) =>
-      i === index ? { ...r, selectedArtistId: artistId } : r
-    ));
+    setImportResults((prev) =>
+      prev.map((r, i) => (i === index ? { ...r, selectedArtistId: artistId } : r)),
+    );
   };
 
   const handleSaveSelectedComposers = async () => {
-    const toSave = importResults.filter(r => r.selectedArtistId && !r.existingComposerId);
+    const toSave = importResults.filter((r) => r.selectedArtistId && !r.existingComposerId);
     if (toSave.length === 0) {
-      setError("No composers selected to save");
+      setError('No composers selected to save');
       return;
     }
 
@@ -200,7 +212,7 @@ export function ComposersTab() {
     let saved = 0;
     for (const item of toSave) {
       try {
-        const selectedArtist = item.results.find(r => r.id === item.selectedArtistId);
+        const selectedArtist = item.results.find((r) => r.id === item.selectedArtistId);
         await createComposerWithSpotify({
           name: item.input.name,
           spotifyArtistId: item.selectedArtistId!,
@@ -218,15 +230,17 @@ export function ComposersTab() {
 
     setSuccessMessage(`Saved ${saved} composers`);
     setImportResults([]);
-    setJsonInput("");
+    setJsonInput('');
     await loadData();
     setSavingImport(false);
   };
 
-  const selectedCount = importResults.filter(r => r.selectedArtistId && !r.existingComposerId).length;
-  const existingCount = importResults.filter(r => r.existingComposerId).length;
+  const selectedCount = importResults.filter(
+    (r) => r.selectedArtistId && !r.existingComposerId,
+  ).length;
+  const existingCount = importResults.filter((r) => r.existingComposerId).length;
   const existingComposerArtistIds = new Set(
-    composers.map(comp => comp.spotifyArtistId).filter((id): id is string => Boolean(id))
+    composers.map((comp) => comp.spotifyArtistId).filter((id): id is string => Boolean(id)),
   );
 
   // Spotify artist search handlers
@@ -241,14 +255,14 @@ export function ComposersTab() {
       const results = await searchSpotifyArtists(spotifySearchQuery, 10);
       setSpotifySearchResults(results);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to search Spotify artists");
+      setError(err instanceof Error ? err.message : 'Failed to search Spotify artists');
     } finally {
       setSearchingSpotifyArtists(false);
     }
   };
 
   const handleAddSpotifyArtist = async (artist: SpotifyArtistSearchResult) => {
-    setSavingSpotifyArtists(prev => new Set(prev).add(artist.id));
+    setSavingSpotifyArtists((prev) => new Set(prev).add(artist.id));
     setError(null);
 
     try {
@@ -263,7 +277,7 @@ export function ComposersTab() {
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to add ${artist.name}`);
     } finally {
-      setSavingSpotifyArtists(prev => {
+      setSavingSpotifyArtists((prev) => {
         const next = new Set(prev);
         next.delete(artist.id);
         return next;
@@ -285,7 +299,7 @@ export function ComposersTab() {
       const results = await searchSpotifyPlaylists(playlistSearchQuery);
       setPlaylistResults(results);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to search playlists");
+      setError(err instanceof Error ? err.message : 'Failed to search playlists');
     } finally {
       setSearchingPlaylists(false);
     }
@@ -302,14 +316,14 @@ export function ComposersTab() {
       const artists = await getPlaylistArtists(playlist.id);
       setPlaylistArtists(artists);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load playlist artists");
+      setError(err instanceof Error ? err.message : 'Failed to load playlist artists');
     } finally {
       setLoadingPlaylistArtists(false);
     }
   };
 
   const togglePlaylistArtist = (artistId: string) => {
-    setSelectedPlaylistArtists(prev => {
+    setSelectedPlaylistArtists((prev) => {
       const next = new Set(prev);
       if (next.has(artistId)) {
         next.delete(artistId);
@@ -322,7 +336,7 @@ export function ComposersTab() {
 
   const handleSavePlaylistComposers = async () => {
     const toSave = playlistArtists.filter(
-      a => selectedPlaylistArtists.has(a.id) && !a.existingComposerId
+      (a) => selectedPlaylistArtists.has(a.id) && !a.existingComposerId,
     );
     if (toSave.length === 0) return;
 
@@ -362,34 +376,34 @@ export function ComposersTab() {
       setSuccessMessage(`Refreshed ${result.updated}/${result.total} artists`);
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to refresh artist metadata");
+      setError(err instanceof Error ? err.message : 'Failed to refresh artist metadata');
     } finally {
       setRefreshingArtists(false);
     }
   };
 
-  const playlistNewArtistsCount = playlistArtists.filter(a => !a.existingComposerId).length;
+  const playlistNewArtistsCount = playlistArtists.filter((a) => !a.existingComposerId).length;
   const playlistSelectedNewCount = playlistArtists.filter(
-    a => selectedPlaylistArtists.has(a.id) && !a.existingComposerId
+    (a) => selectedPlaylistArtists.has(a.id) && !a.existingComposerId,
   ).length;
 
   const sortedComposers = [...composers].sort((a, b) => {
-    if (composerSortBy === "popularity") {
+    if (composerSortBy === 'popularity') {
       const aVal = a.spotifyPopularity ?? -1;
       const bVal = b.spotifyPopularity ?? -1;
-      return composerSortDir === "asc" ? aVal - bVal : bVal - aVal;
+      return composerSortDir === 'asc' ? aVal - bVal : bVal - aVal;
     }
     const aName = a.name.toLowerCase();
     const bName = b.name.toLowerCase();
-    return composerSortDir === "asc" ? aName.localeCompare(bName) : bName.localeCompare(aName);
+    return composerSortDir === 'asc' ? aName.localeCompare(bName) : bName.localeCompare(aName);
   });
 
   const togglePopularitySort = () => {
-    if (composerSortBy === "popularity") {
-      setComposerSortDir(prev => (prev === "asc" ? "desc" : "asc"));
+    if (composerSortBy === 'popularity') {
+      setComposerSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
-      setComposerSortBy("popularity");
-      setComposerSortDir("desc");
+      setComposerSortBy('popularity');
+      setComposerSortDir('desc');
     }
   };
 
@@ -415,9 +429,7 @@ export function ComposersTab() {
           onClose={() => setEditingComposer(null)}
           className="max-w-md"
         >
-          <h3 className="text-lg font-semibold text-black dark:text-white mb-4">
-            Edit Composer
-          </h3>
+          <h3 className="text-lg font-semibold text-black dark:text-white mb-4">Edit Composer</h3>
 
           <div className="space-y-4">
             <div>
@@ -459,7 +471,6 @@ export function ComposersTab() {
               </div>
             </div>
 
-
             <div>
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
                 Biography
@@ -486,7 +497,7 @@ export function ComposersTab() {
               className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
               {saving && <Spinner />}
-              {saving ? "Saving..." : "Save"}
+              {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
         </Modal>
@@ -510,7 +521,7 @@ export function ComposersTab() {
               type="text"
               value={playlistSearchQuery}
               onChange={(e) => setPlaylistSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearchPlaylists()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearchPlaylists()}
               placeholder="Search for playlists (e.g., 'classical music', 'bach', 'baroque')"
               className="flex-1 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
             />
@@ -520,7 +531,7 @@ export function ComposersTab() {
               className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
               {searchingPlaylists && <Spinner />}
-              {searchingPlaylists ? "Searching..." : "Search"}
+              {searchingPlaylists ? 'Searching...' : 'Search'}
             </button>
           </div>
 
@@ -590,7 +601,7 @@ export function ComposersTab() {
                   >
                     {savingPlaylistComposers && <Spinner />}
                     {savingPlaylistComposers
-                      ? "Saving..."
+                      ? 'Saving...'
                       : `Save ${playlistSelectedNewCount} Composers`}
                   </button>
                 </div>
@@ -599,9 +610,7 @@ export function ComposersTab() {
               {loadingPlaylistArtists ? (
                 <div className="flex items-center justify-center py-8">
                   <Spinner className="w-6 h-6" />
-                  <span className="ml-2 text-zinc-600 dark:text-zinc-400">
-                    Loading artists...
-                  </span>
+                  <span className="ml-2 text-zinc-600 dark:text-zinc-400">Loading artists...</span>
                 </div>
               ) : (
                 <div className="max-h-96 overflow-y-auto border border-zinc-200 dark:border-zinc-700 rounded-lg">
@@ -612,19 +621,19 @@ export function ComposersTab() {
                           <input
                             type="checkbox"
                             checked={
-                              playlistArtists.filter(a => !a.existingComposerId).length > 0 &&
+                              playlistArtists.filter((a) => !a.existingComposerId).length > 0 &&
                               playlistArtists
-                                .filter(a => !a.existingComposerId)
-                                .every(a => selectedPlaylistArtists.has(a.id))
+                                .filter((a) => !a.existingComposerId)
+                                .every((a) => selectedPlaylistArtists.has(a.id))
                             }
                             onChange={(e) => {
                               if (e.target.checked) {
                                 setSelectedPlaylistArtists(
                                   new Set(
                                     playlistArtists
-                                      .filter(a => !a.existingComposerId)
-                                      .map(a => a.id)
-                                  )
+                                      .filter((a) => !a.existingComposerId)
+                                      .map((a) => a.id),
+                                  ),
                                 );
                               } else {
                                 setSelectedPlaylistArtists(new Set());
@@ -657,9 +666,7 @@ export function ComposersTab() {
                               />
                             )}
                           </td>
-                          <td className="px-3 py-2 text-black dark:text-white">
-                            {artist.name}
-                          </td>
+                          <td className="px-3 py-2 text-black dark:text-white">{artist.name}</td>
                           <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
                             {artist.trackCount}
                           </td>
@@ -705,7 +712,7 @@ export function ComposersTab() {
               type="text"
               value={spotifySearchQuery}
               onChange={(e) => setSpotifySearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearchSpotifyArtists()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearchSpotifyArtists()}
               placeholder="Search Spotify artists..."
               className="flex-1 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white"
             />
@@ -715,13 +722,13 @@ export function ComposersTab() {
               className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
               {searchingSpotifyArtists && <Spinner />}
-              {searchingSpotifyArtists ? "Searching..." : "Search"}
+              {searchingSpotifyArtists ? 'Searching...' : 'Search'}
             </button>
           </div>
 
           {spotifySearchResults.length > 0 && (
             <div className="space-y-2">
-              {spotifySearchResults.map(artist => {
+              {spotifySearchResults.map((artist) => {
                 const imageUrl = artist.images?.[artist.images.length - 1]?.url;
                 const isSaving = savingSpotifyArtists.has(artist.id);
                 const isExisting = existingComposerArtistIds.has(artist.id);
@@ -757,7 +764,7 @@ export function ComposersTab() {
                       className="px-3 py-1.5 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
                     >
                       {isSaving && <Spinner />}
-                      {isSaving ? "Adding..." : isExisting ? "Already Added" : "Add Composer"}
+                      {isSaving ? 'Adding...' : isExisting ? 'Already Added' : 'Add Composer'}
                     </button>
                   </div>
                 );
@@ -794,14 +801,15 @@ export function ComposersTab() {
                 className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
                 {searchingSpotify && <Spinner />}
-                {searchingSpotify ? `Searching Spotify...` : "Search Spotify for Artists"}
+                {searchingSpotify ? `Searching Spotify...` : 'Search Spotify for Artists'}
               </button>
             </>
           ) : (
             <>
               <div className="flex items-center justify-between">
                 <div className="text-sm text-zinc-600 dark:text-zinc-400">
-                  {importResults.length} composers · {selectedCount} selected · {existingCount} already exist
+                  {importResults.length} composers · {selectedCount} selected · {existingCount}{' '}
+                  already exist
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -859,10 +867,13 @@ export function ComposersTab() {
                                 />
                                 <span>Don&apos;t import</span>
                               </label>
-                              {item.results.map(artist => {
+                              {item.results.map((artist) => {
                                 const imageUrl = artist.images?.[artist.images.length - 1]?.url;
                                 return (
-                                  <label key={artist.id} className="flex items-center gap-2 text-sm">
+                                  <label
+                                    key={artist.id}
+                                    className="flex items-center gap-2 text-sm"
+                                  >
                                     <input
                                       type="radio"
                                       name={`import-${index}`}
@@ -880,7 +891,10 @@ export function ComposersTab() {
                                       <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700" />
                                     )}
                                     <span className="text-black dark:text-white">
-                                      {artist.name} <span className="text-zinc-500">(pop: {artist.popularity})</span>
+                                      {artist.name}{' '}
+                                      <span className="text-zinc-500">
+                                        (pop: {artist.popularity})
+                                      </span>
                                     </span>
                                   </label>
                                 );
@@ -931,7 +945,7 @@ export function ComposersTab() {
               className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50 flex items-center gap-2"
             >
               {refreshingArtists && <Spinner />}
-              {refreshingArtists ? "Refreshing..." : "Refresh missing Spotify metadata"}
+              {refreshingArtists ? 'Refreshing...' : 'Refresh missing Spotify metadata'}
             </button>
           </div>
         </div>
@@ -954,8 +968,8 @@ export function ComposersTab() {
                       className="inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
                     >
                       Popularity
-                      {composerSortBy === "popularity" && (
-                        <span>{composerSortDir === "asc" ? "↑" : "↓"}</span>
+                      {composerSortBy === 'popularity' && (
+                        <span>{composerSortDir === 'asc' ? '↑' : '↓'}</span>
                       )}
                     </button>
                   </th>
@@ -982,7 +996,7 @@ export function ComposersTab() {
                           <div className="text-black dark:text-white font-medium">{comp.name}</div>
                           {comp.spotifyArtistId && (
                             <div className="text-xs text-zinc-500">
-                              Spotify:{" "}
+                              Spotify:{' '}
                               <a
                                 href={`https://open.spotify.com/artist/${comp.spotifyArtistId}`}
                                 target="_blank"
@@ -997,10 +1011,12 @@ export function ComposersTab() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                      {comp.birthYear || comp.deathYear ? `${comp.birthYear || "?"}–${comp.deathYear || "?"}` : "-"}
+                      {comp.birthYear || comp.deathYear
+                        ? `${comp.birthYear || '?'}–${comp.deathYear || '?'}`
+                        : '-'}
                     </td>
                     <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                      {comp.spotifyPopularity ?? "—"}
+                      {comp.spotifyPopularity ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{comp.workCount}</td>
                     <td className="px-4 py-3 text-right">

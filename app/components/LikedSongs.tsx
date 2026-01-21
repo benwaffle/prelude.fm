@@ -1,12 +1,18 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useRef } from "react";
-import Image from "next/image";
-import type { SavedTrack, SimplifiedArtist, Track } from "@spotify/web-api-ts-sdk";
-import { getMatchedTracks, getKnownComposerArtists, submitToMatchQueue, getQueuedTrackIds, type MatchedTrack } from "@/app/actions/spotify";
-import { useSpotifyPlayer } from "@/lib/spotify-player-context";
-import { useLikedSongs } from "@/lib/use-liked-songs";
-import { MovementRow } from "./MovementRow";
+import { useEffect, useState, useRef } from 'react';
+import Image from 'next/image';
+import type { SavedTrack, SimplifiedArtist, Track } from '@spotify/web-api-ts-sdk';
+import {
+  getMatchedTracks,
+  getKnownComposerArtists,
+  submitToMatchQueue,
+  getQueuedTrackIds,
+  type MatchedTrack,
+} from '@/app/actions/spotify';
+import { useSpotifyPlayer } from '@/lib/spotify-player-context';
+import { useLikedSongs } from '@/lib/use-liked-songs';
+import { MovementRow } from './MovementRow';
 
 interface LikedSongsProps {
   accessToken: string;
@@ -18,7 +24,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   const [matchedTracks, setMatchedTracks] = useState<MatchedTrack[]>([]);
   const [knownComposerMap, setKnownComposerMap] = useState<Map<string, string>>(new Map()); // artistId -> composerName
   const [checkingMatches, setCheckingMatches] = useState(false);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [unmatchedCollapsed, setUnmatchedCollapsed] = useState(true);
   const [markingTracks, setMarkingTracks] = useState<Set<string>>(new Set());
   const [queuedTrackIds, setQueuedTrackIds] = useState<Set<string>>(new Set());
@@ -56,9 +62,10 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
         const matchedIds = new Set(matched.map((m) => m.trackId));
         const knownComposerArtistIds = new Set(knownComposers.map((c) => c.artistId));
         const eligibleUnmatchedIds = tracks
-          .filter(({ track }) =>
-            !matchedIds.has(track.id) &&
-            track.artists.some((artist) => knownComposerArtistIds.has(artist.id))
+          .filter(
+            ({ track }) =>
+              !matchedIds.has(track.id) &&
+              track.artists.some((artist) => knownComposerArtistIds.has(artist.id)),
           )
           .map(({ track }) => track.id);
         if (eligibleUnmatchedIds.length > 0) {
@@ -68,7 +75,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
           }
         }
       } catch (err) {
-        console.error("Failed to check matches:", err);
+        console.error('Failed to check matches:', err);
       } finally {
         setCheckingMatches(false);
       }
@@ -78,21 +85,21 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   }, [tracks]);
 
   const handleMarkAsClassical = async (trackId: string) => {
-    setMarkingTracks(prev => new Set(prev).add(trackId));
+    setMarkingTracks((prev) => new Set(prev).add(trackId));
     try {
       const result = await submitToMatchQueue([trackId]);
       if (result.submitted > 0) {
         console.log(`Submitted ${result.submitted} tracks to match queue`);
       }
-      setQueuedTrackIds(prev => {
+      setQueuedTrackIds((prev) => {
         const next = new Set(prev);
         next.add(trackId);
         return next;
       });
     } catch (err) {
-      console.error("Failed to submit track to match queue:", err);
+      console.error('Failed to submit track to match queue:', err);
     } finally {
-      setMarkingTracks(prev => {
+      setMarkingTracks((prev) => {
         const next = new Set(prev);
         next.delete(trackId);
         return next;
@@ -103,9 +110,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   if (loading && tracks.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
-        <p className="text-zinc-600 dark:text-zinc-400">
-          Loading your liked songs...
-        </p>
+        <p className="text-zinc-600 dark:text-zinc-400">Loading your liked songs...</p>
       </div>
     );
   }
@@ -121,15 +126,19 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   const sortedTracks = [...tracks].sort((a, b) => {
     const dateA = new Date(a.added_at).getTime();
     const dateB = new Date(b.added_at).getTime();
-    return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+    return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
   });
 
   // Convert number to roman numeral
   const toRoman = (num: number): string => {
     const romanNumerals: [number, string][] = [
-      [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]
+      [10, 'X'],
+      [9, 'IX'],
+      [5, 'V'],
+      [4, 'IV'],
+      [1, 'I'],
     ];
-    let result = "";
+    let result = '';
     for (const [value, symbol] of romanNumerals) {
       while (num >= value) {
         result += symbol;
@@ -142,14 +151,18 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   // Create maps of trackId -> work info, movement number, and movement name
   const trackWorkMap = new Map(matchedTracks.map((m) => [m.trackId, m.work]));
   const trackMovementMap = new Map(matchedTracks.map((m) => [m.trackId, m.movementNumber]));
-  const trackMovementNameMap = new Map(matchedTracks.map((m) => [
-    m.trackId,
-    m.movementName ? `${toRoman(m.movementNumber)}. ${m.movementName}` : `${toRoman(m.movementNumber)}.`
-  ]));
+  const trackMovementNameMap = new Map(
+    matchedTracks.map((m) => [
+      m.trackId,
+      m.movementName
+        ? `${toRoman(m.movementNumber)}. ${m.movementName}`
+        : `${toRoman(m.movementNumber)}.`,
+    ]),
+  );
   const matchedTrackIds = new Set(matchedTracks.map((m) => m.trackId));
 
   // Group matched tracks by work
-  const matchedByWork = new Map<number, { work: MatchedTrack["work"]; tracks: SavedTrack[] }>();
+  const matchedByWork = new Map<number, { work: MatchedTrack['work']; tracks: SavedTrack[] }>();
   for (const likedTrack of sortedTracks) {
     const work = trackWorkMap.get(likedTrack.track.id);
     if (work) {
@@ -187,7 +200,10 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   }
 
   // Group tracks with known composers by album
-  const knownComposerByAlbum = new Map<string, { albumName: string; albumImage: string | undefined; tracks: SavedTrack[] }>();
+  const knownComposerByAlbum = new Map<
+    string,
+    { albumName: string; albumImage: string | undefined; tracks: SavedTrack[] }
+  >();
   for (const likedTrack of tracksWithKnownComposer) {
     const albumId = likedTrack.track.album.id;
     const existing = knownComposerByAlbum.get(albumId);
@@ -231,15 +247,13 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold text-black dark:text-zinc-50">
-          Your Liked Songs
-        </h2>
+        <h2 className="text-2xl font-bold text-black dark:text-zinc-50">Your Liked Songs</h2>
         <div className="flex items-center gap-4">
           <button
-            onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
+            onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
             className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-zinc-50 transition-colors cursor-pointer"
           >
-            {sortOrder === "desc" ? "Newest First" : "Oldest First"}
+            {sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}
           </button>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             {loading ? `Loading ${tracks.length} of ${total}...` : `${tracks.length} songs`}
@@ -250,11 +264,11 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
       {/* Matched tracks section - grouped by work */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-3">
-          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Matched
-          </h3>
+          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Matched</h3>
           <span className="text-xs text-zinc-500">
-            {checkingMatches ? "..." : `${matchedTrackIds.size + tracksWithKnownComposer.length} tracks, ${matchedByWork.size} works`}
+            {checkingMatches
+              ? '...'
+              : `${matchedTrackIds.size + tracksWithKnownComposer.length} tracks, ${matchedByWork.size} works`}
           </span>
         </div>
         <div className="divide-y divide-zinc-200 dark:divide-zinc-700 md:divide-y-0 md:grid md:grid-cols-[minmax(0,_1fr)_max-content] md:border md:border-zinc-200 md:dark:border-zinc-700">
@@ -264,8 +278,8 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
               new Set(
                 firstTrack.artists
                   .filter((a: SimplifiedArtist) => a.name !== work.composerName)
-                  .map((a: SimplifiedArtist) => a.name)
-              )
+                  .map((a: SimplifiedArtist) => a.name),
+              ),
             );
 
             // Sort tracks by movement number for playback
@@ -274,15 +288,18 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
               const movB = trackMovementMap.get(b.track.id) ?? 0;
               return movA - movB;
             });
-            
+
             // When clicking work header, queue this work's tracks + up to 50 subsequent tracks
             const firstTrackInWork = sortedWorkTracks[0]?.track;
-            const firstTrackIndex = firstTrackInWork 
-              ? allTracksInOrder.findIndex(t => t.track.id === firstTrackInWork.id)
+            const firstTrackIndex = firstTrackInWork
+              ? allTracksInOrder.findIndex((t) => t.track.id === firstTrackInWork.id)
               : -1;
-            const workAndSubsequentUris = firstTrackIndex >= 0
-              ? allTracksInOrder.slice(firstTrackIndex, firstTrackIndex + 50).map(item => item.track.uri)
-              : sortedWorkTracks.map(({ track }) => track.uri);
+            const workAndSubsequentUris =
+              firstTrackIndex >= 0
+                ? allTracksInOrder
+                    .slice(firstTrackIndex, firstTrackIndex + 50)
+                    .map((item) => item.track.uri)
+                : sortedWorkTracks.map(({ track }) => track.uri);
 
             return (
               <div key={work.id} className="contents">
@@ -304,16 +321,20 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                       <span className="font-medium">{work.composerName}</span>
                       <span className="text-zinc-400 mx-1.5">&middot;</span>
                       <span>{work.title}</span>
-                      {work.nickname && <span className="text-zinc-500"> &ldquo;{work.nickname}&rdquo;</span>}
+                      {work.nickname && (
+                        <span className="text-zinc-500"> &ldquo;{work.nickname}&rdquo;</span>
+                      )}
                       {work.catalogSystem && work.catalogNumber && (
-                        <span className="text-zinc-500">, {work.catalogSystem} {work.catalogNumber}</span>
+                        <span className="text-zinc-500">
+                          , {work.catalogSystem} {work.catalogNumber}
+                        </span>
                       )}
                     </p>
                     <p className="text-xs text-zinc-500 truncate">
-                      {headerArtists.join(", ")}
+                      {headerArtists.join(', ')}
                       {firstTrack.album.name && (
                         <>
-                          {headerArtists.length ? " • " : ""}
+                          {headerArtists.length ? ' • ' : ''}
                           {firstTrack.album.name}
                         </>
                       )}
@@ -322,131 +343,145 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                 </button>
                 <div className="divide-y divide-zinc-200 dark:divide-zinc-700 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-l">
                   {[...workTracks]
-                      .sort((a, b) => {
-                        const movA = trackMovementMap.get(a.track.id) ?? 0;
-                        const movB = trackMovementMap.get(b.track.id) ?? 0;
-                        return movA - movB;
-                      })
-                      .map(({ track }) => {
-                        // Find this track's position in the global list and queue up to 50 tracks after it
-                        const trackIndex = allTracksInOrder.findIndex(t => t.track.id === track.id);
-                        const queueTracks = trackIndex >= 0 
-                          ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
+                    .sort((a, b) => {
+                      const movA = trackMovementMap.get(a.track.id) ?? 0;
+                      const movB = trackMovementMap.get(b.track.id) ?? 0;
+                      return movA - movB;
+                    })
+                    .map(({ track }) => {
+                      // Find this track's position in the global list and queue up to 50 tracks after it
+                      const trackIndex = allTracksInOrder.findIndex((t) => t.track.id === track.id);
+                      const queueTracks =
+                        trackIndex >= 0
+                          ? allTracksInOrder
+                              .slice(trackIndex + 1, trackIndex + 51)
+                              .map((item) => item.track)
                           : [];
+
+                      return (
+                        <MovementRow
+                          key={track.id}
+                          track={track}
+                          displayName={trackMovementNameMap.get(track.id) ?? undefined}
+                          hideComposer={work.composerName}
+                          hideArtwork
+                          isPlaying={currentTrack?.id === track.id}
+                          queueTracks={queueTracks}
+                        />
+                      );
+                    })}
+                </div>
+              </div>
+            );
+          })}
+          {/* Tracks with known composers (but no specific work match) - grouped by album */}
+          {Array.from(knownComposerByAlbum.entries()).map(
+            ([albumId, { albumName, albumImage, tracks: albumTracks }]) => {
+              const firstTrack = albumTracks[0].track;
+              const composerName = getTrackComposer(firstTrack)!;
+              const isSingleTrack = albumTracks.length === 1;
+
+              // Get URIs for playing
+              const firstTrackIndex = allTracksInOrder.findIndex(
+                (t) => t.track.id === firstTrack.id,
+              );
+              const albumAndSubsequentUris =
+                firstTrackIndex >= 0
+                  ? allTracksInOrder
+                      .slice(firstTrackIndex, firstTrackIndex + 50)
+                      .map((item) => item.track.uri)
+                  : albumTracks.map(({ track }) => track.uri);
+
+              if (isSingleTrack) {
+                // Single track: inline display
+                return (
+                  <button
+                    key={albumId}
+                    onClick={() => play(albumAndSubsequentUris)}
+                    className="col-span-2 px-3 py-3 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    {albumImage && (
+                      <Image
+                        src={albumImage}
+                        alt={albumName}
+                        width={48}
+                        height={48}
+                        className="rounded"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-black dark:text-zinc-100 truncate">
+                        <span className="font-medium">{composerName}</span>
+                        <span className="text-zinc-400 mx-1.5">&middot;</span>
+                        <span>{firstTrack.name}</span>
+                      </p>
+                      <p className="text-xs text-zinc-500 truncate">{albumName}</p>
+                    </div>
+                    {currentTrack?.id === firstTrack.id && (
+                      <span className="text-xs text-green-500">▶</span>
+                    )}
+                  </button>
+                );
+              }
+
+              // Multiple tracks: header with tracks below
+              return (
+                <div
+                  key={albumId}
+                  className="col-span-2 border-b border-zinc-200 dark:border-zinc-700"
+                >
+                  <button
+                    onClick={() => play(albumAndSubsequentUris)}
+                    className="w-full px-3 py-3 flex items-center gap-3 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    {albumImage && (
+                      <Image
+                        src={albumImage}
+                        alt={albumName}
+                        width={48}
+                        height={48}
+                        className="rounded"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-black dark:text-zinc-100 truncate">
+                        <span className="font-medium">{composerName}</span>
+                      </p>
+                      <p className="text-xs text-zinc-500 truncate">{albumName}</p>
+                    </div>
+                  </button>
+                  <div className="divide-y divide-zinc-200 dark:divide-zinc-700 ml-15">
+                    {[...albumTracks]
+                      .sort((a, b) => a.track.track_number - b.track.track_number)
+                      .map(({ track }) => {
+                        const trackIndex = allTracksInOrder.findIndex(
+                          (t) => t.track.id === track.id,
+                        );
+                        const queueTracks =
+                          trackIndex >= 0
+                            ? allTracksInOrder
+                                .slice(trackIndex + 1, trackIndex + 51)
+                                .map((item) => item.track)
+                            : [];
 
                         return (
                           <MovementRow
                             key={track.id}
                             track={track}
-                            displayName={trackMovementNameMap.get(track.id) ?? undefined}
-                            hideComposer={work.composerName}
+                            hideComposer={composerName}
                             hideArtwork
                             isPlaying={currentTrack?.id === track.id}
                             queueTracks={queueTracks}
                           />
                         );
                       })}
-                </div>
-              </div>
-            );
-          })}
-          {/* Tracks with known composers (but no specific work match) - grouped by album */}
-          {Array.from(knownComposerByAlbum.entries()).map(([albumId, { albumName, albumImage, tracks: albumTracks }]) => {
-            const firstTrack = albumTracks[0].track;
-            const composerName = getTrackComposer(firstTrack)!;
-            const isSingleTrack = albumTracks.length === 1;
-
-            // Get URIs for playing
-            const firstTrackIndex = allTracksInOrder.findIndex(t => t.track.id === firstTrack.id);
-            const albumAndSubsequentUris = firstTrackIndex >= 0
-              ? allTracksInOrder.slice(firstTrackIndex, firstTrackIndex + 50).map(item => item.track.uri)
-              : albumTracks.map(({ track }) => track.uri);
-
-            if (isSingleTrack) {
-              // Single track: inline display
-              return (
-                <button
-                  key={albumId}
-                  onClick={() => play(albumAndSubsequentUris)}
-                  className="col-span-2 px-3 py-3 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  {albumImage && (
-                    <Image
-                      src={albumImage}
-                      alt={albumName}
-                      width={48}
-                      height={48}
-                      className="rounded"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-black dark:text-zinc-100 truncate">
-                      <span className="font-medium">{composerName}</span>
-                      <span className="text-zinc-400 mx-1.5">&middot;</span>
-                      <span>{firstTrack.name}</span>
-                    </p>
-                    <p className="text-xs text-zinc-500 truncate">
-                      {albumName}
-                    </p>
                   </div>
-                  {currentTrack?.id === firstTrack.id && (
-                    <span className="text-xs text-green-500">▶</span>
-                  )}
-                </button>
+                </div>
               );
-            }
-
-            // Multiple tracks: header with tracks below
-            return (
-              <div key={albumId} className="col-span-2 border-b border-zinc-200 dark:border-zinc-700">
-                <button
-                  onClick={() => play(albumAndSubsequentUris)}
-                  className="w-full px-3 py-3 flex items-center gap-3 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  {albumImage && (
-                    <Image
-                      src={albumImage}
-                      alt={albumName}
-                      width={48}
-                      height={48}
-                      className="rounded"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-black dark:text-zinc-100 truncate">
-                      <span className="font-medium">{composerName}</span>
-                    </p>
-                    <p className="text-xs text-zinc-500 truncate">
-                      {albumName}
-                    </p>
-                  </div>
-                </button>
-                <div className="divide-y divide-zinc-200 dark:divide-zinc-700 ml-15">
-                  {[...albumTracks].sort((a, b) => a.track.track_number - b.track.track_number).map(({ track }) => {
-                    const trackIndex = allTracksInOrder.findIndex(t => t.track.id === track.id);
-                    const queueTracks = trackIndex >= 0
-                      ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
-                      : [];
-
-                    return (
-                      <MovementRow
-                        key={track.id}
-                        track={track}
-                        hideComposer={composerName}
-                        hideArtwork
-                        isPlaying={currentTrack?.id === track.id}
-                        queueTracks={queueTracks}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+            },
+          )}
           {!checkingMatches && matchedByWork.size === 0 && tracksWithKnownComposer.length === 0 && (
-            <p className="text-sm text-zinc-500 py-4">
-              No matched tracks yet
-            </p>
+            <p className="text-sm text-zinc-500 py-4">No matched tracks yet</p>
           )}
         </div>
       </div>
@@ -457,31 +492,30 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
           onClick={() => setUnmatchedCollapsed(!unmatchedCollapsed)}
           className="flex items-center gap-2 mb-2 cursor-pointer"
         >
-          <span className="text-sm text-zinc-500">
-            {unmatchedCollapsed ? "▶" : "▼"}
-          </span>
-          <h3 className="text-sm font-medium text-zinc-500">
-            Unmatched
-          </h3>
+          <span className="text-sm text-zinc-500">{unmatchedCollapsed ? '▶' : '▼'}</span>
+          <h3 className="text-sm font-medium text-zinc-500">Unmatched</h3>
           <span className="text-xs text-zinc-500">
-            {checkingMatches ? "..." : unmatchedTracksList.length}
+            {checkingMatches ? '...' : unmatchedTracksList.length}
           </span>
         </button>
         {!unmatchedCollapsed && (
           <div className="space-y-1">
             {unmatchedTracksList.map(({ track }) => {
               // Find this track's position in the global list and queue up to 50 tracks after it
-              const trackIndex = allTracksInOrder.findIndex(t => t.track.id === track.id);
-              const queueTracks = trackIndex >= 0 
-                ? allTracksInOrder.slice(trackIndex + 1, trackIndex + 51).map(item => item.track)
-                : [];
+              const trackIndex = allTracksInOrder.findIndex((t) => t.track.id === track.id);
+              const queueTracks =
+                trackIndex >= 0
+                  ? allTracksInOrder
+                      .slice(trackIndex + 1, trackIndex + 51)
+                      .map((item) => item.track)
+                  : [];
               const isMarking = markingTracks.has(track.id);
               const isQueued = queuedTrackIds.has(track.id);
-              
+
               return (
                 <div key={track.id} className="group relative">
-                  <MovementRow 
-                    track={track} 
+                  <MovementRow
+                    track={track}
                     isPlaying={currentTrack?.id === track.id}
                     queueTracks={queueTracks}
                   />
@@ -491,7 +525,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                     disabled={isMarking || isQueued}
                     className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
-                    {isMarking ? "Marking..." : isQueued ? "Queued" : "Mark as classical"}
+                    {isMarking ? 'Marking...' : isQueued ? 'Queued' : 'Mark as classical'}
                   </button>
                 </div>
               );

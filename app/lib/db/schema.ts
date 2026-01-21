@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations, sql } from 'drizzle-orm';
 import {
   sqliteTable,
   text,
@@ -6,96 +6,94 @@ import {
   index,
   primaryKey,
   uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+} from 'drizzle-orm/sqlite-core';
 
 /*
  * Better Auth
  */
 
-export const user = sqliteTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "boolean" })
-    .default(false)
-    .notNull(),
-  image: text("image"),
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
+export const user = sqliteTable('user', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  emailVerified: integer('email_verified', { mode: 'boolean' }).default(false).notNull(),
+  image: text('image'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
 
 export const session = sqliteTable(
-  "session",
+  'session',
   {
-    id: text("id").primaryKey(),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    token: text("token").notNull().unique(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
+    id: text('id').primaryKey(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    token: text('token').notNull().unique(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
-    ipAddress: text("ip_address"),
-    userAgent: text("user_agent"),
-    userId: text("user_id")
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    userId: text('user_id')
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => user.id, { onDelete: 'cascade' }),
   },
-  (table) => [index("session_userId_idx").on(table.userId)],
+  (table) => [index('session_userId_idx').on(table.userId)],
 );
 
 export const account = sqliteTable(
-  "account",
+  'account',
   {
-    id: text("id").primaryKey(),
-    accountId: text("account_id").notNull(),
-    providerId: text("provider_id").notNull(),
-    userId: text("user_id")
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    userId: text('user_id')
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    accessToken: text("access_token"),
-    refreshToken: text("refresh_token"),
-    idToken: text("id_token"),
-    accessTokenExpiresAt: integer("access_token_expires_at", {
-      mode: "timestamp_ms",
+      .references(() => user.id, { onDelete: 'cascade' }),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: integer('access_token_expires_at', {
+      mode: 'timestamp_ms',
     }),
-    refreshTokenExpiresAt: integer("refresh_token_expires_at", {
-      mode: "timestamp_ms",
+    refreshTokenExpiresAt: integer('refresh_token_expires_at', {
+      mode: 'timestamp_ms',
     }),
-    scope: text("scope"),
-    password: text("password"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
+    scope: text('scope'),
+    password: text('password'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("account_userId_idx").on(table.userId)],
+  (table) => [index('account_userId_idx').on(table.userId)],
 );
 
 export const verification = sqliteTable(
-  "verification",
+  'verification',
   {
-    id: text("id").primaryKey(),
-    identifier: text("identifier").notNull(),
-    value: text("value").notNull(),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
+    id: text('id').primaryKey(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("verification_identifier_idx").on(table.identifier)],
+  (table) => [index('verification_identifier_idx').on(table.identifier)],
 );
 
 export const userRelations = relations(user, ({ many }) => ({
@@ -121,146 +119,144 @@ export const accountRelations = relations(account, ({ one }) => ({
  * Classical Music Schema
  */
 
-export const composer = sqliteTable("composer", {
-  id: integer("id").primaryKey(),
-  name: text("name").notNull(),
-  birthYear: integer("birth_year"),
-  deathYear: integer("death_year"),
-  biography: text("biography"),
-  spotifyArtistId: text("spotify_artist_id").unique().references(() => spotifyArtist.spotifyId),
+export const composer = sqliteTable('composer', {
+  id: integer('id').primaryKey(),
+  name: text('name').notNull(),
+  birthYear: integer('birth_year'),
+  deathYear: integer('death_year'),
+  biography: text('biography'),
+  spotifyArtistId: text('spotify_artist_id')
+    .unique()
+    .references(() => spotifyArtist.spotifyId),
 });
 
 export const work = sqliteTable(
-  "work",
+  'work',
   {
-    id: integer("id").primaryKey(),
-    composerId: integer("composer_id")
+    id: integer('id').primaryKey(),
+    composerId: integer('composer_id')
       .notNull()
       .references(() => composer.id),
-    title: text("title").notNull(),
-    nickname: text("nickname"), // "moonlight", "spring"
-    catalogSystem: text("catalog_system"), // "BWV", "K", "Op" - nullable for works without catalog numbers
-    catalogNumber: text("catalog_number"), // "1052", "27/2" - nullable for works without catalog numbers
-    yearComposed: integer("year_composed"),
-    form: text("form"), // "concerto", "sonata", "fugue"
+    title: text('title').notNull(),
+    nickname: text('nickname'), // "moonlight", "spring"
+    catalogSystem: text('catalog_system'), // "BWV", "K", "Op" - nullable for works without catalog numbers
+    catalogNumber: text('catalog_number'), // "1052", "27/2" - nullable for works without catalog numbers
+    yearComposed: integer('year_composed'),
+    form: text('form'), // "concerto", "sonata", "fugue"
   },
   (table) => [
-    index("work_composer_idx").on(table.composerId),
+    index('work_composer_idx').on(table.composerId),
     // For works WITH catalog numbers: unique by composer + catalog
-    uniqueIndex("work_composer_catalog_idx")
+    uniqueIndex('work_composer_catalog_idx')
       .on(table.composerId, table.catalogSystem, table.catalogNumber)
       .where(sql`${table.catalogSystem} IS NOT NULL AND ${table.catalogNumber} IS NOT NULL`),
     // For works WITHOUT catalog numbers: unique by composer + title
-    uniqueIndex("work_composer_title_idx")
+    uniqueIndex('work_composer_title_idx')
       .on(table.composerId, table.title)
       .where(sql`${table.catalogSystem} IS NULL AND ${table.catalogNumber} IS NULL`),
   ],
 );
 
 export const movement = sqliteTable(
-  "movement",
+  'movement',
   {
-    id: integer("id").primaryKey(),
-    workId: integer("work_id")
+    id: integer('id').primaryKey(),
+    workId: integer('work_id')
       .notNull()
       .references(() => work.id),
-    number: integer("number").notNull(),
-    title: text("title"), // "Allegro", null
+    number: integer('number').notNull(),
+    title: text('title'), // "Allegro", null
   },
   (table) => [
-    index("movement_work_idx").on(table.workId),
-    uniqueIndex("movement_work_number_idx").on(table.workId, table.number),
+    index('movement_work_idx').on(table.workId),
+    uniqueIndex('movement_work_number_idx').on(table.workId, table.number),
   ],
 );
 
-export const spotifyAlbum = sqliteTable("spotify_album", {
-  spotifyId: text("spotify_id").primaryKey(),
-  title: text("title").notNull(),
-  year: integer("year"),
-  popularity: integer("popularity"),
-  images: text("images", { mode: "json" }).$type<
+export const spotifyAlbum = sqliteTable('spotify_album', {
+  spotifyId: text('spotify_id').primaryKey(),
+  title: text('title').notNull(),
+  year: integer('year'),
+  popularity: integer('popularity'),
+  images: text('images', { mode: 'json' }).$type<
     { url: string; width: number; height: number }[]
   >(),
 });
 
 export const recording = sqliteTable(
-  "recording",
+  'recording',
   {
-    id: integer("id").primaryKey(),
-    spotifyAlbumId: text("spotify_album_id")
+    id: integer('id').primaryKey(),
+    spotifyAlbumId: text('spotify_album_id')
       .notNull()
       .references(() => spotifyAlbum.spotifyId),
-    workId: integer("work_id")
+    workId: integer('work_id')
       .notNull()
       .references(() => work.id),
-    popularity: integer("popularity"), // calculated by averaging tracks
+    popularity: integer('popularity'), // calculated by averaging tracks
   },
   (table) => [
-    index("recording_work_idx").on(table.workId),
-    index("recording_album_idx").on(table.spotifyAlbumId),
-    uniqueIndex("recording_album_work_idx").on(table.spotifyAlbumId, table.workId),
-  ]
+    index('recording_work_idx').on(table.workId),
+    index('recording_album_idx').on(table.spotifyAlbumId),
+    uniqueIndex('recording_album_work_idx').on(table.spotifyAlbumId, table.workId),
+  ],
 );
 
-export const spotifyTrack = sqliteTable("spotify_track", {
-  spotifyId: text("spotify_id").primaryKey(),
-  title: text("title").notNull(),
-  trackNumber: integer("track_number").notNull(),
-  durationMs: integer("duration_ms").notNull(),
-  popularity: integer("popularity"),
-  spotifyAlbumId: text("spotify_album_id")
+export const spotifyTrack = sqliteTable('spotify_track', {
+  spotifyId: text('spotify_id').primaryKey(),
+  title: text('title').notNull(),
+  trackNumber: integer('track_number').notNull(),
+  durationMs: integer('duration_ms').notNull(),
+  popularity: integer('popularity'),
+  spotifyAlbumId: text('spotify_album_id')
     .notNull()
     .references(() => spotifyAlbum.spotifyId),
 });
 
-export const spotifyArtist = sqliteTable("spotify_artist", {
-  spotifyId: text("spotify_id").primaryKey(),
-  name: text("name").notNull(),
-  popularity: integer("popularity"),
-  images: text("images", { mode: "json" }).$type<
+export const spotifyArtist = sqliteTable('spotify_artist', {
+  spotifyId: text('spotify_id').primaryKey(),
+  name: text('name').notNull(),
+  popularity: integer('popularity'),
+  images: text('images', { mode: 'json' }).$type<
     { url: string; width: number; height: number }[]
   >(),
 });
 
 export const trackArtists = sqliteTable(
-  "track_artists",
+  'track_artists',
   {
-    spotifyTrackId: text("spotify_track_id")
+    spotifyTrackId: text('spotify_track_id')
       .notNull()
       .references(() => spotifyTrack.spotifyId),
-    spotifyArtistId: text("spotify_artist_id")
+    spotifyArtistId: text('spotify_artist_id')
       .notNull()
       .references(() => spotifyArtist.spotifyId),
   },
-  (table) => [
-    primaryKey({ columns: [table.spotifyTrackId, table.spotifyArtistId] }),
-  ],
+  (table) => [primaryKey({ columns: [table.spotifyTrackId, table.spotifyArtistId] })],
 );
 
 export const trackMovement = sqliteTable(
-  "track_movement",
+  'track_movement',
   {
-    spotifyTrackId: text("spotify_track_id")
+    spotifyTrackId: text('spotify_track_id')
       .notNull()
       .references(() => spotifyTrack.spotifyId),
-    movementId: integer("movement_id")
+    movementId: integer('movement_id')
       .notNull()
       .references(() => movement.id),
-    startMs: integer("start_ms"),
-    endMs: integer("end_ms"),
+    startMs: integer('start_ms'),
+    endMs: integer('end_ms'),
   },
-  (table) => [
-    primaryKey({ columns: [table.spotifyTrackId, table.movementId] }),
-  ],
+  (table) => [primaryKey({ columns: [table.spotifyTrackId, table.movementId] })],
 );
 
-export const matchQueue = sqliteTable("match_queue", {
-  spotifyId: text("spotify_id").primaryKey(),
-  submittedAt: integer("submitted_at", { mode: "timestamp_ms" })
+export const matchQueue = sqliteTable('match_queue', {
+  spotifyId: text('spotify_id').primaryKey(),
+  submittedAt: integer('submitted_at', { mode: 'timestamp_ms' })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
-  submittedBy: text("submitted_by").notNull(),
-  status: text("status").notNull(), // "pending", "matched", "failed"
+  submittedBy: text('submitted_by').notNull(),
+  status: text('status').notNull(), // "pending", "matched", "failed"
 });
 
 /*
@@ -308,17 +304,14 @@ export const recordingRelations = relations(recording, ({ one, many }) => ({
   tracks: many(spotifyTrack),
 }));
 
-export const spotifyTrackRelations = relations(
-  spotifyTrack,
-  ({ one, many }) => ({
-    album: one(spotifyAlbum, {
-      fields: [spotifyTrack.spotifyAlbumId],
-      references: [spotifyAlbum.spotifyId],
-    }),
-    trackArtists: many(trackArtists),
-    trackMovements: many(trackMovement),
+export const spotifyTrackRelations = relations(spotifyTrack, ({ one, many }) => ({
+  album: one(spotifyAlbum, {
+    fields: [spotifyTrack.spotifyAlbumId],
+    references: [spotifyAlbum.spotifyId],
   }),
-);
+  trackArtists: many(trackArtists),
+  trackMovements: many(trackMovement),
+}));
 
 export const spotifyArtistRelations = relations(spotifyArtist, ({ one, many }) => ({
   trackArtists: many(trackArtists),

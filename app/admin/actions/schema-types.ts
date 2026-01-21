@@ -1,4 +1,4 @@
-import type { InferSelectModel } from "drizzle-orm";
+import type { InferSelectModel } from 'drizzle-orm';
 import {
   composer,
   spotifyArtist,
@@ -8,7 +8,7 @@ import {
   movement,
   trackMovement,
   recording,
-} from "@/lib/db/schema";
+} from '@/lib/db/schema';
 
 export type SpotifyTrackRow = InferSelectModel<typeof spotifyTrack>;
 export type SpotifyAlbumRow = InferSelectModel<typeof spotifyAlbum>;

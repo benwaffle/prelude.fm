@@ -1,11 +1,11 @@
-"use server";
+'use server';
 
-import { db } from "@/lib/db";
-import { composer, spotifyAlbum, spotifyArtist, spotifyTrack } from "@/lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
-import type { Image as SpotifyImage, Track as SpotifyTrack } from "@spotify/web-api-ts-sdk";
-import { checkAuth, getSpotifyClient } from "./auth";
-import { buildTrackMetadataDbData, loadTrackDbContext } from "./spotify-utils";
+import { db } from '@/lib/db';
+import { composer, spotifyAlbum, spotifyArtist, spotifyTrack } from '@/lib/db/schema';
+import { eq, inArray } from 'drizzle-orm';
+import type { Image as SpotifyImage, Track as SpotifyTrack } from '@spotify/web-api-ts-sdk';
+import { checkAuth, getSpotifyClient } from './auth';
+import { buildTrackMetadataDbData, loadTrackDbContext } from './spotify-utils';
 import type {
   ComposerRow,
   SpotifyAlbumRow,
@@ -15,7 +15,7 @@ import type {
   MovementRow,
   WorkRow,
   RecordingRow,
-} from "./schema-types";
+} from './schema-types';
 
 export interface TrackMetadata {
   id: string;
@@ -87,7 +87,7 @@ export async function getBatchTrackMetadata(trackUris: string[]) {
   }
 
   if (trackIds.length === 0) {
-    throw new Error("No valid track URIs found");
+    throw new Error('No valid track URIs found');
   }
 
   const spotify = await getSpotifyClient();
@@ -104,101 +104,79 @@ export async function getBatchTrackMetadata(trackUris: string[]) {
   const artistIds = [...new Set(allTrackData.flatMap((track) => track.artists.map((a) => a.id)))];
   const albumIds = [...new Set(allTrackData.map((track) => track.album.id))];
 
-  const [existingSpotifyArtists, existingComposers, existingAlbums, existingTracks] = await Promise.all([
-    artistIds.length > 0
-      ? db
-          .select()
-          .from(spotifyArtist)
-          .where(inArray(spotifyArtist.spotifyId, artistIds))
-      : [],
-    artistIds.length > 0
-      ? db
-          .select()
-          .from(composer)
-          .where(inArray(composer.spotifyArtistId, artistIds))
-      : [],
-    albumIds.length > 0
-      ? db
-          .select()
-          .from(spotifyAlbum)
-          .where(inArray(spotifyAlbum.spotifyId, albumIds))
-      : [],
-    trackIds.length > 0
-      ? db
-          .select()
-          .from(spotifyTrack)
-          .where(inArray(spotifyTrack.spotifyId, trackIds))
-      : [],
-  ]);
+  const [existingSpotifyArtists, existingComposers, existingAlbums, existingTracks] =
+    await Promise.all([
+      artistIds.length > 0
+        ? db.select().from(spotifyArtist).where(inArray(spotifyArtist.spotifyId, artistIds))
+        : [],
+      artistIds.length > 0
+        ? db.select().from(composer).where(inArray(composer.spotifyArtistId, artistIds))
+        : [],
+      albumIds.length > 0
+        ? db.select().from(spotifyAlbum).where(inArray(spotifyAlbum.spotifyId, albumIds))
+        : [],
+      trackIds.length > 0
+        ? db.select().from(spotifyTrack).where(inArray(spotifyTrack.spotifyId, trackIds))
+        : [],
+    ]);
 
-  const spotifyArtistMap = new Map(
-    existingSpotifyArtists.map((a) => [a.spotifyId, a])
-  );
-  const composerMap = new Map(
-    existingComposers.map((c) => [c.spotifyArtistId, c])
-  );
-  const albumMap = new Map(
-    existingAlbums.map((a) => [a.spotifyId, a])
-  );
-  const trackMap = new Map(
-    existingTracks.map((t) => [t.spotifyId, t])
-  );
+  const spotifyArtistMap = new Map(existingSpotifyArtists.map((a) => [a.spotifyId, a]));
+  const composerMap = new Map(existingComposers.map((c) => [c.spotifyArtistId, c]));
+  const albumMap = new Map(existingAlbums.map((a) => [a.spotifyId, a]));
+  const trackMap = new Map(existingTracks.map((t) => [t.spotifyId, t]));
 
   const existingTrackIds = existingTracks.map((t) => t.spotifyId);
-  const {
-    trackMovementsData,
-    movementsData,
-    worksData,
-    composersData,
-    recordingsData,
-  } = await loadTrackDbContext(existingTrackIds);
+  const { trackMovementsData, movementsData, worksData, composersData, recordingsData } =
+    await loadTrackDbContext(existingTrackIds);
 
-  return allTrackData.map((trackData): TrackMetadata => ({
-    id: trackData.id,
-    name: trackData.name,
-    uri: trackData.uri,
-    duration_ms: trackData.duration_ms,
-    disc_number: trackData.disc_number,
-    track_number: trackData.track_number,
-    popularity: trackData.popularity,
-    inSpotifyTracksTable: trackMap.has(trackData.id),
-    artists: trackData.artists.map((artist) => ({
-      id: artist.id,
-      name: artist.name,
-      uri: artist.uri,
-      inSpotifyArtistsTable: spotifyArtistMap.has(artist.id),
-      inComposersTable: composerMap.has(artist.id),
-      composerId: composerMap.get(artist.id)?.id,
-    })),
-    album: {
-      id: trackData.album.id,
-      name: trackData.album.name,
-      uri: trackData.album.uri,
-      release_date: trackData.album.release_date,
-      popularity: trackData.album.popularity,
-      images: trackData.album.images,
-      inSpotifyAlbumsTable: albumMap.has(trackData.album.id),
-    },
-    dbData: buildTrackMetadataDbData({
-      trackId: trackData.id,
-      artists: trackData.artists,
-      existingSpotifyArtists,
-      trackMovementsData,
-      movementsData,
-      worksData,
-      composersData,
-      recordingsData,
-      trackRow: trackMap.get(trackData.id) || null,
-      albumRow: albumMap.get(trackData.album.id) || null,
+  return allTrackData.map(
+    (trackData): TrackMetadata => ({
+      id: trackData.id,
+      name: trackData.name,
+      uri: trackData.uri,
+      duration_ms: trackData.duration_ms,
+      disc_number: trackData.disc_number,
+      track_number: trackData.track_number,
+      popularity: trackData.popularity,
+      inSpotifyTracksTable: trackMap.has(trackData.id),
+      artists: trackData.artists.map((artist) => ({
+        id: artist.id,
+        name: artist.name,
+        uri: artist.uri,
+        inSpotifyArtistsTable: spotifyArtistMap.has(artist.id),
+        inComposersTable: composerMap.has(artist.id),
+        composerId: composerMap.get(artist.id)?.id,
+      })),
+      album: {
+        id: trackData.album.id,
+        name: trackData.album.name,
+        uri: trackData.album.uri,
+        release_date: trackData.album.release_date,
+        popularity: trackData.album.popularity,
+        images: trackData.album.images,
+        inSpotifyAlbumsTable: albumMap.has(trackData.album.id),
+      },
+      dbData: buildTrackMetadataDbData({
+        trackId: trackData.id,
+        artists: trackData.artists,
+        existingSpotifyArtists,
+        trackMovementsData,
+        movementsData,
+        worksData,
+        composersData,
+        recordingsData,
+        trackRow: trackMap.get(trackData.id) || null,
+        albumRow: albumMap.get(trackData.album.id) || null,
+      }),
     }),
-  }));
+  );
 }
 
 export async function getTrackMetadata(trackUri: string) {
   await checkAuth();
 
-  if (!trackUri || typeof trackUri !== "string") {
-    throw new Error("Invalid track URI");
+  if (!trackUri || typeof trackUri !== 'string') {
+    throw new Error('Invalid track URI');
   }
 
   const uriMatch = trackUri.match(/spotify:track:([a-zA-Z0-9]+)/);
@@ -206,7 +184,7 @@ export async function getTrackMetadata(trackUri: string) {
   const trackId = uriMatch?.[1] ?? urlMatch?.[1] ?? null;
 
   if (!trackId) {
-    throw new Error("Invalid Spotify track URI or URL format");
+    throw new Error('Invalid Spotify track URI or URL format');
   }
 
   const spotify = await getSpotifyClient();
@@ -216,47 +194,27 @@ export async function getTrackMetadata(trackUri: string) {
 
     const artistIds = trackData.artists.map((a) => a.id);
 
-    const [existingSpotifyArtists, existingComposers, existingAlbum, existingTrack] = await Promise.all([
-      db
-        .select()
-        .from(spotifyArtist)
-        .where(inArray(spotifyArtist.spotifyId, artistIds)),
-      db
-        .select()
-        .from(composer)
-        .where(inArray(composer.spotifyArtistId, artistIds)),
-      db
-        .select()
-        .from(spotifyAlbum)
-        .where(eq(spotifyAlbum.spotifyId, trackData.album.id)),
-      db
-        .select()
-        .from(spotifyTrack)
-        .where(eq(spotifyTrack.spotifyId, trackData.id)),
-    ]);
+    const [existingSpotifyArtists, existingComposers, existingAlbum, existingTrack] =
+      await Promise.all([
+        db.select().from(spotifyArtist).where(inArray(spotifyArtist.spotifyId, artistIds)),
+        db.select().from(composer).where(inArray(composer.spotifyArtistId, artistIds)),
+        db.select().from(spotifyAlbum).where(eq(spotifyAlbum.spotifyId, trackData.album.id)),
+        db.select().from(spotifyTrack).where(eq(spotifyTrack.spotifyId, trackData.id)),
+      ]);
 
-    const spotifyArtistMap = new Map(
-      existingSpotifyArtists.map((a) => [a.spotifyId, a])
-    );
-    const composerMap = new Map(
-      existingComposers.map((c) => [c.spotifyArtistId, c])
-    );
+    const spotifyArtistMap = new Map(existingSpotifyArtists.map((a) => [a.spotifyId, a]));
+    const composerMap = new Map(existingComposers.map((c) => [c.spotifyArtistId, c]));
 
-    const {
-      trackMovementsData,
-      movementsData,
-      worksData,
-      composersData,
-      recordingsData,
-    } = existingTrack.length > 0
-      ? await loadTrackDbContext([trackData.id])
-      : {
-          trackMovementsData: [],
-          movementsData: [],
-          worksData: [],
-          composersData: [],
-          recordingsData: [],
-        };
+    const { trackMovementsData, movementsData, worksData, composersData, recordingsData } =
+      existingTrack.length > 0
+        ? await loadTrackDbContext([trackData.id])
+        : {
+            trackMovementsData: [],
+            movementsData: [],
+            worksData: [],
+            composersData: [],
+            recordingsData: [],
+          };
 
     const result: TrackMetadata = {
       id: trackData.id,
@@ -299,7 +257,7 @@ export async function getTrackMetadata(trackUri: string) {
     };
     return result;
   } catch (error) {
-    console.error("Error fetching track metadata:", error);
-    throw new Error("Failed to fetch track metadata");
+    console.error('Error fetching track metadata:', error);
+    throw new Error('Failed to fetch track metadata');
   }
 }

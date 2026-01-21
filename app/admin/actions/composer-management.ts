@@ -1,10 +1,10 @@
-"use server";
+'use server';
 
-import { db } from "@/lib/db";
-import { composer, spotifyArtist, work } from "@/lib/db/schema";
-import { count, eq, like } from "drizzle-orm";
-import { checkAuth } from "./auth";
-import type { ComposerRow } from "./schema-types";
+import { db } from '@/lib/db';
+import { composer, spotifyArtist, work } from '@/lib/db/schema';
+import { count, eq, like } from 'drizzle-orm';
+import { checkAuth } from './auth';
+import type { ComposerRow } from './schema-types';
 
 export async function createComposerWithSpotify(data: {
   name: string;
@@ -129,7 +129,7 @@ export async function updateComposerDetails(
     birthYear?: number | null;
     deathYear?: number | null;
     biography?: string | null;
-  }
+  },
 ): Promise<ComposerRow> {
   await checkAuth();
 
@@ -146,7 +146,7 @@ export async function updateComposerDetails(
     .returning();
 
   if (!result) {
-    throw new Error("Composer not found");
+    throw new Error('Composer not found');
   }
 
   return result;

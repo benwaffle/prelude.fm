@@ -1,6 +1,6 @@
-"use server";
+'use server';
 
-import { db } from "@/lib/db";
+import { db } from '@/lib/db';
 import {
   composer,
   spotifyAlbum,
@@ -10,15 +10,10 @@ import {
   trackMovement,
   work,
   movement,
-} from "@/lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
-import { checkAuth } from "./auth";
-import {
-  linkTrackMovement,
-  upsertMovement,
-  upsertRecording,
-  upsertWork,
-} from "./spotify-utils";
+} from '@/lib/db/schema';
+import { eq, inArray } from 'drizzle-orm';
+import { checkAuth } from './auth';
+import { linkTrackMovement, upsertMovement, upsertRecording, upsertWork } from './spotify-utils';
 
 export async function saveTrackWithMetadata(data: {
   album: {
@@ -62,7 +57,7 @@ export async function saveTrackWithMetadata(data: {
         .values({
           spotifyId: album.id,
           title: album.name,
-          year: album.release_date ? parseInt(album.release_date.split("-")[0]) : null,
+          year: album.release_date ? parseInt(album.release_date.split('-')[0]) : null,
           images: album.images,
           popularity: album.popularity || null,
         })
@@ -82,7 +77,7 @@ export async function saveTrackWithMetadata(data: {
         popularity: null,
         images: null,
       })
-      .onConflictDoNothing()
+      .onConflictDoNothing(),
   );
 
   await Promise.all([albumPromise, ...artistPromises]);
@@ -131,8 +126,8 @@ export async function saveTrackWithMetadata(data: {
             spotifyTrackId: track.id,
             spotifyArtistId: artist.id,
           })
-          .onConflictDoNothing()
-      )
+          .onConflictDoNothing(),
+      ),
     );
   }
 
@@ -166,8 +161,10 @@ export async function saveTrackWithMetadata(data: {
 }
 
 export async function checkWorksExist(
-  queries: { catalogSystem: string; catalogNumber: string }[]
-): Promise<Record<string, { workId: number; movements: { number: number; title: string | null }[] }>> {
+  queries: { catalogSystem: string; catalogNumber: string }[],
+): Promise<
+  Record<string, { workId: number; movements: { number: number; title: string | null }[] }>
+> {
   await checkAuth();
 
   if (queries.length === 0) return {};
@@ -183,17 +180,24 @@ export async function checkWorksExist(
       .where(
         inArray(
           work.catalogSystem,
-          queries.map((q) => q.catalogSystem)
-        )
+          queries.map((q) => q.catalogSystem),
+        ),
       );
 
-    const result: Record<string, { workId: number; movements: { number: number; title: string | null }[] }> = {};
+    const result: Record<
+      string,
+      { workId: number; movements: { number: number; title: string | null }[] }
+    > = {};
     const matchingWorkIds: number[] = [];
 
     for (const w of allWorks) {
       if (!w.catalogSystem || !w.catalogNumber) continue;
       const key = `${w.catalogSystem}:${w.catalogNumber}`;
-      if (queries.some((q) => q.catalogSystem === w.catalogSystem && q.catalogNumber === w.catalogNumber)) {
+      if (
+        queries.some(
+          (q) => q.catalogSystem === w.catalogSystem && q.catalogNumber === w.catalogNumber,
+        )
+      ) {
         result[key] = { workId: w.id, movements: [] };
         matchingWorkIds.push(w.id);
       }
@@ -220,8 +224,8 @@ export async function checkWorksExist(
 
     return result;
   } catch (error) {
-    console.error("Error checking works:", error);
-    throw new Error("Failed to check works");
+    console.error('Error checking works:', error);
+    throw new Error('Failed to check works');
   }
 }
 
@@ -233,10 +237,10 @@ export async function deleteTrackMetadata(spotifyTrackId: string) {
 
     return {
       success: true,
-      message: "Track-movement link removed, ready for re-analysis",
+      message: 'Track-movement link removed, ready for re-analysis',
     };
   } catch (error) {
-    console.error("Error removing track-movement link:", error);
-    throw new Error("Failed to remove track-movement link");
+    console.error('Error removing track-movement link:', error);
+    throw new Error('Failed to remove track-movement link');
   }
 }

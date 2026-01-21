@@ -1,9 +1,9 @@
-"use server";
+'use server';
 
-import { db } from "@/lib/db";
-import { composer, spotifyArtist } from "@/lib/db/schema";
-import { or, isNull, eq, sql, inArray } from "drizzle-orm";
-import { checkAuth, getSpotifyClient } from "./auth";
+import { db } from '@/lib/db';
+import { composer, spotifyArtist } from '@/lib/db/schema';
+import { or, isNull, eq, sql, inArray } from 'drizzle-orm';
+import { checkAuth, getSpotifyClient } from './auth';
 
 export interface SpotifyArtistSearchResult {
   id: string;
@@ -15,12 +15,12 @@ export interface SpotifyArtistSearchResult {
 
 export async function searchSpotifyArtists(
   query: string,
-  limit: 1 | 2 | 3 | 4 | 5 | 10 | 20 | 50 = 5
+  limit: 1 | 2 | 3 | 4 | 5 | 10 | 20 | 50 = 5,
 ): Promise<SpotifyArtistSearchResult[]> {
   await checkAuth();
   const spotify = await getSpotifyClient();
 
-  const results = await spotify.search(query, ["artist"], undefined, limit);
+  const results = await spotify.search(query, ['artist'], undefined, limit);
 
   return results.artists.items.map((artist) => ({
     id: artist.id,
@@ -58,7 +58,7 @@ export async function searchSpotifyArtistForImport(input: {
   }
 
   try {
-    const searchResults = await spotify.search(input.name, ["artist"], undefined, 3);
+    const searchResults = await spotify.search(input.name, ['artist'], undefined, 3);
     return {
       input,
       results: searchResults.artists.items.map((artist) => ({
@@ -80,7 +80,10 @@ export async function searchSpotifyArtistForImport(input: {
   }
 }
 
-export async function refreshSpotifyArtistMetadataMissing(): Promise<{ updated: number; total: number }> {
+export async function refreshSpotifyArtistMetadataMissing(): Promise<{
+  updated: number;
+  total: number;
+}> {
   await checkAuth();
   const spotify = await getSpotifyClient();
 
@@ -110,12 +113,12 @@ export async function refreshSpotifyArtistMetadataMissing(): Promise<{ updated: 
               popularity: artist.popularity ?? null,
               images: artist.images ?? null,
             })
-            .where(eq(spotifyArtist.spotifyId, artist.id))
-        )
+            .where(eq(spotifyArtist.spotifyId, artist.id)),
+        ),
       );
       updated += artists.length;
     } catch (err) {
-      console.error("Failed to refresh Spotify artist metadata batch:", err);
+      console.error('Failed to refresh Spotify artist metadata batch:', err);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -135,17 +138,17 @@ export interface SpotifyPlaylistSearchResult {
 
 function getPlaylistTrackCount(playlist: unknown) {
   const maybeTracks = (playlist as { tracks?: { total?: number } | null }).tracks;
-  return typeof maybeTracks?.total === "number" ? maybeTracks.total : 0;
+  return typeof maybeTracks?.total === 'number' ? maybeTracks.total : 0;
 }
 
 export async function searchSpotifyPlaylists(
   query: string,
-  limit: 10 | 20 | 50 = 20
+  limit: 10 | 20 | 50 = 20,
 ): Promise<SpotifyPlaylistSearchResult[]> {
   await checkAuth();
   const spotify = await getSpotifyClient();
 
-  const results = await spotify.search(query, ["playlist"], undefined, limit);
+  const results = await spotify.search(query, ['playlist'], undefined, limit);
 
   return results.playlists.items.map((playlist) => ({
     id: playlist.id,
@@ -174,10 +177,16 @@ export async function getPlaylistArtists(playlistId: string): Promise<PlaylistAr
   const limit = 50;
 
   while (true) {
-    const page = await spotify.playlists.getPlaylistItems(playlistId, undefined, undefined, limit, offset);
+    const page = await spotify.playlists.getPlaylistItems(
+      playlistId,
+      undefined,
+      undefined,
+      limit,
+      offset,
+    );
 
     for (const item of page.items) {
-      if (!item.track || item.track.type !== "track") continue;
+      if (!item.track || item.track.type !== 'track') continue;
 
       const track = item.track as { artists?: Array<{ id: string; name: string }>; name: string };
       if (!track.artists) continue;
@@ -201,16 +210,15 @@ export async function getPlaylistArtists(playlistId: string): Promise<PlaylistAr
   }
 
   const artistIds = Array.from(artistCounts.keys());
-  const existingComposers = artistIds.length > 0
-    ? await db
-        .select({ id: composer.id, spotifyArtistId: composer.spotifyArtistId })
-        .from(composer)
-        .where(inArray(composer.spotifyArtistId, artistIds))
-    : [];
+  const existingComposers =
+    artistIds.length > 0
+      ? await db
+          .select({ id: composer.id, spotifyArtistId: composer.spotifyArtistId })
+          .from(composer)
+          .where(inArray(composer.spotifyArtistId, artistIds))
+      : [];
 
-  const composerByArtistId = new Map(
-    existingComposers.map((c) => [c.spotifyArtistId, c.id])
-  );
+  const composerByArtistId = new Map(existingComposers.map((c) => [c.spotifyArtistId, c.id]));
 
   const result: PlaylistArtistInfo[] = Array.from(artistCounts.entries())
     .map(([id, info]) => ({

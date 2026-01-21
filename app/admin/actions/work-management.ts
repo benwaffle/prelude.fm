@@ -1,10 +1,10 @@
-"use server";
+'use server';
 
-import { db } from "@/lib/db";
-import { composer, movement, recording, spotifyAlbum, trackMovement, work } from "@/lib/db/schema";
-import { and, count, eq, like, or, sql } from "drizzle-orm";
-import { checkAuth } from "./auth";
-import type { ComposerRow, MovementRow, RecordingRow, WorkRow } from "./schema-types";
+import { db } from '@/lib/db';
+import { composer, movement, recording, spotifyAlbum, trackMovement, work } from '@/lib/db/schema';
+import { and, count, eq, like, or, sql } from 'drizzle-orm';
+import { checkAuth } from './auth';
+import type { ComposerRow, MovementRow, RecordingRow, WorkRow } from './schema-types';
 
 export interface WorkWithDetails extends WorkRow {
   composerName: string;
@@ -17,7 +17,7 @@ export async function searchWorks(
   composerId?: number,
   catalogSystem?: string,
   limit = 50,
-  offset = 0
+  offset = 0,
 ): Promise<{ items: WorkWithDetails[]; total: number }> {
   await checkAuth();
 
@@ -28,8 +28,8 @@ export async function searchWorks(
       or(
         like(work.title, searchPattern),
         like(work.nickname, searchPattern),
-        like(work.catalogNumber, searchPattern)
-      )
+        like(work.catalogNumber, searchPattern),
+      ),
     );
   }
   if (composerId !== undefined) {
@@ -62,10 +62,7 @@ export async function searchWorks(
     .limit(limit)
     .offset(offset);
 
-  const totalQuery = db
-    .select({ count: count() })
-    .from(work)
-    .where(whereClause);
+  const totalQuery = db.select({ count: count() }).from(work).where(whereClause);
 
   const [items, [{ count: total }]] = await Promise.all([itemsQuery, totalQuery]);
 
@@ -151,7 +148,7 @@ export async function updateWorkDetails(
     catalogNumber?: string | null;
     yearComposed?: number | null;
     form?: string | null;
-  }
+  },
 ): Promise<WorkRow> {
   await checkAuth();
 
@@ -163,14 +160,10 @@ export async function updateWorkDetails(
   if (data.yearComposed !== undefined) updateData.yearComposed = data.yearComposed;
   if (data.form !== undefined) updateData.form = data.form;
 
-  const [result] = await db
-    .update(work)
-    .set(updateData)
-    .where(eq(work.id, workId))
-    .returning();
+  const [result] = await db.update(work).set(updateData).where(eq(work.id, workId)).returning();
 
   if (!result) {
-    throw new Error("Work not found");
+    throw new Error('Work not found');
   }
 
   return result;
@@ -179,7 +172,7 @@ export async function updateWorkDetails(
 export async function addMovementToWork(
   workId: number,
   number: number,
-  title?: string | null
+  title?: string | null,
 ): Promise<MovementRow> {
   await checkAuth();
 
@@ -197,7 +190,7 @@ export async function addMovementToWork(
 
 export async function updateMovementDetails(
   movementId: number,
-  data: { number?: number; title?: string | null }
+  data: { number?: number; title?: string | null },
 ): Promise<MovementRow> {
   await checkAuth();
 
@@ -212,7 +205,7 @@ export async function updateMovementDetails(
     .returning();
 
   if (!result) {
-    throw new Error("Movement not found");
+    throw new Error('Movement not found');
   }
 
   return result;
@@ -228,7 +221,7 @@ export async function deleteMovement(movementId: number): Promise<void> {
     .limit(1);
 
   if (linkedTrack) {
-    throw new Error("Cannot delete movement: tracks are linked to it");
+    throw new Error('Cannot delete movement: tracks are linked to it');
   }
 
   await db.delete(movement).where(eq(movement.id, movementId));

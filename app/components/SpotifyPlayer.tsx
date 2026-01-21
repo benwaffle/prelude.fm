@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { useRef, useEffect, useCallback, useState } from "react";
-import Image from "next/image";
-import { useSpotifyPlayer } from "@/lib/spotify-player-context";
+import { useRef, useEffect, useCallback, useState } from 'react';
+import Image from 'next/image';
+import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 
 function formatTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 export function SpotifyPlayer() {
@@ -77,7 +77,7 @@ export function SpotifyPlayer() {
 
       return newPosition;
     },
-    [getProgress]
+    [getProgress],
   );
 
   const handleMouseDown = useCallback(
@@ -85,7 +85,7 @@ export function SpotifyPlayer() {
       setIsDragging(true);
       handleSeek(e.clientX);
     },
-    [handleSeek]
+    [handleSeek],
   );
 
   useEffect(() => {
@@ -103,12 +103,12 @@ export function SpotifyPlayer() {
       setIsDragging(false);
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging, handleSeek, seek]);
 
@@ -126,25 +126,21 @@ export function SpotifyPlayer() {
               {currentTrack.album?.images?.[0]?.url && (
                 <Image
                   src={currentTrack.album.images[0].url}
-                  alt={currentTrack.album?.name || "Album"}
+                  alt={currentTrack.album?.name || 'Album'}
                   width={48}
                   height={48}
                   className="rounded shrink-0"
                 />
               )}
               <div className="min-w-0">
-                <p className="text-sm font-medium text-white truncate">
-                  {currentTrack.name}
-                </p>
+                <p className="text-sm font-medium text-white truncate">{currentTrack.name}</p>
                 <p className="text-xs text-zinc-400 truncate">
-                  {currentTrack.artists?.map((a) => a.name).join(", ")}
+                  {currentTrack.artists?.map((a) => a.name).join(', ')}
                 </p>
               </div>
             </>
           ) : (
-            <p className="text-sm text-zinc-500">
-              {isReady ? "Select a track" : "Connecting..."}
-            </p>
+            <p className="text-sm text-zinc-500">{isReady ? 'Select a track' : 'Connecting...'}</p>
           )}
         </div>
 
@@ -207,7 +203,7 @@ export function SpotifyPlayer() {
               <div
                 ref={progressBarRef}
                 className="h-full bg-white group-hover:bg-green-500 rounded-full transition-colors"
-                style={{ width: "0%" }}
+                style={{ width: '0%' }}
               />
             </div>
             <span ref={durationRef} className="text-xs text-zinc-400 w-10 tabular-nums">

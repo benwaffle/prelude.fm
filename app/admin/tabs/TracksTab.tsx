@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { getBatchTrackMetadata, type TrackMetadata } from "../actions/spotify-tracks";
-import { getMatchQueue, updateMatchQueueStatus } from "../../actions/spotify";
-import { AlbumTracksTable } from "../AlbumTracksTable";
-import { Spinner } from "../components/Spinner";
-import { Notice } from "../components/Notice";
+import { useState, useEffect } from 'react';
+import { getBatchTrackMetadata, type TrackMetadata } from '../actions/spotify-tracks';
+import { getMatchQueue, updateMatchQueueStatus } from '../../actions/spotify';
+import { AlbumTracksTable } from '../AlbumTracksTable';
+import { Spinner } from '../components/Spinner';
+import { Notice } from '../components/Notice';
 
 interface AlbumGroup {
   album: {
@@ -29,7 +29,7 @@ const compareTrackOrder = (a: TrackMetadata, b: TrackMetadata) =>
 function getAlbumPriorityScore(tracks: TrackMetadata[]): number {
   let maxScore = 0;
   for (const track of tracks) {
-    const hasKnownComposer = track.artists.some(a => a.inComposersTable);
+    const hasKnownComposer = track.artists.some((a) => a.inComposersTable);
     const hasCatalog = CATALOG_REGEX.test(track.name);
     const score = (hasKnownComposer ? 2 : 0) + (hasCatalog ? 1 : 0);
     if (score > maxScore) maxScore = score;
@@ -39,25 +39,28 @@ function getAlbumPriorityScore(tracks: TrackMetadata[]): number {
 }
 
 function buildAlbumGroups(trackData: TrackMetadata[]): AlbumGroup[] {
-  const grouped = trackData.reduce((acc, track) => {
-    const albumId = track.album.id;
-    if (!acc[albumId]) {
-      acc[albumId] = {
-        album: {
-          id: track.album.id,
-          name: track.album.name,
-          release_date: track.album.release_date,
-          images: track.album.images,
-        },
-        tracks: [],
-      };
-    }
-    acc[albumId].tracks.push(track);
-    return acc;
-  }, {} as Record<string, AlbumGroup>);
+  const grouped = trackData.reduce(
+    (acc, track) => {
+      const albumId = track.album.id;
+      if (!acc[albumId]) {
+        acc[albumId] = {
+          album: {
+            id: track.album.id,
+            name: track.album.name,
+            release_date: track.album.release_date,
+            images: track.album.images,
+          },
+          tracks: [],
+        };
+      }
+      acc[albumId].tracks.push(track);
+      return acc;
+    },
+    {} as Record<string, AlbumGroup>,
+  );
 
   return Object.values(grouped)
-    .map(group => ({
+    .map((group) => ({
       ...group,
       tracks: group.tracks.sort(compareTrackOrder),
     }))
@@ -65,11 +68,11 @@ function buildAlbumGroups(trackData: TrackMetadata[]): AlbumGroup[] {
 }
 
 interface TracksTabProps {
-  onSwitchTab?: (tab: "composers" | "works") => void;
+  onSwitchTab?: (tab: 'composers' | 'works') => void;
 }
 
 export function TracksTab({ onSwitchTab }: TracksTabProps) {
-  const [trackUrisInput, setTrackUrisInput] = useState("");
+  const [trackUrisInput, setTrackUrisInput] = useState('');
   const [albumGroups, setAlbumGroups] = useState<AlbumGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +92,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       const result = await getMatchQueue(0, 0); // Just get count
       setQueueTotal(result.total);
     } catch (err) {
-      console.error("Failed to load queue:", err);
+      console.error('Failed to load queue:', err);
     } finally {
       setLoadingQueue(false);
     }
@@ -111,7 +114,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       const trackData = await getBatchTrackMetadata(trackIds);
       setAlbumGroups(buildAlbumGroups(trackData));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
@@ -120,10 +123,10 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
   const handleTrackSaved = async (trackId: string) => {
     // Update queue status when track is saved
     try {
-      await updateMatchQueueStatus([trackId], "matched");
+      await updateMatchQueueStatus([trackId], 'matched');
       setQueueTotal((prev) => Math.max(0, prev - 1));
     } catch (err) {
-      console.error("Failed to update queue status:", err);
+      console.error('Failed to update queue status:', err);
     }
   };
 
@@ -137,10 +140,10 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       const uris = trackUrisInput
         .trim()
         .split('\n')
-        .filter(line => line.trim());
+        .filter((line) => line.trim());
 
       if (uris.length === 0) {
-        setError("Please enter at least one Spotify track URI or URL");
+        setError('Please enter at least one Spotify track URI or URL');
         setLoading(false);
         return;
       }
@@ -148,7 +151,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       const trackData = await getBatchTrackMetadata(uris);
       setAlbumGroups(buildAlbumGroups(trackData));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
@@ -159,21 +162,21 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       {/* Help links for creating missing composers/works */}
       {onSwitchTab && (
         <div className="mb-4 p-3 rounded-lg bg-zinc-100 dark:bg-zinc-800/50 text-sm text-zinc-600 dark:text-zinc-400">
-          <span className="font-medium">Missing data?</span>{" "}
+          <span className="font-medium">Missing data?</span>{' '}
           <button
-            onClick={() => onSwitchTab("composers")}
+            onClick={() => onSwitchTab('composers')}
             className="text-blue-600 dark:text-blue-400 hover:underline"
           >
             Create a composer
           </button>
-          {" or "}
+          {' or '}
           <button
-            onClick={() => onSwitchTab("works")}
+            onClick={() => onSwitchTab('works')}
             className="text-blue-600 dark:text-blue-400 hover:underline"
           >
             create a work
           </button>
-          {" in the other tabs."}
+          {' in the other tabs.'}
         </div>
       )}
 
@@ -181,11 +184,9 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       <div className="mb-8 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-black dark:text-white">
-              Match Queue
-            </h2>
+            <h2 className="text-lg font-semibold text-black dark:text-white">Match Queue</h2>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              {loadingQueue ? "Loading..." : `${queueTotal} pending tracks`}
+              {loadingQueue ? 'Loading...' : `${queueTotal} pending tracks`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -202,7 +203,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
               className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
             >
               {loading && <Spinner />}
-              {loading ? "Loading..." : `Load ${Math.min(QUEUE_PAGE_SIZE, queueTotal)} Tracks`}
+              {loading ? 'Loading...' : `Load ${Math.min(QUEUE_PAGE_SIZE, queueTotal)} Tracks`}
             </button>
           </div>
         </div>
@@ -217,7 +218,8 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
               Previous
             </button>
             <span className="text-sm text-zinc-600 dark:text-zinc-400">
-              {queueOffset + 1}–{Math.min(queueOffset + QUEUE_PAGE_SIZE, queueTotal)} of {queueTotal}
+              {queueOffset + 1}–{Math.min(queueOffset + QUEUE_PAGE_SIZE, queueTotal)} of{' '}
+              {queueTotal}
             </span>
             <button
               onClick={() => handleLoadFromQueue(queueOffset + QUEUE_PAGE_SIZE)}
@@ -256,7 +258,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
           className="px-6 py-3 rounded-lg bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2"
         >
           {loading && <Spinner />}
-          {loading ? "Loading..." : "Load Tracks"}
+          {loading ? 'Loading...' : 'Load Tracks'}
         </button>
       </form>
 

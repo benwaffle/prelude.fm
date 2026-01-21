@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import type { MaxInt, SavedTrack } from "@spotify/web-api-ts-sdk";
-import { createSpotifySdk } from "@/lib/spotify-sdk";
-import { getCachedLikedSongs, setCachedLikedSongs } from "./liked-songs-cache";
+import { useEffect, useState, useCallback, useRef } from 'react';
+import type { MaxInt, SavedTrack } from '@spotify/web-api-ts-sdk';
+import { createSpotifySdk } from '@/lib/spotify-sdk';
+import { getCachedLikedSongs, setCachedLikedSongs } from './liked-songs-cache';
 
-const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
+const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? '';
 
 interface UseLikedSongsResult {
   tracks: SavedTrack[];
@@ -58,7 +58,7 @@ export function useLikedSongs(accessToken: string): UseLikedSongsResult {
 
       await fetchFromApi();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
@@ -70,7 +70,7 @@ export function useLikedSongs(accessToken: string): UseLikedSongsResult {
     try {
       await fetchFromApi();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }

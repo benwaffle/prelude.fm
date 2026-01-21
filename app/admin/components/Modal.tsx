@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -8,21 +8,20 @@ interface ModalProps {
   children: React.ReactNode;
 }
 
-const joinClasses = (...classes: Array<string | undefined>) =>
-  classes.filter(Boolean).join(" ");
+const joinClasses = (...classes: Array<string | undefined>) => classes.filter(Boolean).join(' ');
 
 export function Modal({ isOpen, onClose, title, className, children }: ModalProps) {
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === 'Escape') {
         onClose();
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -31,15 +30,13 @@ export function Modal({ isOpen, onClose, title, className, children }: ModalProp
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div
         className={joinClasses(
-          "w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-zinc-900",
-          className
+          'w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-zinc-900',
+          className,
         )}
       >
         <div className="flex items-center justify-between gap-4">
           {title ? (
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              {title}
-            </h2>
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
           ) : (
             <span />
           )}

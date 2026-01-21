@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { authClient } from "@/lib/auth-client";
-import { LikedSongs } from "./components/LikedSongs";
-import { SpotifyPlayer } from "./components/SpotifyPlayer";
-import { SpotifyPlayerProvider } from "@/lib/spotify-player-context";
-import { useEffect, useState } from "react";
-import { getSpotifyToken } from "./actions/spotify";
+import { authClient } from '@/lib/auth-client';
+import { LikedSongs } from './components/LikedSongs';
+import { SpotifyPlayer } from './components/SpotifyPlayer';
+import { SpotifyPlayerProvider } from '@/lib/spotify-player-context';
+import { useEffect, useState } from 'react';
+import { getSpotifyToken } from './actions/spotify';
 
 export default function Home() {
   const { data: session } = authClient.useSession();
@@ -15,14 +15,14 @@ export default function Home() {
     if (session) {
       getSpotifyToken()
         .then((token) => setAccessToken(token))
-        .catch((err) => console.error("Error fetching token:", err));
+        .catch((err) => console.error('Error fetching token:', err));
     }
   }, [session]);
 
   const handleSignIn = async () => {
     await authClient.signIn.social({
-      provider: "spotify",
-      callbackURL: "/",
+      provider: 'spotify',
+      callbackURL: '/',
     });
   };
 
@@ -34,9 +34,7 @@ export default function Home() {
     <div className="flex min-h-screen bg-zinc-50 font-sans dark:bg-black">
       <main className="flex min-h-screen w-full flex-col items-center gap-8 py-6 px-4 sm:px-8">
         <div className="w-full flex items-center justify-between">
-          <h1 className="text-4xl font-bold text-black dark:text-zinc-50">
-            prelude.fm
-          </h1>
+          <h1 className="text-4xl font-bold text-black dark:text-zinc-50">prelude.fm</h1>
           {session && (
             <button
               onClick={handleSignOut}
@@ -48,11 +46,11 @@ export default function Home() {
         </div>
 
         {session ? (
-      accessToken ? (
-        <SpotifyPlayerProvider accessToken={accessToken}>
-          <LikedSongs accessToken={accessToken} />
-          <SpotifyPlayer />
-        </SpotifyPlayerProvider>
+          accessToken ? (
+            <SpotifyPlayerProvider accessToken={accessToken}>
+              <LikedSongs accessToken={accessToken} />
+              <SpotifyPlayer />
+            </SpotifyPlayerProvider>
           ) : (
             <div className="flex items-center justify-center py-12">
               <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>

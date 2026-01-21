@@ -1,10 +1,17 @@
-"use server";
+'use server';
 
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { trackMovement, matchQueue, movement, work, composer, spotifyArtist } from "@/lib/db/schema";
-import { headers } from "next/headers";
-import { inArray, eq, sql } from "drizzle-orm";
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
+import {
+  trackMovement,
+  matchQueue,
+  movement,
+  work,
+  composer,
+  spotifyArtist,
+} from '@/lib/db/schema';
+import { headers } from 'next/headers';
+import { inArray, eq, sql } from 'drizzle-orm';
 
 export async function getSpotifyToken(): Promise<string> {
   const session = await auth.api.getSession({
@@ -12,19 +19,19 @@ export async function getSpotifyToken(): Promise<string> {
   });
 
   if (!session) {
-    throw new Error("Unauthorized");
+    throw new Error('Unauthorized');
   }
 
   const tokenResponse = await auth.api.getAccessToken({
     body: {
-      providerId: "spotify",
+      providerId: 'spotify',
       userId: session.user.id,
     },
     headers: await headers(),
   });
 
   if (!tokenResponse?.accessToken) {
-    throw new Error("No Spotify access token");
+    throw new Error('No Spotify access token');
   }
 
   return tokenResponse.accessToken;
@@ -88,7 +95,7 @@ export async function submitToMatchQueue(trackIds: string[]): Promise<{ submitte
   });
 
   if (!session) {
-    throw new Error("Unauthorized");
+    throw new Error('Unauthorized');
   }
 
   // Filter out tracks already in queue
@@ -106,8 +113,8 @@ export async function submitToMatchQueue(trackIds: string[]): Promise<{ submitte
     newTrackIds.map((id) => ({
       spotifyId: id,
       submittedBy: session.user.id,
-      status: "pending",
-    }))
+      status: 'pending',
+    })),
   );
 
   return { submitted: newTrackIds.length };
@@ -126,14 +133,17 @@ export async function getQueuedTrackIds(trackIds: string[]): Promise<string[]> {
 
 export async function getMatchQueue(
   limit = 50,
-  offset = 0
+  offset = 0,
 ): Promise<{ items: { spotifyId: string; submittedAt: Date; status: string }[]; total: number }> {
   const [countResult, results] = await Promise.all([
-    db.select({ count: sql<number>`count(*)` }).from(matchQueue).where(eq(matchQueue.status, "pending")),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(matchQueue)
+      .where(eq(matchQueue.status, 'pending')),
     db
       .select()
       .from(matchQueue)
-      .where(eq(matchQueue.status, "pending"))
+      .where(eq(matchQueue.status, 'pending'))
       .orderBy(matchQueue.submittedAt)
       .limit(limit)
       .offset(offset),
@@ -149,13 +159,13 @@ export async function getMatchQueue(
   };
 }
 
-export async function updateMatchQueueStatus(trackIds: string[], status: "matched" | "failed"): Promise<void> {
+export async function updateMatchQueueStatus(
+  trackIds: string[],
+  status: 'matched' | 'failed',
+): Promise<void> {
   if (trackIds.length === 0) return;
 
-  await db
-    .update(matchQueue)
-    .set({ status })
-    .where(inArray(matchQueue.spotifyId, trackIds));
+  await db.update(matchQueue).set({ status }).where(inArray(matchQueue.spotifyId, trackIds));
 }
 
 export interface KnownComposerTrack {

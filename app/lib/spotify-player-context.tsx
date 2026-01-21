@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import {
   createContext,
@@ -8,11 +8,11 @@ import {
   useState,
   useCallback,
   type ReactNode,
-} from "react";
-import { createSpotifySdk } from "@/lib/spotify-sdk";
-import type { Track } from "@spotify/web-api-ts-sdk";
+} from 'react';
+import { createSpotifySdk } from '@/lib/spotify-sdk';
+import type { Track } from '@spotify/web-api-ts-sdk';
 
-const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
+const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? '';
 
 interface PlaybackProgress {
   position: number;
@@ -46,10 +46,7 @@ interface SpotifyPlayerProviderProps {
   children: ReactNode;
 }
 
-export function SpotifyPlayerProvider({
-  accessToken,
-  children,
-}: SpotifyPlayerProviderProps) {
+export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerProviderProps) {
   const [state, setState] = useState({
     isReady: false,
     isPaused: true,
@@ -74,30 +71,30 @@ export function SpotifyPlayerProvider({
   }, []);
 
   useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://sdk.scdn.co/spotify-player.js";
+    const script = document.createElement('script');
+    script.src = 'https://sdk.scdn.co/spotify-player.js';
     script.async = true;
     document.body.appendChild(script);
 
     window.onSpotifyWebPlaybackSDKReady = () => {
       const player = new window.Spotify.Player({
-        name: "prelude.fm",
+        name: 'prelude.fm',
         getOAuthToken: (cb) => cb(accessToken),
         volume: 1,
       });
 
-      player.addListener("ready", ({ device_id }) => {
-        console.log("Ready with Device ID", device_id);
+      player.addListener('ready', ({ device_id }) => {
+        console.log('Ready with Device ID', device_id);
         setState((s) => ({ ...s, deviceId: device_id, isReady: true }));
       });
 
-      player.addListener("not_ready", ({ device_id }) => {
-        console.log("Device ID has gone offline", device_id);
+      player.addListener('not_ready', ({ device_id }) => {
+        console.log('Device ID has gone offline', device_id);
         setState((s) => ({ ...s, isReady: false }));
       });
 
-      player.addListener("player_state_changed", (sdkState) => {
-        console.log("Player state changed:", sdkState);
+      player.addListener('player_state_changed', (sdkState) => {
+        console.log('Player state changed:', sdkState);
         if (!sdkState) {
           setState((s) => ({ ...s, currentTrack: null, isPaused: true }));
           return;
@@ -138,7 +135,7 @@ export function SpotifyPlayerProvider({
       const spotify = createSpotifySdk(accessToken, spotifyClientId);
       await spotify.player.startResumePlayback(state.deviceId, undefined, uris);
     },
-    [state.deviceId, accessToken]
+    [state.deviceId, accessToken],
   );
 
   const pause = useCallback(async () => {
@@ -183,15 +180,12 @@ export function SpotifyPlayerProvider({
     };
   }, []);
 
-  const subscribeToProgress = useCallback(
-    (callback: (progress: PlaybackProgress) => void) => {
-      progressSubscribersRef.current.add(callback);
-      return () => {
-        progressSubscribersRef.current.delete(callback);
-      };
-    },
-    []
-  );
+  const subscribeToProgress = useCallback((callback: (progress: PlaybackProgress) => void) => {
+    progressSubscribersRef.current.add(callback);
+    return () => {
+      progressSubscribersRef.current.delete(callback);
+    };
+  }, []);
 
   const value: SpotifyPlayerContextValue = {
     ...state,
@@ -207,17 +201,13 @@ export function SpotifyPlayerProvider({
     subscribeToProgress,
   };
 
-  return (
-    <SpotifyPlayerContext.Provider value={value}>
-      {children}
-    </SpotifyPlayerContext.Provider>
-  );
+  return <SpotifyPlayerContext.Provider value={value}>{children}</SpotifyPlayerContext.Provider>;
 }
 
 export function useSpotifyPlayer(): SpotifyPlayerContextValue {
   const context = useContext(SpotifyPlayerContext);
   if (!context) {
-    throw new Error("useSpotifyPlayer must be used within SpotifyPlayerProvider");
+    throw new Error('useSpotifyPlayer must be used within SpotifyPlayerProvider');
   }
   return context;
 }

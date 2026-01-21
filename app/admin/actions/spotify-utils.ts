@@ -7,10 +7,10 @@ import type {
   TrackMovementRow,
   WorkRow,
   RecordingRow,
-} from "./schema-types";
-import { db } from "@/lib/db";
-import { composer, movement, recording, trackMovement, work } from "@/lib/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+} from './schema-types';
+import { db } from '@/lib/db';
+import { composer, movement, recording, trackMovement, work } from '@/lib/db/schema';
+import { and, eq, inArray } from 'drizzle-orm';
 
 export async function upsertWork(data: {
   composerId: number;
@@ -32,8 +32,8 @@ export async function upsertWork(data: {
         and(
           eq(work.composerId, composerId),
           eq(work.catalogSystem, catalogSystem),
-          eq(work.catalogNumber, catalogNumber)
-        )
+          eq(work.catalogNumber, catalogNumber),
+        ),
       )
       .limit(1);
   } else {
@@ -88,10 +88,7 @@ export async function upsertMovement(data: {
     .limit(1);
 
   if (existingMovement) {
-    await db
-      .update(movement)
-      .set({ title })
-      .where(eq(movement.id, existingMovement.id));
+    await db.update(movement).set({ title }).where(eq(movement.id, existingMovement.id));
     return existingMovement.id;
   }
 
@@ -107,10 +104,7 @@ export async function upsertMovement(data: {
   return created.id;
 }
 
-export async function upsertRecording(data: {
-  spotifyAlbumId: string;
-  workId: number;
-}) {
+export async function upsertRecording(data: { spotifyAlbumId: string; workId: number }) {
   const { spotifyAlbumId, workId } = data;
   const [existingRecording] = await db
     .select()
@@ -134,10 +128,7 @@ export async function upsertRecording(data: {
   return created.id;
 }
 
-export async function linkTrackMovement(data: {
-  spotifyTrackId: string;
-  movementId: number;
-}) {
+export async function linkTrackMovement(data: { spotifyTrackId: string; movementId: number }) {
   const { spotifyTrackId, movementId } = data;
   await db
     .insert(trackMovement)
@@ -177,24 +168,22 @@ export async function loadTrackDbContext(spotifyTrackIds: string[]) {
   }
 
   const movementIds = trackMovementRecords.map((tm) => tm.movementId);
-  const movementsData = await db
-    .select()
-    .from(movement)
-    .where(inArray(movement.id, movementIds));
+  const movementsData = await db.select().from(movement).where(inArray(movement.id, movementIds));
 
   const workIds = movementsData.map((m) => m.workId);
-  const worksData = workIds.length > 0
-    ? await db.select().from(work).where(inArray(work.id, workIds))
-    : [];
+  const worksData =
+    workIds.length > 0 ? await db.select().from(work).where(inArray(work.id, workIds)) : [];
 
   const composerIds = worksData.map((w) => w.composerId);
-  const composersData = composerIds.length > 0
-    ? await db.select().from(composer).where(inArray(composer.id, composerIds))
-    : [];
+  const composersData =
+    composerIds.length > 0
+      ? await db.select().from(composer).where(inArray(composer.id, composerIds))
+      : [];
 
-  const recordingsData = workIds.length > 0
-    ? await db.select().from(recording).where(inArray(recording.workId, workIds))
-    : [];
+  const recordingsData =
+    workIds.length > 0
+      ? await db.select().from(recording).where(inArray(recording.workId, workIds))
+      : [];
 
   return {
     trackMovementsData: trackMovementRecords,
@@ -232,27 +221,31 @@ export function buildTrackMetadataDbData(params: {
 
   const trackMovements = trackMovementsData.filter((tm) => tm.spotifyTrackId === trackId);
   const movements = movementsData.filter((m) =>
-    trackMovementsData.some((tm) => tm.movementId === m.id && tm.spotifyTrackId === trackId)
+    trackMovementsData.some((tm) => tm.movementId === m.id && tm.spotifyTrackId === trackId),
   );
   const works = worksData.filter((w) =>
     movementsData.some((m) => {
-      const tm = trackMovementsData.find((t) => t.movementId === m.id && t.spotifyTrackId === trackId);
+      const tm = trackMovementsData.find(
+        (t) => t.movementId === m.id && t.spotifyTrackId === trackId,
+      );
       return tm && m.workId === w.id;
-    })
+    }),
   );
   const composers = composersData.filter((c) =>
     trackMovementsData.some((tm) => {
       const mvmt = movementsData.find((m) => m.id === tm.movementId);
       const wrk = mvmt && worksData.find((w) => w.id === mvmt.workId);
       return wrk && wrk.composerId === c.id && tm.spotifyTrackId === trackId;
-    })
+    }),
   );
   const recordings = recordingsData.filter((r) =>
     worksData.some((w) => {
       const mvmt = movementsData.find((m) => m.workId === w.id);
-      const tm = mvmt && trackMovementsData.find((t) => t.movementId === mvmt.id && t.spotifyTrackId === trackId);
+      const tm =
+        mvmt &&
+        trackMovementsData.find((t) => t.movementId === mvmt.id && t.spotifyTrackId === trackId);
       return tm && r.workId === w.id;
-    })
+    }),
   );
 
   return {

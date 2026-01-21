@@ -1,9 +1,9 @@
-"use server";
+'use server';
 
-import { db } from "@/lib/db";
-import { composer, spotifyArtist, spotifyTrack, trackMovement, work } from "@/lib/db/schema";
-import { count, eq, isNull } from "drizzle-orm";
-import { checkAuth } from "./auth";
+import { db } from '@/lib/db';
+import { composer, spotifyArtist, spotifyTrack, trackMovement, work } from '@/lib/db/schema';
+import { count, eq, isNull } from 'drizzle-orm';
+import { checkAuth } from './auth';
 
 export async function getAdminStats(): Promise<{
   pendingTracks: number;

@@ -6,19 +6,19 @@ It uses NextJS on Vercel for frontend and edge api routes, with Turso Cloud (bui
 
 ## Planned Features
 
-* short term
-    * understanding of additional metadata, and ability to search & navigate by these
-        * catalog sections
-        * works identified via catalog numbers, and opus
-        * movements
-        * recordings
-        * nicknames ("Moonlight sonata")
-    * Liked songs should be the home page. grouped by catalog number and recording
-    * support users who only mark specific movements as 'liked' instead of the whole work
-    * sort recordings by spotify popularity field
-* long term
-    * music discovery features - not sure how yet
-    * sheet music integration - IMSLP, musescore
+- short term
+  - understanding of additional metadata, and ability to search & navigate by these
+    - catalog sections
+    - works identified via catalog numbers, and opus
+    - movements
+    - recordings
+    - nicknames ("Moonlight sonata")
+  - Liked songs should be the home page. grouped by catalog number and recording
+  - support users who only mark specific movements as 'liked' instead of the whole work
+  - sort recordings by spotify popularity field
+- long term
+  - music discovery features - not sure how yet
+  - sheet music integration - IMSLP, musescore
 
 ## Use cases
 
