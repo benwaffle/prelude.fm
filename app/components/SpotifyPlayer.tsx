@@ -117,30 +117,42 @@ export function SpotifyPlayer() {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 p-3">
-      <div className="mx-auto flex items-center gap-4">
+    <div
+      className="fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t px-6 py-4"
+      style={{
+        background: 'rgba(250, 247, 242, 0.95)',
+        borderColor: 'var(--border-strong)',
+        boxShadow: '0 -4px 20px rgba(26, 22, 20, 0.06)',
+      }}
+    >
+      <div className="mx-auto flex items-center gap-6 max-w-[1600px]">
         {/* Track info */}
-        <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
+        <div className="flex items-center justify-start gap-4 flex-1 min-w-0">
           {currentTrack ? (
             <>
               {currentTrack.album?.images?.[0]?.url && (
-                <Image
-                  src={currentTrack.album.images[0].url}
-                  alt={currentTrack.album?.name || 'Album'}
-                  width={48}
-                  height={48}
-                  className="rounded shrink-0"
-                />
+                <div className="shrink-0 overflow-hidden shadow-md" style={{ borderRadius: '2px' }}>
+                  <Image
+                    src={currentTrack.album.images[0].url}
+                    alt={currentTrack.album?.name || 'Album'}
+                    width={56}
+                    height={56}
+                  />
+                </div>
               )}
               <div className="min-w-0">
-                <p className="text-sm font-medium text-white truncate">{currentTrack.name}</p>
-                <p className="text-xs text-zinc-400 truncate">
+                <p className="text-sm font-medium truncate" style={{ color: 'var(--charcoal)' }}>
+                  {currentTrack.name}
+                </p>
+                <p className="text-xs truncate" style={{ color: 'var(--warm-gray)' }}>
                   {currentTrack.artists?.map((a) => a.name).join(', ')}
                 </p>
               </div>
             </>
           ) : (
-            <p className="text-sm text-zinc-500">{isReady ? 'Select a track' : 'Connecting...'}</p>
+            <p className="text-sm" style={{ color: 'var(--warm-gray)' }}>
+              {isReady ? 'Select a track' : 'Connecting...'}
+            </p>
           )}
         </div>
 
@@ -151,7 +163,10 @@ export function SpotifyPlayer() {
             <button
               onClick={previousTrack}
               disabled={!isReady || !currentTrack}
-              className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              className="w-9 h-9 flex items-center justify-center transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              style={{ color: 'var(--charcoal)' }}
+              onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = 'var(--accent)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--charcoal)')}
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M4 4a1 1 0 011 1v4.586l6.293-6.293a1 1 0 011.414 0l.707.707a1 1 0 010 1.414L7.414 10l6 6a1 1 0 010 1.414l-.707.707a1 1 0 01-1.414 0L4 11.414V16a1 1 0 01-2 0V4a1 1 0 011-1z" />
@@ -162,14 +177,28 @@ export function SpotifyPlayer() {
             <button
               onClick={togglePlay}
               disabled={!isReady || !currentTrack}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white text-black hover:scale-105 transition-transform disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="w-11 h-11 flex items-center justify-center rounded-full transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-sm"
+              style={{
+                background: 'var(--accent)',
+                color: 'var(--cream)',
+              }}
+              onMouseEnter={(e) => {
+                if (!e.currentTarget.disabled) {
+                  e.currentTarget.style.background = 'var(--accent-hover)';
+                  e.currentTarget.style.transform = 'scale(1.05)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--accent)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }}
             >
               {isPaused ? (
-                <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                 </svg>
               ) : (
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z" />
                 </svg>
               )}
@@ -179,7 +208,10 @@ export function SpotifyPlayer() {
             <button
               onClick={nextTrack}
               disabled={!isReady || !currentTrack}
-              className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              className="w-9 h-9 flex items-center justify-center transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              style={{ color: 'var(--charcoal)' }}
+              onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = 'var(--accent)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--charcoal)')}
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M16 4a1 1 0 00-1 1v4.586L8.707 3.293a1 1 0 00-1.414 0l-.707.707a1 1 0 000 1.414L12.586 10l-6 6a1 1 0 000 1.414l.707.707a1 1 0 001.414 0L16 11.414V16a1 1 0 002 0V4a1 1 0 00-1-1z" />
@@ -188,35 +220,49 @@ export function SpotifyPlayer() {
           </div>
 
           {/* Progress bar */}
-          <div className="w-[500px] flex items-center gap-2">
+          <div className="w-[500px] flex items-center gap-3 mt-1">
             <span
               ref={currentTimeRef}
-              className="text-xs text-zinc-400 w-10 text-right tabular-nums"
+              className="text-xs w-10 text-right tabular-nums font-medium"
+              style={{ color: 'var(--warm-gray)' }}
             >
               0:00
             </span>
             <div
               ref={progressContainerRef}
               onMouseDown={handleMouseDown}
-              className="flex-1 h-2 bg-zinc-700 rounded-full cursor-pointer group"
+              className="flex-1 h-1.5 rounded-full cursor-pointer group relative"
+              style={{ background: 'var(--light-gray)' }}
             >
               <div
                 ref={progressBarRef}
-                className="h-full bg-white group-hover:bg-green-500 rounded-full transition-colors"
-                style={{ width: '0%' }}
-              />
+                className="h-full rounded-full transition-all duration-150 relative"
+                style={{ width: '0%', background: 'var(--accent)' }}
+              >
+                <div
+                  className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                  style={{ background: 'var(--accent)' }}
+                />
+              </div>
             </div>
-            <span ref={durationRef} className="text-xs text-zinc-400 w-10 tabular-nums">
+            <span
+              ref={durationRef}
+              className="text-xs w-10 tabular-nums font-medium"
+              style={{ color: 'var(--warm-gray)' }}
+            >
               0:00
             </span>
           </div>
         </div>
 
         {/* Volume control */}
-        <div className="flex-1 flex items-center justify-end gap-2">
+        <div className="flex-1 flex items-center justify-end gap-3">
           <button
             onClick={() => setVolume(volume === 0 ? 0.5 : 0)}
-            className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"
+            className="w-8 h-8 flex items-center justify-center cursor-pointer transition-colors duration-200"
+            style={{ color: 'var(--warm-gray)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--charcoal)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--warm-gray)')}
           >
             {volume === 0 ? (
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -239,7 +285,10 @@ export function SpotifyPlayer() {
             step="0.01"
             value={volume}
             onChange={handleVolumeChange}
-            className="w-20 h-1 bg-zinc-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+            className="w-24 h-1 rounded-full appearance-none cursor-pointer"
+            style={{
+              background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${volume * 100}%, var(--light-gray) ${volume * 100}%, var(--light-gray) 100%)`,
+            }}
           />
         </div>
       </div>

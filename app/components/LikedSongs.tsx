@@ -246,32 +246,50 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
 
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold text-black dark:text-zinc-50">Your Liked Songs</h2>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-            className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-zinc-50 transition-colors cursor-pointer"
-          >
-            {sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}
-          </button>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            {loading ? `Loading ${tracks.length} of ${total}...` : `${tracks.length} songs`}
+      {/* Section Header with Editorial Style */}
+      <div className="flex items-end justify-between mb-5 pb-3 editorial-border">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--charcoal)' }}>
+            Your Collection
+          </h2>
+          <p className="text-xs tracking-wide" style={{ color: 'var(--warm-gray)' }}>
+            {loading ? `Loading ${tracks.length} of ${total}...` : `${tracks.length} recordings`}
           </p>
         </div>
+        <button
+          onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+          className="text-sm font-medium transition-all duration-300 cursor-pointer px-4 py-2 border"
+          style={{
+            color: 'var(--charcoal)',
+            borderColor: 'var(--border-strong)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = 'var(--accent)';
+            e.currentTarget.style.color = 'var(--accent)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border-strong)';
+            e.currentTarget.style.color = 'var(--charcoal)';
+          }}
+        >
+          {sortOrder === 'desc' ? '↓ Newest First' : '↑ Oldest First'}
+        </button>
       </div>
 
       {/* Matched tracks section - grouped by work */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-3">
-          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Matched</h3>
-          <span className="text-xs text-zinc-500">
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-3">
+          <h3 className="text-xs font-medium tracking-widest uppercase" style={{ color: 'var(--warm-gray)', letterSpacing: '0.15em' }}>
+            Works
+          </h3>
+          <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+          <span className="text-xs tabular-nums" style={{ color: 'var(--warm-gray)' }}>
             {checkingMatches
               ? '...'
-              : `${matchedTrackIds.size + tracksWithKnownComposer.length} tracks, ${matchedByWork.size} works`}
+              : `${matchedByWork.size} ${matchedByWork.size === 1 ? 'work' : 'works'}`}
           </span>
         </div>
-        <div className="divide-y divide-zinc-200 dark:divide-zinc-700 md:divide-y-0 md:grid md:grid-cols-[minmax(0,_1fr)_max-content] md:border md:border-zinc-200 md:dark:border-zinc-700">
+        <div className="space-y-px">
           {Array.from(matchedByWork.values()).map(({ work, tracks: workTracks }) => {
             const firstTrack = workTracks[0].track;
             const headerArtists = Array.from(
@@ -301,76 +319,105 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                     .map((item) => item.track.uri)
                 : sortedWorkTracks.map(({ track }) => track.uri);
 
+            const movementCount = workTracks.length;
+
             return (
-              <div key={work.id} className="contents">
-                <button
-                  onClick={() => play(workAndSubsequentUris)}
-                  className="px-2 py-2 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-r md:pr-10 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                >
+              <div
+                key={work.id}
+                className="border transition-all duration-200"
+                style={{
+                  borderColor: 'var(--border)',
+                  background: 'var(--warm-white)',
+                }}
+              >
+                {/* Work Header */}
+                <div className="flex items-center gap-3 p-2 group hover:bg-cream transition-colors">
+                  {/* Album Art */}
                   {firstTrack.album.images[0] && (
-                    <Image
-                      src={firstTrack.album.images[0].url}
-                      alt={firstTrack.album.name}
-                      width={56}
-                      height={56}
-                      className="rounded"
-                    />
+                    <button
+                      onClick={() => play(workAndSubsequentUris)}
+                      className="shrink-0 overflow-hidden shadow-sm transition-transform duration-200 hover:scale-105"
+                      style={{ borderRadius: '2px' }}
+                    >
+                      <Image
+                        src={firstTrack.album.images[0].url}
+                        alt={firstTrack.album.name}
+                        width={56}
+                        height={56}
+                        className="object-cover"
+                      />
+                    </button>
                   )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-black dark:text-zinc-100 truncate">
-                      <span className="font-medium">{work.composerName}</span>
-                      <span className="text-zinc-400 mx-1.5">&middot;</span>
-                      <span>{work.title}</span>
-                      {work.nickname && (
-                        <span className="text-zinc-500"> &ldquo;{work.nickname}&rdquo;</span>
-                      )}
+
+                  {/* Work Info */}
+                  <button
+                    onClick={() => play(workAndSubsequentUris)}
+                    className="flex-1 min-w-0 text-left cursor-pointer"
+                  >
+                    <div className="flex items-baseline gap-2 mb-0.5">
+                      <p className="text-xs font-bold tracking-wide" style={{ color: 'var(--accent)' }}>
+                        {work.composerName}
+                      </p>
                       {work.catalogSystem && work.catalogNumber && (
-                        <span className="text-zinc-500">
-                          , {work.catalogSystem} {work.catalogNumber}
+                        <p className="text-xs font-medium" style={{ color: 'var(--warm-gray)' }}>
+                          {work.catalogSystem} {work.catalogNumber}
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-sm font-medium leading-tight truncate" style={{ color: 'var(--charcoal)' }}>
+                      {work.title}
+                      {work.nickname && (
+                        <span className="italic font-normal ml-1.5" style={{ color: 'var(--warm-gray)' }}>
+                          &ldquo;{work.nickname}&rdquo;
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-zinc-500 truncate">
-                      {headerArtists.join(', ')}
-                      {firstTrack.album.name && (
-                        <>
-                          {headerArtists.length ? ' • ' : ''}
-                          {firstTrack.album.name}
-                        </>
-                      )}
+                    <p className="text-xs truncate mt-0.5" style={{ color: 'var(--warm-gray)' }}>
+                      {headerArtists.join(', ')} · {firstTrack.album.name}
                     </p>
-                  </div>
-                </button>
-                <div className="divide-y divide-zinc-200 dark:divide-zinc-700 border-b border-zinc-200 dark:border-zinc-700 md:border-b md:border-l">
-                  {[...workTracks]
-                    .sort((a, b) => {
-                      const movA = trackMovementMap.get(a.track.id) ?? 0;
-                      const movB = trackMovementMap.get(b.track.id) ?? 0;
-                      return movA - movB;
-                    })
-                    .map(({ track }) => {
-                      // Find this track's position in the global list and queue up to 50 tracks after it
-                      const trackIndex = allTracksInOrder.findIndex((t) => t.track.id === track.id);
-                      const queueTracks =
-                        trackIndex >= 0
-                          ? allTracksInOrder
-                              .slice(trackIndex + 1, trackIndex + 51)
-                              .map((item) => item.track)
-                          : [];
+                  </button>
 
-                      return (
-                        <MovementRow
-                          key={track.id}
-                          track={track}
-                          displayName={trackMovementNameMap.get(track.id) ?? undefined}
-                          hideComposer={work.composerName}
-                          hideArtwork
-                          isPlaying={currentTrack?.id === track.id}
-                          queueTracks={queueTracks}
-                        />
-                      );
-                    })}
+                  {/* Movement Count Badge */}
+                  {movementCount > 1 && (
+                    <div className="shrink-0 px-2 py-1" style={{ color: 'var(--warm-gray)' }}>
+                      <span className="text-xs font-medium">{movementCount}</span>
+                    </div>
+                  )}
                 </div>
+
+                {/* Movements List - Always visible for multi-movement works */}
+                {movementCount > 1 && (
+                  <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+                    {[...workTracks]
+                      .sort((a, b) => {
+                        const movA = trackMovementMap.get(a.track.id) ?? 0;
+                        const movB = trackMovementMap.get(b.track.id) ?? 0;
+                        return movA - movB;
+                      })
+                      .map(({ track }) => {
+                        // Find this track's position in the global list and queue up to 50 tracks after it
+                        const trackIndex = allTracksInOrder.findIndex((t) => t.track.id === track.id);
+                        const queueTracks =
+                          trackIndex >= 0
+                            ? allTracksInOrder
+                                .slice(trackIndex + 1, trackIndex + 51)
+                                .map((item) => item.track)
+                            : [];
+
+                        return (
+                          <MovementRow
+                            key={track.id}
+                            track={track}
+                            displayName={trackMovementNameMap.get(track.id) ?? undefined}
+                            hideComposer={work.composerName}
+                            hideArtwork
+                            isPlaying={currentTrack?.id === track.id}
+                            queueTracks={queueTracks}
+                          />
+                        );
+                      })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -379,7 +426,7 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
             ([albumId, { albumName, albumImage, tracks: albumTracks }]) => {
               const firstTrack = albumTracks[0].track;
               const composerName = getTrackComposer(firstTrack)!;
-              const isSingleTrack = albumTracks.length === 1;
+              const trackCount = albumTracks.length;
 
               // Get URIs for playing
               const firstTrackIndex = allTracksInOrder.findIndex(
@@ -392,96 +439,97 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
                       .map((item) => item.track.uri)
                   : albumTracks.map(({ track }) => track.uri);
 
-              if (isSingleTrack) {
-                // Single track: inline display
-                return (
-                  <button
-                    key={albumId}
-                    onClick={() => play(albumAndSubsequentUris)}
-                    className="col-span-2 px-3 py-3 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-700 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    {albumImage && (
-                      <Image
-                        src={albumImage}
-                        alt={albumName}
-                        width={48}
-                        height={48}
-                        className="rounded"
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-black dark:text-zinc-100 truncate">
-                        <span className="font-medium">{composerName}</span>
-                        <span className="text-zinc-400 mx-1.5">&middot;</span>
-                        <span>{firstTrack.name}</span>
-                      </p>
-                      <p className="text-xs text-zinc-500 truncate">{albumName}</p>
-                    </div>
-                    {currentTrack?.id === firstTrack.id && (
-                      <span className="text-xs text-green-500">▶</span>
-                    )}
-                  </button>
-                );
-              }
-
-              // Multiple tracks: header with tracks below
               return (
                 <div
                   key={albumId}
-                  className="col-span-2 border-b border-zinc-200 dark:border-zinc-700"
+                  className="border transition-all duration-200"
+                  style={{
+                    borderColor: 'var(--border)',
+                    background: 'var(--warm-white)',
+                  }}
                 >
-                  <button
-                    onClick={() => play(albumAndSubsequentUris)}
-                    className="w-full px-3 py-3 flex items-center gap-3 text-left cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  >
+                  {/* Album Header */}
+                  <div className="flex items-center gap-3 p-2 group hover:bg-cream transition-colors">
+                    {/* Album Art */}
                     {albumImage && (
-                      <Image
-                        src={albumImage}
-                        alt={albumName}
-                        width={48}
-                        height={48}
-                        className="rounded"
-                      />
+                      <button
+                        onClick={() => play(albumAndSubsequentUris)}
+                        className="shrink-0 overflow-hidden shadow-sm transition-transform duration-200 hover:scale-105"
+                        style={{ borderRadius: '2px' }}
+                      >
+                        <Image
+                          src={albumImage}
+                          alt={albumName}
+                          width={56}
+                          height={56}
+                          className="object-cover"
+                        />
+                      </button>
                     )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-black dark:text-zinc-100 truncate">
-                        <span className="font-medium">{composerName}</span>
-                      </p>
-                      <p className="text-xs text-zinc-500 truncate">{albumName}</p>
-                    </div>
-                  </button>
-                  <div className="divide-y divide-zinc-200 dark:divide-zinc-700 ml-15">
-                    {[...albumTracks]
-                      .sort((a, b) => a.track.track_number - b.track.track_number)
-                      .map(({ track }) => {
-                        const trackIndex = allTracksInOrder.findIndex(
-                          (t) => t.track.id === track.id,
-                        );
-                        const queueTracks =
-                          trackIndex >= 0
-                            ? allTracksInOrder
-                                .slice(trackIndex + 1, trackIndex + 51)
-                                .map((item) => item.track)
-                            : [];
 
-                        return (
-                          <MovementRow
-                            key={track.id}
-                            track={track}
-                            hideComposer={composerName}
-                            hideArtwork
-                            isPlaying={currentTrack?.id === track.id}
-                            queueTracks={queueTracks}
-                          />
-                        );
-                      })}
+                    {/* Album Info */}
+                    <button
+                      onClick={() => play(albumAndSubsequentUris)}
+                      className="flex-1 min-w-0 text-left cursor-pointer"
+                    >
+                      <p className="text-xs font-bold tracking-wide mb-0.5" style={{ color: 'var(--accent)' }}>
+                        {composerName}
+                      </p>
+                      <p className="text-sm font-medium leading-tight truncate" style={{ color: 'var(--charcoal)' }}>
+                        {albumName}
+                      </p>
+                      <p className="text-xs truncate mt-0.5" style={{ color: 'var(--warm-gray)' }}>
+                        {firstTrack.artists.map((a) => a.name).join(', ')}
+                      </p>
+                    </button>
+
+                    {/* Track Count Badge */}
+                    {trackCount > 1 && (
+                      <div className="shrink-0 px-2 py-1" style={{ color: 'var(--warm-gray)' }}>
+                        <span className="text-xs font-medium">{trackCount}</span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Tracks List - Always visible for multi-track albums */}
+                  {trackCount > 1 && (
+                    <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+                      {[...albumTracks]
+                        .sort((a, b) => a.track.track_number - b.track.track_number)
+                        .map(({ track }) => {
+                          const trackIndex = allTracksInOrder.findIndex(
+                            (t) => t.track.id === track.id,
+                          );
+                          const queueTracks =
+                            trackIndex >= 0
+                              ? allTracksInOrder
+                                  .slice(trackIndex + 1, trackIndex + 51)
+                                  .map((item) => item.track)
+                              : [];
+
+                          return (
+                            <MovementRow
+                              key={track.id}
+                              track={track}
+                              hideComposer={composerName}
+                              hideArtwork
+                              isPlaying={currentTrack?.id === track.id}
+                              queueTracks={queueTracks}
+                            />
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
               );
             },
           )}
           {!checkingMatches && matchedByWork.size === 0 && tracksWithKnownComposer.length === 0 && (
-            <p className="text-sm text-zinc-500 py-4">No matched tracks yet</p>
+            <div className="text-center py-12">
+              <p className="text-sm" style={{ color: 'var(--warm-gray)' }}>
+                No works matched yet. Like some classical tracks on Spotify to get started.
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -490,16 +538,21 @@ export function LikedSongs({ accessToken }: LikedSongsProps) {
       <div className="pb-24">
         <button
           onClick={() => setUnmatchedCollapsed(!unmatchedCollapsed)}
-          className="flex items-center gap-2 mb-2 cursor-pointer"
+          className="flex items-center gap-3 mb-4 cursor-pointer group w-full"
         >
-          <span className="text-sm text-zinc-500">{unmatchedCollapsed ? '▶' : '▼'}</span>
-          <h3 className="text-sm font-medium text-zinc-500">Unmatched</h3>
-          <span className="text-xs text-zinc-500">
+          <h3 className="text-xs font-medium tracking-widest uppercase" style={{ color: 'var(--warm-gray)', letterSpacing: '0.15em' }}>
+            Unmatched
+          </h3>
+          <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+          <span className="text-xs tabular-nums transition-colors duration-200" style={{ color: 'var(--warm-gray)' }}>
             {checkingMatches ? '...' : unmatchedTracksList.length}
+          </span>
+          <span className="text-xs transition-transform duration-200" style={{ color: 'var(--warm-gray)', transform: unmatchedCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>
+            ▸
           </span>
         </button>
         {!unmatchedCollapsed && (
-          <div className="space-y-1">
+          <div className="grid gap-2">
             {unmatchedTracksList.map(({ track }) => {
               // Find this track's position in the global list and queue up to 50 tracks after it
               const trackIndex = allTracksInOrder.findIndex((t) => t.track.id === track.id);

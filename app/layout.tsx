@@ -41,7 +41,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${mackinac.variable} font-sans antialiased min-h-screen bg-zinc-50 dark:bg-black`}
+        className={`${mackinac.variable} font-sans antialiased min-h-screen`}
+        style={{ background: 'var(--background)', color: 'var(--foreground)' }}
       >
         {children}
       </body>

@@ -42,40 +42,65 @@ export function MovementRow({
   return (
     <button
       onClick={() => play([track.uri, ...queueTracks.map((t) => t.uri)])}
-      className={`w-full flex items-center gap-3 p-2 text-left cursor-pointer ${
-        hideArtwork ? '' : 'rounded'
-      } ${
-        isPlaying
-          ? 'bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/40'
-          : 'bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+      className={`w-full flex items-center gap-3 text-left cursor-pointer transition-all duration-200 group ${
+        hideArtwork ? 'px-3 py-1.5' : 'border px-4 py-3'
       }`}
+      style={{
+        background: isPlaying ? 'rgba(139, 43, 56, 0.05)' : hideArtwork ? 'transparent' : 'var(--warm-white)',
+        borderColor: hideArtwork ? 'transparent' : isPlaying ? 'var(--accent)' : 'var(--border)',
+      }}
+      onMouseEnter={(e) => {
+        if (!hideArtwork) {
+          e.currentTarget.style.borderColor = 'var(--accent)';
+        }
+        e.currentTarget.style.background = isPlaying ? 'rgba(139, 43, 56, 0.08)' : 'rgba(139, 43, 56, 0.02)';
+      }}
+      onMouseLeave={(e) => {
+        if (!hideArtwork) {
+          e.currentTarget.style.borderColor = isPlaying ? 'var(--accent)' : 'var(--border)';
+        }
+        e.currentTarget.style.background = isPlaying ? 'rgba(139, 43, 56, 0.05)' : hideArtwork ? 'transparent' : 'var(--warm-white)';
+      }}
     >
       {!hideArtwork && track.album.images[0] && (
-        <Image
-          src={track.album.images[0].url}
-          alt={track.album.name}
-          width={40}
-          height={40}
-          className="rounded"
-        />
+        <div className="shrink-0 overflow-hidden" style={{ borderRadius: '2px' }}>
+          <Image
+            src={track.album.images[0].url}
+            alt={track.album.name}
+            width={44}
+            height={44}
+            className="transition-transform duration-300 group-hover:scale-105"
+          />
+        </div>
       )}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-black dark:text-zinc-50 truncate flex items-center gap-2">
-          <span className="truncate">{displayName ?? track.name}</span>
-          <span className="text-xs text-zinc-500">{formatDuration(track.duration_ms)}</span>
-        </p>
-        {shouldShowLine && (
-          <p className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
-            {showArtists ? artistNames : ''}
-            {showAlbum && (
-              <>
-                {showArtists && artistNames ? ' • ' : ''}
-                {track.album.name}
-              </>
-            )}
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium truncate" style={{ color: isPlaying ? 'var(--accent)' : 'var(--charcoal)' }}>
+            {displayName ?? track.name}
           </p>
-        )}
+          {shouldShowLine && (
+            <p className="text-xs truncate" style={{ color: 'var(--warm-gray)', fontSize: '0.65rem' }}>
+              {showArtists ? artistNames : ''}
+              {showAlbum && (
+                <>
+                  {showArtists && artistNames ? ' · ' : ''}
+                  {track.album.name}
+                </>
+              )}
+            </p>
+          )}
+        </div>
+        <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--warm-gray)', fontSize: '0.65rem' }}>
+          {formatDuration(track.duration_ms)}
+        </span>
       </div>
+      {isPlaying && (
+        <div className="shrink-0 flex items-center gap-px">
+          <div className="w-0.5 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent)', animationDelay: '0s' }} />
+          <div className="w-0.5 h-2.5 rounded-full animate-pulse" style={{ background: 'var(--accent)', animationDelay: '0.15s' }} />
+          <div className="w-0.5 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent)', animationDelay: '0.3s' }} />
+        </div>
+      )}
     </button>
   );
 }
