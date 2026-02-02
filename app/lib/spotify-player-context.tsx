@@ -137,7 +137,7 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
 
   const play = useCallback(
     async (uris: string[]) => {
-      if (!state.deviceId) return;
+      if (!state.deviceId || !accessTokenRef.current) return;
       const spotify = createSpotifySdk(accessTokenRef.current, spotifyClientId);
       await spotify.player.startResumePlayback(state.deviceId, undefined, uris);
     },

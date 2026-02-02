@@ -49,7 +49,8 @@ async function refreshSpotifyToken(
   const data = await response.json();
 
   // Update the token in the database
-  const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+  // Subtract 30 seconds to account for network latency and clock skew
+  const expiresAt = new Date(Date.now() + (data.expires_in - 30) * 1000);
 
   await db
     .update(account)
