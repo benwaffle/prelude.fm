@@ -49,7 +49,7 @@ async function refreshSpotifyToken(
   const data = await response.json();
 
   // Update the token in the database
-  const expiresAt = Date.now() + data.expires_in * 1000;
+  const expiresAt = new Date(Date.now() + data.expires_in * 1000);
 
   await db
     .update(account)
@@ -59,8 +59,9 @@ async function refreshSpotifyToken(
       // Spotify might return a new refresh token
       ...(data.refresh_token ? { refreshToken: data.refresh_token } : {}),
     })
-    .where(eq(account.userId, userId))
-    .where(eq(account.providerId, 'spotify'));
+    .where(
+      sql`${account.userId} = ${userId} AND ${account.providerId} = 'spotify'`,
+    );
 
   return {
     accessToken: data.access_token,
@@ -90,19 +91,28 @@ export async function getSpotifyToken(): Promise<string> {
   }
 
   // Check if token is expired or will expire in the next 5 minutes
-  const expiresAt = tokenResponse.expiresAt;
+  const expiresAt = tokenResponse.accessTokenExpiresAt;
   const now = Date.now();
   const fiveMinutes = 5 * 60 * 1000;
 
-  if (expiresAt && expiresAt < now + fiveMinutes) {
+  if (expiresAt && expiresAt.getTime() < now + fiveMinutes) {
     // Token is expired or about to expire, refresh it
     console.log('Spotify token expired or expiring soon, refreshing...');
 
-    if (!tokenResponse.refreshToken) {
+    // Fetch the refresh token from the database
+    const accountRecord = await db
+      .select({ refreshToken: account.refreshToken })
+      .from(account)
+      .where(
+        sql`${account.userId} = ${session.user.id} AND ${account.providerId} = 'spotify'`,
+      )
+      .limit(1);
+
+    if (!accountRecord[0]?.refreshToken) {
       throw new Error('No refresh token available');
     }
 
-    const refreshed = await refreshSpotifyToken(session.user.id, tokenResponse.refreshToken);
+    const refreshed = await refreshSpotifyToken(session.user.id, accountRecord[0].refreshToken);
     return refreshed.accessToken;
   }
 
