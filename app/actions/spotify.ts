@@ -9,9 +9,64 @@ import {
   work,
   composer,
   spotifyArtist,
+  account,
 } from '@/lib/db/schema';
 import { headers } from 'next/headers';
 import { inArray, eq, sql } from 'drizzle-orm';
+
+/**
+ * Refreshes an expired Spotify access token using the refresh token.
+ */
+async function refreshSpotifyToken(
+  userId: string,
+  refreshToken: string,
+): Promise<{ accessToken: string; expiresIn: number }> {
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error('Spotify client credentials not configured');
+  }
+
+  const response = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('Failed to refresh Spotify token:', error);
+    throw new Error('Failed to refresh Spotify token');
+  }
+
+  const data = await response.json();
+
+  // Update the token in the database
+  const expiresAt = Date.now() + data.expires_in * 1000;
+
+  await db
+    .update(account)
+    .set({
+      accessToken: data.access_token,
+      accessTokenExpiresAt: expiresAt,
+      // Spotify might return a new refresh token
+      ...(data.refresh_token ? { refreshToken: data.refresh_token } : {}),
+    })
+    .where(eq(account.userId, userId))
+    .where(eq(account.providerId, 'spotify'));
+
+  return {
+    accessToken: data.access_token,
+    expiresIn: data.expires_in,
+  };
+}
 
 export async function getSpotifyToken(): Promise<string> {
   const session = await auth.api.getSession({
@@ -32,6 +87,23 @@ export async function getSpotifyToken(): Promise<string> {
 
   if (!tokenResponse?.accessToken) {
     throw new Error('No Spotify access token');
+  }
+
+  // Check if token is expired or will expire in the next 5 minutes
+  const expiresAt = tokenResponse.expiresAt;
+  const now = Date.now();
+  const fiveMinutes = 5 * 60 * 1000;
+
+  if (expiresAt && expiresAt < now + fiveMinutes) {
+    // Token is expired or about to expire, refresh it
+    console.log('Spotify token expired or expiring soon, refreshing...');
+
+    if (!tokenResponse.refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    const refreshed = await refreshSpotifyToken(session.user.id, tokenResponse.refreshToken);
+    return refreshed.accessToken;
   }
 
   return tokenResponse.accessToken;
