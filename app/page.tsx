@@ -12,11 +12,21 @@ export default function Home() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
   useEffect(() => {
-    if (session) {
+    if (!session) return;
+
+    // Fetch token immediately
+    const fetchToken = () => {
       getSpotifyToken()
         .then((token) => setAccessToken(token))
         .catch((err) => console.error('Error fetching token:', err));
-    }
+    };
+
+    fetchToken();
+
+    // Refresh token every 50 minutes (tokens expire in 60 minutes)
+    const interval = setInterval(fetchToken, 50 * 60 * 1000);
+
+    return () => clearInterval(interval);
   }, [session]);
 
   const handleSignIn = async () => {

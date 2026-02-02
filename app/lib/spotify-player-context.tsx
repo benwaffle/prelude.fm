@@ -63,6 +63,12 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
     paused: true,
   });
   const progressSubscribersRef = useRef<Set<(progress: PlaybackProgress) => void>>(new Set());
+  const accessTokenRef = useRef(accessToken);
+
+  // Update token ref when it changes
+  useEffect(() => {
+    accessTokenRef.current = accessToken;
+  }, [accessToken]);
 
   // Notify progress subscribers
   const notifyProgressSubscribers = useCallback(() => {
@@ -79,7 +85,7 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
     window.onSpotifyWebPlaybackSDKReady = () => {
       const player = new window.Spotify.Player({
         name: 'prelude.fm',
-        getOAuthToken: (cb) => cb(accessToken),
+        getOAuthToken: (cb) => cb(accessTokenRef.current),
         volume: 1,
       });
 
@@ -131,11 +137,11 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
 
   const play = useCallback(
     async (uris: string[]) => {
-      if (!state.deviceId) return;
-      const spotify = createSpotifySdk(accessToken, spotifyClientId);
+      if (!state.deviceId || !accessTokenRef.current) return;
+      const spotify = createSpotifySdk(accessTokenRef.current, spotifyClientId);
       await spotify.player.startResumePlayback(state.deviceId, undefined, uris);
     },
-    [state.deviceId, accessToken],
+    [state.deviceId],
   );
 
   const pause = useCallback(async () => {
