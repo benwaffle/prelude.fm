@@ -12,7 +12,7 @@
  *   pnpm mb:backfill composers   work composer rels -> composer MBIDs + dates
  *   pnpm mb:backfill report      what has landed so far
  */
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
   composer,
@@ -39,6 +39,7 @@ import {
 import { getSpotifyTracksByIds } from '@/lib/spotify-app-client';
 import { normalizeCatalogNumber, normalizeCatalogSystem } from '@/lib/classical-normalization';
 import { titlesAreCompatible } from '@/lib/metadata-matching';
+import { composerMatchIsCredible } from '@/lib/musicbrainz-promotion';
 
 const BATCH = 50;
 /**
@@ -457,9 +458,11 @@ async function voteComposers() {
 
 async function backfillComposers() {
   // Identity comes from the composer relationship on works we matched, not from
-  // matching names: a name search cannot tell two Bachs apart, a work relationship can.
-  const facts = await db
-    .select({ entityId: musicbrainzFact.entityId, value: musicbrainzFact.value })
+  // matching names: a name search cannot tell four Bachs apart. But the
+  // relationship can still be confidently wrong — a transcription performs the
+  // original composer's work — so each candidate is corroborated before use.
+  const candidates = await db
+    .select({ entityId: musicbrainzFact.entityId, artistId: musicbrainzFact.value })
     .from(musicbrainzFact)
     .where(
       and(
@@ -467,7 +470,7 @@ async function backfillComposers() {
         eq(musicbrainzFact.field, 'musicbrainz_artist'),
       ),
     );
-  log(`[composers] ${facts.length} composers identified via work relationships`);
+  log(`[composers] ${candidates.length} candidates from work relationships`);
 
   const taken = new Set(
     (
@@ -480,38 +483,72 @@ async function backfillComposers() {
 
   let linked = 0;
   let dates = 0;
+  let rejected = 0;
   const seen = new Set<number>();
-  for (const fact of facts) {
-    if (seen.has(fact.entityId)) continue;
-    seen.add(fact.entityId);
-    const existing = await db
-      .select({ id: composer.id, mbid: composer.musicbrainzId })
+  for (const candidate of candidates) {
+    if (seen.has(candidate.entityId)) continue;
+    seen.add(candidate.entityId);
+
+    const [ours] = await db
+      .select({
+        id: composer.id,
+        name: composer.name,
+        birthYear: composer.birthYear,
+        mbid: composer.musicbrainzId,
+      })
       .from(composer)
-      .where(eq(composer.id, fact.entityId))
+      .where(eq(composer.id, candidate.entityId))
       .limit(1);
-    if (!existing.length) continue;
-    if (!existing[0].mbid) {
-      if (taken.has(fact.value)) continue;
-      taken.add(fact.value);
+    if (!ours) continue;
+
+    const artist = await getArtist(candidate.artistId);
+    if (!artist) continue;
+
+    const mbBirth = yearOf(artist['life-span']?.begin);
+    if (!composerMatchIsCredible(ours.name, ours.birthYear, artist.name, mbBirth)) {
+      rejected++;
+      log(
+        `  ! ${ours.name} -> "${artist.name}" (b.${mbBirth ?? '?'}) is not the same person; left unset`,
+      );
+      continue;
+    }
+
+    if (!ours.mbid) {
+      if (taken.has(candidate.artistId)) continue;
+      taken.add(candidate.artistId);
       await db
         .update(composer)
-        .set({ musicbrainzId: fact.value })
-        .where(eq(composer.id, fact.entityId));
+        .set({ musicbrainzId: candidate.artistId })
+        .where(eq(composer.id, ours.id));
       linked++;
     }
-    const artist = await getArtist(fact.value);
-    if (!artist) continue;
-    const birth = yearOf(artist['life-span']?.begin);
-    const death = yearOf(artist['life-span']?.end);
-    if (birth != null) {
-      await recordFact('composer', fact.entityId, 'birth_year', String(birth), artist.id);
+
+    const mbDeath = yearOf(artist['life-span']?.end);
+    if (mbBirth != null) {
+      await recordFact('composer', ours.id, 'birth_year', String(mbBirth), artist.id);
       dates++;
     }
-    if (death != null) {
-      await recordFact('composer', fact.entityId, 'death_year', String(death), artist.id);
+    if (mbDeath != null) {
+      await recordFact('composer', ours.id, 'death_year', String(mbDeath), artist.id);
     }
   }
-  log(`[composers] linked ${linked} composers, recorded dates for ${dates}`);
+  log(
+    `[composers] linked ${linked}, dates for ${dates}, ${rejected} rejected as a different person`,
+  );
+}
+
+/** Undo composer links so they can be decided again. */
+async function resetComposerLinks() {
+  await db.update(composer).set({ musicbrainzId: null });
+  await db
+    .delete(musicbrainzFact)
+    .where(
+      and(
+        eq(musicbrainzFact.entityType, 'composer'),
+        inArray(musicbrainzFact.field, ['birth_year', 'death_year']),
+      ),
+    );
+  log('[reset] cleared composer links and imported dates');
 }
 
 /* ------------------------------------------------------------- report --- */
@@ -579,6 +616,7 @@ const steps: Record<string, () => Promise<void>> = {
   recordings: backfillRecordings,
   works: backfillWorks,
   'reset-works': resetWorkLinks,
+  'reset-composers': resetComposerLinks,
   composers: backfillComposers,
   report,
 };

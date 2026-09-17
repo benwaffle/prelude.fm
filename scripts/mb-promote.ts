@@ -22,6 +22,7 @@ import {
 import {
   decidePromotion,
   formFromWorkType,
+  movementTitleFromMusicBrainz,
   textuallyEqual,
   yearsEqual,
 } from '@/lib/musicbrainz-promotion';
@@ -137,33 +138,45 @@ async function promoteWorkForm() {
 async function promotePartTitles() {
   const facts = await load('work_part', 'part_title');
   const current = new Map(
-    (await db.select({ id: workPartV2.id, title: workPartV2.title }).from(workPartV2)).map((r) => [
-      r.id,
-      r.title,
-    ]),
+    (
+      await db
+        .select({ id: workPartV2.id, title: workPartV2.title, label: workPartV2.label })
+        .from(workPartV2)
+    ).map((r) => [r.id, r]),
   );
 
   const plans: Plan[] = [];
+  let unusable = 0;
   for (const fact of facts) {
-    if (!current.has(fact.entityId)) continue;
-    const held = current.get(fact.entityId) ?? null;
+    const row = current.get(fact.entityId);
+    if (!row) continue;
 
-    const outcome = decidePromotion(held, fact.value, textuallyEqual);
+    // MusicBrainz keeps numbering inside the title and sometimes names the
+    // whole work; neither belongs in a column we render beside our own label.
+    const incoming = movementTitleFromMusicBrainz(fact.value, row.label);
+    if (!incoming) {
+      unusable++;
+      continue;
+    }
+
+    const outcome = decidePromotion(row.title, incoming, textuallyEqual);
     plans.push({
       field: 'part_title',
       entityId: fact.entityId,
-      current: held,
-      incoming: fact.value,
+      current: row.title,
+      incoming,
       outcome: outcome === 'fill' ? 'filled' : outcome === 'agree' ? 'agreed' : 'conflict',
     });
 
     if (outcome === 'fill' && apply) {
-      await db
-        .update(workPartV2)
-        .set({ title: fact.value })
-        .where(eq(workPartV2.id, fact.entityId));
+      await db.update(workPartV2).set({ title: incoming }).where(eq(workPartV2.id, fact.entityId));
       await clearStaleDecision('work_part_v2', String(fact.entityId), 'no_part_name');
     }
+  }
+  if (unusable) {
+    console.log(
+      `${unusable} MusicBrainz part titles named a work rather than a movement and were discarded.`,
+    );
   }
   return plans;
 }

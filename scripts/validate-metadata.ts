@@ -539,13 +539,28 @@ async function main() {
       workForm: sql`(
         select count(*) from musicbrainz_fact f join work w on w.id = f.entity_id
         where f.entity_type = 'work' and f.field = 'work_type' and w.form is null)`.mapWith(Number),
-      partTitle: sql`(
-        select count(*) from musicbrainz_fact f join work_part_v2 p on p.id = f.entity_id
-        where f.entity_type = 'work_part' and f.field = 'part_title' and p.title is null)`.mapWith(
-        Number,
-      ),
     })
     .from(sql`(select 1)`);
+
+  // Counting raw facts here would promise fills that promotion then refuses:
+  // MusicBrainz often names the whole work where we expect a movement, and
+  // those values are discarded rather than written. Applying the same
+  // transformation keeps this honest about what running it would do.
+  const { movementTitleFromMusicBrainz } = await import('@/lib/musicbrainz-promotion');
+  const partTitleCandidates = await db
+    .select({ label: schema.workPartV2.label, value: schema.musicbrainzFact.value })
+    .from(schema.musicbrainzFact)
+    .innerJoin(schema.workPartV2, eq(schema.workPartV2.id, schema.musicbrainzFact.entityId))
+    .where(
+      and(
+        eq(schema.musicbrainzFact.entityType, 'work_part'),
+        eq(schema.musicbrainzFact.field, 'part_title'),
+        isNull(schema.workPartV2.title),
+      ),
+    );
+  const partTitleFillable = partTitleCandidates.filter(
+    (row) => movementTitleFromMusicBrainz(row.value, row.label) !== null,
+  ).length;
 
   const failingMetrics = new Set([
     'tracksWithoutRecording',
@@ -567,7 +582,11 @@ async function main() {
           ok: !hasHardFailures,
           hardInvariants,
           reviewBacklog,
-          musicbrainz: { coverage: mbCoverage, conflicts: mbConflicts, fillable: mbFillable },
+          musicbrainz: {
+            coverage: mbCoverage,
+            conflicts: mbConflicts,
+            fillable: { ...mbFillable, partTitle: partTitleFillable },
+          },
           closedByReview: Object.fromEntries(
             recordedReviews.map((row) => [row.decision, row.value]),
           ),
@@ -610,11 +629,13 @@ async function main() {
         { metric: 'catalogue rows imported', value: String(mbCoverage.catalogueRows) },
         { metric: 'facts recorded', value: String(mbCoverage.facts) },
       ]);
-      const fillable = Object.values(mbFillable).reduce((a, b) => a + b, 0);
+      const fillable = mbFillable.composerBirthYear + mbFillable.workForm + partTitleFillable;
       const conflicting = Object.values(mbConflicts).reduce((a, b) => a + b, 0);
       if (fillable > 0 || conflicting > 0) {
         console.log(
-          `MusicBrainz can fill ${fillable} empty field(s) — run \`pnpm mb:promote\`.\n` +
+          (fillable > 0
+            ? `MusicBrainz can fill ${fillable} empty field(s) — run \`pnpm mb:promote\`.\n`
+            : 'Nothing left for MusicBrainz to fill.\n') +
             `${conflicting} field(s) differ from what we hold; promotion never overwrites them.`,
         );
         console.table([
@@ -625,7 +646,7 @@ async function main() {
           },
           { field: 'composer death year', fillable: '-', differs: mbConflicts.composerDeathYear },
           { field: 'work form', fillable: mbFillable.workForm, differs: mbConflicts.workForm },
-          { field: 'part title', fillable: mbFillable.partTitle, differs: mbConflicts.partTitle },
+          { field: 'part title', fillable: partTitleFillable, differs: mbConflicts.partTitle },
         ]);
       }
     }
