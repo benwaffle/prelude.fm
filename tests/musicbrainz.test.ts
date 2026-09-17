@@ -5,10 +5,12 @@ import {
   childPartsOf,
   composerOf,
   parentWorkOf,
+  resolveWorkLevel,
   stripParentPrefix,
   yearOf,
   type MbWork,
 } from '../app/lib/musicbrainz';
+import { titlesAreCompatible } from '../app/lib/metadata-matching';
 
 const bwv1067: MbWork = {
   id: '179cc1f2-1135-4619-85f0-e42cd9d00979',
@@ -105,4 +107,59 @@ test('reads a year from a MusicBrainz life-span date', () => {
   assert.equal(yearOf('1845'), 1845);
   assert.equal(yearOf(null), null);
   assert.equal(yearOf(''), null);
+});
+
+test('a multi-movement work resolves to the parent its movements share', () => {
+  // A symphony: every movement is a leaf under one work.
+  const parts = [
+    { leafId: 'mvt1', parentId: 'sym', title: 'I. Allegro' },
+    { leafId: 'mvt2', parentId: 'sym', title: 'II. Andante' },
+    { leafId: 'mvt3', parentId: 'sym', title: 'III. Scherzo' },
+  ];
+  assert.equal(resolveWorkLevel('Symphony no. 5', parts, titlesAreCompatible), 'sym');
+});
+
+test('a work matched at two depths resolves to the lower of them', () => {
+  // Real case: our "Prelude and Fugue No. 2" has tracks of the prelude and the
+  // fugue separately, and tracks of the whole thing. The whole-work tracks sit
+  // under The Well-Tempered Clavier, so taking the parent would file us there.
+  const parts = [
+    { leafId: 'prelude', parentId: 'pf2', title: 'Prelude' },
+    { leafId: 'fugue', parentId: 'pf2', title: 'Fugue' },
+    { leafId: 'pf2', parentId: 'wtc-book-1', title: 'Prelude and Fugue no. 2 in C minor' },
+    { leafId: 'pf2', parentId: 'wtc-book-1', title: 'Prelude and Fugue no. 2 in C minor' },
+  ];
+  assert.equal(
+    resolveWorkLevel('Prelude and Fugue No. 2 in C Minor', parts, titlesAreCompatible),
+    'pf2',
+  );
+});
+
+test('a single-part work is the piece itself when the titles agree', () => {
+  // A film cue is a work for us and a part of the soundtrack for MusicBrainz.
+  // Ours is the cue, so the cue is what we link to.
+  const parts = [{ leafId: 'black-pearl', parentId: 'potc-soundtrack', title: 'The Black Pearl' }];
+  assert.equal(resolveWorkLevel('The Black Pearl', parts, titlesAreCompatible), 'black-pearl');
+});
+
+test('a single part that is plainly a movement resolves to the parent', () => {
+  // We hold one movement of a larger work; the work is what we mean.
+  const parts = [{ leafId: 'mvt2', parentId: 'concerto', title: 'II. Adagio' }];
+  assert.equal(
+    resolveWorkLevel('Violin Concerto in A minor', parts, titlesAreCompatible),
+    'concerto',
+  );
+});
+
+test('records nothing when parts name unrelated works', () => {
+  const parts = [
+    { leafId: 'a', parentId: 'work-a', title: 'I' },
+    { leafId: 'b', parentId: 'work-b', title: 'II' },
+  ];
+  assert.equal(resolveWorkLevel('Something', parts, titlesAreCompatible), null);
+});
+
+test('records nothing for a single part with no parent and no title agreement', () => {
+  const parts = [{ leafId: 'solo', parentId: 'solo', title: 'Completely Different' }];
+  assert.equal(resolveWorkLevel('Our Title', parts, titlesAreCompatible), null);
 });

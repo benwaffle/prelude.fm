@@ -232,3 +232,63 @@ export function yearOf(value: string | null | undefined): number | null {
   const match = /^(\d{4})/.exec(value ?? '');
   return match ? Number(match[1]) : null;
 }
+
+/** One of our parts, with what MusicBrainz said about it. */
+export type MatchedPart = {
+  /** The MusicBrainz work this part was recorded as. */
+  leafId: string;
+  /** That work's parent, or the work itself when it has none. */
+  parentId: string;
+  /** The MusicBrainz title, with any parent prefix already removed. */
+  title: string;
+};
+
+/**
+ * Decide which MusicBrainz work corresponds to one of ours.
+ *
+ * MusicBrainz's hierarchy is deeper than ours and its depth varies, so "the
+ * parent of whatever the recording performed" is not a reliable answer. The
+ * Well-Tempered Clavier is a single MusicBrainz work whose parts are the
+ * preludes and fugues; a track of a whole prelude-and-fugue therefore resolves
+ * to a work whose parent is the entire book, while a track of just the prelude
+ * resolves one level lower. Taking the parent in both cases files two dozen of
+ * our works under the book.
+ *
+ * The rule is to find the level whose children are our parts:
+ *
+ * - If one matched work is the parent of the others, our parts are its
+ *   movements and it is our work.
+ * - If every matched work shares one parent, our parts are that parent's
+ *   movements.
+ * - A work with a single part is that piece, so long as MusicBrainz's title
+ *   agrees. Where it does not — we hold one movement of something larger — the
+ *   parent is the better answer.
+ *
+ * Returns null when the parts disagree, which usually means a match further
+ * upstream is wrong; choosing between them would bury that.
+ */
+export function resolveWorkLevel(
+  ourTitle: string,
+  parts: MatchedPart[],
+  titlesAgree: (a: string, b: string) => boolean,
+): string | null {
+  if (parts.length === 0) return null;
+
+  if (parts.length === 1) {
+    const [only] = parts;
+    if (titlesAgree(ourTitle, only.title)) return only.leafId;
+    return only.parentId === only.leafId ? null : only.parentId;
+  }
+
+  const leaves = new Set(parts.map((part) => part.leafId));
+  const parents = new Set(parts.map((part) => part.parentId));
+
+  // A matched work that is also the parent of other matched works sits exactly
+  // at our level: its children are the rest of our parts.
+  const ancestors = [...leaves].filter((leaf) => parents.has(leaf));
+  if (ancestors.length === 1) return ancestors[0];
+  if (ancestors.length > 1) return null;
+
+  if (parents.size === 1) return [...parents][0];
+  return null;
+}

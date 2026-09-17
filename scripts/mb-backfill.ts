@@ -31,11 +31,14 @@ import {
   getRecordingWorks,
   getWork,
   parentWorkOf,
+  resolveWorkLevel,
   stripParentPrefix,
+  type MatchedPart,
   yearOf,
 } from '@/lib/musicbrainz';
 import { getSpotifyTracksByIds } from '@/lib/spotify-app-client';
 import { normalizeCatalogNumber, normalizeCatalogSystem } from '@/lib/classical-normalization';
+import { titlesAreCompatible } from '@/lib/metadata-matching';
 
 const BATCH = 50;
 /**
@@ -279,8 +282,18 @@ async function fetchLeafWorks() {
 /** Phase C — decide our work's MusicBrainz identity from its parts. Database only. */
 async function linkWorks() {
   const rows = await db
-    .select({ partId: workPartV2.id, workId: workPartV2.workId, parent: musicbrainzFact.value })
+    .select({
+      workId: workPartV2.workId,
+      workTitle: work.title,
+      leafId: workPartV2.musicbrainzId,
+      parentId: musicbrainzFact.value,
+      partTitle: sql<string>`(
+        select value from musicbrainz_fact t
+        where t.entity_type = 'work_part' and t.entity_id = ${workPartV2.id}
+          and t.field = 'part_title')`,
+    })
     .from(workPartV2)
+    .innerJoin(work, eq(work.id, workPartV2.workId))
     .innerJoin(
       musicbrainzFact,
       and(
@@ -289,8 +302,14 @@ async function linkWorks() {
         eq(musicbrainzFact.field, 'mb_parent_work'),
       ),
     );
-  const votes: Vote = new Map();
-  for (const row of rows) vote(votes, row.workId, row.parent);
+
+  const byWork = new Map<number, { title: string; parts: MatchedPart[] }>();
+  for (const row of rows) {
+    if (!row.leafId) continue;
+    const entry = byWork.get(row.workId) ?? { title: row.workTitle, parts: [] };
+    entry.parts.push({ leafId: row.leafId, parentId: row.parentId, title: row.partTitle ?? '' });
+    byWork.set(row.workId, entry);
+  }
 
   // work.musicbrainz_id is unique; two of our works must never claim one MBID.
   const taken = new Set(
@@ -299,25 +318,36 @@ async function linkWorks() {
     ).map((r) => r.mbid as string),
   );
   let linked = 0;
-  let split = 0;
-  let collisions = 0;
-  for (const [workId, counts] of votes) {
-    const chosen = winner(counts);
-    // Parts disagreeing about which work they belong to is not something to
-    // resolve by picking one; it means a match upstream is wrong.
+  let unresolved = 0;
+  const claims = new Map<string, number[]>();
+  for (const [workId, entry] of byWork) {
+    const chosen = resolveWorkLevel(entry.title, entry.parts, titlesAreCompatible);
     if (!chosen) {
-      split++;
+      unresolved++;
       continue;
     }
-    if (taken.has(chosen)) {
-      collisions++;
+    const list = claims.get(chosen) ?? [];
+    list.push(workId);
+    claims.set(chosen, list);
+  }
+
+  let contested = 0;
+  for (const [mbid, workIds] of claims) {
+    // Several of our works resolving to one MusicBrainz work means either they
+    // are duplicates of each other or the level is wrong. Either way it is not
+    // a thing to settle by taking whichever came first.
+    if (workIds.length > 1) {
+      contested += workIds.length;
       continue;
     }
-    taken.add(chosen);
-    await db.update(work).set({ musicbrainzId: chosen }).where(eq(work.id, workId));
+    if (taken.has(mbid)) continue;
+    taken.add(mbid);
+    await db.update(work).set({ musicbrainzId: mbid }).where(eq(work.id, workIds[0]));
     linked++;
   }
-  log(`[works/C] linked ${linked} works (${split} split votes, ${collisions} MBID collisions)`);
+  log(
+    `[works/C] linked ${linked} works (${unresolved} unresolved, ${contested} contested by several of our works)`,
+  );
 }
 
 /** Phase D — read each matched work for its type, catalogues and composer. */
@@ -524,10 +554,31 @@ async function report() {
 
 /* --------------------------------------------------------------- main --- */
 
+/**
+ * Undo the work-level decisions so they can be made again, keeping the
+ * part-level lookups that cost thousands of requests to obtain.
+ */
+async function resetWorkLinks() {
+  await db.update(work).set({ musicbrainzId: null });
+  await db.delete(workCatalogV2).where(eq(workCatalogV2.source, 'musicbrainz'));
+  await db.delete(musicbrainzFact).where(and(eq(musicbrainzFact.entityType, 'work')));
+  await db
+    .delete(musicbrainzFact)
+    .where(
+      and(
+        eq(musicbrainzFact.entityType, 'composer'),
+        eq(musicbrainzFact.field, 'musicbrainz_artist'),
+      ),
+    );
+  await db.update(composer).set({ musicbrainzId: null });
+  log('[reset] cleared work links, imported catalogue rows and work/composer facts');
+}
+
 const steps: Record<string, () => Promise<void>> = {
   isrcs: backfillIsrcs,
   recordings: backfillRecordings,
   works: backfillWorks,
+  'reset-works': resetWorkLinks,
   composers: backfillComposers,
   report,
 };
