@@ -128,6 +128,8 @@ export const composer = sqliteTable('composer', {
   spotifyArtistId: text('spotify_artist_id')
     .unique()
     .references(() => spotifyArtist.spotifyId),
+  /** MusicBrainz artist MBID, when we have confidently matched this composer. */
+  musicbrainzId: text('musicbrainz_id').unique(),
 });
 
 export const work = sqliteTable(
@@ -143,6 +145,8 @@ export const work = sqliteTable(
     catalogNumber: text('catalog_number'), // "1052", "27/2" - nullable for works without catalog numbers
     yearComposed: integer('year_composed'),
     form: text('form'), // "concerto", "sonata", "fugue"
+    /** MusicBrainz work MBID of the *parent* work, when matched. */
+    musicbrainzId: text('musicbrainz_id').unique(),
   },
   (table) => [
     index('work_composer_idx').on(table.composerId),
@@ -202,17 +206,32 @@ export const recording = sqliteTable(
   ],
 );
 
-export const spotifyTrack = sqliteTable('spotify_track', {
-  spotifyId: text('spotify_id').primaryKey(),
-  title: text('title').notNull(),
-  trackNumber: integer('track_number').notNull(),
-  discNumber: integer('disc_number').default(1).notNull(),
-  durationMs: integer('duration_ms').notNull(),
-  popularity: integer('popularity'),
-  spotifyAlbumId: text('spotify_album_id')
-    .notNull()
-    .references(() => spotifyAlbum.spotifyId),
-});
+export const spotifyTrack = sqliteTable(
+  'spotify_track',
+  {
+    spotifyId: text('spotify_id').primaryKey(),
+    title: text('title').notNull(),
+    trackNumber: integer('track_number').notNull(),
+    discNumber: integer('disc_number').default(1).notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    popularity: integer('popularity'),
+    spotifyAlbumId: text('spotify_album_id')
+      .notNull()
+      .references(() => spotifyAlbum.spotifyId),
+    /**
+     * The track's ISRC as Spotify reports it. Stored rather than re-fetched
+     * because it is the join key into MusicBrainz, and re-deriving it for the
+     * whole library costs a full pass over the Spotify API.
+     */
+    isrc: text('isrc'),
+    /** MusicBrainz recording MBID this ISRC resolves to, when it resolves. */
+    mbRecordingId: text('mb_recording_id'),
+  },
+  (table) => [
+    index('spotify_track_isrc_idx').on(table.isrc),
+    index('spotify_track_mb_recording_idx').on(table.mbRecordingId),
+  ],
+);
 
 /**
  * Parallel v2 metadata tables. These intentionally coexist with movement,
@@ -230,6 +249,16 @@ export const workCatalogV2 = sqliteTable(
     normalizedSystem: text('normalized_system').notNull(),
     normalizedNumber: text('normalized_number').notNull(),
     isPrimary: integer('is_primary', { mode: 'boolean' }).default(false).notNull(),
+    /**
+     * Where this catalogue reference came from. MusicBrainz carries alternate
+     * catalogues our parser never sees (Chopin's B./C., Scarlatti's Longo,
+     * the revised Köchel), and a reader searching by one of those needs to
+     * find the work. Keeping the source means a wrong import can be undone
+     * without touching parser-derived rows.
+     */
+    source: text('source', { enum: ['parser', 'musicbrainz'] })
+      .default('parser')
+      .notNull(),
   },
   (table) => [
     index('work_catalog_v2_work_idx').on(table.workId),
@@ -252,9 +281,12 @@ export const workPartV2 = sqliteTable(
     position: integer('position').notNull(),
     label: text('label'),
     title: text('title'),
+    /** MusicBrainz work MBID of the movement/leaf work, when matched. */
+    musicbrainzId: text('musicbrainz_id'),
   },
   (table) => [
     index('work_part_v2_work_idx').on(table.workId),
+    index('work_part_v2_musicbrainz_idx').on(table.musicbrainzId),
     uniqueIndex('work_part_v2_work_position_idx').on(table.workId, table.position),
   ],
 );
@@ -304,7 +336,9 @@ export const trackWorkPartV2 = sqliteTable(
       .references(() => workPartV2.id),
     startMs: integer('start_ms'),
     endMs: integer('end_ms'),
-    matchSource: text('match_source', { enum: ['parser', 'migrated', 'manual'] })
+    matchSource: text('match_source', {
+      enum: ['parser', 'migrated', 'manual', 'musicbrainz'],
+    })
       .default('migrated')
       .notNull(),
     matchStatus: text('match_status', { enum: ['confirmed', 'needs_review'] })
@@ -315,6 +349,44 @@ export const trackWorkPartV2 = sqliteTable(
     primaryKey({ columns: [table.spotifyTrackId, table.workPartId] }),
     index('track_work_part_v2_part_idx').on(table.workPartId),
     index('track_work_part_v2_status_idx').on(table.matchStatus),
+  ],
+);
+
+/**
+ * What MusicBrainz asserts about entities we have already matched to it.
+ *
+ * Kept apart from the columns the app reads so that importing MusicBrainz
+ * never silently overwrites something we already know. A value here is a
+ * second opinion: where our own column is empty it is a gap we can close,
+ * and where the two differ it is a disagreement a person should look at.
+ * Folding the two together would destroy exactly that distinction.
+ *
+ * Decisions about a fact — accepted, rejected, "reviewed, they disagree and
+ * ours is right" — belong in `metadata_migration_audit` like every other
+ * metadata decision, not here. This table only records what MusicBrainz said.
+ */
+export const musicbrainzFact = sqliteTable(
+  'musicbrainz_fact',
+  {
+    id: integer('id').primaryKey(),
+    entityType: text('entity_type', { enum: ['composer', 'work', 'work_part'] }).notNull(),
+    entityId: integer('entity_id').notNull(),
+    /** 'birth_year' | 'death_year' | 'work_type' | 'part_title' */
+    field: text('field').notNull(),
+    value: text('value').notNull(),
+    /** The MusicBrainz entity the fact was read from. */
+    musicbrainzId: text('musicbrainz_id').notNull(),
+    fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('musicbrainz_fact_entity_field_idx').on(
+      table.entityType,
+      table.entityId,
+      table.field,
+    ),
+    index('musicbrainz_fact_field_idx').on(table.field),
   ],
 );
 

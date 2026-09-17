@@ -205,6 +205,11 @@ export async function updateWorkDetails(
             and(
               eq(work.composerId, result.composerId),
               ne(work.id, workId),
+              // Only another work's *own* catalogue reference blocks this edit.
+              // An imported MusicBrainz alternate is unreviewed, and letting one
+              // veto a human's edit would put the import above the editor.
+              // A genuine clash between the two belongs in the review backlog.
+              eq(workCatalogV2.source, 'parser'),
               eq(workCatalogV2.normalizedSystem, normalizeCatalogSystem(data.catalogSystem)),
               eq(workCatalogV2.normalizedNumber, normalizeCatalogNumber(data.catalogNumber)),
             ),
@@ -216,7 +221,13 @@ export async function updateWorkDetails(
           );
         }
       }
-      await transaction.delete(workCatalogV2).where(eq(workCatalogV2.workId, workId));
+      // Replace only what the parser put here. MusicBrainz-sourced alternates
+      // (Chopin's B./C. numbers, Scarlatti's Longo) are a different source of
+      // truth, and an edit to this work's own catalogue reference is not a
+      // statement about them — deleting them here would quietly undo an import.
+      await transaction
+        .delete(workCatalogV2)
+        .where(and(eq(workCatalogV2.workId, workId), eq(workCatalogV2.source, 'parser')));
       await ensureWorkCatalogV2(workId, data.catalogSystem, data.catalogNumber, transaction);
     }
     return result;

@@ -487,6 +487,66 @@ async function main() {
   };
   const details = { hardViolations: hardViolationDetails, ...reviewDetails };
 
+  // MusicBrainz is a second source, not an authority: this section measures how
+  // much of the library it reaches and where it disagrees with us. Disagreements
+  // are reported, never resolved here — our parser is often the more specific of
+  // the two, so a difference is a prompt to look, not a defect.
+  const [mbCoverage] = await db
+    .select({
+      tracks: sql`(select count(*) from spotify_track)`.mapWith(Number),
+      tracksWithIsrc: sql`(select count(isrc) from spotify_track)`.mapWith(Number),
+      tracksWithRecording: sql`(select count(mb_recording_id) from spotify_track)`.mapWith(Number),
+      works: sql`(select count(*) from work)`.mapWith(Number),
+      worksLinked: sql`(select count(musicbrainz_id) from work)`.mapWith(Number),
+      parts: sql`(select count(*) from work_part_v2)`.mapWith(Number),
+      partsLinked: sql`(select count(musicbrainz_id) from work_part_v2)`.mapWith(Number),
+      composers: sql`(select count(*) from composer)`.mapWith(Number),
+      composersLinked: sql`(select count(musicbrainz_id) from composer)`.mapWith(Number),
+      catalogueRows:
+        sql`(select count(*) from work_catalog_v2 where source = 'musicbrainz')`.mapWith(Number),
+      facts: sql`(select count(*) from musicbrainz_fact)`.mapWith(Number),
+    })
+    .from(sql`(select 1)`);
+
+  const [mbConflicts] = await db
+    .select({
+      composerBirthYear: sql`(
+        select count(*) from musicbrainz_fact f join composer c on c.id = f.entity_id
+        where f.entity_type = 'composer' and f.field = 'birth_year'
+          and c.birth_year is not null and cast(c.birth_year as text) <> f.value)`.mapWith(Number),
+      composerDeathYear: sql`(
+        select count(*) from musicbrainz_fact f join composer c on c.id = f.entity_id
+        where f.entity_type = 'composer' and f.field = 'death_year'
+          and c.death_year is not null and cast(c.death_year as text) <> f.value)`.mapWith(Number),
+      workForm: sql`(
+        select count(*) from musicbrainz_fact f join work w on w.id = f.entity_id
+        where f.entity_type = 'work' and f.field = 'work_type'
+          and w.form is not null and lower(w.form) <> lower(f.value))`.mapWith(Number),
+      partTitle: sql`(
+        select count(*) from musicbrainz_fact f join work_part_v2 p on p.id = f.entity_id
+        where f.entity_type = 'work_part' and f.field = 'part_title'
+          and p.title is not null and lower(p.title) <> lower(f.value))`.mapWith(Number),
+    })
+    .from(sql`(select 1)`);
+
+  const [mbFillable] = await db
+    .select({
+      composerBirthYear: sql`(
+        select count(*) from musicbrainz_fact f join composer c on c.id = f.entity_id
+        where f.entity_type = 'composer' and f.field = 'birth_year' and c.birth_year is null)`.mapWith(
+        Number,
+      ),
+      workForm: sql`(
+        select count(*) from musicbrainz_fact f join work w on w.id = f.entity_id
+        where f.entity_type = 'work' and f.field = 'work_type' and w.form is null)`.mapWith(Number),
+      partTitle: sql`(
+        select count(*) from musicbrainz_fact f join work_part_v2 p on p.id = f.entity_id
+        where f.entity_type = 'work_part' and f.field = 'part_title' and p.title is null)`.mapWith(
+        Number,
+      ),
+    })
+    .from(sql`(select 1)`);
+
   const failingMetrics = new Set([
     'tracksWithoutRecording',
     'recordingTracksWithoutParts',
@@ -507,6 +567,7 @@ async function main() {
           ok: !hasHardFailures,
           hardInvariants,
           reviewBacklog,
+          musicbrainz: { coverage: mbCoverage, conflicts: mbConflicts, fillable: mbFillable },
           closedByReview: Object.fromEntries(
             recordedReviews.map((row) => [row.decision, row.value]),
           ),
@@ -529,6 +590,46 @@ async function main() {
     console.table(
       Object.entries(reviewBacklog).map(([metric, value]) => ({ metric, count: value })),
     );
+    if (mbCoverage.facts > 0 || mbCoverage.tracksWithIsrc > 0) {
+      console.log('\nMusicBrainz (second source; informational)');
+      console.table([
+        {
+          metric: 'tracks with an ISRC',
+          value: `${mbCoverage.tracksWithIsrc} / ${mbCoverage.tracks}`,
+        },
+        {
+          metric: 'tracks matched to a recording',
+          value: `${mbCoverage.tracksWithRecording} / ${mbCoverage.tracks}`,
+        },
+        { metric: 'works linked', value: `${mbCoverage.worksLinked} / ${mbCoverage.works}` },
+        { metric: 'parts linked', value: `${mbCoverage.partsLinked} / ${mbCoverage.parts}` },
+        {
+          metric: 'composers linked',
+          value: `${mbCoverage.composersLinked} / ${mbCoverage.composers}`,
+        },
+        { metric: 'catalogue rows imported', value: String(mbCoverage.catalogueRows) },
+        { metric: 'facts recorded', value: String(mbCoverage.facts) },
+      ]);
+      const fillable = Object.values(mbFillable).reduce((a, b) => a + b, 0);
+      const conflicting = Object.values(mbConflicts).reduce((a, b) => a + b, 0);
+      if (fillable > 0 || conflicting > 0) {
+        console.log(
+          `MusicBrainz can fill ${fillable} empty field(s) — run \`pnpm mb:promote\`.\n` +
+            `${conflicting} field(s) differ from what we hold; promotion never overwrites them.`,
+        );
+        console.table([
+          {
+            field: 'composer birth year',
+            fillable: mbFillable.composerBirthYear,
+            differs: mbConflicts.composerBirthYear,
+          },
+          { field: 'composer death year', fillable: '-', differs: mbConflicts.composerDeathYear },
+          { field: 'work form', fillable: mbFillable.workForm, differs: mbConflicts.workForm },
+          { field: 'part title', fillable: mbFillable.partTitle, differs: mbConflicts.partTitle },
+        ]);
+      }
+    }
+
     if (recordedReviews.length > 0) {
       console.log(
         '\nClosed by a recorded review decision — these rows still have the gap;' +

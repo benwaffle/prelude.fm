@@ -106,6 +106,7 @@ export async function getComposersWithStats(): Promise<
       deathYear: composer.deathYear,
       biography: composer.biography,
       spotifyArtistId: composer.spotifyArtistId,
+      musicbrainzId: composer.musicbrainzId,
       spotifyImages: spotifyArtist.images,
       spotifyPopularity: spotifyArtist.popularity,
       workCount: count(work.id),
