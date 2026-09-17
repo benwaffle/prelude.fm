@@ -35,6 +35,13 @@ export interface TrackMetadataSaveInput {
     track_number: number;
     popularity: number;
     inSpotifyTracksTable: boolean;
+    /**
+     * Spotify reports the ISRC on the track payload we already fetch, and it is
+     * the join key into MusicBrainz. Capturing it here means the library does
+     * not have to be walked again later to recover something we were handed.
+     * Optional: callers that do not have it leave the stored value alone.
+     */
+    isrc?: string | null;
   };
   artists: { id: string; name: string; inSpotifyArtistsTable: boolean; composerId?: number }[];
   composerArtist?: { id: string; name: string };
@@ -139,6 +146,10 @@ export async function saveTrackMetadataInternal(
     }
   }
 
+  // Only write the ISRC when the caller actually has one, so a path that does
+  // not carry it cannot erase a value another path already stored.
+  const isrcValue = track.isrc === undefined ? {} : { isrc: track.isrc };
+
   await database
     .insert(spotifyTrack)
     .values({
@@ -149,6 +160,7 @@ export async function saveTrackMetadataInternal(
       durationMs: track.duration_ms,
       popularity: track.popularity,
       spotifyAlbumId: album.id,
+      ...isrcValue,
     })
     .onConflictDoUpdate({
       target: spotifyTrack.spotifyId,
@@ -159,6 +171,7 @@ export async function saveTrackMetadataInternal(
         durationMs: track.duration_ms,
         popularity: track.popularity,
         spotifyAlbumId: album.id,
+        ...isrcValue,
       },
     });
 

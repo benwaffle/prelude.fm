@@ -115,6 +115,32 @@ Recording identity on a rerun is reconciled by:
 2. otherwise, a unique greatest membership overlap for the same album and work; or
 3. a new recording if neither rule yields an unambiguous match.
 
+### `musicbrainz_fact`
+
+What MusicBrainz asserts about an entity we have already matched to it:
+`(entity_type, entity_id, field) -> value`, plus the MusicBrainz entity the
+value was read from.
+
+It is deliberately _not_ merged into the columns the app reads. A value here is
+a second opinion, and keeping it separate preserves the only distinction that
+matters when importing: where our own column is empty the fact is a gap we can
+close, and where the two differ it is a disagreement for a person to settle.
+Writing MusicBrainz straight into `work.form` or `work_part_v2.title` would make
+those two cases indistinguishable after the fact.
+
+Identity lives on the entities themselves — `composer.musicbrainz_id`,
+`work.musicbrainz_id`, `work_part_v2.musicbrainz_id` — because that is a fact
+about which row this _is_, not a claim about its contents. `spotify_track.isrc`
+and `spotify_track.mb_recording_id` carry the join: Spotify reports the ISRC,
+MusicBrainz resolves it to a recording, and the recording's `performance`
+relationship reaches the work.
+
+`work_catalog_v2.source` distinguishes parser-derived catalogue references from
+imported ones. MusicBrainz carries alternates our parser never sees — Chopin's
+B. and C. numbers, Scarlatti's Longo, the revised Köchel — and a reader
+searching by one of those needs to find the work. Imported rows are never
+`is_primary`, so nothing in the UI changes; they only widen lookup.
+
 ### `metadata_migration_audit`
 
 Records deterministic merge, keep, and removal decisions. Resolvers use work merge mappings so known historical IDs point at their canonical target. Material manual repairs should include a concise reason.

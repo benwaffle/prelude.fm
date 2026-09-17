@@ -115,6 +115,57 @@ Material work merges/removals should be recorded in `metadata_migration_audit` w
   recording we hold has matched, or a row left behind by a reassignment. Not yet
   measured by the validator, because the two cases need separating first.
 
+## MusicBrainz as a second source
+
+MusicBrainz is used to _corroborate and extend_ the catalogue, never to
+overwrite it. The parser remains the source of structure; MusicBrainz fills gaps
+the parser left and contributes catalogue references it never had.
+
+The join is the ISRC: Spotify reports one per track, MusicBrainz resolves it to
+a recording, and that recording's `performance` relationship reaches a work.
+Coverage is bounded by how many of our releases MusicBrainz holds at all —
+roughly 40% of tracks resolve today, and a little over half of our albums are
+absent from MusicBrainz entirely, so this will never reach 100%.
+
+    pnpm mb:backfill isrcs       Spotify ISRCs -> spotify_track.isrc
+    pnpm mb:backfill recordings  ISRC -> spotify_track.mb_recording_id
+    pnpm mb:backfill works       recording -> work/part MBIDs, catalogues, facts
+    pnpm mb:backfill composers   composer MBIDs -> life dates
+    pnpm mb:backfill report      coverage so far
+
+    pnpm mb:promote              report what MusicBrainz could fill
+    pnpm mb:promote --apply      write it
+
+`pnpm metadata:validate` reports MusicBrainz coverage, how many empty fields
+could be filled, and how many differ from what we hold.
+
+### Rules the import obeys
+
+- **Only empty fields are written.** A field we hold is a claim; if MusicBrainz
+  disagrees, both values are kept and the difference is reported. Our `form` is
+  frequently more specific than MusicBrainz's 29-term vocabulary, so a
+  disagreement usually means ours is better, not wrong.
+- **Identity comes from relationships, not names.** A composer is identified by
+  the `composer` relationship on a work we matched by ISRC. A name search cannot
+  tell four Bachs apart.
+- **Split evidence records nothing.** If the parts of one work name different
+  MusicBrainz works, or one composer is reached through two MusicBrainz artists,
+  nothing is written — choosing would be a guess, and a split vote usually means
+  a match further upstream is wrong.
+- **Only `Catalogue` series become catalogue numbers.** MusicBrainz also has
+  numbered _work_ series; Bach's orchestral suites sit in one numbered 1–4, and
+  reading it as a catalogue would file the second suite under catalogue "2".
+- **Movement titles lose their parent prefix.** MusicBrainz titles a leaf work
+  `"<parent>: <part>"`; importing verbatim would repeat the work's title inside
+  every one of its movements.
+
+### When promotion closes a backlog item
+
+Filling a field deletes any `no_birth_year` / `no_form` / `no_part_name`
+decision recorded against that row. Those decisions mean "someone looked and the
+value genuinely does not exist"; once MusicBrainz supplies one, that statement
+is no longer true and leaving it would misinform the next reader.
+
 ## Safe repair procedure
 
 Before mutating production data or schema:

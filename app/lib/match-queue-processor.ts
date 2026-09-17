@@ -521,6 +521,7 @@ async function prepareParsedTrackSave(
       track_number: track.track_number,
       popularity: track.popularity,
       inSpotifyTracksTable: false,
+      isrc: track.external_ids?.isrc ?? null,
     },
     artists: track.artists.map((artist) => ({
       id: artist.id,

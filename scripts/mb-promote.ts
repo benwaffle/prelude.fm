@@ -19,7 +19,12 @@ import {
   work,
   workPartV2,
 } from '@/lib/db/schema';
-import { normalizeMetadataText } from '@/lib/classical-normalization';
+import {
+  decidePromotion,
+  formFromWorkType,
+  textuallyEqual,
+  yearsEqual,
+} from '@/lib/musicbrainz-promotion';
 
 const apply = process.argv.includes('--apply');
 const showDetails = process.argv.includes('--details');
@@ -33,19 +38,6 @@ type Plan = {
   incoming: string;
   outcome: Outcome;
 };
-
-/** MusicBrainz work types are Capitalised; our `form` column is lower case. */
-function formFromWorkType(value: string) {
-  return value.toLocaleLowerCase();
-}
-
-function sameText(a: string | null, b: string) {
-  return normalizeMetadataText(a) === normalizeMetadataText(b);
-}
-
-function sameYear(a: number | null, b: string) {
-  return a != null && String(a) === b.trim();
-}
 
 async function load(entityType: 'composer' | 'work' | 'work_part', field: string) {
   return db
@@ -82,43 +74,29 @@ async function promoteComposerYears(field: 'birth_year' | 'death_year') {
         .from(composer)
     ).map((r) => [r.id, isBirth ? r.birth : r.death]),
   );
+
   const plans: Plan[] = [];
   for (const fact of facts) {
     if (!current.has(fact.entityId)) continue;
     const held = current.get(fact.entityId) ?? null;
     const year = Number(fact.value);
     if (!Number.isInteger(year)) continue;
-    if (held == null) {
-      plans.push({
-        field,
-        entityId: fact.entityId,
-        current: null,
-        incoming: fact.value,
-        outcome: 'filled',
-      });
-      if (apply) {
-        await db
-          .update(composer)
-          .set(isBirth ? { birthYear: year } : { deathYear: year })
-          .where(eq(composer.id, fact.entityId));
-        if (isBirth) await clearStaleDecision('composer', String(fact.entityId), 'no_birth_year');
-      }
-    } else if (sameYear(held, fact.value)) {
-      plans.push({
-        field,
-        entityId: fact.entityId,
-        current: String(held),
-        incoming: fact.value,
-        outcome: 'agreed',
-      });
-    } else {
-      plans.push({
-        field,
-        entityId: fact.entityId,
-        current: String(held),
-        incoming: fact.value,
-        outcome: 'conflict',
-      });
+
+    const outcome = decidePromotion(held == null ? null : String(held), fact.value, yearsEqual);
+    plans.push({
+      field,
+      entityId: fact.entityId,
+      current: held == null ? null : String(held),
+      incoming: fact.value,
+      outcome: outcome === 'fill' ? 'filled' : outcome === 'agree' ? 'agreed' : 'conflict',
+    });
+
+    if (outcome === 'fill' && apply) {
+      await db
+        .update(composer)
+        .set(isBirth ? { birthYear: year } : { deathYear: year })
+        .where(eq(composer.id, fact.entityId));
+      if (isBirth) await clearStaleDecision('composer', String(fact.entityId), 'no_birth_year');
     }
   }
   return plans;
@@ -129,42 +107,28 @@ async function promoteWorkForm() {
   const current = new Map(
     (await db.select({ id: work.id, form: work.form }).from(work)).map((r) => [r.id, r.form]),
   );
+
   const plans: Plan[] = [];
   for (const fact of facts) {
     if (!current.has(fact.entityId)) continue;
     const held = current.get(fact.entityId) ?? null;
     const incoming = formFromWorkType(fact.value);
-    if (held == null) {
-      plans.push({
-        field: 'form',
-        entityId: fact.entityId,
-        current: null,
-        incoming,
-        outcome: 'filled',
-      });
-      if (apply) {
-        await db.update(work).set({ form: incoming }).where(eq(work.id, fact.entityId));
-        await clearStaleDecision('work', String(fact.entityId), 'no_form');
-      }
-    } else if (sameText(held, incoming)) {
-      plans.push({
-        field: 'form',
-        entityId: fact.entityId,
-        current: held,
-        incoming,
-        outcome: 'agreed',
-      });
-    } else {
-      // Our parser is often more specific than MusicBrainz's 29-term
-      // vocabulary ("chorale prelude" where MusicBrainz has none), so a
-      // difference here is usually us being better, not us being wrong.
-      plans.push({
-        field: 'form',
-        entityId: fact.entityId,
-        current: held,
-        incoming,
-        outcome: 'conflict',
-      });
+
+    // Our parser is frequently more specific than MusicBrainz's 29-term
+    // vocabulary — "chorale prelude" has no MusicBrainz equivalent — so a
+    // difference here usually means ours is the better value, not the wrong one.
+    const outcome = decidePromotion(held, incoming, textuallyEqual);
+    plans.push({
+      field: 'form',
+      entityId: fact.entityId,
+      current: held,
+      incoming,
+      outcome: outcome === 'fill' ? 'filled' : outcome === 'agree' ? 'agreed' : 'conflict',
+    });
+
+    if (outcome === 'fill' && apply) {
+      await db.update(work).set({ form: incoming }).where(eq(work.id, fact.entityId));
+      await clearStaleDecision('work', String(fact.entityId), 'no_form');
     }
   }
   return plans;
@@ -178,41 +142,27 @@ async function promotePartTitles() {
       r.title,
     ]),
   );
+
   const plans: Plan[] = [];
   for (const fact of facts) {
     if (!current.has(fact.entityId)) continue;
     const held = current.get(fact.entityId) ?? null;
-    if (held == null || held.trim() === '') {
-      plans.push({
-        field: 'part_title',
-        entityId: fact.entityId,
-        current: null,
-        incoming: fact.value,
-        outcome: 'filled',
-      });
-      if (apply) {
-        await db
-          .update(workPartV2)
-          .set({ title: fact.value })
-          .where(eq(workPartV2.id, fact.entityId));
-        await clearStaleDecision('work_part_v2', String(fact.entityId), 'no_part_name');
-      }
-    } else if (sameText(held, fact.value)) {
-      plans.push({
-        field: 'part_title',
-        entityId: fact.entityId,
-        current: held,
-        incoming: fact.value,
-        outcome: 'agreed',
-      });
-    } else {
-      plans.push({
-        field: 'part_title',
-        entityId: fact.entityId,
-        current: held,
-        incoming: fact.value,
-        outcome: 'conflict',
-      });
+
+    const outcome = decidePromotion(held, fact.value, textuallyEqual);
+    plans.push({
+      field: 'part_title',
+      entityId: fact.entityId,
+      current: held,
+      incoming: fact.value,
+      outcome: outcome === 'fill' ? 'filled' : outcome === 'agree' ? 'agreed' : 'conflict',
+    });
+
+    if (outcome === 'fill' && apply) {
+      await db
+        .update(workPartV2)
+        .set({ title: fact.value })
+        .where(eq(workPartV2.id, fact.entityId));
+      await clearStaleDecision('work_part_v2', String(fact.entityId), 'no_part_name');
     }
   }
   return plans;
