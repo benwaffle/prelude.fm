@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getCoverage, STATE_LABEL, type AlbumState, type Coverage } from '../actions/coverage';
+import { getCoverage } from '../actions/coverage';
+import { STATE_LABEL, type AlbumState, type Coverage } from '../lib/album-state';
 import { Spinner } from '../components/Spinner';
 
 /** What each state costs to fix, said plainly. */
 const WHAT_IT_NEEDS: Record<AlbumState, string> = {
   anchored: 'MusicBrainz can describe every track. Nothing to do.',
-  partial: 'Some tracks have no ISRC registered in MusicBrainz. Submitting them anchors the rest.',
+  partial:
+    'Some tracks resolve and some do not. Where MusicBrainz has the release, the rest need their ISRCs submitting; where it does not, these recordings are in MusicBrainz under some other release and this one still needs adding.',
   needs_isrcs:
     'MusicBrainz has the release but none of our ISRCs. Submitting them anchors the album.',
   absent:

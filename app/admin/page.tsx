@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
 import { getAdminStats } from './actions/admin-stats';
-import type { AlbumState } from './actions/coverage';
+import type { AlbumState } from './lib/album-state';
 import { Spinner } from './components/Spinner';
 import { CoverageTab } from './tabs/CoverageTab';
 import { AlbumsTab } from './tabs/AlbumsTab';

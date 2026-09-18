@@ -4,51 +4,12 @@ import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { spotifyAlbum, spotifyTrack, trackWorkPartV2, work, workPartV2 } from '@/lib/db/schema';
 import { checkAuth } from './auth';
-
-/**
- * Why an album is, or is not, anchored to MusicBrainz.
- *
- * The states are ordered by what they cost to fix, because that is the only
- * thing that decides what to do next. An album MusicBrainz already holds needs
- * ISRCs submitting, which is minutes; an album it has never heard of needs the
- * release entering, which is an evening.
- */
-export type AlbumState =
-  /** Every track resolves to a MusicBrainz recording. MusicBrainz can speak for it. */
-  | 'anchored'
-  /** Some tracks resolve. The rest are missing ISRCs on a release we can find. */
-  | 'partial'
-  /** MusicBrainz has the release but no ISRCs reach our tracks. */
-  | 'needs_isrcs'
-  /** No release with this barcode. Someone has to add it. */
-  | 'absent'
-  /** Several releases share the barcode, so none of them identifies this album. */
-  | 'ambiguous'
-  /** Nobody has asked MusicBrainz about this barcode yet. */
-  | 'unchecked';
-
-export type AlbumRow = {
-  id: string;
-  title: string;
-  year: number | null;
-  tracks: number;
-  anchored: number;
-  worksLinked: number;
-  works: number;
-  upc: string | null;
-  mbReleaseId: string | null;
-  candidates: number | null;
-  state: AlbumState;
-};
-
-export const STATE_LABEL: Record<AlbumState, string> = {
-  anchored: 'Anchored',
-  partial: 'Partly anchored',
-  needs_isrcs: 'Needs ISRCs',
-  absent: 'Not in MusicBrainz',
-  ambiguous: 'Barcode not unique',
-  unchecked: 'Not checked',
-};
+import {
+  type AlbumRow,
+  type AlbumState,
+  type AlbumTrackRow,
+  type Coverage,
+} from '../lib/album-state';
 
 function deriveState(row: {
   tracks: number;
@@ -93,13 +54,6 @@ async function loadAlbums(): Promise<AlbumRow[]> {
   return rows.map((row) => ({ ...row, state: deriveState(row) }));
 }
 
-export type Coverage = {
-  albums: number;
-  tracks: number;
-  anchoredTracks: number;
-  byState: { state: AlbumState; albums: number; tracks: number }[];
-};
-
 export async function getCoverage(): Promise<Coverage> {
   await checkAuth();
   const albums = await loadAlbums();
@@ -141,19 +95,6 @@ export async function getAlbums(state?: AlbumState, search?: string): Promise<Al
     .filter((album) => (needle ? album.title.toLocaleLowerCase().includes(needle) : true))
     .sort((a, b) => b.tracks - a.tracks);
 }
-
-export type AlbumTrackRow = {
-  id: string;
-  title: string;
-  discNumber: number;
-  trackNumber: number;
-  isrc: string | null;
-  mbRecordingId: string | null;
-  workId: number | null;
-  workTitle: string | null;
-  partLabel: string | null;
-  partTitle: string | null;
-};
 
 export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> {
   await checkAuth();

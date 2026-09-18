@@ -1,14 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getAlbumTracks, getAlbums } from '../actions/coverage';
 import {
-  getAlbumTracks,
-  getAlbums,
   STATE_LABEL,
   type AlbumRow,
   type AlbumState,
   type AlbumTrackRow,
-} from '../actions/coverage';
+} from '../lib/album-state';
 import { Spinner } from '../components/Spinner';
 
 const HARMONY = 'https://harmony.pulsewidth.org.uk';
@@ -22,32 +21,41 @@ const HARMONY = 'https://harmony.pulsewidth.org.uk';
  */
 function nextStep(album: AlbumRow): { label: string; href: string; hint: string } | null {
   const spotifyUrl = `https://open.spotify.com/album/${album.id}`;
+  const addRelease = {
+    label: 'Add release',
+    href: `${HARMONY}/release?url=${encodeURIComponent(spotifyUrl)}`,
+    hint: 'Opens Harmony with this Spotify album loaded, ready to import into MusicBrainz.',
+  };
+
   switch (album.state) {
     case 'anchored':
+    case 'unchecked':
       return null;
+
     case 'partial':
     case 'needs_isrcs':
+      // With the release known, the missing piece is ISRCs. Without it, some of
+      // these recordings are in MusicBrainz already — reached through some other
+      // release — but this pressing is not, so it is the release that is missing.
       return album.mbReleaseId
         ? {
             label: 'Submit ISRCs',
             href: `${HARMONY}/release/actions?release_mbid=${album.mbReleaseId}`,
             hint: 'Opens Harmony, which reads the ISRCs and submits them for you.',
           }
-        : null;
+        : addRelease;
+
     case 'absent':
-      return {
-        label: 'Add release',
-        href: `${HARMONY}/release?url=${encodeURIComponent(spotifyUrl)}`,
-        hint: 'Opens Harmony with this Spotify album loaded, ready to import.',
-      };
+      return addRelease;
+
     case 'ambiguous':
       return {
-        label: 'Find release',
-        href: `https://musicbrainz.org/search?type=release&query=${encodeURIComponent(album.title)}`,
-        hint: 'Several releases share the barcode. Pick the right one by hand.',
+        label: 'Pick release',
+        href: `https://musicbrainz.org/search?type=release&query=${encodeURIComponent(
+          album.upc ?? album.title,
+        )}`,
+        hint: 'Several releases share this barcode. The release exists — choose the right one.',
       };
-    case 'unchecked':
-      return null;
   }
 }
 
