@@ -37,6 +37,7 @@ export type AlbumRow = {
   works: number;
   upc: string | null;
   mbReleaseId: string | null;
+  candidates: number | null;
   state: AlbumState;
 };
 
@@ -45,7 +46,7 @@ export const STATE_LABEL: Record<AlbumState, string> = {
   partial: 'Partly anchored',
   needs_isrcs: 'Needs ISRCs',
   absent: 'Not in MusicBrainz',
-  ambiguous: 'Ambiguous barcode',
+  ambiguous: 'Barcode not unique',
   unchecked: 'Not checked',
 };
 
@@ -53,17 +54,18 @@ function deriveState(row: {
   tracks: number;
   anchored: number;
   mbReleaseId: string | null;
+  candidates: number | null;
   checked: Date | null;
-  upc: string | null;
 }): AlbumState {
   if (row.checked === null) return 'unchecked';
   if (row.tracks > 0 && row.anchored === row.tracks) return 'anchored';
   if (row.anchored > 0) return 'partial';
   if (row.mbReleaseId) return 'needs_isrcs';
-  // A barcode we looked up and did not resolve is either genuinely absent or
-  // shared by several releases; only the second leaves us with a barcode and
-  // no release, so they can be told apart.
-  return row.upc ? 'absent' : 'ambiguous';
+  // Several releases sharing the barcode is not the same as none having it:
+  // one needs a release adding, the other needs the right one choosing, and
+  // confusing them is how duplicate releases get created.
+  if ((row.candidates ?? 0) > 1) return 'ambiguous';
+  return 'absent';
 }
 
 async function loadAlbums(): Promise<AlbumRow[]> {
@@ -74,6 +76,7 @@ async function loadAlbums(): Promise<AlbumRow[]> {
       year: spotifyAlbum.year,
       upc: spotifyAlbum.upc,
       mbReleaseId: spotifyAlbum.mbReleaseId,
+      candidates: spotifyAlbum.mbReleaseCandidates,
       checked: spotifyAlbum.mbCheckedAt,
       tracks: sql<number>`count(distinct ${spotifyTrack.spotifyId})`,
       anchored: sql<number>`count(distinct case when ${spotifyTrack.mbRecordingId} is not null then ${spotifyTrack.spotifyId} end)`,

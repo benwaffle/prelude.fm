@@ -12,7 +12,7 @@
  *   pnpm mb:backfill composers   work composer rels -> composer MBIDs + dates
  *   pnpm mb:backfill report      what has landed so far
  */
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
   composer,
@@ -189,7 +189,7 @@ async function backfillReleases() {
   const pending = await db
     .select({ id: spotifyAlbum.spotifyId, upc: spotifyAlbum.upc })
     .from(spotifyAlbum)
-    .where(isNull(spotifyAlbum.mbCheckedAt));
+    .where(or(isNull(spotifyAlbum.mbCheckedAt), isNull(spotifyAlbum.mbReleaseCandidates)));
   log(`[releases] asking MusicBrainz about ${pending.length} albums`);
 
   let found = 0;
@@ -219,7 +219,11 @@ async function backfillReleases() {
     else ambiguous++;
     await db
       .update(spotifyAlbum)
-      .set({ mbReleaseId: releaseId, mbCheckedAt: new Date() })
+      .set({
+        mbReleaseId: releaseId,
+        mbReleaseCandidates: releases.length,
+        mbCheckedAt: new Date(),
+      })
       .where(eq(spotifyAlbum.spotifyId, album.id));
     if (++done % 50 === 0) log(`  ${done}/${pending.length}`);
   }

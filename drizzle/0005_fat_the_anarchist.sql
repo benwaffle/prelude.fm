@@ -1,0 +1,1 @@
+ALTER TABLE `spotify_album` ADD `mb_release_candidates` integer;

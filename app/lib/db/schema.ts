@@ -192,6 +192,14 @@ export const spotifyAlbum = sqliteTable(
     /** The MusicBrainz release this album is, when one carries the same barcode. */
     mbReleaseId: text('mb_release_id'),
     /**
+     * How many releases carry this barcode. Without the count, a null release
+     * is two different problems wearing the same face: MusicBrainz has nothing
+     * (add the release) or it has several and none of them identifies this
+     * album (pick one). Telling someone to add a release that already exists
+     * is how duplicates get created.
+     */
+    mbReleaseCandidates: integer('mb_release_candidates'),
+    /**
      * When we last asked MusicBrainz about this barcode. Without it a null
      * release is ambiguous — it could mean MusicBrainz does not have the
      * release, or simply that nobody has looked yet, and those call for
