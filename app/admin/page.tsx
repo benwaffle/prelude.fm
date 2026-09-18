@@ -1,131 +1,132 @@
 'use client';
 
-import { authClient } from '@/lib/auth-client';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { authClient } from '@/lib/auth-client';
 import { getAdminStats } from './actions/admin-stats';
 import { Spinner } from './components/Spinner';
+import { DeskTab } from './tabs/DeskTab';
 import { TracksTab } from './tabs/TracksTab';
 import { ComposersTab } from './tabs/ComposersTab';
 import { WorksTab } from './tabs/WorksTab';
 
-type TabType = 'tracks' | 'composers' | 'works';
+type TabId = 'desk' | 'queue' | 'works' | 'composers';
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'desk', label: 'Desk' },
+  { id: 'queue', label: 'Queue' },
+  { id: 'works', label: 'Works' },
+  { id: 'composers', label: 'Composers' },
+];
 
 export default function AdminPage() {
-  const { data: session } = authClient.useSession();
-  const [activeTab, setActiveTab] = useState<TabType>('tracks');
-  const [stats, setStats] = useState<{
-    pendingTracks: number;
-    unlinkedArtists: number;
-    totalWorks: number;
-  } | null>(null);
-  const [loadingStats, setLoadingStats] = useState(true);
+  const { data: session, isPending } = authClient.useSession();
+  const [tab, setTab] = useState<TabId>('desk');
+  const [counts, setCounts] = useState<{ queue: number; works: number; composers: number } | null>(
+    null,
+  );
 
   const isAdmin = session?.user?.name === 'benwaffle';
 
   useEffect(() => {
     if (!isAdmin) return;
-    loadStats();
+    getAdminStats()
+      .then((stats) =>
+        setCounts({
+          queue: stats.pendingTracks,
+          works: stats.totalWorks,
+          composers: stats.unlinkedArtists,
+        }),
+      )
+      .catch(() => setCounts(null));
   }, [isAdmin]);
 
-  const loadStats = async () => {
-    setLoadingStats(true);
-    try {
-      const result = await getAdminStats();
-      setStats(result);
-    } catch (err) {
-      console.error('Failed to load stats:', err);
-    } finally {
-      setLoadingStats(false);
-    }
-  };
-
-  const handleSignIn = async () => {
-    await authClient.signIn.social({
-      provider: 'spotify',
-      callbackURL: '/admin',
-    });
-  };
+  if (isPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner className="h-4 w-4" />
+      </div>
+    );
+  }
 
   if (!session) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <div className="flex flex-col items-center gap-6">
+      <Gate
+        title="Catalogue desk"
+        body="Sign in to open the desk."
+        action={
           <button
-            onClick={handleSignIn}
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-[#1DB954] px-8 text-white transition-colors hover:bg-[#1ed760] cursor-pointer"
+            className="act"
+            onClick={() => authClient.signIn.social({ provider: 'spotify', callbackURL: '/admin' })}
           >
             Sign in with Spotify
           </button>
-        </div>
-      </div>
+        }
+      />
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <p className="text-lg text-zinc-600 dark:text-zinc-400">Access denied</p>
-      </div>
+      <Gate
+        title="Catalogue desk"
+        body={`Signed in as ${session.user?.name ?? 'someone else'}. This desk belongs to another account.`}
+        action={
+          <Link className="act" href="/">
+            Back to the player
+          </Link>
+        }
+      />
     );
   }
 
-  const tabs: { id: TabType; label: string; count?: number }[] = [
-    { id: 'tracks', label: 'Tracks' },
-    { id: 'composers', label: 'Composers', count: stats?.unlinkedArtists },
-    { id: 'works', label: 'Works', count: stats?.totalWorks },
-  ];
-
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black p-8">
-      <main className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-4xl font-bold text-black dark:text-zinc-50">admin</h1>
-          <Link
-            href="/"
-            className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
-          >
-            &larr; Back to Player
-          </Link>
-        </div>
+    <>
+      <header className="desk-rail">
+        <h1>Catalogue desk</h1>
+        <span className="mono text-[10px] text-[var(--faint)]">prelude.fm</span>
+        <Link href="/" className="ml-auto text-[11px] text-[var(--ink-2)] hover:text-[var(--gall)]">
+          Back to the player
+        </Link>
+      </header>
 
-        {/* Tab Navigation */}
-        <div className="border-b border-zinc-200 dark:border-zinc-700 mb-6">
-          <nav className="flex gap-1" aria-label="Tabs">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                    : 'border-transparent text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-600'
-                }`}
-              >
-                {tab.label}
-                {tab.count !== undefined && (
-                  <span
-                    className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
-                      activeTab === tab.id
-                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                    }`}
-                  >
-                    {loadingStats ? <Spinner className="w-3 h-3 inline" /> : tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-        </div>
+      <div className="rule-b px-5">
+        <nav className="tab-strip mx-auto max-w-[1400px]" aria-label="Sections">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              className="tab"
+              aria-current={tab === item.id ? 'page' : undefined}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+              {counts && item.id !== 'desk' && <span className="tab-n">{counts[item.id]}</span>}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-        {/* Tab Content */}
-        <div>
-          {activeTab === 'tracks' && <TracksTab onSwitchTab={(tab) => setActiveTab(tab)} />}
-          {activeTab === 'composers' && <ComposersTab />}
-          {activeTab === 'works' && <WorksTab />}
-        </div>
+      <main className="mx-auto max-w-[1400px] px-5 pt-7">
+        {tab === 'desk' && (
+          <DeskTab onSwitchTab={(next) => setTab(next === 'queue' ? 'queue' : next)} />
+        )}
+        {tab === 'queue' && <TracksTab onSwitchTab={(next) => setTab(next)} />}
+        {tab === 'works' && <WorksTab />}
+        {tab === 'composers' && <ComposersTab />}
       </main>
+    </>
+  );
+}
+
+/** Sign-in and access states. An empty screen should still say what to do next. */
+function Gate({ title, body, action }: { title: string; body: string; action: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center px-6">
+      <div className="slip max-w-sm border-l-2 border-l-[var(--gall)] px-6 py-6">
+        <h1 className="mb-2">{title}</h1>
+        <p className="mb-5 text-[var(--ink-2)]">{body}</p>
+        {action}
+      </div>
     </div>
   );
 }

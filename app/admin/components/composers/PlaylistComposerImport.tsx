@@ -92,12 +92,12 @@ export function PlaylistComposerImport({
     });
 
   return (
-    <section className="overflow-hidden rounded-lg border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-      <header className="border-b border-zinc-200 bg-zinc-100 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800">
-        <h2 className="text-lg font-semibold text-black dark:text-white">
+    <section className="overflow-hidden border border-[var(--rule)] bg-[var(--slip)]">
+      <header className="border-b border-[var(--rule)] bg-[var(--slip-2)] px-4 py-3">
+        <h2 className="text-lg font-semibold text-[var(--ink)]">
           Discover Composers from Playlists
         </h2>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-[var(--ink-2)]">
           Search classical playlists and extract composer artists
         </p>
       </header>
@@ -109,12 +109,12 @@ export function PlaylistComposerImport({
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && search()}
             placeholder="Search for playlists"
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-black dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            className="flex-1 border border-[var(--rule)] bg-[var(--slip)] px-3 py-2 text-[var(--ink)] bg-[var(--slip-2)]"
           />
           <button
             onClick={search}
             disabled={!query.trim() || searching}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+            className="flex items-center gap-2 bg-[var(--gall)] px-4 py-2 text-white disabled:opacity-50"
           >
             {searching && <Spinner />}
             {searching ? 'Searching...' : 'Search'}
@@ -127,7 +127,7 @@ export function PlaylistComposerImport({
               <button
                 key={playlist.id}
                 onClick={() => choose(playlist)}
-                className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 text-left hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                className="flex items-center gap-3 border border-[var(--rule)] p-3 text-left hover:bg-zinc-50 hover:bg-[var(--slip-2)]"
               >
                 {playlist.images[0] && (
                   <Image
@@ -139,10 +139,10 @@ export function PlaylistComposerImport({
                   />
                 )}
                 <span className="min-w-0">
-                  <span className="block truncate font-medium text-black dark:text-white">
+                  <span className="block truncate font-medium text-[var(--ink)]">
                     {playlist.name}
                   </span>
-                  <span className="text-xs text-zinc-500">
+                  <span className="text-xs text-[var(--faint)]">
                     {playlist.trackCount} tracks · by {playlist.owner}
                   </span>
                 </span>
@@ -155,22 +155,22 @@ export function PlaylistComposerImport({
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="font-medium text-black dark:text-white">{selected.name}</div>
-                <div className="text-sm text-zinc-500">
+                <div className="font-medium text-[var(--ink)]">{selected.name}</div>
+                <div className="text-sm text-[var(--faint)]">
                   {artists.length} unique artists · {newArtists.length} new
                 </div>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setSelected(null)}
-                  className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600"
+                  className="border border-[var(--rule)] px-3 py-1.5 text-sm"
                 >
                   Back
                 </button>
                 <button
                   onClick={save}
                   disabled={selectedArtists.length === 0 || saving}
-                  className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                  className="flex items-center gap-2 bg-[var(--viridian)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
                 >
                   {saving && <Spinner />}
                   {saving ? 'Saving...' : `Save ${selectedArtists.length} Composers`}
@@ -182,14 +182,14 @@ export function PlaylistComposerImport({
                 <Spinner className="h-6 w-6" />
               </div>
             ) : (
-              <div className="max-h-96 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <div className="max-h-96 overflow-y-auto border border-[var(--rule)]">
                 {artists.map((artist) => (
                   <label
                     key={artist.id}
-                    className="grid grid-cols-[24px_1fr_auto] items-center gap-3 border-b border-zinc-200 px-3 py-2 text-sm last:border-0 dark:border-zinc-700"
+                    className="grid grid-cols-[24px_1fr_auto] items-center gap-3 border-b border-[var(--rule)] px-3 py-2 text-sm last:border-0"
                   >
                     {artist.existingComposerId ? (
-                      <span className="text-zinc-400">—</span>
+                      <span className="text-[var(--faint)]">—</span>
                     ) : (
                       <input
                         type="checkbox"
@@ -197,8 +197,8 @@ export function PlaylistComposerImport({
                         onChange={() => toggle(artist.id)}
                       />
                     )}
-                    <span className="text-black dark:text-white">{artist.name}</span>
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-[var(--ink)]">{artist.name}</span>
+                    <span className="text-xs text-[var(--faint)]">
                       {artist.existingComposerId ? 'Exists' : `${artist.trackCount} tracks`}
                     </span>
                   </label>

@@ -58,7 +58,7 @@ export function AlbumTracksTable({
   const [savingAll, setSavingAll] = useState(false);
   const [savingTracks, setSavingTracks] = useState<Set<string>>(new Set());
   const [editedMetadata, setEditedMetadata] = useState<Record<string, EditableMetadata>>({});
-  // Record of "CatalogSystem:CatalogNumber" -> { workId, movements: { number, title }[] }
+  // Record of"CatalogSystem:CatalogNumber" -> { workId, movements: { number, title }[] }
   const [existingWorks, setExistingWorks] = useState<
     Record<string, { workId: number; movements: { number: number; title: string | null }[] }>
   >({});
@@ -435,9 +435,9 @@ export function AlbumTracksTable({
   };
 
   return (
-    <div className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+    <div className="border border-[var(--rule)] bg-[var(--slip)] overflow-hidden">
       {/* Album header */}
-      <div className="flex items-center gap-4 p-4 bg-zinc-100 dark:bg-zinc-800">
+      <div className="flex items-center gap-4 p-4 bg-[var(--slip-2)]">
         {album.images[0] && (
           <Image
             src={album.images[0].url}
@@ -448,8 +448,8 @@ export function AlbumTracksTable({
           />
         )}
         <div className="flex-1">
-          <div className="font-semibold text-black dark:text-white">{album.name}</div>
-          <div className="text-sm text-zinc-600 dark:text-zinc-400">
+          <div className="font-semibold text-[var(--ink)]">{album.name}</div>
+          <div className="text-sm text-[var(--ink-2)]">
             {album.release_date?.split('-')[0]} · {tracks.length} track
             {tracks.length !== 1 ? 's' : ''}
           </div>
@@ -458,7 +458,7 @@ export function AlbumTracksTable({
           <button
             onClick={handleLoadFullAlbum}
             disabled={loadingAlbum}
-            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-1.5"
+            className="px-3 py-1.5 text-sm border border-[var(--rule)] text-[var(--ink-2)] hover:bg-[var(--slip-2)] disabled:opacity-50 flex items-center gap-1.5"
           >
             {loadingAlbum && <Spinner />}
             {loadingAlbum ? 'Loading...' : 'Load Full Album'}
@@ -467,7 +467,7 @@ export function AlbumTracksTable({
             <button
               onClick={handleAnalyze}
               disabled={analyzing}
-              className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
+              className="px-3 py-1.5 text-sm bg-[var(--gall)] text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
             >
               {analyzing && <Spinner />}
               {analyzing ? 'Analyzing...' : `Analyze ${unknownCount}`}
@@ -477,7 +477,7 @@ export function AlbumTracksTable({
             <button
               onClick={handleSaveAll}
               disabled={savingAll || savingTracks.size > 0}
-              className="px-3 py-1.5 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center gap-1.5"
+              className="px-3 py-1.5 text-sm bg-[var(--viridian)] text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
             >
               {savingAll && <Spinner />}
               {savingAll ? 'Saving...' : `Save All (${readyTracks.length})`}
@@ -488,7 +488,7 @@ export function AlbumTracksTable({
 
       {/* Tracks table */}
       <table className="w-full">
-        <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-xs text-zinc-600 dark:text-zinc-400">
+        <thead className="bg-[var(--slip-2)] text-xs text-[var(--ink-2)]">
           <tr>
             <th className="px-4 py-2 text-left">#</th>
             <th className="px-4 py-2 text-left">Track Name</th>
@@ -523,7 +523,7 @@ export function AlbumTracksTable({
                 <div className="flex items-center gap-2">
                   <span>{effectiveComposer || '-'}</span>
                   {composerInDb && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-transparent text-[var(--viridian)]">
                       ✓
                     </span>
                   )}
@@ -535,7 +535,7 @@ export function AlbumTracksTable({
                   <select
                     value={metadata.composerName}
                     onChange={(e) => updateEditedMetadata(track.id, 'composerName', e.target.value)}
-                    className="flex-1 px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                    className="flex-1 px-2 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                   >
                     <option value="">Select composer...</option>
                     {track.artists.map((a) => (
@@ -546,7 +546,7 @@ export function AlbumTracksTable({
                     ))}
                   </select>
                   {metadata.composerName && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shrink-0">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--gall-wash)] text-[var(--gall)] shrink-0">
                       new
                     </span>
                   )}
@@ -563,22 +563,20 @@ export function AlbumTracksTable({
                       <div className="flex items-center gap-2">
                         <span>
                           {metadata.catalogSystem} {metadata.catalogNumber}
-                          {metadata.nickname && ` "${metadata.nickname}"`}
+                          {metadata.nickname && `"${metadata.nickname}"`}
                           {!metadata.catalogSystem &&
                             !metadata.catalogNumber &&
                             metadata.formalName}
                         </span>
                         {workInDb && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-transparent text-[var(--viridian)]">
                             ✓
                           </span>
                         )}
                       </div>
                       {(metadata.catalogSystem || metadata.catalogNumber) &&
                         metadata.formalName && (
-                          <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                            {metadata.formalName}
-                          </span>
+                          <span className="text-xs text-[var(--faint)]">{metadata.formalName}</span>
                         )}
                     </div>
                   ) : (
@@ -598,7 +596,7 @@ export function AlbumTracksTable({
                           updateEditedMetadata(track.id, 'catalogSystem', e.target.value)
                         }
                         placeholder="Cat."
-                        className="w-12 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                        className="w-12 px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                       />
                       <input
                         type="text"
@@ -607,14 +605,14 @@ export function AlbumTracksTable({
                           updateEditedMetadata(track.id, 'catalogNumber', e.target.value)
                         }
                         placeholder="No."
-                        className="w-16 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                        className="w-16 px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                       />
                       <input
                         type="text"
                         value={metadata.nickname}
                         onChange={(e) => updateEditedMetadata(track.id, 'nickname', e.target.value)}
                         placeholder="Nickname"
-                        className="w-24 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                        className="w-24 px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                       />
                     </div>
                     <input
@@ -622,11 +620,11 @@ export function AlbumTracksTable({
                       value={metadata.formalName}
                       onChange={(e) => updateEditedMetadata(track.id, 'formalName', e.target.value)}
                       placeholder="Work title (required)"
-                      className="w-full px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                      className="w-full px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                     />
                   </div>
                   {metadata.formalName && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shrink-0 mt-1">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--gall-wash)] text-[var(--gall)] shrink-0 mt-1">
                       new
                     </span>
                   )}
@@ -641,13 +639,13 @@ export function AlbumTracksTable({
                   <div className="flex items-center gap-2">
                     <span>{metadata.movement ?? '-'}</span>
                     {metadata.movement && movementInDb && (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-transparent text-[var(--viridian)]">
                         ✓
                       </span>
                     )}
                   </div>
                   {metadata.movementName && (
-                    <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    <div className="text-xs text-[var(--faint)] mt-0.5">
                       {metadata.movementName}
                     </div>
                   )}
@@ -675,7 +673,7 @@ export function AlbumTracksTable({
                           updateEditedMetadata(track.id, 'movement', val ? parseInt(val) : null);
                         }
                       }}
-                      className="flex-1 min-w-0 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                      className="flex-1 min-w-0 px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                     >
                       <option value="">Select...</option>
                       {availableMovements
@@ -695,11 +693,11 @@ export function AlbumTracksTable({
                     </select>
                     {metadata.movement != null &&
                       (isCurrentMovementNew ? (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shrink-0">
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--gall-wash)] text-[var(--gall)] shrink-0">
                           new
                         </span>
                       ) : (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 shrink-0">
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-transparent text-[var(--viridian)] shrink-0">
                           ✓
                         </span>
                       ))}
@@ -717,7 +715,7 @@ export function AlbumTracksTable({
                           )
                         }
                         placeholder="#"
-                        className="w-12 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                        className="w-12 px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                       />
                       <input
                         type="text"
@@ -726,7 +724,7 @@ export function AlbumTracksTable({
                           updateEditedMetadata(track.id, 'movementName', e.target.value)
                         }
                         placeholder="Movement name"
-                        className="flex-1 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                        className="flex-1 px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                       />
                     </div>
                   )}
@@ -747,7 +745,7 @@ export function AlbumTracksTable({
                         )
                       }
                       placeholder="#"
-                      className="w-12 px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                      className="w-12 px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                     />
                     <input
                       type="text"
@@ -756,11 +754,11 @@ export function AlbumTracksTable({
                         updateEditedMetadata(track.id, 'movementName', e.target.value)
                       }
                       placeholder="Movement name"
-                      className="w-full px-1.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                      className="w-full px-1.5 py-1 text-xs rounded border border-[var(--rule)] bg-[var(--slip)]"
                     />
                   </div>
                   {metadata.movement != null && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shrink-0 mt-1">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--gall-wash)] text-[var(--gall)] shrink-0 mt-1">
                       new
                     </span>
                   )}
@@ -769,19 +767,19 @@ export function AlbumTracksTable({
             }
 
             return (
-              <tr key={track.id} className="border-t border-zinc-200 dark:border-zinc-700">
-                <td className="px-4 py-3 text-zinc-500">{track.track_number}</td>
+              <tr key={track.id} className="border-t border-[var(--rule)]">
+                <td className="px-4 py-3 text-[var(--faint)]">{track.track_number}</td>
                 <td className="px-4 py-3">
                   <div>
-                    <div className="text-black dark:text-white">{track.name}</div>
-                    <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    <div className="text-[var(--ink)]">{track.name}</div>
+                    <div className="text-xs text-[var(--faint)] mt-0.5">
                       {track.artists.map((a, idx) => (
                         <span key={a.id}>
                           {idx > 0 && ', '}
                           <span
                             className={
                               metadata.composerName === a.name
-                                ? 'font-semibold text-zinc-700 dark:text-zinc-300'
+                                ? 'font-semibold text-[var(--ink-2)]'
                                 : ''
                             }
                           >
@@ -792,12 +790,12 @@ export function AlbumTracksTable({
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{composerCell}</td>
-                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{workCell}</td>
-                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{movementCell}</td>
+                <td className="px-4 py-3 text-[var(--ink-2)]">{composerCell}</td>
+                <td className="px-4 py-3 text-[var(--ink-2)]">{workCell}</td>
+                <td className="px-4 py-3 text-[var(--ink-2)]">{movementCell}</td>
                 <td className="px-4 py-3">
                   {isLinked ? (
-                    <span className="text-xs px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                    <span className="text-xs px-2 py-1 rounded-full bg-transparent text-[var(--viridian)]">
                       Linked
                     </span>
                   ) : track.parsed || editedMetadata[track.id] ? (
@@ -815,7 +813,7 @@ export function AlbumTracksTable({
                     <button
                       onClick={() => handleSaveTrack(track)}
                       disabled={isSaving}
-                      className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                      className="text-xs px-3 py-1 rounded bg-[var(--gall)] text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                     >
                       {isSaving && <Spinner className="w-3 h-3" />}
                       {isSaving ? 'Saving...' : 'Save'}

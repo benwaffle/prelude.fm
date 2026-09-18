@@ -109,12 +109,10 @@ export function JsonComposerImport({
   };
 
   return (
-    <section className="overflow-hidden rounded-lg border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-      <header className="border-b border-zinc-200 bg-zinc-100 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800">
-        <h2 className="text-lg font-semibold text-black dark:text-white">
-          Import Composers from JSON
-        </h2>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+    <section className="overflow-hidden border border-[var(--rule)] bg-[var(--slip)]">
+      <header className="border-b border-[var(--rule)] bg-[var(--slip-2)] px-4 py-3">
+        <h2 className="text-lg font-semibold text-[var(--ink)]">Import Composers from JSON</h2>
+        <p className="text-sm text-[var(--ink-2)]">
           Match a JSON list to Spotify, review it, and save selected composers
         </p>
       </header>
@@ -127,12 +125,12 @@ export function JsonComposerImport({
               onChange={(event) => setJson(event.target.value)}
               placeholder='[{"name":"Johann Sebastian Bach","born":1685,"died":1750}]'
               rows={6}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-black dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              className="w-full border border-[var(--rule)] bg-[var(--slip)] px-3 py-2 font-mono text-sm text-[var(--ink)] bg-[var(--slip-2)]"
             />
             <button
               onClick={search}
               disabled={!json.trim() || searching}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+              className="flex items-center gap-2 bg-[var(--gall)] px-4 py-2 text-white disabled:opacity-50"
             >
               {searching && <Spinner />}
               {searching ? `Searching ${progress.current}/${progress.total}...` : 'Search Spotify'}
@@ -140,7 +138,7 @@ export function JsonComposerImport({
           </>
         ) : (
           <>
-            <div className="flex items-center justify-between gap-3 text-sm text-zinc-600 dark:text-zinc-400">
+            <div className="flex items-center justify-between gap-3 text-sm text-[var(--ink-2)]">
               <span>
                 {results.length} results · {selected.length} selected
               </span>
@@ -151,7 +149,7 @@ export function JsonComposerImport({
                 <button
                   onClick={save}
                   disabled={selected.length === 0 || saving}
-                  className="flex items-center gap-2 rounded bg-green-600 px-3 py-1.5 text-white disabled:opacity-50"
+                  className="flex items-center gap-2 rounded bg-[var(--viridian)] px-3 py-1.5 text-white disabled:opacity-50"
                 >
                   {saving && <Spinner />}
                   {saving
@@ -160,16 +158,14 @@ export function JsonComposerImport({
                 </button>
               </div>
             </div>
-            <div className="max-h-96 space-y-3 overflow-y-auto rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+            <div className="max-h-96 space-y-3 overflow-y-auto border border-[var(--rule)] p-3">
               {results.map((item, index) => (
                 <fieldset
                   key={`${item.input.name}-${index}`}
                   className="border-b pb-3 last:border-0"
                 >
-                  <legend className="mb-2 font-medium text-black dark:text-white">
-                    {item.input.name}
-                  </legend>
-                  <label className="mr-4 text-sm text-zinc-500">
+                  <legend className="mb-2 font-medium text-[var(--ink)]">{item.input.name}</legend>
+                  <label className="mr-4 text-sm text-[var(--faint)]">
                     <input
                       type="radio"
                       name={`composer-${index}`}
@@ -187,10 +183,7 @@ export function JsonComposerImport({
                     Skip
                   </label>
                   {item.results.map((artist) => (
-                    <label
-                      key={artist.id}
-                      className="mr-4 text-sm text-zinc-700 dark:text-zinc-300"
-                    >
+                    <label key={artist.id} className="mr-4 text-sm text-[var(--ink-2)]">
                       <input
                         type="radio"
                         name={`composer-${index}`}

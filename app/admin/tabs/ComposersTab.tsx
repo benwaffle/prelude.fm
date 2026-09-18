@@ -148,20 +148,18 @@ export function ComposersTab() {
       <SpotifyArtistSearch existingArtistIds={existingArtistIds} onChanged={changed} />
       <JsonComposerImport onChanged={changed} />
 
-      <section className="overflow-hidden rounded-lg border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-        <header className="flex items-start justify-between gap-4 border-b border-zinc-200 bg-zinc-100 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800">
+      <section className="overflow-hidden border border-[var(--rule)] bg-[var(--slip)]">
+        <header className="flex items-start justify-between gap-4 border-b border-[var(--rule)] bg-[var(--slip-2)] px-4 py-3">
           <div>
-            <h2 className="text-lg font-semibold text-black dark:text-white">
+            <h2 className="text-lg font-semibold text-[var(--ink)]">
               Composers ({composers.length})
             </h2>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              All composers in the database
-            </p>
+            <p className="text-sm text-[var(--ink-2)]">All composers in the database</p>
           </div>
           <button
             onClick={refreshMetadata}
             disabled={refreshing}
-            className="flex items-center gap-2 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-zinc-600"
+            className="flex items-center gap-2 border border-[var(--rule)] px-3 py-1.5 text-sm disabled:opacity-50"
           >
             {refreshing && <Spinner />}
             {refreshing ? 'Refreshing...' : 'Refresh missing Spotify metadata'}
@@ -169,7 +167,7 @@ export function ComposersTab() {
         </header>
         <div className="max-h-[520px] overflow-y-auto">
           <table className="w-full">
-            <thead className="sticky top-0 bg-zinc-50 text-xs text-zinc-600 dark:bg-zinc-800/50 dark:text-zinc-400">
+            <thead className="sticky top-0 bg-[var(--slip-2)] text-xs text-[var(--ink-2)]">
               <tr>
                 <th className="px-4 py-2 text-left">Name</th>
                 <th className="px-4 py-2 text-left">Years</th>
@@ -194,7 +192,7 @@ export function ComposersTab() {
             </thead>
             <tbody className="text-sm">
               {sorted.map((composer) => (
-                <tr key={composer.id} className="border-t border-zinc-200 dark:border-zinc-700">
+                <tr key={composer.id} className="border-t border-[var(--rule)]">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       {composer.spotifyImages?.at(-1)?.url ? (
@@ -207,26 +205,22 @@ export function ComposersTab() {
                       ) : (
                         <span className="h-10 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
                       )}
-                      <span className="font-medium text-black dark:text-white">
-                        {composer.name}
-                      </span>
+                      <span className="font-medium text-[var(--ink)]">{composer.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                  <td className="px-4 py-3 text-[var(--ink-2)]">
                     {composer.birthYear === null && composer.deathYear === null
                       ? 'not recorded'
                       : `${composer.birthYear ?? '?'}–${composer.deathYear ?? '?'}`}
                   </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                  <td className="px-4 py-3 text-[var(--ink-2)]">
                     {composer.spotifyPopularity ?? '—'}
                   </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                    {composer.workCount}
-                  </td>
+                  <td className="px-4 py-3 text-[var(--ink-2)]">{composer.workCount}</td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => beginEdit(composer)}
-                      className="rounded border border-zinc-300 px-3 py-1 text-xs dark:border-zinc-600"
+                      className="rounded border border-[var(--rule)] px-3 py-1 text-xs"
                     >
                       Edit
                     </button>
@@ -259,37 +253,37 @@ function ComposerEditModal({
   if (!composer) return null;
   return (
     <Modal isOpen onClose={onClose} className="max-w-md">
-      <h3 className="mb-4 text-lg font-semibold text-black dark:text-white">Edit Composer</h3>
+      <h3 className="mb-4 text-lg font-semibold text-[var(--ink)]">Edit Composer</h3>
       <div className="space-y-4">
         {(['name', 'birthYear', 'deathYear'] as const).map((field) => (
-          <label key={field} className="block text-sm text-zinc-700 dark:text-zinc-300">
+          <label key={field} className="block text-sm text-[var(--ink-2)]">
             {field === 'name' ? 'Name' : field === 'birthYear' ? 'Birth Year' : 'Death Year'}
             <input
               type={field === 'name' ? 'text' : 'number'}
               value={form[field]}
               onChange={(event) => onFormChange({ ...form, [field]: event.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-black dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              className="mt-1 w-full border border-[var(--rule)] bg-[var(--slip)] px-3 py-2 text-[var(--ink)] bg-[var(--slip-2)]"
             />
           </label>
         ))}
-        <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+        <label className="block text-sm text-[var(--ink-2)]">
           Biography
           <textarea
             value={form.biography}
             onChange={(event) => onFormChange({ ...form, biography: event.target.value })}
             rows={3}
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-black dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            className="mt-1 w-full border border-[var(--rule)] bg-[var(--slip)] px-3 py-2 text-[var(--ink)] bg-[var(--slip-2)]"
           />
         </label>
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border px-4 py-2">
+        <button onClick={onClose} className="border px-4 py-2">
           Cancel
         </button>
         <button
           onClick={onSave}
           disabled={saving}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="flex items-center gap-2 bg-[var(--gall)] px-4 py-2 text-white disabled:opacity-50"
         >
           {saving && <Spinner />}
           {saving ? 'Saving...' : 'Save'}

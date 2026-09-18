@@ -1,0 +1,444 @@
+/* =========================================================
+   THE CATALOGUE DESK
+
+   A workbench, not a reading surface. The listening screens are a
+   concert programme — ivory, Garamond, generous. This is the other
+   half of the same craft: the desk where the catalogue gets corrected,
+   in the idiom of a thematic catalogue's apparatus. Dense, ruled,
+   abbreviation-heavy, every identifier set in a typewriter face so
+   BWV 847 and BWV 874 cannot be mistaken for one another.
+
+   Colour is iron-gall ink on archival board. Rust marks what is
+   unresolved, because that is what a corrector's pen leaves behind;
+   viridian marks what two sources independently agree on. Nothing
+   else is coloured, so colour always means something.
+   ========================================================= */
+
+.desk {
+  --board: #e3e7e1;
+  --slip: #f3f5f1;
+  --slip-2: #eaeee7;
+  --ink: #1a1f1b;
+  --ink-2: #545c53;
+  --faint: #8b9389;
+  --rule: #c5cbc0;
+  --rule-strong: #a9b1a5;
+  --gall: #7c3c1e;
+  --gall-wash: #7c3c1e14;
+  --viridian: #2d5b4e;
+
+  background: var(--board);
+  color: var(--ink);
+  font-family: var(--font-archivo), system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  min-height: 100vh;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-color-scheme: dark) {
+  .desk:not([data-desk='light']) {
+    --board: #131614;
+    --slip: #1b1f1c;
+    --slip-2: #222722;
+    --ink: #e6eae2;
+    --ink-2: #a8b0a5;
+    --faint: #6e776c;
+    --rule: #2b312b;
+    --rule-strong: #3d443d;
+    --gall: #cb7f52;
+    --gall-wash: #cb7f521f;
+    --viridian: #74b39c;
+  }
+}
+
+.desk[data-desk='dark'] {
+  --board: #131614;
+  --slip: #1b1f1c;
+  --slip-2: #222722;
+  --ink: #e6eae2;
+  --ink-2: #a8b0a5;
+  --faint: #6e776c;
+  --rule: #2b312b;
+  --rule-strong: #3d443d;
+  --gall: #cb7f52;
+  --gall-wash: #cb7f521f;
+  --viridian: #74b39c;
+}
+
+/* ---------------------------------------------------------- type --- */
+
+/* Every identifier — catalogue numbers, MBIDs, ISRCs, counts — is set in
+   the typewriter face. These are strings people compare character by
+   character, and a proportional face makes that harder than it needs
+   to be. */
+.desk .mono {
+  font-family: var(--font-fragment), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Section markers, in the condensed face at small size. They name the
+   part of the catalogue you are looking at, so they read as headings
+   even at 10px. */
+.desk .eyebrow {
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.desk h1 {
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.desk h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------ surfaces --- */
+
+.desk .slip {
+  background: var(--slip);
+  border: 1px solid var(--rule);
+}
+
+.desk .rule-t {
+  border-top: 1px solid var(--rule);
+}
+.desk .rule-b {
+  border-bottom: 1px solid var(--rule);
+}
+
+/* ---------------------------------------------------------- rail --- */
+
+.desk-rail {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  height: 44px;
+  background: var(--slip);
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+/* -------------------------------------------------------- what's open --- */
+
+/* The catalogue's open questions, stated as sentences. This is the first
+   thing on the page because it is the page's whole purpose: the counts
+   people need are the ones that say what is still unknown. */
+.desk .gap {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--slip);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--gall);
+  text-align: left;
+  width: 100%;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.desk .gap:hover:not(:disabled) {
+  background: var(--slip-2);
+  border-left-color: var(--gall);
+  cursor: pointer;
+}
+
+.desk .gap[data-settled='true'] {
+  border-left-color: var(--viridian);
+  opacity: 0.72;
+}
+
+.desk .gap-n {
+  font-family: var(--font-fragment), ui-monospace, monospace;
+  font-size: 19px;
+  line-height: 1;
+  color: var(--gall);
+}
+
+.desk .gap[data-settled='true'] .gap-n {
+  color: var(--viridian);
+}
+
+.desk .gap-label {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+/* ----------------------------------------------------- apparatus --- */
+
+/* A disagreement between two sources, set the way a critical edition
+   sets a variant reading: our reading, the bracket, then theirs. The
+   bracket is the notation editors already use for exactly this, so the
+   row needs no legend to be read correctly — and it does not imply
+   either reading is the right one, which is the point. */
+.desk .apparatus {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 0 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.desk .apparatus:last-child {
+  border-bottom: 0;
+}
+
+.desk .apparatus:hover {
+  background: var(--slip-2);
+}
+
+.desk .app-context {
+  grid-column: 1 / -1;
+  color: var(--faint);
+  font-size: 11px;
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desk .app-lemma {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.desk .app-bracket {
+  color: var(--gall);
+  font-family: var(--font-fragment), ui-monospace, monospace;
+  font-size: 14px;
+  user-select: none;
+}
+
+.desk .app-variant {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* The source the variant came from. An apparatus entry always names its
+   witness, and here there is exactly one besides ourselves. */
+.desk .app-siglum {
+  font-family: var(--font-fragment), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+}
+
+/* --------------------------------------------------------- tabs --- */
+
+.desk .tab {
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 7px 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.desk .tab:hover {
+  color: var(--ink);
+}
+
+.desk .tab[aria-current='page'] {
+  color: var(--ink);
+  border-bottom-color: var(--gall);
+}
+
+.desk .tab-n {
+  font-family: var(--font-fragment), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--faint);
+  margin-left: 6px;
+  letter-spacing: 0;
+}
+
+/* ------------------------------------------------------ controls --- */
+
+.desk button.act {
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.desk button.act:hover:not(:disabled) {
+  border-color: var(--gall);
+  color: var(--gall);
+  background: var(--gall-wash);
+}
+
+.desk button.act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.desk button.act[data-variant='keep']:hover:not(:disabled) {
+  border-color: var(--viridian);
+  color: var(--viridian);
+  background: transparent;
+}
+
+/* Inside a long list, two outlined buttons on every row shout louder than
+   the readings they act on. The frame arrives on hover or focus; the label
+   stays legible either way, so nothing is hidden from a reader scanning it. */
+.desk button.act[data-quiet='true'] {
+  border-color: transparent;
+  padding-inline: 4px;
+}
+
+.desk .apparatus:hover button.act[data-quiet='true'],
+.desk button.act[data-quiet='true']:focus-visible {
+  border-color: var(--rule-strong);
+}
+
+.desk input,
+.desk select,
+.desk textarea {
+  background: var(--slip);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.desk input:focus-visible,
+.desk select:focus-visible,
+.desk textarea:focus-visible,
+.desk button:focus-visible,
+.desk a:focus-visible {
+  outline: 2px solid var(--gall);
+  outline-offset: 1px;
+}
+
+.desk input::placeholder {
+  color: var(--faint);
+}
+
+/* -------------------------------------------------------- tables --- */
+
+.desk table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.desk thead th {
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--rule-strong);
+  white-space: nowrap;
+}
+
+.desk tbody td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+.desk tbody tr:hover {
+  background: var(--slip-2);
+}
+
+/* A value we do not have. Saying so plainly beats inventing a
+   placeholder that reads like real data. */
+.desk .absent {
+  color: var(--faint);
+  font-style: italic;
+}
+
+/* Narrow screens: the apparatus stops being a table and becomes stacked
+   lines. Four columns of readings inside 375px crushes both of them, and a
+   variant reading that has wrapped mid-phrase is worse than useless. */
+@media (max-width: 639px) {
+  .desk .apparatus {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    row-gap: 3px;
+  }
+
+  .desk .app-lemma {
+    grid-column: 1 / -1;
+  }
+
+  .desk .app-bracket {
+    grid-column: 1;
+  }
+
+  .desk .app-variant {
+    grid-column: 2;
+  }
+
+  .desk .app-siglum {
+    grid-column: 3;
+  }
+
+  /* The actions, on their own line under the reading they act on. */
+  .desk .apparatus > span:last-child {
+    grid-column: 1 / -1;
+    margin-top: 5px;
+  }
+
+  /* Touch has no hover to reveal a frame, so keep it. */
+  .desk button.act[data-quiet='true'] {
+    border-color: var(--rule-strong);
+    padding-inline: 9px;
+  }
+}
+
+/* The section nav scrolls sideways rather than wrapping or clipping. */
+.desk .tab-strip {
+  display: flex;
+  gap: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.desk .tab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.desk .tab {
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desk * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

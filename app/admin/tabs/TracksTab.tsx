@@ -161,18 +161,18 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
     <div>
       {/* Help links for creating missing composers/works */}
       {onSwitchTab && (
-        <div className="mb-4 p-3 rounded-lg bg-zinc-100 dark:bg-zinc-800/50 text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="mb-4 p-3 bg-[var(--slip-2)] text-sm text-[var(--ink-2)]">
           <span className="font-medium">Missing data?</span>{' '}
           <button
             onClick={() => onSwitchTab('composers')}
-            className="text-blue-600 dark:text-blue-400 hover:underline"
+            className="text-[var(--gall)] hover:underline"
           >
             Create a composer
           </button>
           {' or '}
           <button
             onClick={() => onSwitchTab('works')}
-            className="text-blue-600 dark:text-blue-400 hover:underline"
+            className="text-[var(--gall)] hover:underline"
           >
             create a work
           </button>
@@ -181,11 +181,11 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
       )}
 
       {/* Match Queue Section */}
-      <div className="mb-8 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
+      <div className="mb-8 border border-[var(--rule)] bg-[var(--slip)] p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-black dark:text-white">Match Queue</h2>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <h2 className="text-lg font-semibold text-[var(--ink)]">Match Queue</h2>
+            <p className="text-sm text-[var(--ink-2)]">
               {loadingQueue ? 'Loading...' : `${queueTotal} pending tracks`}
             </p>
           </div>
@@ -193,14 +193,14 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
             <button
               onClick={loadQueueCount}
               disabled={loadingQueue}
-              className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+              className="px-4 py-2 border border-[var(--rule)] text-[var(--ink-2)] hover:bg-[var(--slip-2)] disabled:opacity-50"
             >
               Refresh
             </button>
             <button
               onClick={() => handleLoadFromQueue(0)}
               disabled={loading || queueTotal === 0}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
+              className="px-4 py-2 bg-[var(--gall)] text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
             >
               {loading && <Spinner />}
               {loading ? 'Loading...' : `Load ${Math.min(QUEUE_PAGE_SIZE, queueTotal)} Tracks`}
@@ -209,22 +209,22 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
         </div>
         {/* Pagination controls */}
         {albumGroups.length > 0 && queueTotal > QUEUE_PAGE_SIZE && (
-          <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-[var(--rule)]">
             <button
               onClick={() => handleLoadFromQueue(Math.max(0, queueOffset - QUEUE_PAGE_SIZE))}
               disabled={loading || queueOffset === 0}
-              className="px-3 py-1 text-sm rounded border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+              className="px-3 py-1 text-sm rounded border border-[var(--rule)] text-[var(--ink-2)] hover:bg-[var(--slip-2)] disabled:opacity-50"
             >
               Previous
             </button>
-            <span className="text-sm text-zinc-600 dark:text-zinc-400">
+            <span className="text-sm text-[var(--ink-2)]">
               {queueOffset + 1}–{Math.min(queueOffset + QUEUE_PAGE_SIZE, queueTotal)} of{' '}
               {queueTotal}
             </span>
             <button
               onClick={() => handleLoadFromQueue(queueOffset + QUEUE_PAGE_SIZE)}
               disabled={loading || queueOffset + QUEUE_PAGE_SIZE >= queueTotal}
-              className="px-3 py-1 text-sm rounded border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+              className="px-3 py-1 text-sm rounded border border-[var(--rule)] text-[var(--ink-2)] hover:bg-[var(--slip-2)] disabled:opacity-50"
             >
               Next
             </button>
@@ -232,14 +232,11 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
         )}
       </div>
 
-      <div className="mb-4 text-center text-sm text-zinc-500">— or —</div>
+      <div className="mb-4 text-center text-sm text-[var(--faint)]">— or —</div>
 
       <form onSubmit={handleSubmit} className="mb-8">
         <div className="flex flex-col gap-2 mb-4">
-          <label
-            htmlFor="trackUris"
-            className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
-          >
+          <label htmlFor="trackUris" className="text-sm font-medium text-[var(--ink-2)]">
             Spotify Track URI(s) or URL(s) (one per line)
           </label>
           <textarea
@@ -247,7 +244,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
             value={trackUrisInput}
             onChange={(e) => setTrackUrisInput(e.target.value)}
             placeholder="spotify:track:... or https://open.spotify.com/track/...&#10;One URI/URL per line"
-            className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2 text-black dark:text-white min-h-[150px]"
+            className="border border-[var(--rule)] bg-[var(--slip)] px-4 py-2 text-[var(--ink)] min-h-[150px]"
             required
           />
         </div>
@@ -255,7 +252,7 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-3 rounded-lg bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2"
+          className="px-6 py-3 bg-black text-white hover:bg-[var(--slip-2)] dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2"
         >
           {loading && <Spinner />}
           {loading ? 'Loading...' : 'Load Tracks'}

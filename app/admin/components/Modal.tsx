@@ -30,7 +30,7 @@ export function Modal({ isOpen, onClose, title, className, children }: ModalProp
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div
         className={joinClasses(
-          'w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-zinc-900',
+          'w-full max-w-2xl  bg-[var(--slip)] p-6 shadow-xl bg-[var(--slip)]',
           className,
         )}
       >
@@ -43,7 +43,7 @@ export function Modal({ isOpen, onClose, title, className, children }: ModalProp
           <button
             type="button"
             onClick={onClose}
-            className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+            className="text-sm text-[var(--faint)] hover:text-zinc-700 text-[var(--ink-2)] dark:hover:text-zinc-200"
             aria-label="Close"
           >
             Close
