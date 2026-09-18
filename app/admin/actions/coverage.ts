@@ -98,7 +98,7 @@ export async function getAlbums(state?: AlbumState, search?: string): Promise<Al
 
 export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> {
   await checkAuth();
-  return db
+  const rows = await db
     .select({
       id: spotifyTrack.spotifyId,
       title: spotifyTrack.title,
@@ -108,15 +108,46 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
       mbRecordingId: spotifyTrack.mbRecordingId,
       workId: work.id,
       workTitle: work.title,
+      partId: workPartV2.id,
       partLabel: workPartV2.label,
       partTitle: workPartV2.title,
+      partPosition: workPartV2.position,
     })
     .from(spotifyTrack)
     .leftJoin(trackWorkPartV2, eq(trackWorkPartV2.spotifyTrackId, spotifyTrack.spotifyId))
     .leftJoin(workPartV2, eq(workPartV2.id, trackWorkPartV2.workPartId))
     .leftJoin(work, eq(work.id, workPartV2.workId))
     .where(eq(spotifyTrack.spotifyAlbumId, albumId))
-    .orderBy(spotifyTrack.discNumber, spotifyTrack.trackNumber);
+    .orderBy(spotifyTrack.discNumber, spotifyTrack.trackNumber, workPartV2.position);
+
+  // A track linked to several movements arrives as several rows. Collapsing
+  // them here keeps one row per track, which is what a track is.
+  const byTrack = new Map<string, AlbumTrackRow>();
+  for (const row of rows) {
+    let track = byTrack.get(row.id);
+    if (!track) {
+      track = {
+        id: row.id,
+        title: row.title,
+        discNumber: row.discNumber,
+        trackNumber: row.trackNumber,
+        isrc: row.isrc,
+        mbRecordingId: row.mbRecordingId,
+        parts: [],
+      };
+      byTrack.set(row.id, track);
+    }
+    if (row.workId != null && row.workTitle != null && row.partId != null) {
+      track.parts.push({
+        partId: row.partId,
+        workId: row.workId,
+        workTitle: row.workTitle,
+        label: row.partLabel,
+        title: row.partTitle,
+      });
+    }
+  }
+  return [...byTrack.values()];
 }
 
 /** The ISRCs an album could contribute, in track order. */

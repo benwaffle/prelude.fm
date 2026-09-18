@@ -57,6 +57,15 @@ export type Coverage = {
   byState: { state: AlbumState; albums: number; tracks: number }[];
 };
 
+export type AlbumTrackPart = {
+  /** The work_part_v2 row, so a key never depends on the text being distinct. */
+  partId: number;
+  workId: number;
+  workTitle: string;
+  label: string | null;
+  title: string | null;
+};
+
 export type AlbumTrackRow = {
   id: string;
   title: string;
@@ -64,8 +73,10 @@ export type AlbumTrackRow = {
   trackNumber: number;
   isrc: string | null;
   mbRecordingId: string | null;
-  workId: number | null;
-  workTitle: string | null;
-  partLabel: string | null;
-  partTitle: string | null;
+  /**
+   * The movements this track covers. Usually one, but a single Spotify track
+   * can hold several — a whole prelude and fugue, or a set of variations — and
+   * the catalogue models that deliberately.
+   */
+  parts: AlbumTrackPart[];
 };

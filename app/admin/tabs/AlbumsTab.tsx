@@ -217,18 +217,20 @@ export function AlbumsTab({
                                 )}
                               </td>
                               <td className="text-[var(--ink-2)]">
-                                {track.workTitle ? (
-                                  <>
-                                    {track.workTitle}
-                                    {track.partTitle && (
-                                      <span className="text-[var(--faint)]">
-                                        {' '}
-                                        · {track.partTitle}
-                                      </span>
-                                    )}
-                                  </>
-                                ) : (
+                                {track.parts.length === 0 ? (
                                   <span className="absent">unmatched</span>
+                                ) : (
+                                  track.parts.map((part) => (
+                                    <span key={part.partId} className="block">
+                                      {part.workTitle}
+                                      {(part.label || part.title) && (
+                                        <span className="text-[var(--faint)]">
+                                          {' · '}
+                                          {[part.label, part.title].filter(Boolean).join('. ')}
+                                        </span>
+                                      )}
+                                    </span>
+                                  ))
                                 )}
                               </td>
                             </tr>
