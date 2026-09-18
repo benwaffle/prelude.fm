@@ -310,6 +310,34 @@ export function resolveWorkLevel(
   if (ancestors.length === 1) return ancestors[0];
   if (ancestors.length > 1) return null;
 
+  /*
+   * Several of our parts all naming one MusicBrainz work means that work is
+   * ours and MusicBrainz simply does not divide it further. Taking its parent
+   * instead reaches for the collection above: each of Bach's eight short
+   * preludes and fugues would resolve to "8 kleine Präludien und Fugen,
+   * BWV 553-560", and all eight would look like the same piece as each other.
+   */
+  if (leaves.size === 1 && parts.length >= 2) return [...leaves][0];
+
   if (parents.size === 1) return [...parents][0];
+
+  /*
+   * One part naming a different work than all the others is usually a bad
+   * match rather than a real disagreement: MusicBrainz carries ISRCs that
+   * labels attached to the wrong recording, and a single one of those is
+   * enough to break a work that is otherwise unanimous. Haydn's Symphony 87
+   * loses its link to a Sony ISRC sitting on Symphony 82's finale.
+   *
+   * So a clear majority wins: more than half the parts, at least two of them,
+   * and no tie. Anything less stays unresolved, because two parts pointing one
+   * way and two the other is a real question, not an outlier.
+   */
+  const votes = new Map<string, number>();
+  for (const part of parts) votes.set(part.parentId, (votes.get(part.parentId) ?? 0) + 1);
+  const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+  const [winner, count] = ranked[0];
+  const runnerUp = ranked[1]?.[1] ?? 0;
+  if (count >= 2 && count > parts.length / 2 && count > runnerUp) return winner;
+
   return null;
 }

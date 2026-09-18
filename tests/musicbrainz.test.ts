@@ -163,3 +163,60 @@ test('records nothing for a single part with no parent and no title agreement', 
   const parts = [{ leafId: 'solo', parentId: 'solo', title: 'Completely Different' }];
   assert.equal(resolveWorkLevel('Our Title', parts, titlesAreCompatible), null);
 });
+
+test('one badly matched part does not break an otherwise unanimous work', () => {
+  // Haydn's Symphony 87: three movements agree, and the finale matched
+  // Symphony 82's recording because MusicBrainz carries a Sony ISRC that the
+  // label attached to the wrong work.
+  const parts = [
+    { leafId: 'm1', parentId: 'sym87', title: 'I. Vivace' },
+    { leafId: 'm2', parentId: 'sym87', title: 'II. Adagio' },
+    { leafId: 'm3', parentId: 'sym87', title: 'III. Menuet' },
+    { leafId: 'wrong', parentId: 'sym82', title: 'IV. Finale. Vivace' },
+  ];
+  assert.equal(resolveWorkLevel('Symphony No. 87 in A major', parts, titlesAreCompatible), 'sym87');
+});
+
+test('an even split stays unresolved', () => {
+  // Two against two is a real question, not an outlier to discard.
+  const parts = [
+    { leafId: 'a1', parentId: 'workA', title: 'I' },
+    { leafId: 'a2', parentId: 'workA', title: 'II' },
+    { leafId: 'b1', parentId: 'workB', title: 'III' },
+    { leafId: 'b2', parentId: 'workB', title: 'IV' },
+  ];
+  assert.equal(resolveWorkLevel('Something', parts, titlesAreCompatible), null);
+});
+
+test('a single dissenting part out of two is not a majority', () => {
+  const parts = [
+    { leafId: 'a', parentId: 'workA', title: 'I' },
+    { leafId: 'b', parentId: 'workB', title: 'II' },
+  ];
+  assert.equal(resolveWorkLevel('Something', parts, titlesAreCompatible), null);
+});
+
+test('our parts subdividing one MusicBrainz work resolve to that work', () => {
+  // We store a prelude and its fugue as two movements; MusicBrainz keeps the
+  // pair as one work inside "8 kleine Präludien und Fugen, BWV 553-560".
+  // Reaching for the parent would make all eight resolve to the collection,
+  // and so to each other.
+  const parts = [
+    { leafId: 'pf-d-minor', parentId: 'eight-short', title: 'Prelude' },
+    { leafId: 'pf-d-minor', parentId: 'eight-short', title: 'Fugue' },
+  ];
+  assert.equal(
+    resolveWorkLevel('Prelude and Fugue in D Minor', parts, titlesAreCompatible),
+    'pf-d-minor',
+  );
+});
+
+test('a lone movement of a larger work still resolves to the work', () => {
+  // One part only, so it is a movement we hold in isolation, not a work
+  // MusicBrainz declines to subdivide.
+  const parts = [{ leafId: 'mvt2', parentId: 'concerto', title: 'II. Adagio' }];
+  assert.equal(
+    resolveWorkLevel('Violin Concerto in A minor', parts, titlesAreCompatible),
+    'concerto',
+  );
+});

@@ -16,6 +16,8 @@ import {
   movementTitleFromMusicBrainz,
   textuallyEqual,
 } from '@/lib/musicbrainz-promotion';
+import { resolveWorkLevel, type MatchedPart } from '@/lib/musicbrainz';
+import { titlesAreCompatible } from '@/lib/metadata-matching';
 import { checkAuth } from './auth';
 
 /** A count the desk shows, with the question it answers. */
@@ -307,46 +309,88 @@ export async function resolveDisagreement(
     });
 }
 
-/** Works that several of ours resolve onto — usually duplicates of each other. */
+/**
+ * Groups of our works that resolve onto a single MusicBrainz work.
+ *
+ * Resolved the same way the backfill resolves them, not by reading the raw
+ * parent of each part: MusicBrainz nests works, so two of our works can share
+ * a grandparent while being entirely different pieces. Grouping on the raw
+ * parent reports Haydn's 82nd and 87th symphonies as the same thing.
+ *
+ * What survives that is a real question — two rows here describing one work
+ * there — and it is almost always the same piece entered twice, once as the
+ * collection and once as the individual piece.
+ */
 export async function getContestedWorks(limit = 40) {
   await checkAuth();
+
   const rows = await db
     .select({
-      mbid: musicbrainzFact.value,
       workId: workPartV2.workId,
-      title: work.title,
+      workTitle: work.title,
+      workMbid: work.musicbrainzId,
       composerName: composer.name,
+      partId: workPartV2.id,
+      leafId: workPartV2.musicbrainzId,
+      parentId: musicbrainzFact.value,
     })
-    .from(musicbrainzFact)
-    .innerJoin(workPartV2, eq(workPartV2.id, musicbrainzFact.entityId))
+    .from(workPartV2)
     .innerJoin(work, eq(work.id, workPartV2.workId))
     .innerJoin(composer, eq(composer.id, work.composerId))
-    .where(
-      and(eq(musicbrainzFact.entityType, 'work_part'), eq(musicbrainzFact.field, 'mb_parent_work')),
-    );
+    .innerJoin(
+      musicbrainzFact,
+      and(
+        eq(musicbrainzFact.entityType, 'work_part'),
+        eq(musicbrainzFact.entityId, workPartV2.id),
+        eq(musicbrainzFact.field, 'mb_parent_work'),
+      ),
+    )
+    .where(isNotNull(workPartV2.musicbrainzId));
 
-  const groups = new Map<string, Map<number, { title: string; composerName: string }>>();
-  for (const row of rows) {
-    const group = groups.get(row.mbid) ?? new Map();
-    group.set(row.workId, { title: row.title, composerName: row.composerName });
-    groups.set(row.mbid, group);
-  }
-
-  const unlinked = new Set(
-    (await db.select({ id: work.id }).from(work).where(isNull(work.musicbrainzId))).map(
-      (r) => r.id,
-    ),
+  const partTitles = new Map(
+    (
+      await db
+        .select({ entityId: musicbrainzFact.entityId, value: musicbrainzFact.value })
+        .from(musicbrainzFact)
+        .where(
+          and(eq(musicbrainzFact.entityType, 'work_part'), eq(musicbrainzFact.field, 'part_title')),
+        )
+    ).map((row) => [row.entityId, row.value]),
   );
 
-  return [...groups.entries()]
-    .filter(
-      ([, members]) => members.size > 1 && [...members.keys()].every((id) => unlinked.has(id)),
-    )
+  const byWork = new Map<
+    number,
+    { title: string; composerName: string; linked: boolean; parts: MatchedPart[] }
+  >();
+  for (const row of rows) {
+    const entry = byWork.get(row.workId) ?? {
+      title: row.workTitle,
+      composerName: row.composerName,
+      linked: row.workMbid !== null,
+      parts: [],
+    };
+    entry.parts.push({
+      leafId: row.leafId as string,
+      parentId: row.parentId,
+      title: partTitles.get(row.partId) ?? '',
+    });
+    byWork.set(row.workId, entry);
+  }
+
+  const claims = new Map<string, { id: number; title: string; composerName: string }[]>();
+  for (const [workId, entry] of byWork) {
+    const chosen = resolveWorkLevel(entry.title, entry.parts, titlesAreCompatible);
+    if (!chosen) continue;
+    const list = claims.get(chosen) ?? [];
+    list.push({ id: workId, title: entry.title, composerName: entry.composerName });
+    claims.set(chosen, list);
+  }
+
+  return [...claims.entries()]
+    .filter(([, works]) => works.length > 1)
+    .sort((a, b) => b[1].length - a[1].length)
     .slice(0, limit)
-    .map(([mbid, members]) => ({
-      mbid,
-      works: [...members.entries()].map(([id, info]) => ({ id, ...info })),
-    }));
+    .map(([mbid, works]) => ({ mbid, works }));
 }
 
 /** Kept for the header; the old shape the tabs still read. */
