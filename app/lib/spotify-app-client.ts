@@ -127,6 +127,19 @@ export async function getSpotifyTracksByIds(trackIds: string[]) {
   return tracks;
 }
 
+/** Albums in batches, keeping `external_ids` so the barcode survives. */
+export async function getSpotifyAlbumsByIds(albumIds: string[]) {
+  const albums: Array<{ id: string; name: string; external_ids?: { upc?: string } }> = [];
+  for (let i = 0; i < albumIds.length; i += 20) {
+    const batch = albumIds.slice(i, i + 20);
+    const result = await spotifyFetch<{
+      albums: Array<{ id: string; name: string; external_ids?: { upc?: string } } | null>;
+    }>(`/albums?ids=${batch.join(',')}`);
+    for (const album of result.albums) if (album) albums.push(album);
+  }
+  return albums;
+}
+
 export async function getSpotifyAlbumMetadata(albumId: string): Promise<SpotifyAlbumMetadata> {
   const album = await spotifyFetch<SpotifyAlbumResponse>(`/albums/${albumId}`);
   return {

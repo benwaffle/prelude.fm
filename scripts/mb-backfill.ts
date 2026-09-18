@@ -17,6 +17,7 @@ import { db } from '@/lib/db';
 import {
   composer,
   musicbrainzFact,
+  spotifyAlbum,
   spotifyTrack,
   trackWorkPartV2,
   work,
@@ -27,6 +28,7 @@ import {
   cataloguesOf,
   composerOf,
   findRecordingsByIsrcs,
+  findReleasesByBarcode,
   getArtist,
   getRecordingWorks,
   getWork,
@@ -36,7 +38,7 @@ import {
   type MatchedPart,
   yearOf,
 } from '@/lib/musicbrainz';
-import { getSpotifyTracksByIds } from '@/lib/spotify-app-client';
+import { getSpotifyAlbumsByIds, getSpotifyTracksByIds } from '@/lib/spotify-app-client';
 import { normalizeCatalogNumber, normalizeCatalogSystem } from '@/lib/classical-normalization';
 import { titlesAreCompatible } from '@/lib/metadata-matching';
 import { composerMatchIsCredible } from '@/lib/musicbrainz-promotion';
@@ -148,6 +150,80 @@ async function backfillRecordings() {
   }
   log(`[recordings] resolved ${resolved} tracks`);
   if (failedBatches) log(`[recordings] ${failedBatches} batches unserved; re-run to retry them`);
+}
+
+/* ---------------------------------------------------------- releases --- */
+
+/**
+ * Ask MusicBrainz whether it holds each album, by barcode.
+ *
+ * This is what separates the two reasons an album has nothing anchored: the
+ * release is missing from MusicBrainz entirely, or it is there and simply has
+ * no ISRCs registered. The first needs the release adding, the second needs
+ * ISRCs submitting, and they are very different jobs.
+ */
+async function backfillReleases() {
+  const rows = await db
+    .select({
+      id: spotifyAlbum.spotifyId,
+      upc: spotifyAlbum.upc,
+      checked: spotifyAlbum.mbCheckedAt,
+    })
+    .from(spotifyAlbum);
+
+  const needUpc = rows.filter((row) => !row.upc).map((row) => row.id);
+  if (needUpc.length) {
+    log(`[releases] fetching barcodes for ${needUpc.length} albums`);
+    for (let i = 0; i < needUpc.length; i += 20) {
+      const batch = needUpc.slice(i, i + 20);
+      const albums = await getSpotifyAlbumsByIds(batch);
+      for (const album of albums) {
+        const upc = album.external_ids?.upc ?? null;
+        if (upc) {
+          await db.update(spotifyAlbum).set({ upc }).where(eq(spotifyAlbum.spotifyId, album.id));
+        }
+      }
+    }
+  }
+
+  const pending = await db
+    .select({ id: spotifyAlbum.spotifyId, upc: spotifyAlbum.upc })
+    .from(spotifyAlbum)
+    .where(isNull(spotifyAlbum.mbCheckedAt));
+  log(`[releases] asking MusicBrainz about ${pending.length} albums`);
+
+  let found = 0;
+  let absent = 0;
+  let ambiguous = 0;
+  let done = 0;
+  for (const album of pending) {
+    if (!album.upc) {
+      await db
+        .update(spotifyAlbum)
+        .set({ mbCheckedAt: new Date() })
+        .where(eq(spotifyAlbum.spotifyId, album.id));
+      continue;
+    }
+    let releases;
+    try {
+      releases = await findReleasesByBarcode(album.upc);
+    } catch (error) {
+      log(`  ! ${album.upc}: ${error instanceof Error ? error.message.slice(0, 60) : error}`);
+      continue;
+    }
+    // A barcode shared by several releases identifies none of them, and
+    // guessing would attach this album to the wrong one.
+    const releaseId = releases.length === 1 ? releases[0] : null;
+    if (releases.length === 1) found++;
+    else if (releases.length === 0) absent++;
+    else ambiguous++;
+    await db
+      .update(spotifyAlbum)
+      .set({ mbReleaseId: releaseId, mbCheckedAt: new Date() })
+      .where(eq(spotifyAlbum.spotifyId, album.id));
+    if (++done % 50 === 0) log(`  ${done}/${pending.length}`);
+  }
+  log(`[releases] ${found} matched, ${absent} not in MusicBrainz, ${ambiguous} ambiguous barcodes`);
 }
 
 /* ------------------------------------------------------------- 3. works --- */
@@ -614,6 +690,7 @@ async function resetWorkLinks() {
 const steps: Record<string, () => Promise<void>> = {
   isrcs: backfillIsrcs,
   recordings: backfillRecordings,
+  releases: backfillReleases,
   works: backfillWorks,
   'reset-works': resetWorkLinks,
   'reset-composers': resetComposerLinks,

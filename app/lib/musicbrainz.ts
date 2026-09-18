@@ -138,6 +138,27 @@ export async function findRecordingsByIsrcs(isrcs: string[]): Promise<Map<string
   return found;
 }
 
+/**
+ * Releases carrying a barcode, filtered to exact matches.
+ *
+ * The search index is fuzzy and will return near misses, so results whose own
+ * barcode differs are dropped: a near miss here would attach an album to the
+ * wrong release. Leading zeros are ignored, since UPC-12 and EAN-13 write the
+ * same barcode with different padding.
+ */
+export async function findReleasesByBarcode(barcode: string): Promise<string[]> {
+  const normalise = (value: string | null | undefined) => (value ?? '').trim().replace(/^0+/, '');
+  const wanted = normalise(barcode);
+  if (!wanted) return [];
+
+  const result = await mbGet<{ releases?: { id: string; barcode?: string | null }[] }>(
+    `/release?query=barcode:${encodeURIComponent(wanted)}&fmt=json&limit=25`,
+  );
+  return (result?.releases ?? [])
+    .filter((release) => normalise(release.barcode) === wanted)
+    .map((release) => release.id);
+}
+
 /** The works a recording is a performance of. */
 export async function getRecordingWorks(
   recordingId: string,

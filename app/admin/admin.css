@@ -442,6 +442,55 @@
   padding: 14px;
 }
 
+/* ------------------------------------------------------- albums --- */
+
+/* One album, its anchoring, and the single thing to do about it. The action is
+   a link out to the tool that does the job, so it sits apart from the part of
+   the row that opens the track list. */
+.desk .album-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+}
+
+.desk .album-row:hover {
+  background: var(--slip-2);
+}
+
+.desk .album-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.desk .album-title {
+  min-width: 0;
+  flex: 1 1 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desk .album-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* An action is a link, but it should read as the button it behaves like. */
+.desk a.act {
+  display: inline-block;
+  text-decoration: none;
+}
+
 /* -------------------------------------------------------- tables --- */
 
 .desk table {

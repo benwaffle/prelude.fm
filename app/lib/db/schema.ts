@@ -177,15 +177,30 @@ export const movement = sqliteTable(
   ],
 );
 
-export const spotifyAlbum = sqliteTable('spotify_album', {
-  spotifyId: text('spotify_id').primaryKey(),
-  title: text('title').notNull(),
-  year: integer('year'),
-  popularity: integer('popularity'),
-  images: text('images', { mode: 'json' }).$type<
-    { url: string; width: number; height: number }[]
-  >(),
-});
+export const spotifyAlbum = sqliteTable(
+  'spotify_album',
+  {
+    spotifyId: text('spotify_id').primaryKey(),
+    title: text('title').notNull(),
+    year: integer('year'),
+    popularity: integer('popularity'),
+    images: text('images', { mode: 'json' }).$type<
+      { url: string; width: number; height: number }[]
+    >(),
+    /** The release barcode Spotify reports; the key MusicBrainz indexes releases by. */
+    upc: text('upc'),
+    /** The MusicBrainz release this album is, when one carries the same barcode. */
+    mbReleaseId: text('mb_release_id'),
+    /**
+     * When we last asked MusicBrainz about this barcode. Without it a null
+     * release is ambiguous — it could mean MusicBrainz does not have the
+     * release, or simply that nobody has looked yet, and those call for
+     * completely different work.
+     */
+    mbCheckedAt: integer('mb_checked_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [index('spotify_album_mb_release_idx').on(table.mbReleaseId)],
+);
 
 export const recording = sqliteTable(
   'recording',

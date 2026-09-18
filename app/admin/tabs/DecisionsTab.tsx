@@ -10,6 +10,7 @@ import {
   type Disagreement,
   type DisagreementField,
 } from '../actions/catalogue-health';
+import { getUnconfirmedWorks } from '../actions/coverage';
 import { Spinner } from '../components/Spinner';
 
 type ContestedGroup = {
@@ -24,27 +25,28 @@ const FIELD_NAME: Record<DisagreementField, string> = {
   part_title: 'movement title',
 };
 
-export function OverviewTab({
-  onSwitchTab,
-}: {
-  onSwitchTab: (tab: 'queue' | 'works' | 'composers') => void;
-}) {
+export function DecisionsTab() {
   const [health, setHealth] = useState<CatalogueHealth | null>(null);
   const [field, setField] = useState<DisagreementField | undefined>();
   const [conflicts, setConflicts] = useState<{ rows: Disagreement[]; total: number } | null>(null);
   const [duplicates, setDuplicates] = useState<ContestedGroup[]>([]);
+  const [unconfirmed, setUnconfirmed] = useState<
+    { id: number; title: string; form: string | null; parts: number; recordings: number }[]
+  >([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [nextHealth, nextConflicts, nextDuplicates] = await Promise.all([
+    const [nextHealth, nextConflicts, nextDuplicates, nextUnconfirmed] = await Promise.all([
       getCatalogueHealth(),
       getDisagreements(field, 25),
       getContestedWorks(10),
+      getUnconfirmedWorks(15),
     ]);
     setHealth(nextHealth);
     setConflicts(nextConflicts);
     setDuplicates(nextDuplicates);
+    setUnconfirmed(nextUnconfirmed);
     setLoading(false);
   }, [field]);
 
@@ -80,60 +82,14 @@ export function OverviewTab({
     );
   }
 
-  const todo = health.gaps.filter((gap) => gap.count > 0);
   const totalConflicts = health.disagreementsByField.reduce((sum, row) => sum + row.count, 0);
 
   return (
     <div className="flex flex-col gap-8 pb-16">
-      <section>
-        <p className="eyebrow mb-2">Needs attention</p>
-        {todo.length === 0 ? (
-          <p className="text-[var(--viridian)]">Nothing waiting.</p>
-        ) : (
-          <div className="slip">
-            {todo.map((gap) => (
-              <div key={gap.id} className="row">
-                <span className="mono w-16 shrink-0 text-[15px] text-[var(--gall)]">
-                  {gap.count.toLocaleString()}
-                </span>
-                <span className="min-w-0 flex-1">{gap.label}</span>
-                {gap.tab && (
-                  <button className="act" onClick={() => onSwitchTab(gap.tab!)}>
-                    Open
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <p className="eyebrow mb-2">MusicBrainz coverage</p>
-        <div className="slip flex flex-wrap">
-          {[
-            { label: 'tracks', held: health.tracksMatched, total: health.tracks },
-            { label: 'works', held: health.worksLinked, total: health.works },
-            { label: 'movements', held: health.partsLinked, total: health.parts },
-            { label: 'composers', held: health.composersLinked, total: health.composers },
-          ].map((row) => (
-            <div key={row.label} className="min-w-[140px] flex-1 px-4 py-3">
-              <p className="mono text-[15px] leading-none">
-                {row.held.toLocaleString()}
-                <span className="text-[var(--faint)]"> / {row.total.toLocaleString()}</span>
-              </p>
-              <p className="mt-1.5 text-[11px] text-[var(--ink-2)]">{row.label} matched</p>
-            </div>
-          ))}
-          <div className="min-w-[140px] flex-1 px-4 py-3">
-            <p className="mono text-[15px] leading-none text-[var(--viridian)]">
-              {health.importedCatalogues.toLocaleString()}
-            </p>
-            <p className="mt-1.5 text-[11px] text-[var(--ink-2)]">catalogue numbers added</p>
-          </div>
-        </div>
-      </section>
-
+      <p className="max-w-[70ch] text-[var(--ink-2)]">
+        Everything here needs a person. MusicBrainz either disagrees with us, points two of our
+        works at one of its own, or has nothing to say at all.
+      </p>
       <section>
         <p className="eyebrow mb-2">Conflicts with MusicBrainz</p>
         <p className="mb-3 max-w-[70ch] text-[var(--ink-2)]">
@@ -209,6 +165,33 @@ export function OverviewTab({
           </>
         )}
       </section>
+
+      {unconfirmed.length > 0 && (
+        <section>
+          <p className="eyebrow mb-2">Works MusicBrainz has never confirmed</p>
+          <p className="mb-3 max-w-[70ch] text-[var(--ink-2)]">
+            The parser created these from track titles and nothing has corroborated them. Anchoring
+            the albums they appear on is what confirms or corrects them — the ones with the most
+            recordings are worth the most.
+          </p>
+          <div className="slip">
+            {unconfirmed.map((item) => (
+              <div key={item.id} className="row">
+                <span className="mono w-10 shrink-0 text-[11px] text-[var(--faint)]">
+                  {item.id}
+                </span>
+                <span className="min-w-0 flex-1">
+                  {item.title}
+                  {item.form && <span className="text-[var(--faint)]"> · {item.form}</span>}
+                </span>
+                <span className="mono shrink-0 text-[11px] text-[var(--faint)]">
+                  {item.recordings} rec · {item.parts} mvt
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {duplicates.length > 0 && (
         <section>
