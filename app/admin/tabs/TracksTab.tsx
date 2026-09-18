@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { getBatchTrackMetadata, type TrackMetadata } from '../actions/spotify-tracks';
 import { getMatchQueue, updateMatchQueueStatus } from '../../actions/spotify';
 import { AlbumTracksTable } from '../AlbumTracksTable';
-import { Spinner } from '../components/Spinner';
 import { Notice } from '../components/Notice';
 
 interface AlbumGroup {
@@ -158,121 +157,99 @@ export function TracksTab({ onSwitchTab }: TracksTabProps) {
   };
 
   return (
-    <div>
-      {/* Help links for creating missing composers/works */}
-      {onSwitchTab && (
-        <div className="mb-4 p-3 bg-[var(--slip-2)] text-sm text-[var(--ink-2)]">
-          <span className="font-medium">Missing data?</span>{' '}
-          <button
-            onClick={() => onSwitchTab('composers')}
-            className="text-[var(--gall)] hover:underline"
-          >
-            Create a composer
-          </button>
-          {' or '}
-          <button
-            onClick={() => onSwitchTab('works')}
-            className="text-[var(--gall)] hover:underline"
-          >
-            create a work
-          </button>
-          {' in the other tabs.'}
-        </div>
-      )}
-
-      {/* Match Queue Section */}
-      <div className="mb-8 border border-[var(--rule)] bg-[var(--slip)] p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-[var(--ink)]">Match Queue</h2>
-            <p className="text-sm text-[var(--ink-2)]">
-              {loadingQueue ? 'Loading...' : `${queueTotal} pending tracks`}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={loadQueueCount}
-              disabled={loadingQueue}
-              className="px-4 py-2 border border-[var(--rule)] text-[var(--ink-2)] hover:bg-[var(--slip-2)] disabled:opacity-50"
-            >
+    <div className="flex flex-col gap-5 pb-16">
+      <section className="panel">
+        <div className="toolbar">
+          <span className="panel-title">Match queue</span>
+          <span className="mono text-[15px] text-[var(--gall)]">
+            {loadingQueue ? '…' : queueTotal.toLocaleString()}
+          </span>
+          <span className="text-[var(--ink-2)]">tracks waiting</span>
+          <span className="ml-auto flex gap-2">
+            <button onClick={loadQueueCount} disabled={loadingQueue} className="act">
               Refresh
             </button>
             <button
               onClick={() => handleLoadFromQueue(0)}
               disabled={loading || queueTotal === 0}
-              className="px-4 py-2 bg-[var(--gall)] text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
+              className="act"
+              data-variant="primary"
             >
-              {loading && <Spinner />}
-              {loading ? 'Loading...' : `Load ${Math.min(QUEUE_PAGE_SIZE, queueTotal)} Tracks`}
+              {loading ? 'Loading…' : `Load ${Math.min(QUEUE_PAGE_SIZE, queueTotal)}`}
             </button>
-          </div>
+          </span>
         </div>
-        {/* Pagination controls */}
+
         {albumGroups.length > 0 && queueTotal > QUEUE_PAGE_SIZE && (
-          <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-[var(--rule)]">
+          <div className="toolbar">
             <button
               onClick={() => handleLoadFromQueue(Math.max(0, queueOffset - QUEUE_PAGE_SIZE))}
               disabled={loading || queueOffset === 0}
-              className="px-3 py-1 text-sm rounded border border-[var(--rule)] text-[var(--ink-2)] hover:bg-[var(--slip-2)] disabled:opacity-50"
+              className="act"
             >
               Previous
             </button>
-            <span className="text-sm text-[var(--ink-2)]">
+            <span className="mono text-[11px] text-[var(--ink-2)]">
               {queueOffset + 1}–{Math.min(queueOffset + QUEUE_PAGE_SIZE, queueTotal)} of{' '}
-              {queueTotal}
+              {queueTotal.toLocaleString()}
             </span>
             <button
               onClick={() => handleLoadFromQueue(queueOffset + QUEUE_PAGE_SIZE)}
               disabled={loading || queueOffset + QUEUE_PAGE_SIZE >= queueTotal}
-              className="px-3 py-1 text-sm rounded border border-[var(--rule)] text-[var(--ink-2)] hover:bg-[var(--slip-2)] disabled:opacity-50"
+              className="act"
             >
               Next
             </button>
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="mb-4 text-center text-sm text-[var(--faint)]">— or —</div>
-
-      <form onSubmit={handleSubmit} className="mb-8">
-        <div className="flex flex-col gap-2 mb-4">
-          <label htmlFor="trackUris" className="text-sm font-medium text-[var(--ink-2)]">
-            Spotify Track URI(s) or URL(s) (one per line)
-          </label>
-          <textarea
-            id="trackUris"
-            value={trackUrisInput}
-            onChange={(e) => setTrackUrisInput(e.target.value)}
-            placeholder="spotify:track:... or https://open.spotify.com/track/...&#10;One URI/URL per line"
-            className="border border-[var(--rule)] bg-[var(--slip)] px-4 py-2 text-[var(--ink)] min-h-[150px]"
-            required
-          />
+      <details className="fold">
+        <summary>Load specific tracks</summary>
+        <div className="fold-body">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <label htmlFor="trackUris" className="text-[var(--ink-2)]">
+              Paste Spotify track links or URIs, one per line.
+            </label>
+            <textarea
+              id="trackUris"
+              value={trackUrisInput}
+              onChange={(e) => setTrackUrisInput(e.target.value)}
+              placeholder="https://open.spotify.com/track/…"
+              className="min-h-[110px]"
+              required
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="act self-start"
+              data-variant="primary"
+            >
+              {loading ? 'Loading…' : 'Load tracks'}
+            </button>
+          </form>
         </div>
+      </details>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="px-6 py-3 bg-black text-white hover:bg-[var(--slip-2)] dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2"
-        >
-          {loading && <Spinner />}
-          {loading ? 'Loading...' : 'Load Tracks'}
-        </button>
-      </form>
-
-      {error && (
-        <Notice variant="error" className="mb-4">
-          {error}
-        </Notice>
+      {onSwitchTab && (
+        <p className="text-[11px] text-[var(--faint)]">
+          Composer or work missing?{' '}
+          <button onClick={() => onSwitchTab('composers')} className="text-[var(--gall)] underline">
+            Add a composer
+          </button>{' '}
+          or{' '}
+          <button onClick={() => onSwitchTab('works')} className="text-[var(--gall)] underline">
+            add a work
+          </button>
+          .
+        </p>
       )}
 
-      {successMessage && (
-        <Notice variant="success" className="mb-4">
-          {successMessage}
-        </Notice>
-      )}
+      {error && <Notice variant="error">{error}</Notice>}
+      {successMessage && <Notice variant="success">{successMessage}</Notice>}
 
       {albumGroups.length > 0 && (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-5">
           {albumGroups.map(({ album, tracks }) => (
             <AlbumTracksTable
               key={album.id}

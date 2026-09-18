@@ -657,71 +657,52 @@ export function WorksTab() {
       )}
 
       {/* Search and Filters */}
-      <div className="border border-[var(--rule)] bg-[var(--slip)] p-4">
-        <div className="flex flex-wrap gap-4 items-end">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-[var(--ink-2)] mb-1">Search</label>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Title, nickname, or catalog number..."
-              className="w-full px-3 py-2 border border-[var(--rule)] bg-[var(--slip)] text-[var(--ink)]"
-            />
-          </div>
-
-          <div className="w-48">
-            <label className="block text-sm font-medium text-[var(--ink-2)] mb-1">Composer</label>
-            <select
-              value={filterComposerId || ''}
-              onChange={(e) =>
-                setFilterComposerId(e.target.value ? parseInt(e.target.value) : undefined)
-              }
-              className="w-full px-3 py-2 border border-[var(--rule)] bg-[var(--slip)] text-[var(--ink)]"
-            >
-              <option value="">All composers</option>
-              {composers.map((comp) => (
-                <option key={comp.id} value={comp.id}>
-                  {comp.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="w-32">
-            <label className="block text-sm font-medium text-[var(--ink-2)] mb-1">Catalog</label>
-            <input
-              type="text"
-              value={filterCatalogSystem}
-              onChange={(e) => setFilterCatalogSystem(e.target.value)}
-              placeholder="BWV, Op., K."
-              className="w-full px-3 py-2 border border-[var(--rule)] bg-[var(--slip)] text-[var(--ink)]"
-            />
-          </div>
-
-          <button
-            onClick={handleSearch}
-            disabled={loading}
-            className="px-4 py-2 bg-[var(--gall)] text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+      <section className="panel">
+        <div className="toolbar">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            placeholder="Title, nickname, or catalogue number"
+            className="min-w-[240px] flex-1"
+          />
+          <select
+            value={filterComposerId || ''}
+            onChange={(e) =>
+              setFilterComposerId(e.target.value ? parseInt(e.target.value) : undefined)
+            }
           >
-            {loading && <Spinner />}
-            Search
+            <option value="">All composers</option>
+            {composers.map((comp) => (
+              <option key={comp.id} value={comp.id}>
+                {comp.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={filterCatalogSystem}
+            onChange={(e) => setFilterCatalogSystem(e.target.value)}
+            placeholder="BWV, Op., K."
+            className="w-28"
+          />
+          <button onClick={handleSearch} disabled={loading} className="act" data-variant="primary">
+            {loading ? 'Searching…' : 'Search'}
           </button>
-
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-[var(--viridian)] text-white hover:opacity-90"
-          >
-            Create Work
+          <button onClick={() => setShowCreateModal(true)} className="act ml-auto">
+            New work
           </button>
         </div>
-      </div>
+      </section>
 
       {/* Works List */}
-      <div className="border border-[var(--rule)] bg-[var(--slip)] overflow-hidden">
-        <div className="px-4 py-3 bg-[var(--slip-2)] border-b border-[var(--rule)]">
-          <h2 className="text-lg font-semibold text-[var(--ink)]">Works ({totalWorks})</h2>
+      <div className="panel overflow-hidden">
+        <div className="panel-head">
+          <span className="panel-title">Works</span>
+          <span className="mono text-[11px] text-[var(--faint)]">
+            {totalWorks.toLocaleString()}
+          </span>
         </div>
 
         {loading ? (
@@ -735,23 +716,23 @@ export function WorksTab() {
           </div>
         ) : (
           <table className="w-full">
-            <thead className="bg-[var(--slip-2)] text-xs text-[var(--ink-2)]">
+            <thead className="bg-[var(--slip-2)]">
               <tr>
-                <th className="px-2 py-1 text-left">Composer</th>
-                <th className="px-2 py-1 text-left">Title</th>
-                <th className="px-2 py-1 text-left">Catalog</th>
-                <th className="px-2 py-1 text-left">Form</th>
-                <th className="px-2 py-1 text-left">Year</th>
-                <th className="px-2 py-1 text-left">Movements</th>
-                <th className="px-2 py-1 text-left">Recordings</th>
-                <th className="px-2 py-1 text-right">Actions</th>
+                <th>Composer</th>
+                <th>Title</th>
+                <th>Catalogue</th>
+                <th>Form</th>
+                <th>Year</th>
+                <th>Mvts</th>
+                <th>Recs</th>
+                <th />
               </tr>
             </thead>
-            <tbody className="text-xs">
+            <tbody>
               {works.map((work) => (
                 <tr key={work.id} className="border-t border-[var(--rule)]">
-                  <td className="px-2 py-1 text-[var(--ink-2)]">{work.composerName}</td>
-                  <td className="px-2 py-1">
+                  <td className="text-[var(--ink-2)]">{work.composerName}</td>
+                  <td>
                     <span className="text-[var(--ink)]">{work.title}</span>
                     {work.nickname && (
                       <span className="text-xs text-[var(--faint)] ml-2">
@@ -759,28 +740,29 @@ export function WorksTab() {
                       </span>
                     )}
                   </td>
-                  <td className="px-2 py-1 text-[var(--ink-2)]">
-                    {work.catalogSystem && work.catalogNumber
-                      ? `${work.catalogSystem} ${work.catalogNumber}`
-                      : '-'}
+                  <td className="mono text-[var(--ink-2)]">
+                    {work.catalogSystem && work.catalogNumber ? (
+                      `${work.catalogSystem} ${work.catalogNumber}`
+                    ) : (
+                      <span className="absent">none</span>
+                    )}
                   </td>
-                  <td className="px-2 py-1 text-[var(--ink-2)]">{work.form || '-'}</td>
-                  <td className="px-2 py-1 text-[var(--ink-2)]">{work.yearComposed ?? '-'}</td>
-                  <td className="px-2 py-1 text-[var(--ink-2)]">{work.movementCount}</td>
-                  <td className="px-2 py-1 text-[var(--ink-2)]">{work.recordingCount}</td>
-                  <td className="px-2 py-1 text-right">
+                  <td className="text-[var(--ink-2)]">
+                    {work.form || <span className="absent">none</span>}
+                  </td>
+                  <td className="mono text-[var(--ink-2)]">{work.yearComposed ?? '—'}</td>
+                  <td className="mono text-[var(--ink-2)]">{work.movementCount}</td>
+                  <td className="mono text-[var(--ink-2)]">{work.recordingCount}</td>
+                  <td className="text-right">
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => handleViewWorkDetails(work.id)}
                         disabled={loadingDetails}
-                        className="text-xs px-2 py-0.5 rounded bg-[var(--gall)] text-white hover:opacity-90"
+                        className="act"
                       >
                         View
                       </button>
-                      <button
-                        onClick={() => startEditingWork(work)}
-                        className="text-xs px-2 py-0.5 rounded border border-[var(--rule)] text-[var(--ink-2)] hover:bg-[var(--slip-2)]"
-                      >
+                      <button onClick={() => startEditingWork(work)} className="act">
                         Edit
                       </button>
                     </div>

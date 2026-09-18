@@ -5,23 +5,23 @@ import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
 import { getAdminStats } from './actions/admin-stats';
 import { Spinner } from './components/Spinner';
-import { DeskTab } from './tabs/DeskTab';
+import { OverviewTab } from './tabs/OverviewTab';
 import { TracksTab } from './tabs/TracksTab';
 import { ComposersTab } from './tabs/ComposersTab';
 import { WorksTab } from './tabs/WorksTab';
 
-type TabId = 'desk' | 'queue' | 'works' | 'composers';
+type TabId = 'overview' | 'queue' | 'works' | 'composers';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'desk', label: 'Desk' },
-  { id: 'queue', label: 'Queue' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'queue', label: 'Tracks' },
   { id: 'works', label: 'Works' },
   { id: 'composers', label: 'Composers' },
 ];
 
 export default function AdminPage() {
   const { data: session, isPending } = authClient.useSession();
-  const [tab, setTab] = useState<TabId>('desk');
+  const [tab, setTab] = useState<TabId>('overview');
   const [counts, setCounts] = useState<{ queue: number; works: number; composers: number } | null>(
     null,
   );
@@ -52,8 +52,8 @@ export default function AdminPage() {
   if (!session) {
     return (
       <Gate
-        title="Catalogue desk"
-        body="Sign in to open the desk."
+        title="prelude admin"
+        body="Sign in to continue."
         action={
           <button
             className="act"
@@ -69,8 +69,8 @@ export default function AdminPage() {
   if (!isAdmin) {
     return (
       <Gate
-        title="Catalogue desk"
-        body={`Signed in as ${session.user?.name ?? 'someone else'}. This desk belongs to another account.`}
+        title="prelude admin"
+        body={`Signed in as ${session.user?.name ?? 'someone else'}. This page is for another account.`}
         action={
           <Link className="act" href="/">
             Back to the player
@@ -83,8 +83,7 @@ export default function AdminPage() {
   return (
     <>
       <header className="desk-rail">
-        <h1>Catalogue desk</h1>
-        <span className="mono text-[10px] text-[var(--faint)]">prelude.fm</span>
+        <h1>prelude admin</h1>
         <Link href="/" className="ml-auto text-[11px] text-[var(--ink-2)] hover:text-[var(--gall)]">
           Back to the player
         </Link>
@@ -100,16 +99,14 @@ export default function AdminPage() {
               onClick={() => setTab(item.id)}
             >
               {item.label}
-              {counts && item.id !== 'desk' && <span className="tab-n">{counts[item.id]}</span>}
+              {counts && item.id !== 'overview' && <span className="tab-n">{counts[item.id]}</span>}
             </button>
           ))}
         </nav>
       </div>
 
       <main className="mx-auto max-w-[1400px] px-5 pt-7">
-        {tab === 'desk' && (
-          <DeskTab onSwitchTab={(next) => setTab(next === 'queue' ? 'queue' : next)} />
-        )}
+        {tab === 'overview' && <OverviewTab onSwitchTab={(next: TabId) => setTab(next)} />}
         {tab === 'queue' && <TracksTab onSwitchTab={(next) => setTab(next)} />}
         {tab === 'works' && <WorksTab />}
         {tab === 'composers' && <ComposersTab />}

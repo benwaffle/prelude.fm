@@ -101,6 +101,8 @@ export function ComposersTab() {
     }
   };
 
+  const [search, setSearch] = useState('');
+
   const existingArtistIds = useMemo(
     () =>
       new Set(
@@ -112,14 +114,20 @@ export function ComposersTab() {
   );
   const sorted = useMemo(
     () =>
-      [...composers].sort((left, right) => {
-        const comparison =
-          sort.by === 'popularity'
-            ? (left.spotifyPopularity ?? -1) - (right.spotifyPopularity ?? -1)
-            : left.name.localeCompare(right.name, 'en', { sensitivity: 'base' });
-        return sort.direction === 'asc' ? comparison : -comparison;
-      }),
-    [composers, sort],
+      composers
+        .filter((composer) =>
+          search.trim()
+            ? composer.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
+            : true,
+        )
+        .sort((left, right) => {
+          const comparison =
+            sort.by === 'popularity'
+              ? (left.spotifyPopularity ?? -1) - (right.spotifyPopularity ?? -1)
+              : left.name.localeCompare(right.name, 'en', { sensitivity: 'base' });
+          return sort.direction === 'asc' ? comparison : -comparison;
+        }),
+    [composers, search, sort],
   );
 
   if (loading && composers.length === 0) {
@@ -131,7 +139,7 @@ export function ComposersTab() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-5 pb-16">
       {error && <Notice variant="error">{error}</Notice>}
       {success && <Notice variant="success">{success}</Notice>}
 
@@ -144,30 +152,26 @@ export function ComposersTab() {
         onSave={saveEdit}
       />
 
-      <PlaylistComposerImport onChanged={changed} />
-      <SpotifyArtistSearch existingArtistIds={existingArtistIds} onChanged={changed} />
-      <JsonComposerImport onChanged={changed} />
-
-      <section className="overflow-hidden border border-[var(--rule)] bg-[var(--slip)]">
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--rule)] bg-[var(--slip-2)] px-4 py-3">
-          <div>
-            <h2 className="text-lg font-semibold text-[var(--ink)]">
-              Composers ({composers.length})
-            </h2>
-            <p className="text-sm text-[var(--ink-2)]">All composers in the database</p>
-          </div>
-          <button
-            onClick={refreshMetadata}
-            disabled={refreshing}
-            className="flex items-center gap-2 border border-[var(--rule)] px-3 py-1.5 text-sm disabled:opacity-50"
-          >
-            {refreshing && <Spinner />}
-            {refreshing ? 'Refreshing...' : 'Refresh missing Spotify metadata'}
+      <section className="panel overflow-hidden">
+        <div className="toolbar">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Find a composer"
+            className="min-w-[220px] flex-1"
+          />
+          <span className="text-[11px] text-[var(--faint)]">
+            {sorted.length === composers.length
+              ? `${composers.length} composers`
+              : `${sorted.length} of ${composers.length}`}
+          </span>
+          <button onClick={refreshMetadata} disabled={refreshing} className="act ml-auto">
+            {refreshing ? 'Refreshing…' : 'Refresh Spotify data'}
           </button>
-        </header>
+        </div>
         <div className="max-h-[520px] overflow-y-auto">
           <table className="w-full">
-            <thead className="sticky top-0 bg-[var(--slip-2)] text-xs text-[var(--ink-2)]">
+            <thead className="sticky top-0 bg-[var(--slip-2)]">
               <tr>
                 <th className="px-4 py-2 text-left">Name</th>
                 <th className="px-4 py-2 text-left">Years</th>
@@ -231,6 +235,15 @@ export function ComposersTab() {
           </table>
         </div>
       </section>
+
+      <details className="fold">
+        <summary>Add composers</summary>
+        <div className="fold-body space-y-6">
+          <PlaylistComposerImport onChanged={changed} />
+          <SpotifyArtistSearch existingArtistIds={existingArtistIds} onChanged={changed} />
+          <JsonComposerImport onChanged={changed} />
+        </div>
+      </details>
     </div>
   );
 }

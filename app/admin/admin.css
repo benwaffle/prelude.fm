@@ -1,17 +1,13 @@
 /* =========================================================
-   THE CATALOGUE DESK
+   ADMIN STYLES
 
-   A workbench, not a reading surface. The listening screens are a
-   concert programme — ivory, Garamond, generous. This is the other
-   half of the same craft: the desk where the catalogue gets corrected,
-   in the idiom of a thematic catalogue's apparatus. Dense, ruled,
-   abbreviation-heavy, every identifier set in a typewriter face so
-   BWV 847 and BWV 874 cannot be mistaken for one another.
+   Deliberately not the player's theme. The listening screens are built
+   for reading; this is built for correcting records, so it is denser,
+   ruled rather than carded, and every identifier is set in a monospace
+   face — BWV 847 and BWV 874 get compared character by character.
 
-   Colour is iron-gall ink on archival board. Rust marks what is
-   unresolved, because that is what a corrector's pen leaves behind;
-   viridian marks what two sources independently agree on. Nothing
-   else is coloured, so colour always means something.
+   Two colours carry meaning and nothing else is coloured: rust for
+   something unresolved, green for something two sources agree on.
    ========================================================= */
 
 .desk {
@@ -180,64 +176,94 @@
   font-size: 12px;
 }
 
-/* ----------------------------------------------------- apparatus --- */
+/* ------------------------------------------------------- lists --- */
 
-/* A disagreement between two sources, set the way a critical edition
-   sets a variant reading: our reading, the bracket, then theirs. The
-   bracket is the notation editors already use for exactly this, so the
-   row needs no legend to be read correctly — and it does not imply
-   either reading is the right one, which is the point. */
-.desk .apparatus {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto auto;
-  align-items: baseline;
-  gap: 0 12px;
-  padding: 9px 14px;
+/* A plain row in a list: a number, what it is, and the way to act on it. */
+.desk .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--rule);
 }
 
-.desk .apparatus:last-child {
+.desk .row:last-child {
   border-bottom: 0;
 }
 
-.desk .apparatus:hover {
+.desk .row:hover {
   background: var(--slip-2);
 }
 
-.desk .app-context {
+/* --------------------------------------------------- conflicts --- */
+
+/* Two sources hold different values for one field. Both are labelled, because
+   which source a value came from is the only thing that decides the question,
+   and a reader should never have to work that out from position alone. */
+.desk .conflict {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 16px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.desk .conflict:last-child {
+  border-bottom: 0;
+}
+
+.desk .conflict:hover {
+  background: var(--slip-2);
+}
+
+.desk .conflict-head {
   grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
   color: var(--faint);
   font-size: 11px;
-  margin-bottom: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.desk .tag {
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  border: 1px solid var(--rule);
+  padding: 1px 5px;
   white-space: nowrap;
 }
 
-.desk .app-lemma {
-  color: var(--ink);
-  font-size: 13px;
+.desk .conflict-values {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  align-items: baseline;
+  min-width: 0;
 }
 
-.desk .app-bracket {
-  color: var(--gall);
-  font-family: var(--font-fragment), ui-monospace, monospace;
-  font-size: 14px;
-  user-select: none;
-}
-
-.desk .app-variant {
-  color: var(--ink-2);
-  font-size: 13px;
-}
-
-/* The source the variant came from. An apparatus entry always names its
-   witness, and here there is exactly one besides ourselves. */
-.desk .app-siglum {
-  font-family: var(--font-fragment), ui-monospace, monospace;
+.desk .conflict-values dt {
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
   font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--faint);
-  letter-spacing: 0.04em;
+}
+
+.desk .conflict-values dd {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.desk .conflict-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 /* --------------------------------------------------------- tabs --- */
@@ -302,23 +328,9 @@
   cursor: default;
 }
 
-.desk button.act[data-variant='keep']:hover:not(:disabled) {
-  border-color: var(--viridian);
-  color: var(--viridian);
-  background: transparent;
-}
-
-/* Inside a long list, two outlined buttons on every row shout louder than
-   the readings they act on. The frame arrives on hover or focus; the label
-   stays legible either way, so nothing is hidden from a reader scanning it. */
-.desk button.act[data-quiet='true'] {
-  border-color: transparent;
-  padding-inline: 4px;
-}
-
-.desk .apparatus:hover button.act[data-quiet='true'],
-.desk button.act[data-quiet='true']:focus-visible {
-  border-color: var(--rule-strong);
+.desk button.act[data-variant='primary'] {
+  border-color: var(--gall);
+  color: var(--gall);
 }
 
 .desk input,
@@ -343,6 +355,91 @@
 
 .desk input::placeholder {
   color: var(--faint);
+}
+
+/* ------------------------------------------------------- panels --- */
+
+/* Every section of every tab is the same shape: a titled bar, then the thing
+   itself. Three tabs that each invented their own arrangement was most of why
+   this page was hard to move around in. */
+.desk .panel {
+  background: var(--slip);
+  border: 1px solid var(--rule);
+}
+
+.desk .panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--slip-2);
+}
+
+.desk .panel-title {
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Controls that act on what is below them. */
+.desk .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.desk .toolbar:last-child {
+  border-bottom: 0;
+}
+
+/* Tools used occasionally sit folded away, so the list you came for is the
+   first thing on the tab rather than the last. */
+.desk details.fold {
+  border: 1px solid var(--rule);
+  background: var(--slip);
+}
+
+.desk details.fold > summary {
+  cursor: pointer;
+  padding: 9px 14px;
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  list-style: none;
+}
+
+.desk details.fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.desk details.fold > summary::before {
+  content: '+';
+  display: inline-block;
+  width: 14px;
+  color: var(--gall);
+}
+
+.desk details.fold[open] > summary::before {
+  content: '–';
+}
+
+.desk details.fold[open] > summary {
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.desk .fold-body {
+  padding: 14px;
 }
 
 /* -------------------------------------------------------- tables --- */
@@ -382,41 +479,21 @@
   font-style: italic;
 }
 
-/* Narrow screens: the apparatus stops being a table and becomes stacked
-   lines. Four columns of readings inside 375px crushes both of them, and a
-   variant reading that has wrapped mid-phrase is worse than useless. */
+/* Narrow screens: the two readings and the buttons each get their own line.
+   Side by side inside 375px, a value that has wrapped mid-phrase is harder to
+   judge than no value at all. */
 @media (max-width: 639px) {
-  .desk .apparatus {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    row-gap: 3px;
+  .desk .conflict {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .desk .app-lemma {
-    grid-column: 1 / -1;
+  .desk .conflict-actions {
+    justify-content: flex-start;
+    margin-top: 4px;
   }
 
-  .desk .app-bracket {
-    grid-column: 1;
-  }
-
-  .desk .app-variant {
-    grid-column: 2;
-  }
-
-  .desk .app-siglum {
-    grid-column: 3;
-  }
-
-  /* The actions, on their own line under the reading they act on. */
-  .desk .apparatus > span:last-child {
-    grid-column: 1 / -1;
-    margin-top: 5px;
-  }
-
-  /* Touch has no hover to reveal a frame, so keep it. */
-  .desk button.act[data-quiet='true'] {
-    border-color: var(--rule-strong);
-    padding-inline: 9px;
+  .desk .row {
+    flex-wrap: wrap;
   }
 }
 
