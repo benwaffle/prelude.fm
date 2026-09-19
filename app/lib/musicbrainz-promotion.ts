@@ -137,3 +137,100 @@ export function movementTitleFromMusicBrainz(
   if (text.length < 2) return null;
   return text;
 }
+
+/**
+ * A catalogue reference at the end of a title: ", BWV 856.2/856", ", op. 39",
+ * ", op. 6 no. 8". The match has to run to the end of the string and contain
+ * nothing but the reference, so a nickname after it — Mozart's K. 331 "Alla
+ * Turca" — leaves the title alone rather than losing its second half.
+ */
+const TRAILING_CATALOGUE =
+  /,\s*(?:bwv|kv?|rv|hwv|hob|buxwv|zwv|twv|wq|woo|d|s|b|l|cd|fp|sz|bb|op(?:us)?)\.?\s*[\dIVXivx][\w./:-]*(?:\s*(?:no|nr)\.?\s*\d+[a-z]?)?\s*$/i;
+
+/**
+ * Turn a MusicBrainz work title into one that fits beside our own.
+ *
+ * Two differences from their convention. They prefix a work with the
+ * collection it belongs to — "The Well-Tempered Clavier, Book I: Prelude and
+ * Fugue no. 11 …" — which we express through the catalogue instead. And they
+ * put the catalogue reference in the title, where 92% of ours keep it in
+ * work_catalog_v2; importing it verbatim would make a tenth of the catalogue
+ * read differently from the rest.
+ *
+ * Returns null when nothing usable survives.
+ */
+export function workTitleFromMusicBrainz(
+  mbTitle: string,
+  parentTitle: string | null,
+): string | null {
+  let text = stripParentPrefixLocal(mbTitle.trim(), parentTitle);
+  // Repeat once: "…, BWV 856.2/856" can leave a second reference behind.
+  text = text.replace(TRAILING_CATALOGUE, '').trim();
+  text = text.replace(TRAILING_CATALOGUE, '').trim();
+  text = text.replace(/[\s,:;-]+$/, '').trim();
+  if (text.length < 3) return null;
+  return text;
+}
+
+/** Local copy of the prefix rule, so this module does not depend on the client. */
+function stripParentPrefixLocal(leafTitle: string, parentTitle: string | null): string {
+  if (!parentTitle) return leafTitle;
+  const prefix = `${parentTitle}:`;
+  if (!leafTitle.startsWith(prefix)) return leafTitle;
+  return leafTitle.slice(prefix.length).trim() || leafTitle;
+}
+
+/**
+ * Whether MusicBrainz's title says strictly less than ours.
+ *
+ * "Concerto in G major" against our "Flute Concerto in G major" carries no
+ * word we do not already have, and drops the one that says what plays it.
+ */
+export function saysLessThan(incoming: string, ourTitle: string): boolean {
+  const ours = new Set(normalizeMetadataText(ourTitle).split(' ').filter(Boolean));
+  const theirs = normalizeMetadataText(incoming).split(' ').filter(Boolean);
+  if (theirs.length === 0) return true;
+  return theirs.every((token) => ours.has(token));
+}
+
+/**
+ * Choose new titles for a group of works that currently share one.
+ *
+ * A title shared by ten works names none of them — the parser had nowhere to
+ * record which of Bach's preludes and fugues a work was, so it used the
+ * collection for all ten. That is the only case worth overwriting a title for,
+ * because everywhere else replacing one title with another is just preferring
+ * a different house style.
+ *
+ * Being different from ours is not enough. The replacement has to do the job
+ * ours failed at, so the whole group is decided together and taken only when:
+ *
+ *  - every proposed title is distinct, since swapping one shared title for
+ *    another shared one fixes nothing; and
+ *  - no proposal says strictly less than what it replaces, which is what
+ *    rules out "Concerto in G major" for "Flute Concerto in G major".
+ *
+ * A group where any member is missing a proposal is left alone: renaming half
+ * of it would leave the catalogue in a worse state than it started.
+ */
+export function chooseGroupTitles(
+  members: { id: number; ourTitle: string; incoming: string | null }[],
+): Map<number, string> {
+  const empty = new Map<number, string>();
+  if (members.length < 2) return empty;
+  if (members.some((member) => !member.incoming)) return empty;
+
+  const proposals = members.map((member) => ({ ...member, incoming: member.incoming as string }));
+
+  const distinct = new Set(proposals.map((p) => normalizeMetadataText(p.incoming)));
+  if (distinct.size !== proposals.length) return empty;
+
+  if (proposals.some((p) => saysLessThan(p.incoming, p.ourTitle))) return empty;
+
+  const chosen = new Map<number, string>();
+  for (const proposal of proposals) {
+    if (textuallyEqual(proposal.ourTitle, proposal.incoming)) continue;
+    chosen.set(proposal.id, proposal.incoming);
+  }
+  return chosen;
+}

@@ -23,6 +23,7 @@ import {
   decidePromotion,
   formFromWorkType,
   movementTitleFromMusicBrainz,
+  chooseGroupTitles,
   textuallyEqual,
   yearsEqual,
 } from '@/lib/musicbrainz-promotion';
@@ -181,6 +182,64 @@ async function promotePartTitles() {
   return plans;
 }
 
+/**
+ * Work titles, decided a group at a time.
+ *
+ * Unlike every other field this one is never empty, so "fill the gap" does not
+ * apply: there is always something to overwrite, and overwriting on preference
+ * would rewrite the catalogue into somebody else's house style. The case worth
+ * fixing is a title shared by several works, which therefore names none of
+ * them — and whether MusicBrainz fixes it can only be judged across the whole
+ * group, so that is how it is judged.
+ */
+async function promoteWorkTitles() {
+  const facts = new Map((await load('work', 'work_title')).map((f) => [f.entityId, f.value]));
+  const rows = await db
+    .select({ id: work.id, title: work.title, composerId: work.composerId })
+    .from(work);
+
+  const groups = new Map<string, { id: number; ourTitle: string; incoming: string | null }[]>();
+  for (const row of rows) {
+    const key = `${row.composerId}:${normaliseTitle(row.title)}`;
+    const member = { id: row.id, ourTitle: row.title, incoming: facts.get(row.id) ?? null };
+    groups.set(key, [...(groups.get(key) ?? []), member]);
+  }
+
+  const plans: Plan[] = [];
+  for (const members of groups.values()) {
+    const chosen = chooseGroupTitles(members);
+    for (const member of members) {
+      if (!member.incoming) continue;
+      const replacement = chosen.get(member.id);
+      if (!replacement) {
+        plans.push({
+          field: 'work_title',
+          entityId: member.id,
+          current: member.ourTitle,
+          incoming: member.incoming,
+          outcome: textuallyEqual(member.ourTitle, member.incoming) ? 'agreed' : 'conflict',
+        });
+        continue;
+      }
+      plans.push({
+        field: 'work_title',
+        entityId: member.id,
+        current: member.ourTitle,
+        incoming: replacement,
+        outcome: 'filled',
+      });
+      if (apply) {
+        await db.update(work).set({ title: replacement }).where(eq(work.id, member.id));
+      }
+    }
+  }
+  return plans;
+}
+
+function normaliseTitle(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
 async function main() {
   const factCount = await db.select({ n: sql<number>`count(*)` }).from(musicbrainzFact);
   if (!factCount[0]?.n) {
@@ -193,6 +252,7 @@ async function main() {
     ...(await promoteComposerYears('death_year')),
     ...(await promoteWorkForm()),
     ...(await promotePartTitles()),
+    ...(await promoteWorkTitles()),
   ];
 
   const summary = new Map<string, Record<Outcome, number>>();

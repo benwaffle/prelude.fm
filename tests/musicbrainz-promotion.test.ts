@@ -5,7 +5,10 @@ import {
   decidePromotion,
   formFromWorkType,
   movementTitleFromMusicBrainz,
+  chooseGroupTitles,
+  saysLessThan,
   textuallyEqual,
+  workTitleFromMusicBrainz,
   yearsEqual,
 } from '../app/lib/musicbrainz-promotion';
 
@@ -157,4 +160,97 @@ test('leaves an unnumbered movement title alone', () => {
 test('returns null when nothing survives', () => {
   assert.equal(movementTitleFromMusicBrainz('III.', 'III'), null);
   assert.equal(movementTitleFromMusicBrainz('   ', null), null);
+});
+
+test('drops the collection prefix and the catalogue from a work title', () => {
+  assert.equal(
+    workTitleFromMusicBrainz(
+      'The Well-Tempered Clavier, Book I: Prelude and Fugue no. 11 in F major, BWV 856.2/856',
+      'The Well-Tempered Clavier, Book I',
+    ),
+    'Prelude and Fugue no. 11 in F major',
+  );
+  assert.equal(
+    workTitleFromMusicBrainz('Symphony no. 5 in C minor, op. 67', null),
+    'Symphony no. 5 in C minor',
+  );
+});
+
+test('leaves a title with no catalogue reference alone', () => {
+  assert.equal(workTitleFromMusicBrainz('Clair de lune', null), 'Clair de lune');
+  assert.equal(
+    workTitleFromMusicBrainz('Concerto for Strings in G minor', null),
+    'Concerto for Strings in G minor',
+  );
+});
+
+test('does not cut a catalogue reference that is not at the end', () => {
+  // A nickname follows it, and cutting mid-title mangles the result.
+  assert.equal(
+    workTitleFromMusicBrainz('Sonata for Piano no. 11 in A major, K. 331 "Alla Turca"', null),
+    'Sonata for Piano no. 11 in A major, K. 331 "Alla Turca"',
+  );
+});
+
+test('strips a two-part catalogue reference', () => {
+  assert.equal(
+    workTitleFromMusicBrainz('Concerto Grosso in G minor, op. 6 no. 8', null),
+    'Concerto Grosso in G minor',
+  );
+  assert.equal(
+    workTitleFromMusicBrainz('Symphony no. 82 in C major, Hob. I:82', null),
+    'Symphony no. 82 in C major',
+  );
+});
+
+test('renames a group whose shared title names none of them', () => {
+  const chosen = chooseGroupTitles([
+    {
+      id: 537,
+      ourTitle: 'The Well-Tempered Clavier, Book 1',
+      incoming: 'Prelude and Fugue no. 12 in F minor',
+    },
+    {
+      id: 539,
+      ourTitle: 'The Well-Tempered Clavier, Book 1',
+      incoming: 'Prelude and Fugue no. 14 in F-sharp minor',
+    },
+  ]);
+  assert.equal(chosen.size, 2);
+  assert.equal(chosen.get(537), 'Prelude and Fugue no. 12 in F minor');
+});
+
+test('refuses a replacement that says less than what it replaces', () => {
+  // "Concerto in G major" drops the word that says what plays it.
+  const chosen = chooseGroupTitles([
+    { id: 857, ourTitle: 'Flute Concerto in G major', incoming: 'Concerto in G major' },
+    { id: 858, ourTitle: 'Flute Concerto in G major', incoming: 'Concerto in G minor' },
+  ]);
+  assert.equal(chosen.size, 0);
+});
+
+test('refuses a group that would still share a title', () => {
+  // Translating both into German distinguishes neither.
+  const chosen = chooseGroupTitles([
+    { id: 1, ourTitle: 'Goldberg Variations', incoming: 'Goldberg-Variationen' },
+    { id: 2, ourTitle: 'Goldberg Variations', incoming: 'Goldberg-Variationen' },
+  ]);
+  assert.equal(chosen.size, 0);
+});
+
+test('leaves a group alone when any member has no proposal', () => {
+  // Renaming half a group is worse than renaming none of it.
+  const chosen = chooseGroupTitles([
+    { id: 1, ourTitle: 'The Well-Tempered Clavier, Book 2', incoming: 'Prelude and Fugue no. 1' },
+    { id: 2, ourTitle: 'The Well-Tempered Clavier, Book 2', incoming: null },
+  ]);
+  assert.equal(chosen.size, 0);
+});
+
+test('recognises a title that adds information', () => {
+  assert.equal(saysLessThan('Concerto in G major', 'Flute Concerto in G major'), true);
+  assert.equal(
+    saysLessThan('Concerto in F major, RV 293 “L’autunno”', 'Violin Concerto in F major'),
+    false,
+  );
 });

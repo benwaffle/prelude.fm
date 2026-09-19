@@ -41,7 +41,7 @@ import {
 import { getSpotifyAlbumsByIds, getSpotifyTracksByIds } from '@/lib/spotify-app-client';
 import { normalizeCatalogNumber, normalizeCatalogSystem } from '@/lib/classical-normalization';
 import { titlesAreCompatible } from '@/lib/metadata-matching';
-import { composerMatchIsCredible } from '@/lib/musicbrainz-promotion';
+import { composerMatchIsCredible, workTitleFromMusicBrainz } from '@/lib/musicbrainz-promotion';
 
 const BATCH = 50;
 /**
@@ -443,7 +443,7 @@ async function fetchParentWorks() {
         .select({ entityId: musicbrainzFact.entityId })
         .from(musicbrainzFact)
         .where(
-          and(eq(musicbrainzFact.entityType, 'work'), eq(musicbrainzFact.field, 'mb_work_read')),
+          and(eq(musicbrainzFact.entityType, 'work'), eq(musicbrainzFact.field, 'mb_work_read_v2')),
         )
     ).map((r) => r.entityId),
   );
@@ -451,6 +451,7 @@ async function fetchParentWorks() {
   log(`[works/D] ${todo.length} works to read (${done.size} already read)`);
 
   let types = 0;
+  let titles = 0;
   let catalogues = 0;
   let composers = 0;
   let read = 0;
@@ -468,6 +469,14 @@ async function fetchParentWorks() {
     if (mbWork.type) {
       await recordFact('work', ourWork.id, 'work_type', mbWork.type, mbWork.id);
       types++;
+    }
+    // MusicBrainz prefixes a work with the collection it sits in, so the
+    // parent is needed to take that back off again.
+    const parent = parentWorkOf(mbWork);
+    const title = workTitleFromMusicBrainz(mbWork.title, parent ? parent.title : null);
+    if (title) {
+      await recordFact('work', ourWork.id, 'work_title', title, mbWork.id);
+      titles++;
     }
     for (const catalogue of cataloguesOf(mbWork)) {
       const inserted = await db
@@ -491,11 +500,11 @@ async function fetchParentWorks() {
       composers++;
     }
     // Mark last, so an interrupted work is read again rather than half-recorded.
-    await recordFact('work', ourWork.id, 'mb_work_read', '1', mbWork.id);
+    await recordFact('work', ourWork.id, 'mb_work_read_v2', '1', mbWork.id);
     if (++read % 100 === 0) log(`  read ${read}/${todo.length}`);
   }
   log(
-    `[works/D] ${types} work types, ${catalogues} new catalogue rows, ${composers} composer relations`,
+    `[works/D] ${types} types, ${titles} titles, ${catalogues} new catalogue rows, ${composers} composer relations`,
   );
 }
 
