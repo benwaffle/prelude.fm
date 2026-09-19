@@ -1,6 +1,6 @@
 'use server';
 
-import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { spotifyAlbum, spotifyTrack, trackWorkPartV2, work, workPartV2 } from '@/lib/db/schema';
 import { checkAuth } from './auth';
@@ -150,15 +150,46 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
   return [...byTrack.values()];
 }
 
-/** The ISRCs an album could contribute, in track order. */
-export async function getAlbumIsrcs(albumId: string): Promise<string[]> {
+/**
+ * The ISRCs an album could contribute, for seeding a submission.
+ *
+ * Fetched for the albums on screen rather than with the album list, because a
+ * 121-track box set carries more ISRC text than every other field on its row
+ * put together.
+ *
+ * `discs` comes back so the caller can tell whether it may place the ISRCs by
+ * position. MagicISRC seeds by medium and track; we do not store MusicBrainz's
+ * medium layout, so only a single-disc album can be placed safely. Guessing on
+ * a multi-disc release would attach ISRCs to the wrong recordings, which is
+ * exactly the error nobody notices until much later.
+ */
+export async function getIsrcSeeds(
+  albumIds: string[],
+): Promise<Record<string, { discs: number; isrcs: string[] }>> {
   await checkAuth();
+  if (albumIds.length === 0) return {};
+
   const rows = await db
-    .select({ isrc: spotifyTrack.isrc })
+    .select({
+      albumId: spotifyTrack.spotifyAlbumId,
+      discNumber: spotifyTrack.discNumber,
+      trackNumber: spotifyTrack.trackNumber,
+      isrc: spotifyTrack.isrc,
+    })
     .from(spotifyTrack)
-    .where(and(eq(spotifyTrack.spotifyAlbumId, albumId), isNotNull(spotifyTrack.isrc)))
-    .orderBy(spotifyTrack.discNumber, spotifyTrack.trackNumber);
-  return rows.map((row) => row.isrc as string);
+    .where(and(inArray(spotifyTrack.spotifyAlbumId, albumIds), isNotNull(spotifyTrack.isrc)))
+    .orderBy(spotifyTrack.spotifyAlbumId, spotifyTrack.discNumber, spotifyTrack.trackNumber);
+
+  const seeds: Record<string, { discs: number; isrcs: string[] }> = {};
+  const discs: Record<string, Set<number>> = {};
+  for (const row of rows) {
+    seeds[row.albumId] ??= { discs: 1, isrcs: [] };
+    discs[row.albumId] ??= new Set();
+    discs[row.albumId].add(row.discNumber);
+    seeds[row.albumId].isrcs.push(row.isrc as string);
+  }
+  for (const albumId of Object.keys(seeds)) seeds[albumId].discs = discs[albumId].size;
+  return seeds;
 }
 
 /** Albums never checked against MusicBrainz, newest first — the backfill's queue. */

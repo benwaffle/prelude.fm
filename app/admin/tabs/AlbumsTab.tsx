@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getAlbumTracks, getAlbums } from '../actions/coverage';
+import { getAlbumTracks, getAlbums, getIsrcSeeds } from '../actions/coverage';
 import {
   STATE_LABEL,
   type AlbumRow,
@@ -11,6 +11,29 @@ import {
 import { Spinner } from '../components/Spinner';
 
 const HARMONY = 'https://harmony.pulsewidth.org.uk';
+const MAGICISRC = 'https://magicisrc.kepstin.ca';
+
+/**
+ * A MagicISRC link for a release, with the ISRCs already placed where we can
+ * place them safely.
+ *
+ * MagicISRC seeds by medium and track (`isrcM-T`). We do not store which
+ * MusicBrainz medium a track sits on, so positions are only filled in for an
+ * album on a single disc, where medium 1 is the only possibility. A multi-disc
+ * album gets the release alone and the ISRCs pasted by hand, because a seed
+ * off by one medium attaches every ISRC to the wrong recording.
+ */
+function magicIsrcUrl(releaseMbid: string, seed?: { discs: number; isrcs: string[] }) {
+  const params = new URLSearchParams({ musicbrainzid: releaseMbid });
+  if (seed && seed.discs === 1) {
+    seed.isrcs.forEach((isrc, index) => params.set(`isrc1-${index + 1}`, isrc));
+    params.set(
+      'edit-note',
+      'ISRCs sourced from Spotify, matched to this release by barcode (UPC).',
+    );
+  }
+  return `${MAGICISRC}/?${params.toString()}`;
+}
 
 /**
  * The one thing to do about this album, and the tool that does it.
@@ -19,7 +42,10 @@ const HARMONY = 'https://harmony.pulsewidth.org.uk';
  * carries the client attribution MusicBrainz editors look for. Sending someone
  * to a tool the community already trusts beats anything we would build here.
  */
-function nextStep(album: AlbumRow): { label: string; href: string; hint: string } | null {
+function nextStep(
+  album: AlbumRow,
+  seed?: { discs: number; isrcs: string[] },
+): { label: string; href: string; hint: string } | null {
   const spotifyUrl = `https://open.spotify.com/album/${album.id}`;
   const addRelease = {
     label: 'Add release',
@@ -40,8 +66,11 @@ function nextStep(album: AlbumRow): { label: string; href: string; hint: string 
       return album.mbReleaseId
         ? {
             label: 'Submit ISRCs',
-            href: `${HARMONY}/release/actions?release_mbid=${album.mbReleaseId}`,
-            hint: 'Opens Harmony, which reads the ISRCs and submits them for you.',
+            href: magicIsrcUrl(album.mbReleaseId, seed),
+            hint:
+              seed && seed.discs === 1
+                ? 'Opens MagicISRC with the ISRCs filled in. It shows a diff before anything is written.'
+                : 'Opens MagicISRC for this release. Multi-disc, so the ISRCs need placing by hand.',
           }
         : addRelease;
 
@@ -70,6 +99,7 @@ export function AlbumsTab({
   const [albums, setAlbums] = useState<AlbumRow[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [tracks, setTracks] = useState<Record<string, AlbumTrackRow[]>>({});
+  const [seeds, setSeeds] = useState<Record<string, { discs: number; isrcs: string[] }>>({});
 
   // The filter lives with the page, because Coverage sets it when you click a
   // row there. Keeping a second copy here only created two things to keep in
@@ -77,8 +107,19 @@ export function AlbumsTab({
   // changing filter does not blank the page.
   useEffect(() => {
     let cancelled = false;
-    void getAlbums(state, search).then((rows) => {
-      if (!cancelled) setAlbums(rows);
+    void getAlbums(state, search).then(async (rows) => {
+      if (cancelled) return;
+      setAlbums(rows);
+      // Only the albums whose next step is an ISRC submission need their
+      // ISRCs, and only those on screen.
+      const needSeeds = rows
+        .filter(
+          (row) => row.mbReleaseId && (row.state === 'partial' || row.state === 'needs_isrcs'),
+        )
+        .map((row) => row.id);
+      if (needSeeds.length === 0) return;
+      const fetched = await getIsrcSeeds(needSeeds);
+      if (!cancelled) setSeeds(fetched);
     });
     return () => {
       cancelled = true;
@@ -142,7 +183,7 @@ export function AlbumsTab({
       ) : (
         <div className="slip">
           {albums.map((album) => {
-            const step = nextStep(album);
+            const step = nextStep(album, seeds[album.id]);
             const isOpen = open === album.id;
             return (
               <div key={album.id} className="rule-b last:border-b-0">
