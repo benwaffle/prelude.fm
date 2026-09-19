@@ -3,6 +3,7 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { spotifyAlbum, spotifyTrack, trackWorkPartV2, work, workPartV2 } from '@/lib/db/schema';
+import { findRecordingsByIsrcs } from '@/lib/musicbrainz';
 import { checkAuth } from './auth';
 import {
   type AlbumRow,
@@ -190,6 +191,66 @@ export async function getIsrcSeeds(
   }
   for (const albumId of Object.keys(seeds)) seeds[albumId].discs = discs[albumId].size;
   return seeds;
+}
+
+/**
+ * Ask MusicBrainz about one album's ISRCs again, now.
+ *
+ * Contributing to MusicBrainz changes nothing here until something re-reads
+ * it, and until this existed the only way to see whether a submission worked
+ * was to re-run the whole backfill from a terminal. That is a poor loop for a
+ * page whose entire purpose is to send you off to make those submissions.
+ *
+ * Scoped to one album so it stays within MusicBrainz's one-request-per-second
+ * rule without making anyone wait: even a long box set is a handful of
+ * batched queries.
+ */
+export async function recheckAlbum(
+  albumId: string,
+): Promise<{ resolved: number; anchored: number; tracks: number }> {
+  await checkAuth();
+
+  const rows = await db
+    .select({ id: spotifyTrack.spotifyId, isrc: spotifyTrack.isrc })
+    .from(spotifyTrack)
+    .where(
+      and(
+        eq(spotifyTrack.spotifyAlbumId, albumId),
+        isNotNull(spotifyTrack.isrc),
+        isNull(spotifyTrack.mbRecordingId),
+      ),
+    );
+
+  const byIsrc = new Map<string, string[]>();
+  for (const row of rows) {
+    if (!row.isrc) continue;
+    byIsrc.set(row.isrc, [...(byIsrc.get(row.isrc) ?? []), row.id]);
+  }
+
+  let resolved = 0;
+  const isrcs = [...byIsrc.keys()];
+  for (let i = 0; i < isrcs.length; i += 20) {
+    const found = await findRecordingsByIsrcs(isrcs.slice(i, i + 20));
+    for (const [isrc, recordingId] of found) {
+      for (const trackId of byIsrc.get(isrc) ?? []) {
+        await db
+          .update(spotifyTrack)
+          .set({ mbRecordingId: recordingId })
+          .where(eq(spotifyTrack.spotifyId, trackId));
+        resolved++;
+      }
+    }
+  }
+
+  const [totals] = await db
+    .select({
+      tracks: sql<number>`count(*)`,
+      anchored: sql<number>`count(${spotifyTrack.mbRecordingId})`,
+    })
+    .from(spotifyTrack)
+    .where(eq(spotifyTrack.spotifyAlbumId, albumId));
+
+  return { resolved, ...totals };
 }
 
 /** Albums never checked against MusicBrainz, newest first — the backfill's queue. */

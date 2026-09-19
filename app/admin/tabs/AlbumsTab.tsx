@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getAlbumTracks, getAlbums, getIsrcSeeds } from '../actions/coverage';
+import { getAlbumTracks, getAlbums, getIsrcSeeds, recheckAlbum } from '../actions/coverage';
 import {
   STATE_LABEL,
   type AlbumRow,
@@ -100,6 +100,8 @@ export function AlbumsTab({
   const [open, setOpen] = useState<string | null>(null);
   const [tracks, setTracks] = useState<Record<string, AlbumTrackRow[]>>({});
   const [seeds, setSeeds] = useState<Record<string, { discs: number; isrcs: string[] }>>({});
+  const [rechecking, setRechecking] = useState<string | null>(null);
+  const [recheckResult, setRecheckResult] = useState<Record<string, string>>({});
 
   // The filter lives with the page, because Coverage sets it when you click a
   // row there. Keeping a second copy here only created two things to keep in
@@ -125,6 +127,23 @@ export function AlbumsTab({
       cancelled = true;
     };
   }, [state, search]);
+
+  async function recheck(albumId: string) {
+    setRechecking(albumId);
+    try {
+      const result = await recheckAlbum(albumId);
+      setRecheckResult((current) => ({
+        ...current,
+        [albumId]:
+          result.resolved > 0
+            ? `matched ${result.resolved} more — ${result.anchored}/${result.tracks} anchored`
+            : `no change — ${result.anchored}/${result.tracks} anchored`,
+      }));
+      setAlbums(await getAlbums(state, search));
+    } finally {
+      setRechecking(null);
+    }
+  }
 
   async function toggle(albumId: string) {
     if (open === albumId) {
@@ -204,6 +223,21 @@ export function AlbumsTab({
                       <span className="tag">{STATE_LABEL[album.state]}</span>
                     </span>
                   </button>
+                  {recheckResult[album.id] && (
+                    <span className="shrink-0 text-[11px] text-[var(--viridian)]">
+                      {recheckResult[album.id]}
+                    </span>
+                  )}
+                  {album.state !== 'anchored' && (
+                    <button
+                      className="act shrink-0"
+                      disabled={rechecking === album.id}
+                      onClick={() => recheck(album.id)}
+                      title="Ask MusicBrainz about this album's ISRCs again. Use it after submitting."
+                    >
+                      {rechecking === album.id ? 'Checking…' : 'Re-check'}
+                    </button>
+                  )}
                   {step && (
                     <a
                       className="act shrink-0"
