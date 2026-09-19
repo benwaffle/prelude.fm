@@ -39,8 +39,13 @@ export async function POST(request: Request) {
   if (!isAuthorized(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  // The worker chains itself through this handler, so a claim stranded by an
+  // earlier link in the chain is recovered by the next one rather than waiting
+  // for tomorrow's scheduled run. Only claims older than the stale window are
+  // touched, so this cannot take work away from a worker that is still going.
+  const prepared = await prepareMatchQueue({ maxAttempts: 5, staleMinutes: 30 });
   scheduleWorker(request);
-  return Response.json({ scheduled: true }, { status: 202 });
+  return Response.json({ scheduled: true, ...prepared }, { status: 202 });
 }
 
 export async function GET(request: Request) {

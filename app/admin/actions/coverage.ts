@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { spotifyAlbum, spotifyTrack, trackWorkPartV2, work, workPartV2 } from '@/lib/db/schema';
 import { findRecordingsByIsrcs } from '@/lib/musicbrainz';
+import { getSpotifyAlbumTracks } from '@/lib/spotify-app-client';
 import { checkAuth } from './auth';
 import {
   type AlbumRow,
@@ -194,6 +195,35 @@ export async function getIsrcSeeds(
   }
   for (const albumId of Object.keys(seeds)) seeds[albumId].discs = discs[albumId].size;
   return seeds;
+}
+
+/**
+ * Every ISRC on an album, read from Spotify rather than from what we kept.
+ *
+ * We store only the tracks worth keeping for a classical catalogue — a
+ * compilation can arrive with eleven tracks and leave two behind, the other
+ * nine marked not classical. Submitting two ISRCs when we can see eleven makes
+ * us a worse contributor than we need to be, and the nine we discarded are
+ * still real recordings that MusicBrainz wants identified.
+ *
+ * Read on demand, because it is a Spotify round trip per album and most rows
+ * never need it.
+ */
+export async function getFullIsrcSeed(
+  albumId: string,
+): Promise<{ discs: number; tracks: { track: number; isrc: string }[]; total: number }> {
+  await checkAuth();
+  const { album, tracks } = await getSpotifyAlbumTracks(albumId);
+  void album;
+
+  const discs = new Set<number>();
+  const seeded: { track: number; isrc: string }[] = [];
+  for (const track of tracks) {
+    discs.add(track.disc_number);
+    const isrc = track.external_ids?.isrc;
+    if (isrc) seeded.push({ track: track.track_number, isrc });
+  }
+  return { discs: discs.size || 1, tracks: seeded, total: tracks.length };
 }
 
 /**

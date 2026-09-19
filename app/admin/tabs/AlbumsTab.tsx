@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getAlbumTracks, getAlbums, getIsrcSeeds, recheckAlbum } from '../actions/coverage';
+import {
+  getAlbumTracks,
+  getAlbums,
+  getFullIsrcSeed,
+  getIsrcSeeds,
+  recheckAlbum,
+} from '../actions/coverage';
 import {
   STATE_LABEL,
   type AlbumRow,
@@ -111,6 +117,7 @@ export function AlbumsTab({
   >({});
   const [rechecking, setRechecking] = useState<string | null>(null);
   const [recheckResult, setRecheckResult] = useState<Record<string, string>>({});
+  const [fullSeeded, setFullSeeded] = useState<Record<string, number>>({});
 
   // The filter lives with the page, because Coverage sets it when you click a
   // row there. Keeping a second copy here only created two things to keep in
@@ -136,6 +143,20 @@ export function AlbumsTab({
       cancelled = true;
     };
   }, [state, search]);
+
+  /**
+   * Replace an album's seed with every ISRC Spotify lists, not just the tracks
+   * we kept. Triggered by opening the album, which is when someone is deciding
+   * whether to submit it, and keeps the Spotify round trip off the list view.
+   */
+  async function loadFullSeed(albumId: string) {
+    const full = await getFullIsrcSeed(albumId);
+    setSeeds((current) => ({
+      ...current,
+      [albumId]: { discs: full.discs, tracks: full.tracks },
+    }));
+    setFullSeeded((current) => ({ ...current, [albumId]: full.tracks.length }));
+  }
 
   async function recheck(albumId: string) {
     setRechecking(albumId);
@@ -163,6 +184,11 @@ export function AlbumsTab({
     if (!tracks[albumId]) {
       const rows = await getAlbumTracks(albumId);
       setTracks((current) => ({ ...current, [albumId]: rows }));
+    }
+    const album = albums?.find((row) => row.id === albumId);
+    const wantsIsrcs = album && (album.state === 'partial' || album.state === 'needs_isrcs');
+    if (wantsIsrcs && album?.mbReleaseId && fullSeeded[albumId] === undefined) {
+      await loadFullSeed(albumId);
     }
   }
 
@@ -263,6 +289,13 @@ export function AlbumsTab({
 
                 {isOpen && (
                   <div className="px-4 pb-3">
+                    {fullSeeded[album.id] !== undefined && fullSeeded[album.id] > album.tracks && (
+                      <p className="mb-2 text-[11px] text-[var(--ink-2)]">
+                        Spotify lists {fullSeeded[album.id]} ISRCs for this album; we keep{' '}
+                        {album.tracks} track{album.tracks === 1 ? '' : 's'}. The submission covers
+                        all {fullSeeded[album.id]}.
+                      </p>
+                    )}
                     {!tracks[album.id] ? (
                       <Spinner className="h-3 w-3" />
                     ) : (
