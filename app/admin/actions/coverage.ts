@@ -158,15 +158,18 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
  * 121-track box set carries more ISRC text than every other field on its row
  * put together.
  *
- * `discs` comes back so the caller can tell whether it may place the ISRCs by
- * position. MagicISRC seeds by medium and track; we do not store MusicBrainz's
- * medium layout, so only a single-disc album can be placed safely. Guessing on
- * a multi-disc release would attach ISRCs to the wrong recordings, which is
- * exactly the error nobody notices until much later.
+ * Each ISRC carries the disc and track it actually sits on, because we hold
+ * only the tracks that have been ingested, not whole albums. "Les Sauvages"
+ * is one track here and it is track 3; numbering the list from one would
+ * attach its ISRC to the release's first recording instead.
+ *
+ * `discs` comes back so the caller can tell whether it may place them at all.
+ * MagicISRC seeds by medium and track, and we do not store MusicBrainz's
+ * medium layout, so only a single-disc album can be placed safely.
  */
 export async function getIsrcSeeds(
   albumIds: string[],
-): Promise<Record<string, { discs: number; isrcs: string[] }>> {
+): Promise<Record<string, { discs: number; tracks: { track: number; isrc: string }[] }>> {
   await checkAuth();
   if (albumIds.length === 0) return {};
 
@@ -181,13 +184,13 @@ export async function getIsrcSeeds(
     .where(and(inArray(spotifyTrack.spotifyAlbumId, albumIds), isNotNull(spotifyTrack.isrc)))
     .orderBy(spotifyTrack.spotifyAlbumId, spotifyTrack.discNumber, spotifyTrack.trackNumber);
 
-  const seeds: Record<string, { discs: number; isrcs: string[] }> = {};
+  const seeds: Record<string, { discs: number; tracks: { track: number; isrc: string }[] }> = {};
   const discs: Record<string, Set<number>> = {};
   for (const row of rows) {
-    seeds[row.albumId] ??= { discs: 1, isrcs: [] };
+    seeds[row.albumId] ??= { discs: 1, tracks: [] };
     discs[row.albumId] ??= new Set();
     discs[row.albumId].add(row.discNumber);
-    seeds[row.albumId].isrcs.push(row.isrc as string);
+    seeds[row.albumId].tracks.push({ track: row.trackNumber, isrc: row.isrc as string });
   }
   for (const albumId of Object.keys(seeds)) seeds[albumId].discs = discs[albumId].size;
   return seeds;

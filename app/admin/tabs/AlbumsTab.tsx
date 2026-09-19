@@ -22,11 +22,18 @@ const MAGICISRC = 'https://magicisrc.kepstin.ca';
  * album on a single disc, where medium 1 is the only possibility. A multi-disc
  * album gets the release alone and the ISRCs pasted by hand, because a seed
  * off by one medium attaches every ISRC to the wrong recording.
+ *
+ * Each ISRC goes to the track it actually sits on. We hold only the tracks
+ * that have been ingested, so numbering the list from one would place a
+ * lone track 3 at position 1.
  */
-function magicIsrcUrl(releaseMbid: string, seed?: { discs: number; isrcs: string[] }) {
+function magicIsrcUrl(
+  releaseMbid: string,
+  seed?: { discs: number; tracks: { track: number; isrc: string }[] },
+) {
   const params = new URLSearchParams({ musicbrainzid: releaseMbid });
   if (seed && seed.discs === 1) {
-    seed.isrcs.forEach((isrc, index) => params.set(`isrc1-${index + 1}`, isrc));
+    for (const { track, isrc } of seed.tracks) params.set(`isrc1-${track}`, isrc);
     params.set(
       'edit-note',
       'ISRCs sourced from Spotify, matched to this release by barcode (UPC).',
@@ -44,7 +51,7 @@ function magicIsrcUrl(releaseMbid: string, seed?: { discs: number; isrcs: string
  */
 function nextStep(
   album: AlbumRow,
-  seed?: { discs: number; isrcs: string[] },
+  seed?: { discs: number; tracks: { track: number; isrc: string }[] },
 ): { label: string; href: string; hint: string } | null {
   const spotifyUrl = `https://open.spotify.com/album/${album.id}`;
   const addRelease = {
@@ -99,7 +106,9 @@ export function AlbumsTab({
   const [albums, setAlbums] = useState<AlbumRow[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [tracks, setTracks] = useState<Record<string, AlbumTrackRow[]>>({});
-  const [seeds, setSeeds] = useState<Record<string, { discs: number; isrcs: string[] }>>({});
+  const [seeds, setSeeds] = useState<
+    Record<string, { discs: number; tracks: { track: number; isrc: string }[] }>
+  >({});
   const [rechecking, setRechecking] = useState<string | null>(null);
   const [recheckResult, setRecheckResult] = useState<Record<string, string>>({});
 
