@@ -29,6 +29,7 @@ import {
   composerOf,
   findRecordingsByIsrcs,
   findReleasesByBarcode,
+  getReleaseRecordingIds,
   getArtist,
   getRecordingWorks,
   getWork,
@@ -195,6 +196,7 @@ async function backfillReleases() {
   let found = 0;
   let absent = 0;
   let ambiguous = 0;
+  let sharedRecordings = 0;
   let done = 0;
   for (const album of pending) {
     if (!album.upc) {
@@ -211,11 +213,31 @@ async function backfillReleases() {
       log(`  ! ${album.upc}: ${error instanceof Error ? error.message.slice(0, 60) : error}`);
       continue;
     }
-    // A barcode shared by several releases identifies none of them, and
-    // guessing would attach this album to the wrong one.
-    const releaseId = releases.length === 1 ? releases[0] : null;
+    // A barcode shared by several releases usually means one record issued in
+    // several territories, which MusicBrainz models as separate releases over
+    // one set of recordings. Where the recordings are the same the choice does
+    // not matter, so take the first; where they differ the barcode genuinely
+    // identifies nothing and picking one would attach the album to the wrong
+    // record.
+    let releaseId = releases.length === 1 ? releases[0] : null;
+    if (releases.length > 1) {
+      const fingerprints: string[] = [];
+      for (const candidate of releases) {
+        try {
+          fingerprints.push((await getReleaseRecordingIds(candidate)).join(','));
+        } catch {
+          fingerprints.push(`error:${candidate}`);
+        }
+      }
+      const distinct = new Set(fingerprints);
+      if (distinct.size === 1 && !fingerprints[0].startsWith('error:') && fingerprints[0] !== '') {
+        releaseId = releases[0];
+        sharedRecordings++;
+      }
+    }
     if (releases.length === 1) found++;
     else if (releases.length === 0) absent++;
+    else if (releaseId) found++;
     else ambiguous++;
     await db
       .update(spotifyAlbum)
@@ -227,7 +249,9 @@ async function backfillReleases() {
       .where(eq(spotifyAlbum.spotifyId, album.id));
     if (++done % 50 === 0) log(`  ${done}/${pending.length}`);
   }
-  log(`[releases] ${found} matched, ${absent} not in MusicBrainz, ${ambiguous} ambiguous barcodes`);
+  log(
+    `[releases] ${found} matched (${sharedRecordings} of them a barcode shared by releases over the same recordings), ${absent} not in MusicBrainz, ${ambiguous} genuinely ambiguous`,
+  );
 }
 
 /* ------------------------------------------------------------- 3. works --- */

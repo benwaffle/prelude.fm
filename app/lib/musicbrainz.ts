@@ -159,6 +159,27 @@ export async function findReleasesByBarcode(barcode: string): Promise<string[]> 
     .map((release) => release.id);
 }
 
+/**
+ * The recordings a release contains, in order.
+ *
+ * Used to decide whether releases sharing a barcode actually differ. A record
+ * issued in two territories is two releases in MusicBrainz and one set of
+ * recordings, so for anything addressed to recordings — ISRCs above all — the
+ * two are interchangeable and the barcode is not really ambiguous at all.
+ */
+export async function getReleaseRecordingIds(releaseId: string): Promise<string[]> {
+  const release = await mbGet<{
+    media?: { tracks?: { recording?: { id: string } }[] }[];
+  }>(`/release/${releaseId}?inc=recordings&fmt=json`);
+  const ids: string[] = [];
+  for (const medium of release?.media ?? []) {
+    for (const track of medium.tracks ?? []) {
+      if (track.recording?.id) ids.push(track.recording.id);
+    }
+  }
+  return ids;
+}
+
 /** The works a recording is a performance of. */
 export async function getRecordingWorks(
   recordingId: string,
