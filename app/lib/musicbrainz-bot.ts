@@ -45,12 +45,22 @@ const userAgent = `PreludeFM/0.1 ( ${contact} )`;
  */
 const DAILY_EDIT_CAP = 1_000;
 
-/** Start far below the cap. It widens once submissions have been reconciled. */
-const DEFAULT_BATCH_EDITS = 25;
+/**
+ * A ceiling on one album, not a batch size.
+ *
+ * Submissions are made an album at a time, because an album is the unit a
+ * person can actually check: same release, same barcode, one tracklist to
+ * read down. This only stops a box set with hundreds of missing ISRCs from
+ * spending most of the day's allowance in one press.
+ */
+const MAX_EDITS_PER_ALBUM = 200;
 
 export class MusicBrainzBotError extends Error {}
 
 export type BotRun = {
+  /** The release this batch belongs to; every item is from it. */
+  releaseMbid: string | null;
+  albumTitle: string | null;
   /** What would be, or was, submitted. */
   items: IsrcSubmissionItem[];
   /**
@@ -81,7 +91,7 @@ export type BotRun = {
 function editNoteFor(items: IsrcSubmissionItem[]): string {
   return (
     `ISRCs from Spotify, matched to this recording by a release whose barcode is identical ` +
-    `and whose track durations agree within 3 seconds. ${items.length} recording(s). ` +
+    `and whose track durations agree within 3 seconds. ${items.length} recording(s) on one release. ` +
     `Submitted by prelude_fm_bot — ${contact} — replies are read.`
   );
 }
@@ -109,9 +119,9 @@ export async function editsSpentToday(now = new Date()): Promise<number> {
  * because the failure mode here is writing to somebody else's database.
  */
 export async function runIsrcBot(
-  options: { apply?: boolean; maxEdits?: number } = {},
+  options: { apply?: boolean; maxEdits?: number; releaseMbid?: string } = {},
 ): Promise<BotRun> {
-  const maxEdits = options.maxEdits ?? DEFAULT_BATCH_EDITS;
+  const maxEdits = options.maxEdits ?? MAX_EDITS_PER_ALBUM;
   const spentToday = await editsSpentToday();
   const remaining = Math.max(0, DAILY_EDIT_CAP - spentToday);
   const allowance = Math.min(maxEdits, remaining);
@@ -122,7 +132,15 @@ export async function runIsrcBot(
     );
   }
 
-  const gaps = await isrcGaps(allowance);
+  /*
+   * One album. Which one is the caller's choice rather than the bot's,
+   * because the person pressing the button is the one who has read it — and
+   * a bot that picks its own target would be deciding what to submit, which
+   * is the part that has not been earned yet.
+   */
+  const everything = await isrcGaps(5_000);
+  const releaseMbid = options.releaseMbid ?? everything[0]?.releaseMbid;
+  const gaps = everything.filter((gap) => gap.releaseMbid === releaseMbid).slice(0, allowance);
   const items: IsrcSubmissionItem[] = gaps.map((gap) => ({
     recordingMbid: gap.recordingMbid,
     isrc: gap.isrc,
@@ -133,7 +151,17 @@ export async function runIsrcBot(
   const editNote = editNoteFor(items);
 
   if (!options.apply || edits === 0) {
-    return { items, evidence: gaps, edits, spentToday, submitted: false, editNote, payload };
+    return {
+      releaseMbid: releaseMbid ?? null,
+      albumTitle: gaps[0]?.albumTitle ?? null,
+      items,
+      evidence: gaps,
+      edits,
+      spentToday,
+      submitted: false,
+      editNote,
+      payload,
+    };
   }
 
   // Exchanged from the refresh token on demand, because access tokens expire
@@ -185,5 +213,15 @@ export async function runIsrcBot(
       .onConflictDoNothing();
   }
 
-  return { items, evidence: gaps, edits, spentToday, submitted: true, editNote, payload };
+  return {
+    releaseMbid: releaseMbid ?? null,
+    albumTitle: gaps[0]?.albumTitle ?? null,
+    items,
+    evidence: gaps,
+    edits,
+    spentToday,
+    submitted: true,
+    editNote,
+    payload,
+  };
 }

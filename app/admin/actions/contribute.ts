@@ -27,82 +27,52 @@ import { checkAuth } from './auth';
  * payload is available to read. Automation is something each class of edit
  * earns, and for now the earning is somebody deciding one batch at a time.
  */
-export type BotPreview = {
+export type BotStatus = {
   configured: boolean;
   spentToday: number;
   dailyCap: number;
-  edits: number;
-  editNote: string;
-  payload: string;
-  items: {
-    isrc: string;
-    recordingMbid: string;
-    trackTitle: string;
-    recordingTitle: string;
-    albumTitle: string;
-    upc: string | null;
-    barcode: string | null;
-    deltaMs: number;
-    medium: number;
-    position: number;
-  }[];
   error: string | null;
 };
 
-export async function previewBotBatch(maxEdits = 25): Promise<BotPreview> {
+/** Whether the bot can submit, and how much of today's allowance is left. */
+export async function getBotStatus(): Promise<BotStatus> {
   await checkAuth();
-  const configured = botCredentials() !== null;
-  try {
-    const run = await runIsrcBot({ apply: false, maxEdits });
-    return {
-      configured,
-      spentToday: run.spentToday,
-      dailyCap: 1000,
-      edits: run.edits,
-      editNote: run.editNote,
-      payload: run.payload,
-      items: run.evidence.map((gap) => ({
-        isrc: gap.isrc,
-        recordingMbid: gap.recordingMbid,
-        trackTitle: gap.trackTitle,
-        recordingTitle: gap.recordingTitle,
-        albumTitle: gap.albumTitle,
-        upc: gap.upc,
-        barcode: gap.barcode,
-        deltaMs: gap.durationDeltaMs,
-        medium: gap.medium,
-        position: gap.position,
-      })),
-      error: null,
-    };
-  } catch (error) {
-    return {
-      configured,
-      spentToday: await editsSpentToday().catch(() => 0),
-      dailyCap: 1000,
-      edits: 0,
-      editNote: '',
-      payload: '',
-      items: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return {
+    configured: botCredentials() !== null,
+    spentToday: await editsSpentToday().catch(() => 0),
+    dailyCap: 1000,
+    error: null,
+  };
 }
 
 /**
- * Send one batch, because a person asked for this batch.
+ * The exact document that would be sent for one release.
  *
- * The bot is never run on a schedule and never by the worker. It submits
- * when somebody presses the button, so that every edit leaving here has been
- * looked at by the person whose name is on the account.
+ * Kept available because "show me what you would actually post" is the last
+ * check before trusting a machine with somebody else's database, and a
+ * summary is not that.
  */
-export async function submitBotBatch(
-  maxEdits = 25,
-): Promise<{ submitted: number; error: string | null; view: ContributionView }> {
+export async function getBotPayload(releaseMbid: string): Promise<string> {
+  await checkAuth();
+  const run = await runIsrcBot({ apply: false, releaseMbid });
+  return run.payload;
+}
+
+export async function submitBotBatch(releaseMbid: string): Promise<{
+  submitted: number;
+  album: string | null;
+  error: string | null;
+  view: ContributionView;
+}> {
   await checkAuth();
   try {
-    const run = await runIsrcBot({ apply: true, maxEdits });
-    return { submitted: run.edits, error: null, view: await getContributions() };
+    const run = await runIsrcBot({ apply: true, releaseMbid });
+    return {
+      submitted: run.edits,
+      album: run.albumTitle,
+      error: null,
+      view: await getContributions(),
+    };
   } catch (error) {
     const message =
       error instanceof MusicBrainzBotError
@@ -110,7 +80,7 @@ export async function submitBotBatch(
         : error instanceof Error
           ? error.message
           : String(error);
-    return { submitted: 0, error: message, view: await getContributions() };
+    return { submitted: 0, album: null, error: message, view: await getContributions() };
   }
 }
 
@@ -122,7 +92,20 @@ export type ContributionView = {
     albumTitle: string;
     missing: number;
     link: string;
-    tracks: { isrc: string; medium: number; position: number; title: string; delta: number }[];
+    /** The release's barcode, and ours — identical by construction, shown anyway. */
+    barcode: string | null;
+    upc: string | null;
+    tracks: {
+      isrc: string;
+      medium: number;
+      position: number;
+      trackTitle: string;
+      recordingTitle: string;
+      recordingMbid: string;
+      upc: string | null;
+      barcode: string | null;
+      delta: number;
+    }[];
   }[];
   workGaps: Awaited<ReturnType<typeof workRelationshipGaps>>;
   contested: Awaited<ReturnType<typeof contestedIsrcs>>;
@@ -174,11 +157,17 @@ export async function getContributions(): Promise<ContributionView> {
       albumTitle: release.albumTitle,
       missing: release.missing,
       link: magicIsrcLink(release.releaseMbid, release.gaps),
+      barcode: release.gaps[0]?.barcode ?? null,
+      upc: release.gaps[0]?.upc ?? null,
       tracks: release.gaps.map((gap: IsrcGap) => ({
         isrc: gap.isrc,
         medium: gap.medium,
         position: gap.position,
-        title: gap.recordingTitle,
+        trackTitle: gap.trackTitle,
+        recordingTitle: gap.recordingTitle,
+        recordingMbid: gap.recordingMbid,
+        upc: gap.upc,
+        barcode: gap.barcode,
         delta: gap.durationDeltaMs,
       })),
     })),

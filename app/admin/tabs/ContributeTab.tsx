@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
+  getBotPayload,
+  getBotStatus,
   getContributions,
-  previewBotBatch,
   recordIsrcSubmission,
   reconcileSubmissions,
   setSubmissionOutcome,
   submitBotBatch,
-  type BotPreview,
+  type BotStatus,
   type ContributionView,
 } from '../actions/contribute';
 import { Spinner } from '../components/Spinner';
@@ -24,10 +25,9 @@ import { Spinner } from '../components/Spinner';
 export function ContributeTab() {
   const [view, setView] = useState<ContributionView | null>(null);
   const [busy, setBusy] = useState(false);
-  const [bot, setBot] = useState<BotPreview | null>(null);
-  const [batchSize, setBatchSize] = useState(25);
+  const [bot, setBot] = useState<BotStatus | null>(null);
   const [botResult, setBotResult] = useState<string | null>(null);
-  const [showPayload, setShowPayload] = useState(false);
+  const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
 
   const refresh = useCallback(() => {
     getContributions()
@@ -37,27 +37,34 @@ export function ContributeTab() {
 
   useEffect(refresh, [refresh]);
 
-  async function preview(size = batchSize) {
+  useEffect(() => {
+    getBotStatus()
+      .then(setBot)
+      .catch(() => setBot(null));
+  }, []);
+
+  async function submitAlbum(releaseMbid: string, albumTitle: string) {
     setBusy(true);
     setBotResult(null);
     try {
-      setBot(await previewBotBatch(size));
+      const result = await submitBotBatch(releaseMbid);
+      setView(result.view);
+      setBot(await getBotStatus());
+      setBotResult(
+        result.error
+          ? `${albumTitle}: not submitted — ${result.error}`
+          : `${albumTitle}: submitted ${result.submitted} ISRCs. They stay pending until MusicBrainz shows them.`,
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitBatch() {
+  async function revealPayload(releaseMbid: string) {
+    if (payload?.releaseMbid === releaseMbid) return setPayload(null);
     setBusy(true);
     try {
-      const result = await submitBotBatch(batchSize);
-      setView(result.view);
-      setBotResult(
-        result.error
-          ? `Not submitted: ${result.error}`
-          : `Submitted ${result.submitted} ISRCs. They stay pending until MusicBrainz shows them.`,
-      );
-      setBot(await previewBotBatch(batchSize));
+      setPayload({ releaseMbid, xml: await getBotPayload(releaseMbid) });
     } finally {
       setBusy(false);
     }
@@ -110,132 +117,12 @@ export function ContributeTab() {
             {bot ? `${bot.spentToday} of ${bot.dailyCap} edits today` : 'not loaded'}
           </span>
         </div>
-        <p className="px-4 pt-3 text-[var(--ink-2)]">
-          The bot submits when you press the button and at no other time — it is not on a schedule
-          and the worker never runs it. Every batch is shown with its evidence first. Only ISRCs:
-          releases, works and merges stay manual, because a wrong edit there is expensive for other
-          people to undo.
+        <p className="px-4 py-3 text-[var(--ink-2)]">
+          {bot?.configured
+            ? 'Submits one album at a time, when you press the button on it below, and at no other time — not on a schedule, and never from the worker. Only ISRCs.'
+            : 'Not configured. Run `pnpm mb:authorise` to obtain a refresh token for prelude_fm_bot. Everything below still works; the submitting is done by hand.'}
         </p>
-        <div className="toolbar">
-          <label className="flex items-center gap-2">
-            Batch
-            <select
-              value={batchSize}
-              onChange={(event) => setBatchSize(Number(event.target.value))}
-            >
-              {[5, 10, 25, 50, 100].map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="act" disabled={busy} onClick={() => preview()}>
-            Show me the next batch
-          </button>
-          {bot && bot.edits > 0 && bot.configured && (
-            <button className="act" data-variant="primary" disabled={busy} onClick={submitBatch}>
-              Submit these {bot.edits} to MusicBrainz
-            </button>
-          )}
-        </div>
-
-        {bot && !bot.configured && (
-          <p className="px-4 pb-3 text-[var(--gall)]">
-            Not configured. Run <span className="mono">pnpm mb:authorise</span> to obtain a refresh
-            token for prelude_fm_bot. Previewing works without one.
-          </p>
-        )}
-        {bot?.error && <p className="px-4 pb-3 text-[var(--gall)]">{bot.error}</p>}
         {botResult && <p className="px-4 pb-3">{botResult}</p>}
-
-        {bot && bot.items.length > 0 && (
-          <div className="fold-body">
-            <p className="mb-2 text-[var(--ink-2)]">Edit note sent with every one of these:</p>
-            <p className="mb-3 text-[var(--ink-2)]">{bot.editNote}</p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Disc/track</th>
-                  <th>Our track</th>
-                  <th>MusicBrainz recording</th>
-                  <th>Barcode</th>
-                  <th>Δ</th>
-                  <th>ISRC</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bot.items.map((item) => {
-                  // The query already requires these to be equal ignoring
-                  // zero padding, so a mismatch here means the rule broke
-                  // rather than the album differing.
-                  const strip = (value: string | null) => (value ?? '').replace(/^0+/, '');
-                  const barcodesAgree =
-                    strip(item.upc) !== '' && strip(item.upc) === strip(item.barcode);
-                  return (
-                    <tr key={`${item.recordingMbid}-${item.isrc}`}>
-                      <td className="mono whitespace-nowrap">
-                        {item.medium}-{item.position}
-                      </td>
-                      <td>
-                        <span className="block">{item.trackTitle}</span>
-                        <span className="block text-[11px] text-[var(--faint)]">
-                          {item.albumTitle}
-                        </span>
-                      </td>
-                      <td>
-                        <a
-                          href={`https://musicbrainz.org/recording/${item.recordingMbid}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {item.recordingTitle}
-                        </a>
-                      </td>
-                      <td className="mono whitespace-nowrap text-[11px]">
-                        {barcodesAgree ? (
-                          <>
-                            <span style={{ color: 'var(--viridian)' }}>{item.barcode}</span>
-                            {/*
-                              The same barcode written two ways: Spotify pads a
-                              UPC-12 to thirteen digits. Showing both where the
-                              raw text differs keeps the zero-stripping visible
-                              instead of quietly asserting a match.
-                            */}
-                            {item.upc !== item.barcode && (
-                              <span className="block text-[var(--faint)]">ours {item.upc}</span>
-                            )}
-                          </>
-                        ) : (
-                          <span style={{ color: 'var(--gall)' }}>
-                            {item.upc ?? '—'} ≠ {item.barcode ?? '—'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="mono whitespace-nowrap">{item.deltaMs}ms</td>
-                      <td className="mono whitespace-nowrap">{item.isrc}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <p className="mt-2 text-[11px] text-[var(--faint)]">
-              The barcode is shown rather than ticked: it is the same value on both sides, and
-              seeing the pair is what makes the match checkable. Δ is how far our duration is from
-              MusicBrainz&apos;s — the batch only includes tracks within 3 seconds.
-            </p>
-            <div className="toolbar">
-              <button className="act" onClick={() => setShowPayload((value) => !value)}>
-                {showPayload ? 'Hide' : 'Show'} the exact payload
-              </button>
-            </div>
-            {showPayload && (
-              <pre className="mono overflow-x-auto text-[11px] text-[var(--ink-2)]">
-                {bot.payload}
-              </pre>
-            )}
-          </div>
-        )}
       </section>
 
       <section className="panel">
@@ -255,7 +142,7 @@ export function ContributeTab() {
             <summary>
               <span className="album-title">{release.albumTitle}</span>
               <span className="album-meta">
-                {release.missing} missing · barcode matches · durations within 3s
+                {release.missing} missing · barcode {release.barcode ?? '—'} · durations within 3s
               </span>
             </summary>
             <div className="fold-body">
@@ -263,25 +150,50 @@ export function ContributeTab() {
                 <thead>
                   <tr>
                     <th>Disc/track</th>
-                    <th>Recording</th>
-                    <th>ISRC</th>
+                    <th>Our track</th>
+                    <th>MusicBrainz recording</th>
                     <th>Δ</th>
+                    <th>ISRC</th>
                   </tr>
                 </thead>
                 <tbody>
                   {release.tracks.map((track) => (
                     <tr key={`${track.medium}-${track.position}`}>
-                      <td className="mono">
+                      <td className="mono whitespace-nowrap">
                         {track.medium}-{track.position}
                       </td>
-                      <td>{track.title}</td>
-                      <td className="mono">{track.isrc}</td>
-                      <td className="mono">{track.delta}ms</td>
+                      <td>{track.trackTitle}</td>
+                      <td>
+                        <a
+                          href={`https://musicbrainz.org/recording/${track.recordingMbid}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {track.recordingTitle}
+                        </a>
+                      </td>
+                      <td className="mono whitespace-nowrap">{track.delta}ms</td>
+                      <td className="mono whitespace-nowrap">{track.isrc}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <p className="mt-2 text-[11px] text-[var(--faint)]">
+                Every row is on this release, whose barcode is the album&apos;s own
+                {release.upc && release.upc !== release.barcode ? ` (${release.upc} padded)` : ''}.
+                Δ is how far our duration is from MusicBrainz&apos;s.
+              </p>
               <div className="toolbar">
+                {bot?.configured && (
+                  <button
+                    className="act"
+                    data-variant="primary"
+                    disabled={busy}
+                    onClick={() => submitAlbum(release.releaseMbid, release.albumTitle)}
+                  >
+                    Submit {release.missing} as prelude_fm_bot
+                  </button>
+                )}
                 <a className="act" href={release.link} target="_blank" rel="noreferrer">
                   Open in MagicISRC
                 </a>
@@ -290,7 +202,14 @@ export function ContributeTab() {
                   disabled={busy}
                   onClick={() => submitted(release.releaseMbid)}
                 >
-                  I submitted these
+                  I submitted these by hand
+                </button>
+                <button
+                  className="act"
+                  disabled={busy}
+                  onClick={() => revealPayload(release.releaseMbid)}
+                >
+                  {payload?.releaseMbid === release.releaseMbid ? 'Hide' : 'Show'} the payload
                 </button>
                 <a
                   className="act"
@@ -301,6 +220,11 @@ export function ContributeTab() {
                   Release
                 </a>
               </div>
+              {payload?.releaseMbid === release.releaseMbid && (
+                <pre className="mono overflow-x-auto text-[11px] text-[var(--ink-2)]">
+                  {payload.xml}
+                </pre>
+              )}
             </div>
           </details>
         ))}
