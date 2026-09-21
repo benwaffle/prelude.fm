@@ -143,6 +143,15 @@ export interface MusicBrainzSource {
   /** The works a recording is a performance of. */
   recordingWorks(recordingId: string): Promise<MbWorkRef[]>;
 
+  /**
+   * One recording with its works and credits.
+   *
+   * The counterpart to `releaseWithRecordings` for tracks reached by ISRC
+   * rather than by release — the albums MusicBrainz does not hold, where
+   * there is no release read to carry this information along with it.
+   */
+  recordingDetail(recordingId: string): Promise<MbReleaseRecording | null>;
+
   /** A work with its parent, composer and catalogue relationships. */
   work(workId: string): Promise<MbWork | null>;
 

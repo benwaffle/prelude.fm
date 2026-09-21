@@ -18,7 +18,14 @@ import { sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbInvariantResult } from './db/schema';
 
-export type InvariantSeverity = 'hard' | 'upstream';
+/**
+ * - `hard`: our cache is inconsistent with itself. Our bug, and it fails.
+ * - `upstream`: MusicBrainz contradicts itself. Their bug, and we report it
+ *   so it can be contributed back rather than repaired locally.
+ * - `review`: the evidence points two ways and neither side is obviously
+ *   wrong. Nothing to fix automatically; somebody has to look.
+ */
+export type InvariantSeverity = 'hard' | 'upstream' | 'review';
 
 export type Invariant = {
   name: string;
@@ -122,6 +129,21 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
       where s.kind = 'isrc'
         and s.target_mbid is not null
         and not exists (select 1 from mb_recording r where r.mbid = s.target_mbid)
+    `,
+  },
+  {
+    name: 'isrc-disagrees-with-position',
+    severity: 'review',
+    describes:
+      "A track's ISRC names one recording and its place on the release names another. Either the release we matched is the wrong edition, or MusicBrainz holds the same performance twice. Anchoring keeps the position it already had rather than guessing between them.",
+    cheap: false,
+    query: sql`
+      select tr.spotify_track_id as id,
+             tr.recording_mbid || ' vs ' || i.recording_mbid as detail
+        from track_recording tr
+        join mb_recording_isrc i on i.isrc = tr.isrc
+       where tr.matched_by = 'release_position'
+         and i.recording_mbid <> tr.recording_mbid
     `,
   },
   {

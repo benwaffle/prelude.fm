@@ -48,6 +48,7 @@ async function processAndDispatchNext(requestUrl: string, depth: number) {
   const progressed =
     result.albums.length > 0 ||
     result.musicbrainz.worksRead > 0 ||
+    result.musicbrainz.recordingsRead > 0 ||
     result.musicbrainz.artistsRead > 0;
   if (!progressed) return;
   if (depth + 1 >= MAX_CHAIN_LENGTH) return;

@@ -78,7 +78,7 @@ export async function getCatalogueHealth(): Promise<CatalogueHealth> {
   const [totals] = await db
     .select({
       tracks: sql<number>`(select count(*) from spotify_track)`,
-      tracksMatched: sql<number>`(select count(mb_recording_id) from spotify_track)`,
+      tracksMatched: sql<number>`(select count(*) from track_recording)`,
       works: sql<number>`(select count(*) from work)`,
       worksLinked: sql<number>`(select count(musicbrainz_id) from work)`,
       parts: sql<number>`(select count(*) from work_part_v2)`,

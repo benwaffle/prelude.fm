@@ -12,6 +12,8 @@
  *   pnpm mb:ingest albums [--limit n]  cache releases and anchor their tracks
  *   pnpm mb:ingest anchor [--all]      anchor tracks; --all re-anchors ones already done
  *   pnpm mb:ingest report              what the cache holds and what it reaches
+  pnpm mb:ingest loose [--limit n]   anchor tracks by ISRC alone, no release needed
+  pnpm mb:ingest recordings [--limit n] read recordings an ISRC named but nobody has
   pnpm mb:ingest artists [--limit n] read artist stubs, composers first
   pnpm mb:ingest refresh [--limit n] re-read cached releases for newly stored fields
   pnpm mb:ingest check               run the cache invariants
@@ -72,6 +74,7 @@ async function main() {
         where exists (select 1 from mb_recording_work w where w.recording_mbid = tr.recording_mbid)
       union all select 'cached releases', count(*) from mb_release
       union all select 'cached recordings', count(*) from mb_recording
+      union all select '  read in full', count(*) from mb_recording where detail = 'full'
       union all select 'cached works', count(*) from mb_work
       union all select '  read in full', count(*) from mb_work where detail = 'full'
       union all select '  with a parent', count(*) from mb_work where parent_mbid is not null
@@ -94,6 +97,30 @@ async function main() {
   }
 
   if (options.step === 'report') {
+    await report();
+    return;
+  }
+
+  if (options.step === 'loose') {
+    const result = await ingest.anchorTracksByIsrc(source, {
+      limit: Number.isFinite(options.limit) ? options.limit : 10_000,
+    });
+    console.log(
+      `searched ${result.searched} ISRCs in ${result.requests} requests, anchored ${result.anchored} tracks`,
+    );
+    await report();
+    return;
+  }
+
+  if (options.step === 'recordings') {
+    const result = await cache.drainRecordingStubs(
+      source,
+      Number.isFinite(options.limit) ? options.limit : 10_000,
+    );
+    console.log(
+      `read ${result.recordings} recordings in ${result.requests} requests; ` +
+        `${result.reachedWork} reached a work`,
+    );
     await report();
     return;
   }
@@ -234,7 +261,14 @@ async function main() {
     await invariants.recordInvariantResults(results);
     let broken = 0;
     for (const result of results) {
-      const mark = result.violations === 0 ? 'ok  ' : result.severity === 'hard' ? 'FAIL' : 'note';
+      const mark =
+        result.violations === 0
+          ? 'ok  '
+          : result.severity === 'hard'
+            ? 'FAIL'
+            : result.severity === 'review'
+              ? 'look'
+              : 'note';
       console.log(`${mark} ${result.name.padEnd(32)} ${result.violations}`);
       if (result.violations > 0) {
         console.log(`     ${result.describes}`);

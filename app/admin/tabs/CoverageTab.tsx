@@ -188,8 +188,10 @@ export function CoverageTab({ onPick }: { onPick: (state: AlbumState) => void })
                     </span>
                   )}
                 </span>
-                {invariant.severity === 'upstream' && invariant.violations > 0 && (
-                  <span className="tag shrink-0">theirs, not ours</span>
+                {invariant.violations > 0 && invariant.severity !== 'hard' && (
+                  <span className="tag shrink-0">
+                    {invariant.severity === 'upstream' ? 'theirs, not ours' : 'needs a look'}
+                  </span>
                 )}
               </div>
             ))}

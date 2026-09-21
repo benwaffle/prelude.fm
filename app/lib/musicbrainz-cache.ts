@@ -183,6 +183,7 @@ export async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
         mbid: recording.id,
         title: recording.title,
         length: recording.length,
+        detail: 'full' as const,
         fetchedAt: new Date(),
       };
       await db
@@ -389,6 +390,77 @@ export async function ingestRelease(
     worksSeen: cached.workMbids.length,
     worksFetched,
   };
+}
+
+/**
+ * Read recordings that an ISRC named but nobody has looked at.
+ *
+ * These come from the ISRC sweep, which resolves a track without knowing its
+ * release and so learns nothing but an MBID. One request each turns that into
+ * a title, a length, the works it performs and who played — the same
+ * information a release read would have brought, for the albums MusicBrainz
+ * does not have as releases.
+ */
+export async function drainRecordingStubs(
+  source: MusicBrainzSource,
+  limit: number,
+): Promise<{ recordings: number; requests: number; reachedWork: number }> {
+  const stubs = await db
+    .select({ mbid: mbRecording.mbid })
+    .from(mbRecording)
+    .where(eq(mbRecording.detail, 'stub'))
+    .limit(limit);
+
+  let requests = 0;
+  let recordings = 0;
+  let reachedWork = 0;
+
+  for (const stub of stubs) {
+    const detail = await source.recordingDetail(stub.mbid);
+    requests++;
+    if (!detail) continue;
+
+    await db
+      .update(mbRecording)
+      .set({
+        title: detail.title,
+        length: detail.length,
+        detail: 'full',
+        fetchedAt: new Date(),
+      })
+      .where(eq(mbRecording.mbid, stub.mbid));
+
+    if (detail.works.length > 0) {
+      await db
+        .insert(mbRecordingWork)
+        .values(detail.works.map((w) => ({ recordingMbid: stub.mbid, workMbid: w.id })))
+        .onConflictDoNothing();
+      await cacheWorkStubs(detail.works);
+      reachedWork++;
+    }
+
+    if (detail.credits.length > 0) {
+      await db
+        .insert(mbRecordingCredit)
+        .values(
+          detail.credits.map((c) => ({
+            recordingMbid: stub.mbid,
+            artistMbid: c.artistId,
+            role: c.role,
+            instrument: c.instrument ?? '',
+          })),
+        )
+        .onConflictDoNothing();
+      await db
+        .insert(mbArtist)
+        .values(detail.credits.map((c) => ({ mbid: c.artistId, name: c.name })))
+        .onConflictDoNothing();
+    }
+
+    recordings++;
+  }
+
+  return { recordings, requests, reachedWork };
 }
 
 /**

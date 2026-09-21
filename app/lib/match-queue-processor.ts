@@ -48,6 +48,7 @@ export interface QueueWorkerResult {
     albumsCached: number;
     tracksAnchored: number;
     worksRead: number;
+    recordingsRead: number;
     artistsRead: number;
     requests: number;
     /** Set when the budget refused the pass, so a caller can stop chaining. */
@@ -369,6 +370,9 @@ const WORK_SWEEP_SIZE = 40;
  */
 const ARTIST_SWEEP_SIZE = 20;
 
+/** How many ISRC-named recordings a pass reads when no album is waiting. */
+const RECORDING_SWEEP_SIZE = 30;
+
 /**
  * One pass of the worker: some albums, then MusicBrainz.
  *
@@ -414,6 +418,7 @@ export async function runMatchQueueWorker(
     albumsCached: 0,
     tracksAnchored: 0,
     worksRead: 0,
+    recordingsRead: 0,
     artistsRead: 0,
     requests: 0,
     stopped: null as string | null,
@@ -422,7 +427,7 @@ export async function runMatchQueueWorker(
   if (options.musicbrainz !== false) {
     const [
       { ingestAlbum },
-      { drainArtistStubs, drainWorkStubs },
+      { drainArtistStubs, drainRecordingStubs, drainWorkStubs },
       { musicBrainzApi },
       { MusicBrainzBudgetError },
     ] = await Promise.all([
@@ -443,11 +448,24 @@ export async function runMatchQueueWorker(
       }
 
       if (albums.length === 0) {
-        const swept = await drainWorkStubs(musicBrainzApi('backfill'), WORK_SWEEP_SIZE);
+        // Recordings first: a recording stub is a track somebody has liked
+        // that currently reaches no work at all, where a work stub only
+        // deepens a tree that already has leaves.
+        const recordings = await drainRecordingStubs(
+          musicBrainzApi('backfill'),
+          RECORDING_SWEEP_SIZE,
+        );
+        musicbrainz.recordingsRead += recordings.recordings;
+        musicbrainz.requests += recordings.requests;
+
+        const swept =
+          recordings.recordings > 0
+            ? { works: 0, requests: 0 }
+            : await drainWorkStubs(musicBrainzApi('backfill'), WORK_SWEEP_SIZE);
         musicbrainz.worksRead += swept.works;
         musicbrainz.requests += swept.requests;
 
-        if (swept.works === 0) {
+        if (recordings.recordings === 0 && swept.works === 0) {
           const artists = await drainArtistStubs(musicBrainzApi('backfill'), ARTIST_SWEEP_SIZE);
           musicbrainz.artistsRead += artists.artists;
           musicbrainz.requests += artists.requests;

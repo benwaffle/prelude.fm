@@ -775,6 +775,18 @@ export const mbRecording = sqliteTable('mb_recording', {
   title: text('title').notNull(),
   /** Milliseconds, as MusicBrainz reports it. */
   length: integer('length'),
+  /**
+   * 'stub': an ISRC search named this recording and nothing else is known.
+   * 'full': read with its works and credits, from a release or its own lookup.
+   *
+   * An ISRC resolves without reference to a release, which is the only way to
+   * anchor a track whose album MusicBrainz does not have. That leaves a
+   * recording we can name but know nothing about, and this column is what
+   * keeps that from looking like a broken reference: the stubs are the queue.
+   */
+  detail: text('detail', { enum: ['stub', 'full'] })
+    .default('full')
+    .notNull(),
   fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
@@ -995,7 +1007,7 @@ export const mbSubmission = sqliteTable(
  */
 export const mbInvariantResult = sqliteTable('mb_invariant_result', {
   name: text('name').primaryKey(),
-  severity: text('severity', { enum: ['hard', 'upstream'] }).notNull(),
+  severity: text('severity', { enum: ['hard', 'upstream', 'review'] }).notNull(),
   violations: integer('violations').notNull(),
   /** A few offending ids, so the report says what to look at. */
   samples: text('samples', { mode: 'json' }).$type<{ id: string; detail: string | null }[]>(),

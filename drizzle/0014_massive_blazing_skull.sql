@@ -1,0 +1,1 @@
+ALTER TABLE `mb_recording` ADD `detail` text DEFAULT 'full' NOT NULL;

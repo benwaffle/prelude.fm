@@ -3,7 +3,8 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { spotifyAlbum, spotifyTrack, trackWorkPartV2, work, workPartV2 } from '@/lib/db/schema';
-import { findRecordingsByIsrcs } from '@/lib/musicbrainz';
+import { musicBrainzApi } from '@/lib/musicbrainz';
+import { anchorTracksByIsrc } from '@/lib/musicbrainz-ingest';
 import { getSpotifyAlbumTracks } from '@/lib/spotify-app-client';
 import { checkAuth } from './auth';
 import {
@@ -42,7 +43,9 @@ async function loadAlbums(): Promise<AlbumRow[]> {
       candidates: spotifyAlbum.mbReleaseCandidates,
       checked: spotifyAlbum.mbCheckedAt,
       tracks: sql<number>`count(distinct ${spotifyTrack.spotifyId})`,
-      anchored: sql<number>`count(distinct case when ${spotifyTrack.mbRecordingId} is not null then ${spotifyTrack.spotifyId} end)`,
+      anchored: sql<number>`count(distinct case when exists (
+        select 1 from track_recording tr where tr.spotify_track_id = ${spotifyTrack.spotifyId}
+      ) then ${spotifyTrack.spotifyId} end)`,
       works: sql<number>`count(distinct ${workPartV2.workId})`,
       worksLinked: sql<number>`count(distinct case when ${work.musicbrainzId} is not null then ${work.id} end)`,
     })
@@ -107,7 +110,9 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
       discNumber: spotifyTrack.discNumber,
       trackNumber: spotifyTrack.trackNumber,
       isrc: spotifyTrack.isrc,
-      mbRecordingId: spotifyTrack.mbRecordingId,
+      mbRecordingId: sql<
+        string | null
+      >`(select tr.recording_mbid from track_recording tr where tr.spotify_track_id = ${spotifyTrack.spotifyId})`,
       workId: work.id,
       workTitle: work.title,
       partId: workPartV2.id,
@@ -243,42 +248,22 @@ export async function recheckAlbum(
 ): Promise<{ resolved: number; anchored: number; tracks: number }> {
   await checkAuth();
 
-  const rows = await db
-    .select({ id: spotifyTrack.spotifyId, isrc: spotifyTrack.isrc })
-    .from(spotifyTrack)
-    .where(
-      and(
-        eq(spotifyTrack.spotifyAlbumId, albumId),
-        isNotNull(spotifyTrack.isrc),
-        isNull(spotifyTrack.mbRecordingId),
-      ),
-    );
-
-  const byIsrc = new Map<string, string[]>();
-  for (const row of rows) {
-    if (!row.isrc) continue;
-    byIsrc.set(row.isrc, [...(byIsrc.get(row.isrc) ?? []), row.id]);
-  }
-
-  let resolved = 0;
-  const isrcs = [...byIsrc.keys()];
-  for (let i = 0; i < isrcs.length; i += 20) {
-    const found = await findRecordingsByIsrcs(isrcs.slice(i, i + 20), 'interactive');
-    for (const [isrc, recordingId] of found) {
-      for (const trackId of byIsrc.get(isrc) ?? []) {
-        await db
-          .update(spotifyTrack)
-          .set({ mbRecordingId: recordingId })
-          .where(eq(spotifyTrack.spotifyId, trackId));
-        resolved++;
-      }
-    }
-  }
+  /*
+   * The same resolution the loose-ISRC sweep does, scoped to one album. An
+   * ISRC identifies a recording without reference to a release, which is
+   * what makes this useful here: the albums a person re-checks from this
+   * page are mostly the ones whose release MusicBrainz does not have.
+   */
+  const { anchored: resolved } = await anchorTracksByIsrc(musicBrainzApi('interactive'), {
+    albumId,
+  });
 
   const [totals] = await db
     .select({
       tracks: sql<number>`count(*)`,
-      anchored: sql<number>`count(${spotifyTrack.mbRecordingId})`,
+      anchored: sql<number>`count(distinct case when exists (
+        select 1 from track_recording tr where tr.spotify_track_id = ${spotifyTrack.spotifyId}
+      ) then ${spotifyTrack.spotifyId} end)`,
     })
     .from(spotifyTrack)
     .where(eq(spotifyTrack.spotifyAlbumId, albumId));

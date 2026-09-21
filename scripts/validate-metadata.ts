@@ -495,7 +495,7 @@ async function main() {
     .select({
       tracks: sql`(select count(*) from spotify_track)`.mapWith(Number),
       tracksWithIsrc: sql`(select count(isrc) from spotify_track)`.mapWith(Number),
-      tracksWithRecording: sql`(select count(mb_recording_id) from spotify_track)`.mapWith(Number),
+      tracksWithRecording: sql`(select count(*) from track_recording)`.mapWith(Number),
       works: sql`(select count(*) from work)`.mapWith(Number),
       worksLinked: sql`(select count(musicbrainz_id) from work)`.mapWith(Number),
       parts: sql`(select count(*) from work_part_v2)`.mapWith(Number),

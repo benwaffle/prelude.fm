@@ -325,6 +325,75 @@ export async function ingestAlbum(
   };
 }
 
+/**
+ * Anchor tracks by ISRC alone, without knowing their release.
+ *
+ * An ISRC identifies a recording, so it does not need a release to resolve —
+ * the search index answers directly. That matters because a track whose album
+ * is not in MusicBrainz, or whose release we could not identify, is otherwise
+ * unreachable: release-first ingest anchors nothing for 202 of our albums,
+ * and 1,556 tracks that the older ISRC-only pass had resolved were left
+ * behind by it.
+ *
+ * Batched twenty at a time, because the search takes a Lucene OR over ISRCs
+ * and a long query makes the server answer 503 far more often.
+ */
+export async function anchorTracksByIsrc(
+  source: MusicBrainzSource,
+  options: { limit?: number; albumId?: string } = {},
+): Promise<{ anchored: number; requests: number; searched: number }> {
+  const rows = await db
+    .select({ spotifyId: spotifyTrack.spotifyId, isrc: spotifyTrack.isrc })
+    .from(spotifyTrack)
+    .where(
+      and(
+        isNotNull(spotifyTrack.isrc),
+        options.albumId ? eq(spotifyTrack.spotifyAlbumId, options.albumId) : undefined,
+        sql`not exists (select 1 from ${trackRecording} where ${trackRecording.spotifyTrackId} = ${spotifyTrack.spotifyId})`,
+      ),
+    )
+    .limit(options.limit ?? 500);
+
+  const byIsrc = new Map<string, string[]>();
+  for (const row of rows) {
+    if (!row.isrc) continue;
+    byIsrc.set(row.isrc, [...(byIsrc.get(row.isrc) ?? []), row.spotifyId]);
+  }
+
+  const isrcs = [...byIsrc.keys()];
+  let requests = 0;
+  let anchored = 0;
+
+  for (let i = 0; i < isrcs.length; i += 20) {
+    const batch = isrcs.slice(i, i + 20);
+    const found = await source.recordingsByIsrc(batch);
+    requests++;
+
+    for (const [isrc, recordingMbid] of found) {
+      // Remember the mapping so a later lookup of the same ISRC is a join.
+      await db.insert(mbRecordingIsrc).values({ isrc, recordingMbid }).onConflictDoNothing();
+
+      // A stub, so the anchor points at something the cache holds. The search
+      // gives an MBID and nothing else; the stub is what queues the lookup
+      // that turns it into a title, works and credits.
+      await db
+        .insert(mbRecording)
+        .values({ mbid: recordingMbid, title: '', detail: 'stub' })
+        .onConflictDoNothing();
+
+      for (const spotifyTrackId of byIsrc.get(isrc) ?? []) {
+        await db
+          .insert(trackRecording)
+          .values({ spotifyTrackId, recordingMbid, isrc, matchedBy: 'isrc', matchedAt: new Date() })
+          .onConflictDoNothing();
+        anchored++;
+      }
+    }
+  }
+
+  return { anchored, requests, searched: isrcs.length };
+}
+
 /** The works reachable from the recordings this album's tracks are anchored to. */
 export async function worksReachedByAlbum(albumId: string): Promise<string[]> {
   const rows = await db

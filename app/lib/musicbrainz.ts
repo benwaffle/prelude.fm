@@ -15,6 +15,7 @@ import type {
   MbCredit,
   MbRelation,
   MbRelease,
+  MbReleaseRecording,
   MbReleaseTrack,
   MbRecordingSearchHit,
   MbWork,
@@ -345,6 +346,36 @@ export async function getReleaseWithRecordings(
   };
 }
 
+/** One recording, with the works it performs and who played on it. */
+export async function getRecordingDetail(
+  recordingId: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<MbReleaseRecording | null> {
+  const raw = await mbGet<{
+    id: string;
+    title?: string;
+    length?: number | null;
+    isrcs?: string[];
+    relations?: MbRelation[];
+    'artist-credit'?: { name?: string; artist?: { id: string; name: string } }[];
+  }>(`/recording/${recordingId}?inc=work-rels+artist-rels+artist-credits+isrcs&fmt=json`, channel);
+  if (!raw) return null;
+
+  return {
+    id: raw.id,
+    title: raw.title ?? '',
+    length: raw.length ?? null,
+    isrcs: raw.isrcs ?? [],
+    works: (raw.relations ?? [])
+      .filter((relation) => relation.type === 'performance' && relation.work)
+      .map((relation) => relation.work as MbWorkRef),
+    credits: creditsFromRelations(raw.relations),
+    artistCredit: (raw['artist-credit'] ?? []).flatMap((credit) =>
+      credit.artist?.id && credit.name ? [{ artistId: credit.artist.id, name: credit.name }] : [],
+    ),
+  };
+}
+
 /* ------------------------------------------------------------- source --- */
 
 /**
@@ -363,6 +394,7 @@ export function musicBrainzApi(channel: MusicBrainzChannel = DEFAULT_CHANNEL): M
     releaseRecordingIds: (releaseId) => getReleaseRecordingIds(releaseId, channel),
     recordingsByIsrc: (isrcs) => findRecordingsByIsrcs(isrcs, channel),
     recordingWorks: (recordingId) => getRecordingWorks(recordingId, channel),
+    recordingDetail: (recordingId) => getRecordingDetail(recordingId, channel),
     work: (workId) => getWork(workId, channel),
     artist: (artistId) => getArtist(artistId, channel),
   };
