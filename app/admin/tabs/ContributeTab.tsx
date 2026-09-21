@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   getContributions,
+  previewBotBatch,
   recordIsrcSubmission,
   reconcileSubmissions,
   setSubmissionOutcome,
+  submitBotBatch,
+  type BotPreview,
   type ContributionView,
 } from '../actions/contribute';
 import { Spinner } from '../components/Spinner';
@@ -21,6 +24,10 @@ import { Spinner } from '../components/Spinner';
 export function ContributeTab() {
   const [view, setView] = useState<ContributionView | null>(null);
   const [busy, setBusy] = useState(false);
+  const [bot, setBot] = useState<BotPreview | null>(null);
+  const [batchSize, setBatchSize] = useState(25);
+  const [botResult, setBotResult] = useState<string | null>(null);
+  const [showPayload, setShowPayload] = useState(false);
 
   const refresh = useCallback(() => {
     getContributions()
@@ -29,6 +36,32 @@ export function ContributeTab() {
   }, []);
 
   useEffect(refresh, [refresh]);
+
+  async function preview(size = batchSize) {
+    setBusy(true);
+    setBotResult(null);
+    try {
+      setBot(await previewBotBatch(size));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitBatch() {
+    setBusy(true);
+    try {
+      const result = await submitBotBatch(batchSize);
+      setView(result.view);
+      setBotResult(
+        result.error
+          ? `Not submitted: ${result.error}`
+          : `Submitted ${result.submitted} ISRCs. They stay pending until MusicBrainz shows them.`,
+      );
+      setBot(await previewBotBatch(batchSize));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!view) return <Spinner className="h-4 w-4" />;
 
@@ -69,6 +102,99 @@ export function ContributeTab() {
         filled in; the submission is yours to make. Releases, works and merges stay manual on
         purpose — a wrong one of those is expensive for other people to undo.
       </p>
+
+      <section className="panel">
+        <div className="panel-head">
+          <span className="panel-title">prelude_fm_bot</span>
+          <span className="mono text-[var(--ink-2)]">
+            {bot ? `${bot.spentToday} of ${bot.dailyCap} edits today` : 'not loaded'}
+          </span>
+        </div>
+        <p className="px-4 pt-3 text-[var(--ink-2)]">
+          The bot submits when you press the button and at no other time — it is not on a schedule
+          and the worker never runs it. Every batch is shown with its evidence first. Only ISRCs:
+          releases, works and merges stay manual, because a wrong edit there is expensive for other
+          people to undo.
+        </p>
+        <div className="toolbar">
+          <label className="flex items-center gap-2">
+            Batch
+            <select
+              value={batchSize}
+              onChange={(event) => setBatchSize(Number(event.target.value))}
+            >
+              {[5, 10, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="act" disabled={busy} onClick={() => preview()}>
+            Show me the next batch
+          </button>
+          {bot && bot.edits > 0 && bot.configured && (
+            <button className="act" data-variant="primary" disabled={busy} onClick={submitBatch}>
+              Submit these {bot.edits} to MusicBrainz
+            </button>
+          )}
+        </div>
+
+        {bot && !bot.configured && (
+          <p className="px-4 pb-3 text-[var(--gall)]">
+            No token configured. Set MUSICBRAINZ_BOT_TOKEN to an OAuth2 bearer token for
+            prelude_fm_bot with the submit_isrc scope. Previewing works without one.
+          </p>
+        )}
+        {bot?.error && <p className="px-4 pb-3 text-[var(--gall)]">{bot.error}</p>}
+        {botResult && <p className="px-4 pb-3">{botResult}</p>}
+
+        {bot && bot.items.length > 0 && (
+          <div className="fold-body">
+            <p className="mb-2 text-[var(--ink-2)]">Edit note sent with every one of these:</p>
+            <p className="mb-3 text-[var(--ink-2)]">{bot.editNote}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>ISRC</th>
+                  <th>Recording</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bot.items.slice(0, 12).map((item) => (
+                  <tr key={`${item.recordingMbid}-${item.isrc}`}>
+                    <td className="mono">{item.isrc}</td>
+                    <td>
+                      <a
+                        href={`https://musicbrainz.org/recording/${item.recordingMbid}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {item.recordingMbid}
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {bot.items.length > 12 && (
+              <p className="mt-2 text-[var(--faint)]">
+                and {bot.items.length - 12} more in this batch
+              </p>
+            )}
+            <div className="toolbar">
+              <button className="act" onClick={() => setShowPayload((value) => !value)}>
+                {showPayload ? 'Hide' : 'Show'} the exact payload
+              </button>
+            </div>
+            {showPayload && (
+              <pre className="mono overflow-x-auto text-[11px] text-[var(--ink-2)]">
+                {bot.payload}
+              </pre>
+            )}
+          </div>
+        )}
+      </section>
 
       <section className="panel">
         <div className="panel-head">

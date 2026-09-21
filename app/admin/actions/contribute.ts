@@ -11,7 +11,81 @@ import {
   workRelationshipGaps,
   type IsrcGap,
 } from '@/lib/musicbrainz-contributions';
+import { editsSpentToday, MusicBrainzBotError, runIsrcBot } from '@/lib/musicbrainz-bot';
 import { checkAuth } from './auth';
+
+/**
+ * What the bot would submit, without submitting it.
+ *
+ * Separate from the submit action on purpose. Every batch is looked at
+ * before it is sent: the evidence is shown, the edit note is shown, and the
+ * payload is available to read. Automation is something each class of edit
+ * earns, and for now the earning is somebody deciding one batch at a time.
+ */
+export type BotPreview = {
+  configured: boolean;
+  spentToday: number;
+  dailyCap: number;
+  edits: number;
+  editNote: string;
+  payload: string;
+  items: { isrc: string; recordingMbid: string }[];
+  error: string | null;
+};
+
+export async function previewBotBatch(maxEdits = 25): Promise<BotPreview> {
+  await checkAuth();
+  const configured = Boolean(process.env.MUSICBRAINZ_BOT_TOKEN);
+  try {
+    const run = await runIsrcBot({ apply: false, maxEdits });
+    return {
+      configured,
+      spentToday: run.spentToday,
+      dailyCap: 1000,
+      edits: run.edits,
+      editNote: run.editNote,
+      payload: run.payload,
+      items: run.items,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      configured,
+      spentToday: await editsSpentToday().catch(() => 0),
+      dailyCap: 1000,
+      edits: 0,
+      editNote: '',
+      payload: '',
+      items: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Send one batch, because a person asked for this batch.
+ *
+ * The bot is never run on a schedule and never by the worker. It submits
+ * when somebody presses the button, so that every edit leaving here has been
+ * looked at by the person whose name is on the account.
+ */
+export async function submitBotBatch(
+  maxEdits = 25,
+): Promise<{ submitted: number; error: string | null; view: ContributionView }> {
+  await checkAuth();
+  try {
+    const run = await runIsrcBot({ apply: true, maxEdits });
+    return { submitted: run.edits, error: null, view: await getContributions() };
+  } catch (error) {
+    const message =
+      error instanceof MusicBrainzBotError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    return { submitted: 0, error: message, view: await getContributions() };
+  }
+}
 
 export type ContributionView = {
   counts: Awaited<ReturnType<typeof contributionCounts>>;
