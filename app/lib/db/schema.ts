@@ -390,44 +390,6 @@ export const trackWorkPartV2 = sqliteTable(
   ],
 );
 
-/**
- * What MusicBrainz asserts about entities we have already matched to it.
- *
- * Kept apart from the columns the app reads so that importing MusicBrainz
- * never silently overwrites something we already know. A value here is a
- * second opinion: where our own column is empty it is a gap we can close,
- * and where the two differ it is a disagreement a person should look at.
- * Folding the two together would destroy exactly that distinction.
- *
- * Decisions about a fact — accepted, rejected, "reviewed, they disagree and
- * ours is right" — belong in `metadata_migration_audit` like every other
- * metadata decision, not here. This table only records what MusicBrainz said.
- */
-export const musicbrainzFact = sqliteTable(
-  'musicbrainz_fact',
-  {
-    id: integer('id').primaryKey(),
-    entityType: text('entity_type', { enum: ['composer', 'work', 'work_part'] }).notNull(),
-    entityId: integer('entity_id').notNull(),
-    /** 'birth_year' | 'death_year' | 'work_type' | 'part_title' */
-    field: text('field').notNull(),
-    value: text('value').notNull(),
-    /** The MusicBrainz entity the fact was read from. */
-    musicbrainzId: text('musicbrainz_id').notNull(),
-    fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex('musicbrainz_fact_entity_field_idx').on(
-      table.entityType,
-      table.entityId,
-      table.field,
-    ),
-    index('musicbrainz_fact_field_idx').on(table.field),
-  ],
-);
-
 export const metadataMigrationAudit = sqliteTable(
   'metadata_migration_audit',
   {

@@ -504,41 +504,41 @@ async function main() {
       composersLinked: sql`(select count(musicbrainz_id) from composer)`.mapWith(Number),
       catalogueRows:
         sql`(select count(*) from work_catalog_v2 where source = 'musicbrainz')`.mapWith(Number),
-      facts: sql`(select count(*) from musicbrainz_fact)`.mapWith(Number),
+      cachedWorks: sql`(select count(*) from mb_work)`.mapWith(Number),
+      cachedRecordings: sql`(select count(*) from mb_recording)`.mapWith(Number),
     })
     .from(sql`(select 1)`);
 
   const [mbConflicts] = await db
     .select({
       composerBirthYear: sql`(
-        select count(*) from musicbrainz_fact f join composer c on c.id = f.entity_id
-        where f.entity_type = 'composer' and f.field = 'birth_year'
-          and c.birth_year is not null and cast(c.birth_year as text) <> f.value)`.mapWith(Number),
+        select count(*) from composer c join mb_artist a on a.mbid = c.musicbrainz_id
+        where c.birth_year is not null and a.begin_year is not null
+          and c.birth_year <> a.begin_year)`.mapWith(Number),
       composerDeathYear: sql`(
-        select count(*) from musicbrainz_fact f join composer c on c.id = f.entity_id
-        where f.entity_type = 'composer' and f.field = 'death_year'
-          and c.death_year is not null and cast(c.death_year as text) <> f.value)`.mapWith(Number),
+        select count(*) from composer c join mb_artist a on a.mbid = c.musicbrainz_id
+        where c.death_year is not null and a.end_year is not null
+          and c.death_year <> a.end_year)`.mapWith(Number),
       workForm: sql`(
-        select count(*) from musicbrainz_fact f join work w on w.id = f.entity_id
-        where f.entity_type = 'work' and f.field = 'work_type'
-          and w.form is not null and lower(w.form) <> lower(f.value))`.mapWith(Number),
+        select count(*) from work w join mb_work mw on mw.mbid = w.musicbrainz_id
+        where mw.type is not null and w.form is not null
+          and lower(w.form) <> lower(mw.type))`.mapWith(Number),
       partTitle: sql`(
-        select count(*) from musicbrainz_fact f join work_part_v2 p on p.id = f.entity_id
-        where f.entity_type = 'work_part' and f.field = 'part_title'
-          and p.title is not null and lower(p.title) <> lower(f.value))`.mapWith(Number),
+        select count(distinct wp.id) from work_part_v2 wp
+          join mb_work mw on mw.mbid = wp.musicbrainz_id
+        where wp.title is not null and mw.title is not null
+          and lower(wp.title) <> lower(mw.title))`.mapWith(Number),
     })
     .from(sql`(select 1)`);
 
   const [mbFillable] = await db
     .select({
       composerBirthYear: sql`(
-        select count(*) from musicbrainz_fact f join composer c on c.id = f.entity_id
-        where f.entity_type = 'composer' and f.field = 'birth_year' and c.birth_year is null)`.mapWith(
-        Number,
-      ),
+        select count(*) from composer c join mb_artist a on a.mbid = c.musicbrainz_id
+        where a.begin_year is not null and c.birth_year is null)`.mapWith(Number),
       workForm: sql`(
-        select count(*) from musicbrainz_fact f join work w on w.id = f.entity_id
-        where f.entity_type = 'work' and f.field = 'work_type' and w.form is null)`.mapWith(Number),
+        select count(*) from work w join mb_work mw on mw.mbid = w.musicbrainz_id
+        where mw.type is not null and w.form is null)`.mapWith(Number),
     })
     .from(sql`(select 1)`);
 
@@ -547,17 +547,15 @@ async function main() {
   // those values are discarded rather than written. Applying the same
   // transformation keeps this honest about what running it would do.
   const { movementTitleFromMusicBrainz } = await import('@/lib/musicbrainz-promotion');
-  const partTitleCandidates = await db
-    .select({ label: schema.workPartV2.label, value: schema.musicbrainzFact.value })
-    .from(schema.musicbrainzFact)
-    .innerJoin(schema.workPartV2, eq(schema.workPartV2.id, schema.musicbrainzFact.entityId))
-    .where(
-      and(
-        eq(schema.musicbrainzFact.entityType, 'work_part'),
-        eq(schema.musicbrainzFact.field, 'part_title'),
-        isNull(schema.workPartV2.title),
-      ),
-    );
+  const partTitleCandidates = await db.all<{ label: string | null; value: string }>(sql`
+    select distinct wp.label, mw.title as value
+      from work_part_v2 wp
+      join track_work_part_v2 twp on twp.work_part_id = wp.id
+      join track_recording tr on tr.spotify_track_id = twp.spotify_track_id
+      join mb_recording_work rw on rw.recording_mbid = tr.recording_mbid
+      join mb_work mw on mw.mbid = rw.work_mbid
+     where wp.title is null
+  `);
   const partTitleFillable = partTitleCandidates.filter(
     (row) => movementTitleFromMusicBrainz(row.value, row.label) !== null,
   ).length;
@@ -609,7 +607,7 @@ async function main() {
     console.table(
       Object.entries(reviewBacklog).map(([metric, value]) => ({ metric, count: value })),
     );
-    if (mbCoverage.facts > 0 || mbCoverage.tracksWithIsrc > 0) {
+    if (mbCoverage.cachedWorks > 0 || mbCoverage.tracksWithIsrc > 0) {
       console.log('\nMusicBrainz (second source; informational)');
       console.table([
         {
@@ -627,7 +625,8 @@ async function main() {
           value: `${mbCoverage.composersLinked} / ${mbCoverage.composers}`,
         },
         { metric: 'catalogue rows imported', value: String(mbCoverage.catalogueRows) },
-        { metric: 'facts recorded', value: String(mbCoverage.facts) },
+        { metric: 'works cached', value: String(mbCoverage.cachedWorks) },
+        { metric: 'recordings cached', value: String(mbCoverage.cachedRecordings) },
       ]);
       const fillable = mbFillable.composerBirthYear + mbFillable.workForm + partTitleFillable;
       const conflicting = Object.values(mbConflicts).reduce((a, b) => a + b, 0);

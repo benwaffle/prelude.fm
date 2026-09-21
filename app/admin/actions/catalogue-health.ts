@@ -1,11 +1,12 @@
 'use server';
 
-import { and, count, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { count, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
   composer,
+  mbArtist,
+  mbWork,
   metadataMigrationAudit,
-  musicbrainzFact,
   spotifyTrack,
   trackWorkPartV2,
   work,
@@ -171,30 +172,27 @@ async function loadDisagreements(): Promise<Disagreement[]> {
       name: composer.name,
       birth: composer.birthYear,
       death: composer.deathYear,
-      field: musicbrainzFact.field,
-      value: musicbrainzFact.value,
+      mbBirth: mbArtist.beginYear,
+      mbDeath: mbArtist.endYear,
     })
-    .from(musicbrainzFact)
-    .innerJoin(composer, eq(composer.id, musicbrainzFact.entityId))
-    .where(
-      and(
-        eq(musicbrainzFact.entityType, 'composer'),
-        sql`${musicbrainzFact.field} in ('birth_year', 'death_year')`,
-      ),
-    );
+    .from(composer)
+    .innerJoin(mbArtist, eq(mbArtist.mbid, composer.musicbrainzId));
+
   for (const row of years) {
-    const field = row.field as 'birth_year' | 'death_year';
-    const held = field === 'birth_year' ? row.birth : row.death;
-    if (held == null || String(held) === row.value.trim()) continue;
-    if (settled.has(`composer_${field}:${row.id}`)) continue;
-    out.push({
-      key: `${field}:${row.id}`,
-      field,
-      entityId: row.id,
-      context: row.name,
-      ours: String(held),
-      theirs: row.value,
-    });
+    for (const field of ['birth_year', 'death_year'] as const) {
+      const held = field === 'birth_year' ? row.birth : row.death;
+      const theirs = field === 'birth_year' ? row.mbBirth : row.mbDeath;
+      if (held == null || theirs == null || held === theirs) continue;
+      if (settled.has(`composer_${field}:${row.id}`)) continue;
+      out.push({
+        key: `${field}:${row.id}`,
+        field,
+        entityId: row.id,
+        context: row.name,
+        ours: String(held),
+        theirs: String(theirs),
+      });
+    }
   }
 
   return out;
@@ -291,31 +289,18 @@ export async function getContestedWorks(limit = 40) {
       composerName: composer.name,
       partId: workPartV2.id,
       leafId: workPartV2.musicbrainzId,
-      parentId: musicbrainzFact.value,
+      // A part with no parent in MusicBrainz is its own level, which is what
+      // resolveWorkLevel expects when leaf and parent are the same.
+      parentId: sql<string>`coalesce(${mbWork.parentMbid}, ${mbWork.mbid})`,
+      partTitle: mbWork.title,
     })
     .from(workPartV2)
     .innerJoin(work, eq(work.id, workPartV2.workId))
     .innerJoin(composer, eq(composer.id, work.composerId))
-    .innerJoin(
-      musicbrainzFact,
-      and(
-        eq(musicbrainzFact.entityType, 'work_part'),
-        eq(musicbrainzFact.entityId, workPartV2.id),
-        eq(musicbrainzFact.field, 'mb_parent_work'),
-      ),
-    )
+    .innerJoin(mbWork, eq(mbWork.mbid, workPartV2.musicbrainzId))
     .where(isNotNull(workPartV2.musicbrainzId));
 
-  const partTitles = new Map(
-    (
-      await db
-        .select({ entityId: musicbrainzFact.entityId, value: musicbrainzFact.value })
-        .from(musicbrainzFact)
-        .where(
-          and(eq(musicbrainzFact.entityType, 'work_part'), eq(musicbrainzFact.field, 'part_title')),
-        )
-    ).map((row) => [row.entityId, row.value]),
-  );
+  const partTitles = new Map(rows.map((row) => [row.partId, row.partTitle]));
 
   const byWork = new Map<
     number,
