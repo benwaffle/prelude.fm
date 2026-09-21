@@ -179,22 +179,6 @@ export const work = sqliteTable(
   ],
 );
 
-export const movement = sqliteTable(
-  'movement',
-  {
-    id: integer('id').primaryKey(),
-    workId: integer('work_id')
-      .notNull()
-      .references(() => work.id),
-    number: integer('number').notNull(),
-    title: text('title'), // "Allegro", null
-  },
-  (table) => [
-    index('movement_work_idx').on(table.workId),
-    uniqueIndex('movement_work_number_idx').on(table.workId, table.number),
-  ],
-);
-
 export const spotifyAlbum = sqliteTable(
   'spotify_album',
   {
@@ -226,25 +210,6 @@ export const spotifyAlbum = sqliteTable(
     mbCheckedAt: integer('mb_checked_at', { mode: 'timestamp_ms' }),
   },
   (table) => [index('spotify_album_mb_release_idx').on(table.mbReleaseId)],
-);
-
-export const recording = sqliteTable(
-  'recording',
-  {
-    id: integer('id').primaryKey(),
-    spotifyAlbumId: text('spotify_album_id')
-      .notNull()
-      .references(() => spotifyAlbum.spotifyId),
-    workId: integer('work_id')
-      .notNull()
-      .references(() => work.id),
-    popularity: integer('popularity'), // calculated by averaging tracks
-  },
-  (table) => [
-    index('recording_work_idx').on(table.workId),
-    index('recording_album_idx').on(table.spotifyAlbumId),
-    uniqueIndex('recording_album_work_idx').on(table.spotifyAlbumId, table.workId),
-  ],
 );
 
 export const spotifyTrack = sqliteTable(
@@ -431,21 +396,6 @@ export const trackArtists = sqliteTable(
   (table) => [primaryKey({ columns: [table.spotifyTrackId, table.spotifyArtistId] })],
 );
 
-export const trackMovement = sqliteTable(
-  'track_movement',
-  {
-    spotifyTrackId: text('spotify_track_id')
-      .notNull()
-      .references(() => spotifyTrack.spotifyId),
-    movementId: integer('movement_id')
-      .notNull()
-      .references(() => movement.id),
-    startMs: integer('start_ms'),
-    endMs: integer('end_ms'),
-  },
-  (table) => [primaryKey({ columns: [table.spotifyTrackId, table.movementId] })],
-);
-
 export const matchQueue = sqliteTable(
   'match_queue',
   {
@@ -486,32 +436,12 @@ export const workRelations = relations(work, ({ one, many }) => ({
     fields: [work.composerId],
     references: [composer.id],
   }),
-  movements: many(movement),
-  recordings: many(recording),
-}));
-
-export const movementRelations = relations(movement, ({ one, many }) => ({
-  work: one(work, {
-    fields: [movement.workId],
-    references: [work.id],
-  }),
-  trackMovements: many(trackMovement),
+  parts: many(workPartV2),
+  recordings: many(recordingV2),
 }));
 
 export const spotifyAlbumRelations = relations(spotifyAlbum, ({ many }) => ({
-  recordings: many(recording),
-}));
-
-export const recordingRelations = relations(recording, ({ one, many }) => ({
-  spotifyAlbum: one(spotifyAlbum, {
-    fields: [recording.spotifyAlbumId],
-    references: [spotifyAlbum.spotifyId],
-  }),
-  work: one(work, {
-    fields: [recording.workId],
-    references: [work.id],
-  }),
-  tracks: many(spotifyTrack),
+  recordings: many(recordingV2),
 }));
 
 export const spotifyTrackRelations = relations(spotifyTrack, ({ one, many }) => ({
@@ -520,7 +450,7 @@ export const spotifyTrackRelations = relations(spotifyTrack, ({ one, many }) => 
     references: [spotifyAlbum.spotifyId],
   }),
   trackArtists: many(trackArtists),
-  trackMovements: many(trackMovement),
+  workParts: many(trackWorkPartV2),
 }));
 
 export const spotifyArtistRelations = relations(spotifyArtist, ({ one, many }) => ({
@@ -539,17 +469,6 @@ export const trackArtistsRelations = relations(trackArtists, ({ one }) => ({
   artist: one(spotifyArtist, {
     fields: [trackArtists.spotifyArtistId],
     references: [spotifyArtist.spotifyId],
-  }),
-}));
-
-export const trackMovementRelations = relations(trackMovement, ({ one }) => ({
-  track: one(spotifyTrack, {
-    fields: [trackMovement.spotifyTrackId],
-    references: [spotifyTrack.spotifyId],
-  }),
-  movement: one(movement, {
-    fields: [trackMovement.movementId],
-    references: [movement.id],
   }),
 }));
 

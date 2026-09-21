@@ -8,7 +8,12 @@
 - A recording is a particular performance of one work on one Spotify album, identified by explicit track membership rather than an occurrence number.
 - The model supports both one track containing several work parts and one work part spanning several tracks.
 
-The `_v2` suffix is historical. `work_catalog_v2`, `work_part_v2`, `recording_v2`, `recording_track_v2`, and `track_work_part_v2` are the live production model.
+The `_v2` suffix is historical. `work_catalog_v2`, `work_part_v2`,
+`recording_v2`, `recording_track_v2`, and `track_work_part_v2` are the live
+production model. The v1 tables they replaced — `movement`, `recording`,
+`track_movement` — are gone; the schema declared them for a while after
+production had dropped them, which is why `spotify-utils.ts` still speaks of
+"track movements" while querying `track_work_part_v2`.
 
 ```mermaid
 erDiagram
