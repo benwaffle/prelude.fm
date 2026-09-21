@@ -7,9 +7,11 @@ import {
   getCatalogRecordings,
   getCatalogWorkHeader,
   getCatalogWorks,
+  searchWorks,
   type CatalogComposer,
   type CatalogRecording,
   type CatalogWork,
+  type WorkSearchHit,
 } from '@/app/actions/library';
 import { useLibrary } from '@/lib/library-context';
 import { useNavSearch } from '../AppShell';
@@ -99,6 +101,36 @@ export function CatalogScreen() {
     );
   }, [composers, query]);
 
+  /*
+   * Works are searched on the server rather than filtered here, because a
+   * catalogue reference has to reach every reference a work carries and only
+   * one of them is loaded with the card. A reader who knows a Scarlatti
+   * sonata as L 413 should find it even though its card says Kk. 9.
+   */
+  const [hits, setHits] = useState<WorkSearchHit[]>([]);
+  const trimmed = query.trim();
+
+  useEffect(() => {
+    if (trimmed.length < 2) {
+      setHits([]);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      searchWorks(trimmed)
+        .then((found) => {
+          if (live) setHits(found);
+        })
+        .catch(() => {
+          if (live) setHits([]);
+        });
+    }, 180);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [trimmed]);
+
   const composer = composers.find((c) => c.id === composerId) ?? null;
   const work = works.find((w) => w.id === workId) ?? null;
 
@@ -135,6 +167,18 @@ export function CatalogScreen() {
         )}
       </div>
 
+      {trimmed.length >= 2 && (
+        <SearchResults
+          query={trimmed}
+          hits={hits}
+          onPick={(hit) => {
+            setComposerId(hit.composerId);
+            setWorkId(hit.workId);
+            setLevel(2);
+          }}
+        />
+      )}
+
       <div className="grid flex-1 grid-cols-[264px_340px_minmax(0,1fr)] max-[900px]:grid-cols-[minmax(0,1fr)]">
         <ComposerPane
           list={filtered}
@@ -150,6 +194,59 @@ export function CatalogScreen() {
           hidden={isNarrow && level !== 1}
         />
         <RecordingPane header={header} recordings={recordings} hidden={isNarrow && level !== 2} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What the query found, above the three panes.
+ *
+ * Shows every catalogue reference each work carries, not just the one that
+ * matched, so it is clear why a search for L 413 returned something labelled
+ * Kk. 9 — and so the reader learns the work's other names.
+ */
+function SearchResults({
+  query,
+  hits,
+  onPick,
+}: {
+  query: string;
+  hits: WorkSearchHit[];
+  onPick: (hit: WorkSearchHit) => void;
+}) {
+  return (
+    <div className="border-b border-rule bg-paper-2 px-5 py-3">
+      <div className="mb-2 font-meta text-[9.5px] tracking-[0.2em] text-muted uppercase">
+        {hits.length > 0
+          ? `${hits.length} work${hits.length === 1 ? '' : 's'} matching “${query}”`
+          : `Nothing matching “${query}”`}
+      </div>
+      <div className="flex flex-col">
+        {hits.map((hit) => (
+          <button
+            key={hit.workId}
+            type="button"
+            onClick={() => onPick(hit)}
+            className="flex cursor-pointer items-baseline gap-3 border-b border-rule/40 py-[6px] text-left last:border-b-0"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] text-ink">
+                {hit.title}
+                {hit.nickname && <span className="text-muted"> “{hit.nickname}”</span>}
+              </span>
+              <span className="block truncate font-meta text-[10px] text-muted">
+                {hit.composerName}
+                {hit.references.length > 0 && <> · {hit.references.join(' · ')}</>}
+              </span>
+            </span>
+            <span className="shrink-0 font-meta text-[10px] text-muted tabular-nums">
+              {hit.recordingCount === 0
+                ? 'no recordings'
+                : `${hit.recordingCount} recording${hit.recordingCount === 1 ? '' : 's'}`}
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   );
