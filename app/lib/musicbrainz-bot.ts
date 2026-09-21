@@ -11,7 +11,8 @@
  * wrong edit there is expensive for other people to undo and that cost is not
  * ours to impose.
  *
- * Credentials are never held here. The token comes from the environment, and
+ * Credentials are never held here. The refresh token comes from the
+ * environment and is exchanged for a short-lived access token on demand;
  * without one the bot refuses rather than falling back to anything.
  */
 import { and, eq, gte, sql } from 'drizzle-orm';
@@ -24,6 +25,7 @@ import {
   editCount,
   type IsrcSubmissionItem,
 } from './musicbrainz-isrc-submission';
+import { botAccessToken } from './musicbrainz-oauth';
 
 const BASE = 'https://musicbrainz.org/ws/2';
 
@@ -123,14 +125,9 @@ export async function runIsrcBot(
     return { items, edits, spentToday, submitted: false, editNote, payload };
   }
 
-  const token = process.env.MUSICBRAINZ_BOT_TOKEN;
-  if (!token) {
-    throw new MusicBrainzBotError(
-      'MUSICBRAINZ_BOT_TOKEN is not set. The bot needs an OAuth2 bearer token issued ' +
-        'to prelude_fm_bot with the submit_isrc scope, from an application registered ' +
-        'at https://musicbrainz.org/account/applications with access_type=offline.',
-    );
-  }
+  // Exchanged from the refresh token on demand, because access tokens expire
+  // and a stored one would start failing an hour after it was written down.
+  const token = await botAccessToken();
 
   // Through the gateway like every other request, on the lowest-priority
   // channel: a submission is never more urgent than somebody's import.

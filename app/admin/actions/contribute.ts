@@ -16,6 +16,7 @@ import {
   type IsrcGap,
 } from '@/lib/musicbrainz-contributions';
 import { editsSpentToday, MusicBrainzBotError, runIsrcBot } from '@/lib/musicbrainz-bot';
+import { botCredentials } from '@/lib/musicbrainz-oauth';
 import { checkAuth } from './auth';
 
 /**
@@ -39,7 +40,7 @@ export type BotPreview = {
 
 export async function previewBotBatch(maxEdits = 25): Promise<BotPreview> {
   await checkAuth();
-  const configured = Boolean(process.env.MUSICBRAINZ_BOT_TOKEN);
+  const configured = botCredentials() !== null;
   try {
     const run = await runIsrcBot({ apply: false, maxEdits });
     return {

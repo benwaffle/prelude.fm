@@ -142,8 +142,8 @@ export function ContributeTab() {
 
         {bot && !bot.configured && (
           <p className="px-4 pb-3 text-[var(--gall)]">
-            No token configured. Set MUSICBRAINZ_BOT_TOKEN to an OAuth2 bearer token for
-            prelude_fm_bot with the submit_isrc scope. Previewing works without one.
+            Not configured. Run <span className="mono">pnpm mb:authorise</span> to obtain a refresh
+            token for prelude_fm_bot. Previewing works without one.
           </p>
         )}
         {bot?.error && <p className="px-4 pb-3 text-[var(--gall)]">{bot.error}</p>}

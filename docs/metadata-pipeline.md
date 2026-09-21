@@ -67,6 +67,36 @@ the artists credited on them with roles. Asking per recording instead costs one
 request each — dozens for an album — and that ratio is what makes the
 rate-limited web service usable at all.
 
+## Contributing back
+
+`prelude_fm_bot` submits ISRCs, and only ISRCs. Releases, works and merges
+stay manual permanently, because a wrong edit there is expensive for other
+people to undo.
+
+It runs when somebody presses the button in admin and at no other time — not
+on a schedule, and never from the worker. Every batch is shown first with its
+evidence, its edit note and the exact XML.
+
+Authorisation is the out-of-band flow MusicBrainz offers installed
+applications, so there is no callback to host:
+
+```bash
+# Register at https://musicbrainz.org/account/applications
+#   Type: Installed application   Callback: urn:ietf:wg:oauth:2.0:oob
+pnpm mb:authorise            # prints the URL; sign in AS prelude_fm_bot
+pnpm mb:authorise <code>     # prints the refresh token for .envrc
+```
+
+What is stored is the refresh token, because access tokens expire and one
+written into the environment would fail an hour later. The bot exchanges it
+for an access token on demand and keeps that in memory only.
+
+The daily cap counts **edits, not requests**: one POST can carry fifty ISRCs
+and the bot code of conduct limits a bot to 1,000 edits a day. It is read off
+the submission ledger rather than a counter, so a restart cannot lose it. Bot
+approval does not raise the rate limit, so submissions still queue through the
+gateway on its lowest-priority channel.
+
 ## End-to-end flow
 
 1. A signed-in user submits one or more unmatched Spotify tracks.
