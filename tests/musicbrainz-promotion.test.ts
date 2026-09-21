@@ -306,3 +306,19 @@ test('a genuinely different title is not treated as an abbreviation', () => {
   assert.equal(abbreviates('Fra karnevalet', 'From the Carnival'), false);
   assert.equal(abbreviates('Rondo. Allegro', 'Rondo. Allegro – Presto'), true);
 });
+
+test('a title that is only a numeral is a label, not a movement name', () => {
+  // The numbering strip needs a space after the numeral, so "I." survived it
+  // and was about to be stored as a movement title — putting the numeral in
+  // both columns, where the reader prints it twice.
+  assert.equal(movementTitleFromMusicBrainz('Sonata: I.', null), null);
+  assert.equal(movementTitleFromMusicBrainz('III', null), null);
+  assert.equal(movementTitleFromMusicBrainz('4.', null), null);
+  assert.equal(movementTitleFromMusicBrainz('I. Allegro', null), 'Allegro');
+});
+
+test('less common catalogue sigils are recognised too', () => {
+  // Falck for W. F. Bach: "Prélude, FK nv29" was reaching a movement title.
+  assert.equal(movementTitleFromMusicBrainz('Prélude, FK nv29', null), null);
+  assert.equal(movementTitleFromMusicBrainz('Andante, JS 30', null), null);
+});

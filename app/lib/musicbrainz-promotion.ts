@@ -134,7 +134,17 @@ const LEADING_NUMBER = /^\s*(?:(?:no\.?\s*)?\d+|[ivxlcdm]+)\s*[.:)]?\s+/i;
  * op. 30 Nr. 5" was being written into a movement title.
  */
 const CATALOGUE_TOKEN =
-  /\b(?:bwv|rv|hwv|hob|buxwv|zwv|twv|wq|woo|opus|mwv|trv|anh|deest)\b|\b(?:op|kv|k|cd|sz|bv)\.?\s*\d+|\b(?:d|l|s|b|c|p|f)\.\s*\d+/i;
+  /\b(?:bwv|rv|hwv|hob|buxwv|zwv|twv|wq|woo|opus|mwv|trv|anh|deest|falk|jb|ies)\b|\b(?:op|kv|k|cd|sz|bv|fk|bb|fp|hv|js|wn)\.?\s*(?:nv)?\s*\d+|\b(?:d|l|s|b|c|p|f|h)\.\s*\d+/i;
+
+/**
+ * A title that is only numbering is a label, not a name.
+ *
+ * MusicBrainz sometimes titles a movement with nothing but its number, and
+ * the numbering strip above leaves "I." behind when no space follows it.
+ * Storing that as a title puts the numeral in both columns and the reader
+ * prints it twice.
+ */
+const ONLY_NUMBERING = /^[\s.,:)IVXLCDMivxlcdm\d-]+$/;
 
 /**
  * Turn a MusicBrainz work title into something that belongs in `work_part_v2.title`.
@@ -176,6 +186,7 @@ export function movementTitleFromMusicBrainz(
 
   // Anything still carrying a catalogue reference is a work title, not a movement.
   if (CATALOGUE_TOKEN.test(text)) return null;
+  if (ONLY_NUMBERING.test(text)) return null;
   if (text.length < 2) return null;
   return text;
 }

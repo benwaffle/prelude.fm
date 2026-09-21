@@ -31,6 +31,8 @@ export type WorkNode = {
   parentMbid: string | null;
   parentTitle: string | null;
   hasChildren: boolean;
+  /** This work's position among its parent's parts, when it has one. */
+  orderingKey?: number | null;
 };
 
 export type WorkLevel = {
