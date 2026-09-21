@@ -263,7 +263,7 @@ export async function recheckAlbum(
   let resolved = 0;
   const isrcs = [...byIsrc.keys()];
   for (let i = 0; i < isrcs.length; i += 20) {
-    const found = await findRecordingsByIsrcs(isrcs.slice(i, i + 20));
+    const found = await findRecordingsByIsrcs(isrcs.slice(i, i + 20), 'interactive');
     for (const [isrc, recordingId] of found) {
       for (const trackId of byIsrc.get(isrc) ?? []) {
         await db

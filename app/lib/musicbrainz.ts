@@ -1,15 +1,42 @@
 /**
- * A small, polite MusicBrainz web-service client.
+ * The MusicBrainz web service, as a `MusicBrainzSource`.
  *
- * MusicBrainz asks anonymous clients for at most one request per second and a
- * User-Agent that identifies the application and a way to contact us. Both are
- * conditions of use rather than suggestions, so the rate limit is enforced here
- * by serialising every request through one queue: callers cannot accidentally
- * exceed it by running lookups concurrently.
+ * Every request here goes through `musicbrainz-gateway.ts`, which owns the one
+ * request per second MusicBrainz allows us and decides whose turn it is. This
+ * module is only about what to ask for and how to read the answer.
  */
+import {
+  MusicBrainzBudgetError,
+  scheduleMusicBrainzRequest,
+  type MusicBrainzChannel,
+} from './musicbrainz-gateway';
+import type {
+  MbArtist,
+  MbCredit,
+  MbRelation,
+  MbRelease,
+  MbReleaseTrack,
+  MbRecordingSearchHit,
+  MbWork,
+  MbWorkRef,
+  MusicBrainzSource,
+} from './musicbrainz-source';
+
+export type {
+  MbArtist,
+  MbCredit,
+  MbRelation,
+  MbRelease,
+  MbReleaseRecording,
+  MbReleaseTrack,
+  MbRecordingSearchHit,
+  MbWork,
+  MbWorkRef,
+  MusicBrainzSource,
+} from './musicbrainz-source';
+export { MusicBrainzBudgetError };
 
 const BASE = 'https://musicbrainz.org/ws/2';
-const MIN_INTERVAL_MS = 1_100;
 const MAX_ATTEMPTS = 6;
 
 const contact = process.env.MUSICBRAINZ_CONTACT ?? 'https://prelude.fm';
@@ -17,21 +44,14 @@ const userAgent = `PreludeFM/0.1 ( ${contact} )`;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-let tail: Promise<unknown> = Promise.resolve();
-let lastRequestAt = 0;
-
-/** Serialise onto a single queue so the one-request-per-second rule holds globally. */
-function enqueue<T>(run: () => Promise<T>): Promise<T> {
-  const result = tail.then(async () => {
-    const wait = MIN_INTERVAL_MS - (Date.now() - lastRequestAt);
-    if (wait > 0) await sleep(wait);
-    lastRequestAt = Date.now();
-    return run();
-  });
-  // Keep the chain alive even when a caller's promise rejects.
-  tail = result.catch(() => undefined);
-  return result;
-}
+/**
+ * The channel a bare call counts against.
+ *
+ * `backfill` is the safe default: it is the lowest-priority read channel, so
+ * forgetting to say what a call is for makes it wait rather than jump a queue
+ * somebody is sitting in front of.
+ */
+const DEFAULT_CHANNEL: MusicBrainzChannel = 'backfill';
 
 export class MusicBrainzError extends Error {}
 
@@ -41,11 +61,16 @@ export class MusicBrainzError extends Error {}
  *
  * MusicBrainz answers 503 with a "server is busy" body under load, and it does
  * so often enough that treating it as fatal would abort long backfills
- * needlessly, so it is retried with a backoff.
+ * needlessly, so it is retried with a backoff. Each attempt is a fresh trip
+ * through the gateway, so retries queue like anything else and are counted
+ * against the day's budget — a retry is a request the server had to serve.
  */
-export async function mbGet<T>(path: string): Promise<T | null> {
+export async function mbGet<T>(
+  path: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<T | null> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const response = await enqueue(() =>
+    const response = await scheduleMusicBrainzRequest(channel, () =>
       fetch(`${BASE}${path}`, { headers: { 'User-Agent': userAgent, Accept: 'application/json' } }),
     );
 
@@ -75,38 +100,6 @@ export async function mbGet<T>(path: string): Promise<T | null> {
   throw new MusicBrainzError(`retries exhausted for ${path}`);
 }
 
-/* ---------------------------------------------------------------- types --- */
-
-export type MbRelation = {
-  type: string;
-  direction: 'forward' | 'backward';
-  'attribute-values'?: Record<string, string>;
-  work?: { id: string; title: string };
-  artist?: { id: string; name: string };
-  series?: { id: string; name: string; type?: string };
-};
-
-export type MbWork = {
-  id: string;
-  title: string;
-  type?: string | null;
-  relations?: MbRelation[];
-};
-
-export type MbArtist = {
-  id: string;
-  name: string;
-  type?: string | null;
-  'life-span'?: { begin?: string | null; end?: string | null };
-};
-
-export type MbRecordingSearchHit = {
-  id: string;
-  title: string;
-  score?: number;
-  isrcs?: string[];
-};
-
 /* ------------------------------------------------------------- lookups --- */
 
 /**
@@ -120,7 +113,10 @@ export type MbRecordingSearchHit = {
  * Only ISRCs we asked for are returned; a recording carrying extra ISRCs does
  * not cause those to be claimed.
  */
-export async function findRecordingsByIsrcs(isrcs: string[]): Promise<Map<string, string>> {
+export async function findRecordingsByIsrcs(
+  isrcs: string[],
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<Map<string, string>> {
   const found = new Map<string, string>();
   if (isrcs.length === 0) return found;
 
@@ -128,6 +124,7 @@ export async function findRecordingsByIsrcs(isrcs: string[]): Promise<Map<string
   const query = isrcs.map((isrc) => `isrc:${isrc}`).join(' OR ');
   const result = await mbGet<{ recordings?: MbRecordingSearchHit[] }>(
     `/recording?query=${encodeURIComponent(query)}&fmt=json&limit=100`,
+    channel,
   );
 
   for (const recording of result?.recordings ?? []) {
@@ -146,13 +143,17 @@ export async function findRecordingsByIsrcs(isrcs: string[]): Promise<Map<string
  * wrong release. Leading zeros are ignored, since UPC-12 and EAN-13 write the
  * same barcode with different padding.
  */
-export async function findReleasesByBarcode(barcode: string): Promise<string[]> {
+export async function findReleasesByBarcode(
+  barcode: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<string[]> {
   const normalise = (value: string | null | undefined) => (value ?? '').trim().replace(/^0+/, '');
   const wanted = normalise(barcode);
   if (!wanted) return [];
 
   const result = await mbGet<{ releases?: { id: string; barcode?: string | null }[] }>(
     `/release?query=barcode:${encodeURIComponent(wanted)}&fmt=json&limit=25`,
+    channel,
   );
   return (result?.releases ?? [])
     .filter((release) => normalise(release.barcode) === wanted)
@@ -167,10 +168,13 @@ export async function findReleasesByBarcode(barcode: string): Promise<string[]> 
  * recordings, so for anything addressed to recordings — ISRCs above all — the
  * two are interchangeable and the barcode is not really ambiguous at all.
  */
-export async function getReleaseRecordingIds(releaseId: string): Promise<string[]> {
+export async function getReleaseRecordingIds(
+  releaseId: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<string[]> {
   const release = await mbGet<{
     media?: { tracks?: { recording?: { id: string } }[] }[];
-  }>(`/release/${releaseId}?inc=recordings&fmt=json`);
+  }>(`/release/${releaseId}?inc=recordings&fmt=json`, channel);
   const ids: string[] = [];
   for (const medium of release?.media ?? []) {
     for (const track of medium.tracks ?? []) {
@@ -183,29 +187,161 @@ export async function getReleaseRecordingIds(releaseId: string): Promise<string[
 /** The works a recording is a performance of. */
 export async function getRecordingWorks(
   recordingId: string,
-): Promise<{ id: string; title: string }[]> {
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<MbWorkRef[]> {
   const recording = await mbGet<{ relations?: MbRelation[] }>(
     `/recording/${recordingId}?inc=work-rels&fmt=json`,
+    channel,
   );
-  const works: { id: string; title: string }[] = [];
+  const works: MbWorkRef[] = [];
   for (const relation of recording?.relations ?? []) {
     if (relation.type === 'performance' && relation.work) works.push(relation.work);
   }
   return works;
 }
 
-export async function getWork(workId: string): Promise<MbWork | null> {
-  return mbGet<MbWork>(`/work/${workId}?inc=work-rels+artist-rels+series-rels&fmt=json`);
+export async function getWork(
+  workId: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<MbWork | null> {
+  return mbGet<MbWork>(`/work/${workId}?inc=work-rels+artist-rels+series-rels&fmt=json`, channel);
 }
 
-export async function getArtist(artistId: string): Promise<MbArtist | null> {
-  return mbGet<MbArtist>(`/artist/${artistId}?fmt=json`);
+export async function getArtist(
+  artistId: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<MbArtist | null> {
+  return mbGet<MbArtist>(`/artist/${artistId}?fmt=json`, channel);
+}
+
+/* --------------------------------------------------- the release read --- */
+
+/**
+ * Everything one release can tell us, in one request.
+ *
+ * This single `inc` list returns the tracklist, each track's recording, its
+ * ISRCs, the works those recordings perform, and the artists credited on them
+ * with their roles. Asking per recording instead would cost one request each
+ * — dozens for an album — and the difference between those two shapes is what
+ * decides whether the rate-limited web service is usable at all.
+ */
+const RELEASE_INC = 'recordings+recording-level-rels+work-rels+artist-rels+isrcs';
+
+type RawRelease = {
+  id: string;
+  title?: string;
+  barcode?: string | null;
+  date?: string | null;
+  country?: string | null;
+  media?: {
+    position?: number;
+    tracks?: {
+      position?: number;
+      number?: string;
+      title?: string;
+      length?: number | null;
+      recording?: {
+        id: string;
+        title?: string;
+        length?: number | null;
+        isrcs?: string[];
+        relations?: MbRelation[];
+      };
+    }[];
+  }[];
+};
+
+/**
+ * Artist credits on a recording.
+ *
+ * An instrument relationship names the instrument in its attributes — a
+ * violinist is `instrument` + `violin`, not a role called `violin` — so the
+ * attribute is only read as an instrument for the relationship types that use
+ * it that way. `engineer` also carries attributes (`assistant`), and reading
+ * that as an instrument would invent a credit that does not exist.
+ */
+function creditsFromRelations(relations: MbRelation[] | undefined): MbCredit[] {
+  const credits: MbCredit[] = [];
+  for (const relation of relations ?? []) {
+    if (!relation.artist) continue;
+    const carriesInstrument = relation.type === 'instrument' || relation.type === 'vocal';
+    credits.push({
+      artistId: relation.artist.id,
+      name: relation.artist.name,
+      role: relation.type,
+      instrument: carriesInstrument ? (relation.attributes?.[0] ?? null) : null,
+    });
+  }
+  return credits;
+}
+
+export async function getReleaseWithRecordings(
+  releaseId: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<MbRelease | null> {
+  const raw = await mbGet<RawRelease>(`/release/${releaseId}?inc=${RELEASE_INC}&fmt=json`, channel);
+  if (!raw) return null;
+
+  const tracks: MbReleaseTrack[] = [];
+  raw.media?.forEach((medium, mediumIndex) => {
+    medium.tracks?.forEach((track, trackIndex) => {
+      const recording = track.recording;
+      if (!recording) return;
+      tracks.push({
+        medium: medium.position ?? mediumIndex + 1,
+        position: track.position ?? trackIndex + 1,
+        title: track.title ?? recording.title ?? '',
+        length: track.length ?? null,
+        recording: {
+          id: recording.id,
+          title: recording.title ?? '',
+          length: recording.length ?? null,
+          isrcs: recording.isrcs ?? [],
+          works: (recording.relations ?? [])
+            .filter((relation) => relation.type === 'performance' && relation.work)
+            .map((relation) => relation.work as MbWorkRef),
+          credits: creditsFromRelations(recording.relations),
+        },
+      });
+    });
+  });
+
+  return {
+    id: raw.id,
+    title: raw.title ?? '',
+    barcode: raw.barcode ?? null,
+    date: raw.date ?? null,
+    country: raw.country ?? null,
+    tracks,
+  };
+}
+
+/* ------------------------------------------------------------- source --- */
+
+/**
+ * The web service as a `MusicBrainzSource`, bound to one channel.
+ *
+ * Binding the channel at construction rather than per call means the caller
+ * says once what it is doing — serving a signup, sweeping the cache — and
+ * every read it makes inherits the right priority.
+ */
+export function musicBrainzApi(channel: MusicBrainzChannel = DEFAULT_CHANNEL): MusicBrainzSource {
+  return {
+    name: `musicbrainz-api:${channel}`,
+    releasesByBarcode: (barcode) => findReleasesByBarcode(barcode, channel),
+    releaseWithRecordings: (releaseId) => getReleaseWithRecordings(releaseId, channel),
+    releaseRecordingIds: (releaseId) => getReleaseRecordingIds(releaseId, channel),
+    recordingsByIsrc: (isrcs) => findRecordingsByIsrcs(isrcs, channel),
+    recordingWorks: (recordingId) => getRecordingWorks(recordingId, channel),
+    work: (workId) => getWork(workId, channel),
+    artist: (artistId) => getArtist(artistId, channel),
+  };
 }
 
 /* ------------------------------------------------------ relation readers --- */
 
 /** The parent work this one is a movement/section of, if any. */
-export function parentWorkOf(work: MbWork): { id: string; title: string } | null {
+export function parentWorkOf(work: MbWork): MbWorkRef | null {
   for (const relation of work.relations ?? []) {
     if (relation.type === 'parts' && relation.direction === 'backward' && relation.work) {
       return relation.work;
@@ -215,8 +351,8 @@ export function parentWorkOf(work: MbWork): { id: string; title: string } | null
 }
 
 /** Child parts, in the order MusicBrainz returned them. */
-export function childPartsOf(work: MbWork): { id: string; title: string }[] {
-  const parts: { id: string; title: string }[] = [];
+export function childPartsOf(work: MbWork): MbWorkRef[] {
+  const parts: MbWorkRef[] = [];
   for (const relation of work.relations ?? []) {
     if (relation.type === 'parts' && relation.direction === 'forward' && relation.work) {
       parts.push(relation.work);

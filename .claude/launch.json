@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "prelude",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "/opt/homebrew/bin/direnv",
+      "runtimeArgs": ["exec", ".", "npm", "run", "dev"],
       "port": 3000,
       "url": "http://127.0.0.1:3000"
     }

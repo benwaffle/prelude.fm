@@ -575,3 +575,47 @@ export const trackMovementRelations = relations(trackMovement, ({ one }) => ({
     references: [movement.id],
   }),
 }));
+
+/*
+ * MusicBrainz gateway: request budget and kill switch
+ */
+
+/**
+ * Requests spent against the MusicBrainz web service, per UTC day and channel.
+ *
+ * Persisted rather than counted in memory because serverless instances come
+ * and go, so a per-process tally measures one lambda instead of the service.
+ * It is also the number that decides when the web service stops being enough
+ * and a local mirror becomes necessary, which makes it worth keeping even
+ * when no cap is close.
+ */
+export const mbRequestBudget = sqliteTable(
+  'mb_request_budget',
+  {
+    /** UTC date, `YYYY-MM-DD`. */
+    day: text('day').notNull(),
+    /** 'interactive' | 'backfill' | 'bot' */
+    channel: text('channel').notNull(),
+    requests: integer('requests').default(0).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.channel] })],
+);
+
+/**
+ * Per-channel pause flags and cap overrides.
+ *
+ * A row for the pseudo-channel `all` applies to every channel. This exists so
+ * that stopping traffic to somebody else's server, or widening the bot's daily
+ * cap once its submissions have been reconciled, does not require a deploy.
+ */
+export const mbGatewayControl = sqliteTable('mb_gateway_control', {
+  /** 'all' | 'interactive' | 'backfill' | 'bot' */
+  channel: text('channel').primaryKey(),
+  paused: integer('paused', { mode: 'boolean' }).default(false).notNull(),
+  /** Null means the built-in default for that channel. */
+  dailyCap: integer('daily_cap'),
+  note: text('note'),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+});

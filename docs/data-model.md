@@ -156,3 +156,14 @@ Stores ingestion state per Spotify track. Valid states are:
 - `not_classical`: terminal classification and intentionally allowed to remain unlinked.
 
 The physical column `workflow_run_id` is exposed in code as `claimOwnerId`; it now stores the worker lease owner rather than a GitHub Actions run.
+
+### `mb_request_budget` and `mb_gateway_control`
+
+MusicBrainz request accounting and the kill switch, described in
+`docs/metadata-pipeline.md`. `mb_request_budget` counts requests per UTC day
+and channel; `mb_gateway_control` holds pause flags and cap overrides, keyed by
+channel or by the pseudo-channel `all`.
+
+Neither is metadata. They are here because the budget is the constraint the
+metadata pipeline is designed around: how much of MusicBrainz we can read in a
+day decides how much of the catalogue MusicBrainz gets to describe.

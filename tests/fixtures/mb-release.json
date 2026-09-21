@@ -1,0 +1,664 @@
+{
+  "title": "Concerti per due violini e archi I",
+  "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+  "status": "Official",
+  "disambiguation": "",
+  "id": "1afe97b5-d8ab-40c4-a9fd-5b38ed14e2ba",
+  "asin": null,
+  "relations": [
+    {
+      "target-credit": "",
+      "type-id": "01323b4f-7aba-410c-8c91-cb224b963a40",
+      "attribute-values": {},
+      "end": null,
+      "direction": "backward",
+      "source-credit": "",
+      "ended": false,
+      "target-type": "artist",
+      "attributes": ["translator"],
+      "artist": {
+        "country": null,
+        "type": "Person",
+        "sort-name": "Cantagrel, Laurent",
+        "name": "Laurent Cantagrel",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "id": "d6943d55-0e87-4ab4-b1e1-27ffb1079986",
+        "disambiguation": ""
+      },
+      "type": "liner notes",
+      "attribute-ids": {
+        "translator": "25dfb08e-9b99-44db-b30c-1d6ec6747af8"
+      },
+      "begin": null
+    },
+    {
+      "type-id": "01323b4f-7aba-410c-8c91-cb224b963a40",
+      "target-credit": "",
+      "attribute-values": {},
+      "end": null,
+      "direction": "backward",
+      "source-credit": "",
+      "ended": false,
+      "attributes": [],
+      "target-type": "artist",
+      "type": "liner notes",
+      "artist": {
+        "disambiguation": "liner notes author",
+        "id": "7ad5e449-e8af-43f7-bb16-5a83e7da7043",
+        "name": "Cesare Fertonani",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "sort-name": "Fertonani, Cesare",
+        "country": null,
+        "type": "Person"
+      },
+      "begin": null,
+      "attribute-ids": {}
+    },
+    {
+      "type-id": "01323b4f-7aba-410c-8c91-cb224b963a40",
+      "target-credit": "",
+      "attribute-values": {},
+      "end": null,
+      "direction": "backward",
+      "source-credit": "",
+      "ended": false,
+      "target-type": "artist",
+      "attributes": ["translator"],
+      "artist": {
+        "id": "21d0a566-c846-4ed0-8ecc-854481f43876",
+        "disambiguation": "",
+        "name": "Marcia Hadjimarkos",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "sort-name": "Hadjimarkos, Marcia",
+        "country": null,
+        "type": "Person"
+      },
+      "type": "liner notes",
+      "attribute-ids": {
+        "translator": "25dfb08e-9b99-44db-b30c-1d6ec6747af8"
+      },
+      "begin": null
+    },
+    {
+      "ended": false,
+      "source-credit": "",
+      "end": null,
+      "direction": "backward",
+      "attribute-values": {},
+      "target-credit": "",
+      "type-id": "01323b4f-7aba-410c-8c91-cb224b963a40",
+      "begin": null,
+      "attribute-ids": {},
+      "type": "liner notes",
+      "artist": {
+        "id": "ec735768-9dbc-4328-98d3-e7d1ee71ef7b",
+        "disambiguation": "",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "name": "Susan Orlando",
+        "sort-name": "Orlando, Susan",
+        "type": "Person",
+        "country": null
+      },
+      "attributes": [],
+      "target-type": "artist"
+    },
+    {
+      "end": null,
+      "direction": "backward",
+      "source-credit": "",
+      "ended": false,
+      "type-id": "01323b4f-7aba-410c-8c91-cb224b963a40",
+      "target-credit": "",
+      "attribute-values": {},
+      "artist": {
+        "type": null,
+        "country": null,
+        "sort-name": "Russer, Achim",
+        "type-id": null,
+        "name": "Achim Russer",
+        "id": "9f864217-9238-4016-a3a7-7380cd8d7a71",
+        "disambiguation": "liner notes translator"
+      },
+      "type": "liner notes",
+      "attribute-ids": {},
+      "begin": null,
+      "target-type": "artist",
+      "attributes": []
+    },
+    {
+      "target-credit": "",
+      "type-id": "0b58dc9b-9c49-4b19-bb58-9c06d41c8fbf",
+      "attribute-values": {},
+      "end": null,
+      "direction": "backward",
+      "ended": false,
+      "source-credit": "",
+      "attributes": [],
+      "target-type": "artist",
+      "type": "photography",
+      "artist": {
+        "type": "Person",
+        "country": "FR",
+        "sort-name": "Mignot, Julien",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "name": "Julien Mignot",
+        "id": "a0f32164-0a99-4112-860b-5f5792239ceb",
+        "disambiguation": "photographer"
+      },
+      "begin": null,
+      "attribute-ids": {}
+    },
+    {
+      "attribute-values": {},
+      "target-credit": "",
+      "type-id": "0b58dc9b-9c49-4b19-bb58-9c06d41c8fbf",
+      "source-credit": "",
+      "ended": false,
+      "direction": "backward",
+      "end": null,
+      "attributes": [],
+      "target-type": "artist",
+      "begin": null,
+      "attribute-ids": {},
+      "type": "photography",
+      "artist": {
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "name": "Denis Rouvre",
+        "disambiguation": "Photographer",
+        "id": "d4f4e3a5-4d62-4fb0-9efe-625d700a1d83",
+        "type": "Person",
+        "country": "FR",
+        "sort-name": "Rouvre, Denis"
+      }
+    }
+  ],
+  "country": "XW",
+  "packaging": "None",
+  "date": "2013-11-18",
+  "quality": "normal",
+  "barcode": "0709869024256",
+  "packaging-id": "119eba76-b343-3e02-a292-f0f00644bb9b",
+  "media": [
+    {
+      "tracks": [
+        {
+          "number": "1",
+          "recording": {
+            "relations": [
+              {
+                "attribute-values": {},
+                "type-id": "40dff87a-e475-4aa6-b615-9935b564d756",
+                "target-credit": "",
+                "ended": false,
+                "source-credit": "",
+                "direction": "backward",
+                "end": null,
+                "attributes": [],
+                "target-type": "artist",
+                "begin": null,
+                "attribute-ids": {},
+                "type": "editor",
+                "artist": {
+                  "type": "Person",
+                  "country": null,
+                  "sort-name": "Noir, Jean-Daniel",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "name": "Jean-Daniel Noir",
+                  "id": "48129437-cfa2-478f-acd1-b6a080ce12b4",
+                  "disambiguation": ""
+                }
+              },
+              {
+                "source-credit": "",
+                "ended": false,
+                "end": null,
+                "direction": "backward",
+                "attribute-values": {},
+                "target-credit": "",
+                "type-id": "5dcc52af-7064-4051-8d62-7d80f4c3c907",
+                "attribute-ids": {
+                  "assistant": "8c4196b1-7053-4b16-921a-f22b2898ed44"
+                },
+                "begin": null,
+                "artist": {
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "name": "Marie Delorme",
+                  "disambiguation": "engineer",
+                  "id": "89afab9a-b317-4e8b-9ff7-7749a1192384",
+                  "type": "Person",
+                  "country": null,
+                  "sort-name": "Delorme, Marie"
+                },
+                "type": "engineer",
+                "target-type": "artist",
+                "attributes": ["assistant"]
+              },
+              {
+                "attribute-values": {},
+                "attribute-credits": {},
+                "target-credit": "",
+                "type-id": "59054b12-01ac-43ee-a618-285fd397e461",
+                "source-credit": "",
+                "ended": true,
+                "end": "2013-01",
+                "direction": "backward",
+                "attributes": ["violin"],
+                "target-type": "artist",
+                "begin": "2013-01",
+                "attribute-ids": {
+                  "violin": "089f123c-0f7d-4105-a64e-49de81ca8fa4"
+                },
+                "type": "instrument",
+                "artist": {
+                  "sort-name": "Minasi, Riccardo",
+                  "country": "IT",
+                  "type": "Person",
+                  "id": "35c7ae2f-c43c-4438-b857-02bd6c99fdb9",
+                  "disambiguation": "Italian conductor",
+                  "name": "Riccardo Minasi",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                }
+              },
+              {
+                "attribute-credits": {},
+                "target-credit": "",
+                "type-id": "59054b12-01ac-43ee-a618-285fd397e461",
+                "attribute-values": {},
+                "end": "2013-01",
+                "direction": "backward",
+                "source-credit": "",
+                "ended": true,
+                "attributes": ["violin"],
+                "target-type": "artist",
+                "type": "instrument",
+                "artist": {
+                  "country": "RU",
+                  "type": "Person",
+                  "sort-name": "Sinkovsky, Dmitry",
+                  "name": "Дмитрий Синьковский",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "disambiguation": "violinist, countertenor",
+                  "id": "935b530f-4229-45fd-8beb-b06406b1c800"
+                },
+                "begin": "2013-01",
+                "attribute-ids": {
+                  "violin": "089f123c-0f7d-4105-a64e-49de81ca8fa4"
+                }
+              },
+              {
+                "end": null,
+                "direction": "backward",
+                "source-credit": "",
+                "ended": false,
+                "type-id": "3e3102e1-1896-4f50-b5b2-dd9824e46efe",
+                "target-credit": "",
+                "attribute-values": {},
+                "type": "mix",
+                "artist": {
+                  "id": "48129437-cfa2-478f-acd1-b6a080ce12b4",
+                  "disambiguation": "",
+                  "name": "Jean-Daniel Noir",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "sort-name": "Noir, Jean-Daniel",
+                  "country": null,
+                  "type": "Person"
+                },
+                "begin": null,
+                "attribute-ids": {},
+                "attributes": [],
+                "target-type": "artist"
+              },
+              {
+                "source-credit": "",
+                "ended": true,
+                "end": "2013-01",
+                "direction": "backward",
+                "attribute-values": {},
+                "type-id": "3b6616c5-88ba-4341-b4ee-81ce1e6d7ebb",
+                "target-credit": "",
+                "attribute-ids": {},
+                "begin": "2013-01",
+                "artist": {
+                  "sort-name": "Il Pomo d’Oro",
+                  "country": null,
+                  "type": "Orchestra",
+                  "disambiguation": "",
+                  "id": "80e83913-b0d4-41f6-80b3-cf1119d025f8",
+                  "name": "Il Pomo d’Oro",
+                  "type-id": "a0b36c92-3eb1-3839-a4f9-4799823f54a5"
+                },
+                "type": "performing orchestra",
+                "target-type": "artist",
+                "attributes": []
+              },
+              {
+                "target-type": "artist",
+                "attributes": [],
+                "artist": {
+                  "sort-name": "Noir, Jean-Daniel",
+                  "country": null,
+                  "type": "Person",
+                  "disambiguation": "",
+                  "id": "48129437-cfa2-478f-acd1-b6a080ce12b4",
+                  "name": "Jean-Daniel Noir",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                },
+                "type": "producer",
+                "attribute-ids": {},
+                "begin": null,
+                "target-credit": "",
+                "type-id": "5c0ceac3-feb4-41f0-868d-dc06f6e27fc0",
+                "attribute-values": {},
+                "end": null,
+                "direction": "backward",
+                "ended": false,
+                "source-credit": ""
+              },
+              {
+                "type": "sound",
+                "artist": {
+                  "sort-name": "Noir, Jean-Daniel",
+                  "country": null,
+                  "type": "Person",
+                  "id": "48129437-cfa2-478f-acd1-b6a080ce12b4",
+                  "disambiguation": "",
+                  "name": "Jean-Daniel Noir",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                },
+                "begin": "2013-01",
+                "attribute-ids": {},
+                "attributes": [],
+                "target-type": "artist",
+                "end": "2013-01",
+                "direction": "backward",
+                "source-credit": "",
+                "ended": true,
+                "type-id": "0cd6aa63-c297-42ed-8725-c16d31913a98",
+                "target-credit": "",
+                "attribute-values": {}
+              },
+              {
+                "attributes": [],
+                "target-type": "work",
+                "begin": "2013-01",
+                "attribute-ids": {},
+                "type": "performance",
+                "attribute-values": {},
+                "target-credit": "",
+                "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+                "work": {
+                  "title": "Concerto for 2 Violins in A minor, RV 523: I. Allegro molto",
+                  "type-id": null,
+                  "attributes": [],
+                  "languages": ["zxx"],
+                  "disambiguation": "",
+                  "id": "9df7d00e-a81b-4578-8e26-5cb7c9699f2a",
+                  "language": "zxx",
+                  "type": null,
+                  "iswcs": []
+                },
+                "source-credit": "",
+                "ended": true,
+                "end": "2013-01",
+                "direction": "forward"
+              }
+            ],
+            "first-release-date": "2013-11-18",
+            "length": 233000,
+            "title": "Concerto, RV 523 in A minor: I.Allegro molto",
+            "disambiguation": "",
+            "id": "301e58dc-4f27-4110-b03a-61b92b1daf3a",
+            "isrcs": ["FRZ131321010"],
+            "video": false
+          },
+          "length": 233000,
+          "title": "Concerto, RV 523 in A minor: Allegro molto",
+          "position": 1,
+          "id": "f4af5221-98ef-4101-83c5-996830f9bb3d"
+        },
+        {
+          "recording": {
+            "isrcs": ["FRZ131321020"],
+            "video": false,
+            "relations": [
+              {
+                "attribute-ids": {},
+                "begin": null,
+                "artist": {
+                  "name": "Jean-Daniel Noir",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "disambiguation": "",
+                  "id": "48129437-cfa2-478f-acd1-b6a080ce12b4",
+                  "country": null,
+                  "type": "Person",
+                  "sort-name": "Noir, Jean-Daniel"
+                },
+                "type": "editor",
+                "target-type": "artist",
+                "attributes": [],
+                "source-credit": "",
+                "ended": false,
+                "end": null,
+                "direction": "backward",
+                "attribute-values": {},
+                "type-id": "40dff87a-e475-4aa6-b615-9935b564d756",
+                "target-credit": ""
+              },
+              {
+                "attribute-values": {},
+                "target-credit": "",
+                "type-id": "5dcc52af-7064-4051-8d62-7d80f4c3c907",
+                "ended": false,
+                "source-credit": "",
+                "end": null,
+                "direction": "backward",
+                "attributes": ["assistant"],
+                "target-type": "artist",
+                "begin": null,
+                "attribute-ids": {
+                  "assistant": "8c4196b1-7053-4b16-921a-f22b2898ed44"
+                },
+                "type": "engineer",
+                "artist": {
+                  "name": "Marie Delorme",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "disambiguation": "engineer",
+                  "id": "89afab9a-b317-4e8b-9ff7-7749a1192384",
+                  "country": null,
+                  "type": "Person",
+                  "sort-name": "Delorme, Marie"
+                }
+              },
+              {
+                "attribute-credits": {},
+                "target-credit": "",
+                "type-id": "59054b12-01ac-43ee-a618-285fd397e461",
+                "attribute-values": {},
+                "end": "2013-01",
+                "direction": "backward",
+                "source-credit": "",
+                "ended": true,
+                "attributes": ["violin"],
+                "target-type": "artist",
+                "type": "instrument",
+                "artist": {
+                  "disambiguation": "Italian conductor",
+                  "id": "35c7ae2f-c43c-4438-b857-02bd6c99fdb9",
+                  "name": "Riccardo Minasi",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "sort-name": "Minasi, Riccardo",
+                  "country": "IT",
+                  "type": "Person"
+                },
+                "begin": "2013-01",
+                "attribute-ids": {
+                  "violin": "089f123c-0f7d-4105-a64e-49de81ca8fa4"
+                }
+              },
+              {
+                "attribute-ids": {
+                  "violin": "089f123c-0f7d-4105-a64e-49de81ca8fa4"
+                },
+                "begin": "2013-01",
+                "artist": {
+                  "sort-name": "Sinkovsky, Dmitry",
+                  "country": "RU",
+                  "type": "Person",
+                  "id": "935b530f-4229-45fd-8beb-b06406b1c800",
+                  "disambiguation": "violinist, countertenor",
+                  "name": "Дмитрий Синьковский",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                },
+                "type": "instrument",
+                "target-type": "artist",
+                "attributes": ["violin"],
+                "source-credit": "",
+                "ended": true,
+                "direction": "backward",
+                "end": "2013-01",
+                "attribute-values": {},
+                "target-credit": "",
+                "attribute-credits": {},
+                "type-id": "59054b12-01ac-43ee-a618-285fd397e461"
+              },
+              {
+                "target-type": "artist",
+                "attributes": [],
+                "artist": {
+                  "sort-name": "Noir, Jean-Daniel",
+                  "type": "Person",
+                  "country": null,
+                  "id": "48129437-cfa2-478f-acd1-b6a080ce12b4",
+                  "disambiguation": "",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "name": "Jean-Daniel Noir"
+                },
+                "type": "mix",
+                "attribute-ids": {},
+                "begin": null,
+                "type-id": "3e3102e1-1896-4f50-b5b2-dd9824e46efe",
+                "target-credit": "",
+                "attribute-values": {},
+                "end": null,
+                "direction": "backward",
+                "source-credit": "",
+                "ended": false
+              },
+              {
+                "attribute-values": {},
+                "target-credit": "",
+                "type-id": "3b6616c5-88ba-4341-b4ee-81ce1e6d7ebb",
+                "source-credit": "",
+                "ended": true,
+                "end": "2013-01",
+                "direction": "backward",
+                "target-type": "artist",
+                "attributes": [],
+                "attribute-ids": {},
+                "begin": "2013-01",
+                "artist": {
+                  "country": null,
+                  "type": "Orchestra",
+                  "sort-name": "Il Pomo d’Oro",
+                  "name": "Il Pomo d’Oro",
+                  "type-id": "a0b36c92-3eb1-3839-a4f9-4799823f54a5",
+                  "id": "80e83913-b0d4-41f6-80b3-cf1119d025f8",
+                  "disambiguation": ""
+                },
+                "type": "performing orchestra"
+              },
+              {
+                "target-credit": "",
+                "type-id": "5c0ceac3-feb4-41f0-868d-dc06f6e27fc0",
+                "attribute-values": {},
+                "end": null,
+                "direction": "backward",
+                "source-credit": "",
+                "ended": false,
+                "target-type": "artist",
+                "attributes": [],
+                "artist": {
+                  "country": null,
+                  "type": "Person",
+                  "sort-name": "Noir, Jean-Daniel",
+                  "name": "Jean-Daniel Noir",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "id": "48129437-cfa2-478f-acd1-b6a080ce12b4",
+                  "disambiguation": ""
+                },
+                "type": "producer",
+                "attribute-ids": {},
+                "begin": null
+              },
+              {
+                "source-credit": "",
+                "ended": true,
+                "end": "2013-01",
+                "direction": "backward",
+                "attribute-values": {},
+                "target-credit": "",
+                "type-id": "0cd6aa63-c297-42ed-8725-c16d31913a98",
+                "attribute-ids": {},
+                "begin": "2013-01",
+                "artist": {
+                  "country": null,
+                  "type": "Person",
+                  "sort-name": "Noir, Jean-Daniel",
+                  "name": "Jean-Daniel Noir",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "disambiguation": "",
+                  "id": "48129437-cfa2-478f-acd1-b6a080ce12b4"
+                },
+                "type": "sound",
+                "target-type": "artist",
+                "attributes": []
+              },
+              {
+                "attributes": [],
+                "target-type": "work",
+                "type": "performance",
+                "begin": "2013-01",
+                "attribute-ids": {},
+                "work": {
+                  "language": "zxx",
+                  "id": "6cac7bfe-c0c1-4719-aab1-457c221d1394",
+                  "languages": ["zxx"],
+                  "disambiguation": "",
+                  "title": "Concerto for 2 Violins in A minor, RV 523: II. Largo",
+                  "attributes": [],
+                  "type-id": null,
+                  "iswcs": [],
+                  "type": null
+                },
+                "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+                "target-credit": "",
+                "attribute-values": {},
+                "end": "2013-01",
+                "direction": "forward",
+                "source-credit": "",
+                "ended": true
+              }
+            ],
+            "first-release-date": "2013-11-18",
+            "length": 171000,
+            "title": "Concerto, RV 523 in A minor: II.Largo",
+            "id": "e79640d3-154a-4b05-9f43-0db9374d3f9a",
+            "disambiguation": ""
+          },
+          "number": "2",
+          "id": "d332dae5-cfa2-491a-94af-ccdcc9b129bf",
+          "position": 2,
+          "length": 171000,
+          "title": "Concerto, RV 523 in A minor: Largo"
+        }
+      ],
+      "track-offset": 0,
+      "track-count": 2,
+      "position": 1,
+      "format": "Digital Media",
+      "id": "798a061f-c02f-309b-a4c7-a181df96e0d8",
+      "title": "",
+      "format-id": "907a28d9-b3b2-3ef6-89a8-7b18d91d4794"
+    }
+  ]
+}

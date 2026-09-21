@@ -6,6 +6,7 @@ import { authClient } from '@/lib/auth-client';
 import { getAdminStats } from './actions/admin-stats';
 import type { AlbumState } from './lib/album-state';
 import { Spinner } from './components/Spinner';
+import { GatewayBar } from './components/GatewayBar';
 import { CoverageTab } from './tabs/CoverageTab';
 import { AlbumsTab } from './tabs/AlbumsTab';
 import { DecisionsTab } from './tabs/DecisionsTab';
@@ -91,9 +92,10 @@ export default function AdminPage() {
 
   return (
     <>
-      <header className="desk-rail">
+      <header className="desk-rail relative">
         <h1>prelude admin</h1>
-        <Link href="/" className="ml-auto text-[11px] text-[var(--ink-2)] hover:text-[var(--gall)]">
+        <GatewayBar />
+        <Link href="/" className="text-[11px] text-[var(--ink-2)] hover:text-[var(--gall)]">
           Back to the player
         </Link>
       </header>

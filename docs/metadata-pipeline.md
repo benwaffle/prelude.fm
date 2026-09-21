@@ -8,6 +8,51 @@ Production code is deployed by pushing commits to the repository’s `master` br
 
 The route requires `Authorization: Bearer $CRON_SECRET`, uses the Node.js runtime, and has a five-minute maximum duration. Vercel invokes a daily recovery run at `06:00 UTC`. User submissions also dispatch the route immediately.
 
+## The MusicBrainz gateway
+
+Every MusicBrainz request the service makes goes through one scheduler,
+`app/lib/musicbrainz-gateway.ts`. MusicBrainz allows anonymous clients one
+request per second; that budget is shared by every import, backfill and
+submission, so it is spent in one place.
+
+Requests declare a channel, which is also their priority:
+
+| Channel       | For                                                     | Daily cap |
+| ------------- | ------------------------------------------------------- | --------: |
+| `interactive` | somebody is waiting — a library import, an admin lookup |    40,000 |
+| `backfill`    | filling gaps in the shared cache                        |    40,000 |
+| `bot`         | submissions back to MusicBrainz                         |     1,000 |
+
+Channels are served strictly in order, so sustained interactive traffic
+starves backfill and both starve the bot. That is the intent: submissions are
+never urgent. When the gateway is idle the first request to arrive is
+dispatched immediately, whatever its channel, since there is nothing to
+prioritise it against.
+
+The read caps are runaway protection rather than policy. The bot cap is 1,000
+because the MusicBrainz bot code of conduct caps a bot at 1,000 edits a day.
+
+Counts live in `mb_request_budget`, one row per UTC day and channel, because
+serverless instances come and go and a per-process tally would measure one
+lambda rather than the service. It is also the number that decides when the
+web service stops being enough and a local mirror becomes necessary.
+
+`mb_gateway_control` holds per-channel pause flags and cap overrides; a row for
+the pseudo-channel `all` applies to everything. Admin reads and writes it in
+the header bar, so stopping traffic to somebody else's server does not require
+a deploy. Pause flags are cached for five seconds.
+
+Reads go through `MusicBrainzSource` (`app/lib/musicbrainz-source.ts`). The web
+service implements it in `app/lib/musicbrainz.ts`; a local mirror would be a
+second implementation rather than a rewrite.
+
+`getReleaseWithRecordings` is the read that matters most: one request with
+`inc=recordings+recording-level-rels+work-rels+artist-rels+isrcs` returns a
+release's tracklist, its recordings, their ISRCs, the works they perform and
+the artists credited on them with roles. Asking per recording instead costs one
+request each — dozens for an album — and that ratio is what makes the
+rate-limited web service usable at all.
+
 ## End-to-end flow
 
 1. A signed-in user submits one or more unmatched Spotify tracks.
