@@ -98,6 +98,33 @@ export function performingCredits(credits: StoredCredit[]): PerformingCredits {
   return result;
 }
 
+/**
+ * MusicBrainz's special-purpose artists, which are not people.
+ *
+ * `[unknown]`, `[anonymous]`, `[traditional]`, `[no artist]` and the rest are
+ * placeholders standing in for the absence of an artist, and the convention
+ * is a name in square brackets. Printing one in a composer field would put a
+ * value that reads like data where there is none — the app has its own way of
+ * showing a gap, and this should reach it rather than dress itself up as a
+ * name.
+ */
+export function isPlaceholderArtist(name: string | null | undefined): boolean {
+  return /^\s*\[.+\]\s*$/.test(name ?? '');
+}
+
+/**
+ * The name to print for an artist.
+ *
+ * Prefers what a release credited them as, because MusicBrainz files an
+ * artist under their own script and the credited name is the Latin form the
+ * label printed. Returns null for a placeholder, so the caller shows its own
+ * blank state instead.
+ */
+export function displayName(artist: { name: string; creditedName?: string | null }): string | null {
+  const name = artist.creditedName?.trim() || artist.name.trim();
+  return isPlaceholderArtist(name) ? null : name;
+}
+
 /** Whether MusicBrainz said anything at all about who performed. */
 export function hasPerformingCredits(credits: PerformingCredits): boolean {
   return (

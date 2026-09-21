@@ -13,7 +13,7 @@
  * So: one request for the release, then one for each work we have never
  * looked at, and none at all for anything already cached.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from './db';
 import {
   mbArtist,
@@ -51,6 +51,8 @@ export async function cacheArtist(artist: MbArtist) {
     endYear: yearOf(artist['life-span']?.end),
     fetchedAt: new Date(),
   };
+  // `creditedName` is deliberately absent from the update: it is the name a
+  // release printed, which this lookup does not know and must not erase.
   await db.insert(mbArtist).values(row).onConflictDoUpdate({
     target: mbArtist.mbid,
     set: row,
@@ -446,14 +448,57 @@ export async function refreshCachedReleases(
   return { releases: refreshed, requests };
 }
 
-/** Composers named by cached works but never read as artists. */
-export async function artistsNeedingDetail(limit = 100): Promise<string[]> {
-  const rows = await db
-    .select({ mbid: mbWork.composerMbid })
-    .from(mbWork)
-    .innerJoin(mbArtist, eq(mbArtist.mbid, mbWork.composerMbid))
-    .where(sql`${mbWork.composerMbid} is not null and ${mbArtist.sortName} is null`)
-    .groupBy(mbWork.composerMbid)
+/**
+ * Artists we know the name of but nothing else.
+ *
+ * Every artist reaches the cache as a stub — a name attached to a credit or a
+ * composer relationship — because that is all a release read carries. Their
+ * dates, sort name and type each cost a request, so they are filled in
+ * afterwards and composers come first: a composer's dates are what place a
+ * work in a period, which is a thing the reader shows, while a session
+ * engineer's are not.
+ */
+export async function artistsNeedingDetail(limit: number): Promise<string[]> {
+  const composers = await db
+    .selectDistinct({ mbid: mbArtist.mbid })
+    .from(mbArtist)
+    .innerJoin(mbWork, eq(mbWork.composerMbid, mbArtist.mbid))
+    .where(isNull(mbArtist.sortName))
     .limit(limit);
-  return rows.flatMap((row) => (row.mbid ? [row.mbid] : []));
+
+  if (composers.length >= limit) return composers.map((row) => row.mbid);
+
+  const rest = await db
+    .select({ mbid: mbArtist.mbid })
+    .from(mbArtist)
+    .where(isNull(mbArtist.sortName))
+    .limit(limit - composers.length);
+
+  const seen = new Set(composers.map((row) => row.mbid));
+  return [...seen, ...rest.map((row) => row.mbid).filter((mbid) => !seen.has(mbid))];
+}
+
+/**
+ * Read artist stubs, composers first.
+ *
+ * One request each, and unlike works there is no tree to walk, so the cost is
+ * exactly the number of artists nobody has looked at yet.
+ */
+export async function drainArtistStubs(
+  source: MusicBrainzSource,
+  limit: number,
+): Promise<{ artists: number; requests: number }> {
+  const pending = await artistsNeedingDetail(limit);
+  let requests = 0;
+  let artists = 0;
+
+  for (const mbid of pending) {
+    const artist = await source.artist(mbid);
+    requests++;
+    if (!artist) continue;
+    await cacheArtist(artist);
+    artists++;
+  }
+
+  return { artists, requests };
 }

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   creditLine,
+  displayName,
   hasPerformingCredits,
+  isPlaceholderArtist,
   performingCredits,
   type StoredCredit,
 } from '../app/lib/musicbrainz-credits';
@@ -132,4 +134,34 @@ test('a recording with only production credits has nothing to say about performe
     hasPerformingCredits(performingCredits([credit('instrument', 'Someone', 'piano')])),
     true,
   );
+});
+
+/* ------------------------------------------------------------ artist names */
+
+test('a placeholder artist is not a name', () => {
+  // MusicBrainz uses bracketed special-purpose artists to stand in for the
+  // absence of one. The cache already holds [unknown].
+  assert.equal(isPlaceholderArtist('[unknown]'), true);
+  assert.equal(isPlaceholderArtist('[traditional]'), true);
+  assert.equal(isPlaceholderArtist('[no artist]'), true);
+  assert.equal(isPlaceholderArtist('Johann Sebastian Bach'), false);
+  assert.equal(isPlaceholderArtist(null), false);
+});
+
+test('a bracketed word inside a real name is still a real name', () => {
+  assert.equal(isPlaceholderArtist('Wilhelm Kempff [piano]'), false);
+});
+
+test('the printed name prefers what the release credited', () => {
+  // MusicBrainz files the violinist under his own script; the release printed
+  // the Latin form, and the rest of the interface is Latin.
+  assert.equal(
+    displayName({ name: 'Дмитрий Синьковский', creditedName: 'Dmitry Sinkovsky' }),
+    'Dmitry Sinkovsky',
+  );
+  assert.equal(displayName({ name: 'Simon Preston', creditedName: null }), 'Simon Preston');
+});
+
+test('a placeholder has no printed name, so the reader shows its own blank', () => {
+  assert.equal(displayName({ name: '[unknown]' }), null);
 });

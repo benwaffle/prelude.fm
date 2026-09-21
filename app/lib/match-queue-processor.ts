@@ -48,6 +48,7 @@ export interface QueueWorkerResult {
     albumsCached: number;
     tracksAnchored: number;
     worksRead: number;
+    artistsRead: number;
     requests: number;
     /** Set when the budget refused the pass, so a caller can stop chaining. */
     stopped: string | null;
@@ -361,6 +362,14 @@ export async function processNextPendingAlbum(
 const WORK_SWEEP_SIZE = 40;
 
 /**
+ * How many artist stubs a pass reads once no works are waiting.
+ *
+ * After works, because a work's title and tree are what a reader sees first;
+ * an artist's dates only decide which period a composer is filed under.
+ */
+const ARTIST_SWEEP_SIZE = 20;
+
+/**
  * One pass of the worker: some albums, then MusicBrainz.
  *
  * The MusicBrainz side is deliberately split in two. Caching an album's
@@ -405,18 +414,23 @@ export async function runMatchQueueWorker(
     albumsCached: 0,
     tracksAnchored: 0,
     worksRead: 0,
+    artistsRead: 0,
     requests: 0,
     stopped: null as string | null,
   };
 
   if (options.musicbrainz !== false) {
-    const [{ ingestAlbum }, { drainWorkStubs }, { musicBrainzApi }, { MusicBrainzBudgetError }] =
-      await Promise.all([
-        import('@/lib/musicbrainz-ingest'),
-        import('@/lib/musicbrainz-cache'),
-        import('@/lib/musicbrainz'),
-        import('@/lib/musicbrainz-gateway'),
-      ]);
+    const [
+      { ingestAlbum },
+      { drainArtistStubs, drainWorkStubs },
+      { musicBrainzApi },
+      { MusicBrainzBudgetError },
+    ] = await Promise.all([
+      import('@/lib/musicbrainz-ingest'),
+      import('@/lib/musicbrainz-cache'),
+      import('@/lib/musicbrainz'),
+      import('@/lib/musicbrainz-gateway'),
+    ]);
 
     try {
       for (const album of albums) {
@@ -432,6 +446,12 @@ export async function runMatchQueueWorker(
         const swept = await drainWorkStubs(musicBrainzApi('backfill'), WORK_SWEEP_SIZE);
         musicbrainz.worksRead += swept.works;
         musicbrainz.requests += swept.requests;
+
+        if (swept.works === 0) {
+          const artists = await drainArtistStubs(musicBrainzApi('backfill'), ARTIST_SWEEP_SIZE);
+          musicbrainz.artistsRead += artists.artists;
+          musicbrainz.requests += artists.requests;
+        }
       }
     } catch (error) {
       // A paused gateway or an exhausted daily cap is not a failure of the

@@ -12,6 +12,7 @@
  *   pnpm mb:ingest albums [--limit n]  cache releases and anchor their tracks
  *   pnpm mb:ingest anchor [--all]      anchor tracks; --all re-anchors ones already done
  *   pnpm mb:ingest report              what the cache holds and what it reaches
+  pnpm mb:ingest artists [--limit n] read artist stubs, composers first
   pnpm mb:ingest refresh [--limit n] re-read cached releases for newly stored fields
   pnpm mb:ingest check               run the cache invariants
   pnpm mb:ingest credits [--limit n] old credit line vs MusicBrainz, side by side
@@ -77,6 +78,8 @@ async function main() {
       union all select 'cached credits', count(*) from mb_recording_credit
       union all select 'cached catalogue references', count(*) from mb_work_catalogue
       union all select 'cached artists', count(*) from mb_artist
+      union all select '  read in full', count(*) from mb_artist where sort_name is not null
+      union all select '  with a birth year', count(*) from mb_artist where begin_year is not null
     `);
     const width = Math.max(...rows.map((row) => row.label.length));
     for (const row of rows) {
@@ -91,6 +94,16 @@ async function main() {
   }
 
   if (options.step === 'report') {
+    await report();
+    return;
+  }
+
+  if (options.step === 'artists') {
+    const result = await cache.drainArtistStubs(
+      source,
+      Number.isFinite(options.limit) ? options.limit : 10_000,
+    );
+    console.log(`read ${result.artists} artists in ${result.requests} requests`);
     await report();
     return;
   }
