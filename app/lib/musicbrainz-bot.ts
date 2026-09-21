@@ -24,6 +24,7 @@ import type { IsrcGap } from './musicbrainz-edit-links';
 import {
   buildIsrcSubmission,
   editCount,
+  editNoteFor,
   type IsrcSubmissionItem,
 } from './musicbrainz-isrc-submission';
 import { botAccessToken } from './musicbrainz-oauth';
@@ -81,21 +82,6 @@ export type BotRun = {
   payload: string;
 };
 
-/**
- * The note attached to every edit.
- *
- * The code of conduct asks that a bot be identifiable, say where its data
- * comes from, and give a way to reach whoever runs it — and that somebody
- * answers when an editor replies.
- */
-function editNoteFor(items: IsrcSubmissionItem[]): string {
-  return (
-    `ISRCs from Spotify, matched to this recording by a release whose barcode is identical ` +
-    `and whose track durations agree within 3 seconds. ${items.length} recording(s) on one release. ` +
-    `Submitted by prelude_fm_bot — ${contact} — replies are read.`
-  );
-}
-
 /** Edits already made today, from the ledger rather than a counter. */
 export async function editsSpentToday(now = new Date()): Promise<number> {
   const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -148,7 +134,7 @@ export async function runIsrcBot(
 
   const payload = buildIsrcSubmission(items);
   const edits = editCount(items);
-  const editNote = editNoteFor(items);
+  const editNote = editNoteFor(gaps);
 
   if (!options.apply || edits === 0) {
     return {
