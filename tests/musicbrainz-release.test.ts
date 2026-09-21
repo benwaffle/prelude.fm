@@ -125,7 +125,7 @@ test('the API source asks for the release on the channel it was built with', asy
     assert.equal(release?.tracks.length, 2);
     assert.match(
       fetchStub.calls[0],
-      /inc=recordings\+recording-level-rels\+work-rels\+artist-rels\+isrcs/,
+      /inc=recordings\+recording-level-rels\+work-rels\+artist-rels\+artist-credits\+isrcs/,
     );
   } finally {
     fetchStub.restore();

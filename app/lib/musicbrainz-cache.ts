@@ -224,16 +224,32 @@ export async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
     await db.insert(mbRecordingCredit).values(batch).onConflictDoNothing();
   }
 
-  const creditedArtists = new Map(
-    [...recordings.values()].flatMap((recording) =>
-      recording.credits.map((credit) => [credit.artistId, credit.name] as const),
-    ),
-  );
-  for (const batch of chunk([...creditedArtists])) {
-    await db
-      .insert(mbArtist)
-      .values(batch.map(([mbid, name]) => ({ mbid, name })))
-      .onConflictDoNothing();
+  const namedArtists = new Map<string, { name: string; creditedName: string | null }>();
+  for (const recording of recordings.values()) {
+    for (const credit of recording.credits) {
+      if (!namedArtists.has(credit.artistId)) {
+        namedArtists.set(credit.artistId, { name: credit.name, creditedName: null });
+      }
+    }
+    for (const credited of recording.artistCredit) {
+      const existing = namedArtists.get(credited.artistId);
+      if (existing) existing.creditedName ??= credited.name;
+      else
+        namedArtists.set(credited.artistId, { name: credited.name, creditedName: credited.name });
+    }
+  }
+  for (const batch of chunk([...namedArtists])) {
+    for (const [mbid, artist] of batch) {
+      await db
+        .insert(mbArtist)
+        .values({ mbid, name: artist.name, creditedName: artist.creditedName })
+        .onConflictDoUpdate({
+          target: mbArtist.mbid,
+          // Only fills a gap: a name we already learned is not replaced by a
+          // later release crediting the same artist differently.
+          set: { creditedName: sql`coalesce(${mbArtist.creditedName}, excluded.credited_name)` },
+        });
+    }
   }
 
   const works = [...recordings.values()].flatMap((recording) => recording.works);
@@ -404,6 +420,30 @@ export async function drainWorkStubs(
     if (spent > 0) works++;
   }
   return { works, requests };
+}
+
+/**
+ * Re-read releases already cached, to pick up fields a later version of the
+ * reader learned to ask for.
+ *
+ * Cheap in a way worth stating: the expensive half of ingest is the work
+ * tree, and those works are already cached, so a re-read is one request per
+ * release. That is what makes it reasonable to change what we store and
+ * backfill it afterwards rather than getting it right first time.
+ */
+export async function refreshCachedReleases(
+  source: MusicBrainzSource,
+  limit: number,
+): Promise<{ releases: number; requests: number }> {
+  const releases = await db.select({ mbid: mbRelease.mbid }).from(mbRelease).limit(limit);
+  let requests = 0;
+  let refreshed = 0;
+  for (const release of releases) {
+    const report = await ingestRelease(source, release.mbid, { fetchWorks: false });
+    requests += report.requests;
+    if (report.found) refreshed++;
+  }
+  return { releases: refreshed, requests };
 }
 
 /** Composers named by cached works but never read as artists. */

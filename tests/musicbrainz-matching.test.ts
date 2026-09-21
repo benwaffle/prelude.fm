@@ -47,6 +47,7 @@ function mbRelease(id: string, lengths: (number | null)[]): MbRelease {
         isrcs: [],
         works: [],
         credits: [],
+        artistCredit: [],
       },
     })),
   };

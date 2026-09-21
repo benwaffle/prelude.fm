@@ -75,6 +75,16 @@ export type MbReleaseRecording = {
   isrcs: string[];
   works: MbWorkRef[];
   credits: MbCredit[];
+  /**
+   * The artists as this release credits them.
+   *
+   * Worth keeping apart from the relationship credits because it carries the
+   * name the label printed, which for an artist whose MusicBrainz name is in
+   * another script is the only Latin form we get without a second request:
+   * the violinist filed as Дмитрий Синьковский is credited here as Dmitry
+   * Sinkovsky.
+   */
+  artistCredit: { artistId: string; name: string }[];
 };
 
 export type MbReleaseTrack = {

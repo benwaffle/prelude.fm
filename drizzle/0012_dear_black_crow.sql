@@ -1,0 +1,1 @@
+ALTER TABLE `mb_artist` ADD `credited_name` text;

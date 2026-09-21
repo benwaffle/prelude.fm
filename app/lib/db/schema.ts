@@ -658,6 +658,16 @@ export const mbGatewayControl = sqliteTable('mb_gateway_control', {
 export const mbArtist = sqliteTable('mb_artist', {
   mbid: text('mbid').primaryKey(),
   name: text('name').notNull(),
+  /**
+   * The name a release printed for this artist.
+   *
+   * MusicBrainz files an artist under their own script, so a Japanese
+   * conductor is 鈴木雅明 and a Russian violinist is Дмитрий Синьковский. The
+   * release's artist credit carries the Latin form the label printed, which
+   * is what the rest of this interface is written in, and it arrives with the
+   * release read rather than costing a request of its own.
+   */
+  creditedName: text('credited_name'),
   sortName: text('sort_name'),
   /** 'Person' | 'Group' | 'Orchestra' | 'Choir' | ... */
   type: text('type'),

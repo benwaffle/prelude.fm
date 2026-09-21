@@ -248,7 +248,7 @@ export async function getArtist(
  * — dozens for an album — and the difference between those two shapes is what
  * decides whether the rate-limited web service is usable at all.
  */
-const RELEASE_INC = 'recordings+recording-level-rels+work-rels+artist-rels+isrcs';
+const RELEASE_INC = 'recordings+recording-level-rels+work-rels+artist-rels+artist-credits+isrcs';
 
 type RawRelease = {
   id: string;
@@ -269,6 +269,7 @@ type RawRelease = {
         length?: number | null;
         isrcs?: string[];
         relations?: MbRelation[];
+        'artist-credit'?: { name?: string; artist?: { id: string; name: string } }[];
       };
     }[];
   }[];
@@ -324,6 +325,11 @@ export async function getReleaseWithRecordings(
             .filter((relation) => relation.type === 'performance' && relation.work)
             .map((relation) => relation.work as MbWorkRef),
           credits: creditsFromRelations(recording.relations),
+          artistCredit: (recording['artist-credit'] ?? []).flatMap((credit) =>
+            credit.artist?.id && credit.name
+              ? [{ artistId: credit.artist.id, name: credit.name }]
+              : [],
+          ),
         },
       });
     });
