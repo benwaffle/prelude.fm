@@ -167,3 +167,126 @@ channel or by the pseudo-channel `all`.
 Neither is metadata. They are here because the budget is the constraint the
 metadata pipeline is designed around: how much of MusicBrainz we can read in a
 day decides how much of the catalogue MusicBrainz gets to describe.
+
+## The MusicBrainz cache
+
+A second set of tables holds MusicBrainz as MusicBrainz states it, keyed by
+MBID and shared by every user. They are a cache of somebody else's database,
+not our interpretation of it: nothing in them is edited by hand, and anything
+we believe that MusicBrainz does not is recorded elsewhere.
+
+They exist alongside the model above rather than replacing it. Nothing the
+reader shows comes from here yet except recording credits.
+
+```mermaid
+erDiagram
+    mb_release ||--o{ mb_release_track : lists
+    mb_release_track }o--|| mb_recording : performs
+    mb_recording ||--o{ mb_recording_isrc : identified_by
+    mb_recording ||--o{ mb_recording_work : performs
+    mb_recording ||--o{ mb_recording_credit : credits
+    mb_recording_work }o--|| mb_work : of
+    mb_work ||--o{ mb_work : parts
+    mb_work ||--o{ mb_work_catalogue : identified_by
+    mb_work }o--o| mb_artist : composed_by
+    mb_recording_credit }o--|| mb_artist : by
+    spotify_track ||--o| track_recording : anchored_to
+    track_recording }o--|| mb_recording : is
+```
+
+### `mb_work`
+
+The recursive tree our own model does not have. `parent_mbid` and
+`ordering_key` come from the child's own view of the `parts` relationship, so
+a child fetch answers both what it belongs to and where it sits, and the
+parent never has to be read to learn the order of its parts.
+
+`detail` separates a work we have fetched (`full`) from one we only know the
+name of because a recording pointed at it (`stub`). A release read names
+dozens of works and gives the parent of none of them, so without this the
+cache could not tell "no parent" from "not looked at yet". The stub rows are
+also the backfill queue.
+
+Which node of the tree is the work a reader sees is decided by
+`workLevelOf` (`app/lib/musicbrainz-work-level.ts`), not stored.
+
+### `mb_recording`, `mb_recording_isrc`, `mb_recording_work`, `mb_recording_credit`
+
+A recording is one performance, independent of the releases carrying it —
+the relationship our `recording_v2` gets the wrong way round by tying a
+performance to a Spotify album.
+
+`mb_recording_isrc` is not keyed on the ISRC alone. An ISRC should identify
+one recording, and MusicBrainz genuinely holds cases where a label attached
+the same one to two; a unique key would hide the conflict rather than let us
+find and report it.
+
+`mb_recording_credit` holds the role MusicBrainz states — `conductor`,
+`performing orchestra`, `instrument` with the instrument as an attribute.
+`instrument` is `''` rather than null where a role has none, because it is
+part of the key and SQLite allows duplicate rows when a key column is null.
+
+### `mb_artist`
+
+`credited_name` is the name a release printed. MusicBrainz files an artist
+under their own script, so a conductor is stored as 鈴木雅明 where the rest of
+this interface is Latin, and the release's artist credit carries the Latin
+form at no extra request. `sort_name`, `type` and the years cost a lookup
+each and are filled in by a sweep, composers first.
+
+### `mb_release` and `mb_release_track`
+
+An exact tracklist, replacing the parser's album-local `recordingGroup`
+string and the token-overlap threshold used to reconcile it.
+
+### `track_recording`
+
+The join between Spotify and MusicBrainz: which recording a track is.
+`matched_by` records how, because the routes do not deserve equal trust — an
+ISRC is the label's own identifier, while a position on a release is only as
+good as the release match behind it.
+
+Anchoring by position asks whether the album's whole tracklist lines up with
+the release's, not whether one track does. A CD master and its Spotify
+transfer routinely differ by seconds, and deciding per track leaves an album
+anchored in patches, where the gaps read as missing data rather than as doubt
+about the tracklist. A track held in isolation — one liked track from a box
+set — has no tracklist behind it and is held to a tighter tolerance.
+
+### `mb_submission`
+
+Every edit sent to MusicBrainz, whoever sent it. A human clicking through a
+prefilled form and a bot posting the same edit are recorded identically, so
+that when a class of edit earns automation nothing downstream changes with
+it. It is also the cross-user deduplicator: two people owning the same album
+must not both submit its ISRCs.
+
+`outcome` stays `pending` until MusicBrainz shows the edit landed. An edit is
+a proposal that editors vote on, and recording it as applied on submission
+would record our intention rather than the result.
+
+### `mb_invariant_result`
+
+The latest result of each cache invariant, so admin can show the current
+state as a page rather than behind a command. Defined in
+`app/lib/musicbrainz-invariants.ts` and run from three places: the cheap ones
+in the worker after each album, all of them from the CLI.
+
+### `work.parser_form` and `work_part_v2.parser_title`
+
+What the LLM parser said, where MusicBrainz has since replaced it.
+
+`work.form` and `work_part_v2.title` were both written by the parser reading
+a Spotify track title. Presenting a difference with MusicBrainz as a decision
+for a person treated a guess as evidence, so MusicBrainz owns both now. The
+parser's reading is kept rather than deleted: it is often the more specific
+of the two — "violin concerto" where MusicBrainz says "concerto" — and that
+is worth having for recommendation and grouping, which do not have to be
+right.
+
+MusicBrainz does not get to shorten a movement title, and a value still
+carrying a catalogue reference is a work title rather than a movement title.
+Both are refused.
+
+`work.form` is empty where MusicBrainz has no type for the work. That is a
+gap, counted by `metadata:validate`, not a failure.
