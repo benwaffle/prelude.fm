@@ -954,3 +954,22 @@ export const mbSubmission = sqliteTable(
     index('mb_submission_subject_idx').on(table.subject),
   ],
 );
+
+/**
+ * The latest result of each MusicBrainz cache invariant.
+ *
+ * One row per check, overwritten each time it runs. A history would answer
+ * "when did this start" but the honest answer to that is in the git log and
+ * the ingest logs; what a person needs here is whether the cache is sound
+ * right now, on a page rather than behind a command.
+ */
+export const mbInvariantResult = sqliteTable('mb_invariant_result', {
+  name: text('name').primaryKey(),
+  severity: text('severity', { enum: ['hard', 'upstream'] }).notNull(),
+  violations: integer('violations').notNull(),
+  /** A few offending ids, so the report says what to look at. */
+  samples: text('samples', { mode: 'json' }).$type<{ id: string; detail: string | null }[]>(),
+  checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+});

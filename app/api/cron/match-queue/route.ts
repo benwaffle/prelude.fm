@@ -41,6 +41,10 @@ async function processAndDispatchNext(requestUrl: string, depth: number) {
   // the chain, not a reason to retry it.
   if (result.musicbrainz.stopped) return;
 
+  // A broken cache invariant stops the chain rather than writing more on top
+  // of it. Admin shows what broke.
+  if (result.brokenInvariants.length > 0) return;
+
   const progressed = result.albums.length > 0 || result.musicbrainz.worksRead > 0;
   if (!progressed) return;
   if (depth + 1 >= MAX_CHAIN_LENGTH) return;

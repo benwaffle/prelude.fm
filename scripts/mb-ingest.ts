@@ -12,6 +12,7 @@
  *   pnpm mb:ingest albums [--limit n]  cache releases and anchor their tracks
  *   pnpm mb:ingest anchor [--all]      anchor tracks; --all re-anchors ones already done
  *   pnpm mb:ingest report              what the cache holds and what it reaches
+  pnpm mb:ingest check               run the cache invariants
  *
  * The same `ingestAlbum` runs in the worker; this is for bulk backfill and for
  * looking at one album by hand.
@@ -43,12 +44,13 @@ async function main() {
     throw new Error('TURSO_DATABASE_URL is required (put it in .env.local or export it)');
   }
 
-  const [{ db }, ingest, cache, mb, gateway, drizzle] = await Promise.all([
+  const [{ db }, ingest, cache, mb, gateway, invariants, drizzle] = await Promise.all([
     import('@/lib/db'),
     import('@/lib/musicbrainz-ingest'),
     import('@/lib/musicbrainz-cache'),
     import('@/lib/musicbrainz'),
     import('@/lib/musicbrainz-gateway'),
+    import('@/lib/musicbrainz-invariants'),
     import('drizzle-orm'),
   ]);
   const { sql } = drizzle;
@@ -88,6 +90,27 @@ async function main() {
 
   if (options.step === 'report') {
     await report();
+    return;
+  }
+
+  if (options.step === 'check') {
+    const results = await invariants.runMusicBrainzInvariants();
+    await invariants.recordInvariantResults(results);
+    let broken = 0;
+    for (const result of results) {
+      const mark = result.violations === 0 ? 'ok  ' : result.severity === 'hard' ? 'FAIL' : 'note';
+      console.log(`${mark} ${result.name.padEnd(32)} ${result.violations}`);
+      if (result.violations > 0) {
+        console.log(`     ${result.describes}`);
+        for (const sample of result.samples) {
+          console.log(`     - ${sample.id}${sample.detail ? ` -> ${sample.detail}` : ''}`);
+        }
+      }
+      if (result.violations > 0 && result.severity === 'hard') broken++;
+    }
+    // Upstream findings are contributions, not failures, so only our own
+    // broken invariants set a non-zero exit for CI.
+    if (broken > 0) process.exitCode = 1;
     return;
   }
 

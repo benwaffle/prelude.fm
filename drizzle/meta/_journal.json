@@ -78,6 +78,13 @@
       "when": 1789971827523,
       "tag": "0010_slim_zemo",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789972020242,
+      "tag": "0011_pretty_vampiro",
+      "breakpoints": true
     }
   ]
 }

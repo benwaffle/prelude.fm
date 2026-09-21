@@ -52,6 +52,8 @@ export interface QueueWorkerResult {
     /** Set when the budget refused the pass, so a caller can stop chaining. */
     stopped: string | null;
   };
+  /** Cache invariants that the pass broke, if any. Non-empty means stop. */
+  brokenInvariants: { name: string; violations: number }[];
 }
 
 function now() {
@@ -444,7 +446,31 @@ export async function runMatchQueueWorker(
     }
   }
 
-  return { albums, ...prepared, musicbrainz };
+  // The cheap invariants run here rather than only in a nightly sweep,
+  // because a service ingesting continuously can accumulate a violation for
+  // days before anyone types a command. A broken cache stops the chain: the
+  // classical metadata this pass saved is fine, but writing more on top of an
+  // inconsistent cache makes the damage harder to understand.
+  let brokenInvariants: { name: string; violations: number }[] = [];
+  if (options.musicbrainz !== false && albums.length > 0) {
+    try {
+      const { runMusicBrainzInvariants, recordInvariantResults, hardViolations } =
+        await import('@/lib/musicbrainz-invariants');
+      const results = await runMusicBrainzInvariants({ cheapOnly: true });
+      await recordInvariantResults(results);
+      brokenInvariants = hardViolations(results).map((result) => ({
+        name: result.name,
+        violations: result.violations,
+      }));
+      for (const broken of brokenInvariants) {
+        console.error(`MusicBrainz cache invariant broken: ${broken.name} (${broken.violations})`);
+      }
+    } catch (error) {
+      console.error('Invariant check failed:', error);
+    }
+  }
+
+  return { albums, ...prepared, musicbrainz, brokenInvariants };
 }
 
 export async function claimPendingAlbum(

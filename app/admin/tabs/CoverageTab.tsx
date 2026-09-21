@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getCoverage } from '../actions/coverage';
+import { getCacheHealth, type CacheHealth } from '../actions/cache-health';
 import { STATE_LABEL, type AlbumState, type Coverage } from '../lib/album-state';
 import { Spinner } from '../components/Spinner';
 
@@ -21,9 +22,13 @@ const WHAT_IT_NEEDS: Record<AlbumState, string> = {
 
 export function CoverageTab({ onPick }: { onPick: (state: AlbumState) => void }) {
   const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [health, setHealth] = useState<CacheHealth | null>(null);
 
   useEffect(() => {
     void getCoverage().then(setCoverage);
+    getCacheHealth()
+      .then(setHealth)
+      .catch(() => setHealth(null));
   }, []);
 
   if (!coverage) {
@@ -90,6 +95,90 @@ export function CoverageTab({ onPick }: { onPick: (state: AlbumState) => void })
           ))}
         </div>
       </section>
+
+      {health && (
+        <section>
+          <p className="eyebrow mb-2">The MusicBrainz cache</p>
+          <div className="slip px-4 py-4">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
+              <Figure
+                label="Albums cached"
+                value={health.cache.albumsCached}
+                of={health.cache.albums}
+              />
+              <Figure
+                label="Tracks anchored"
+                value={health.cache.tracksAnchored}
+                of={health.cache.tracks}
+              />
+              <Figure
+                label="Reaching a work"
+                value={health.cache.tracksReachingWork}
+                of={health.cache.tracks}
+              />
+              <Figure label="Works read" value={health.cache.worksRead} of={health.cache.works} />
+              <Figure label="Works with a parent" value={health.cache.worksWithParent} />
+              <Figure label="Credits" value={health.cache.credits} />
+            </dl>
+            <p className="mt-3 max-w-[70ch] text-[var(--ink-2)]">
+              Anchored means a track is tied to a MusicBrainz recording, by its ISRC or by its
+              position on a release whose tracklist lines up. Reaching a work means MusicBrainz also
+              says what that recording is a performance of.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {health && health.invariants.length > 0 && (
+        <section>
+          <p className="eyebrow mb-2">Cache checks</p>
+          <div className="slip">
+            {health.invariants.map((invariant) => (
+              <div key={invariant.name} className="row">
+                <span
+                  className="mono w-12 shrink-0"
+                  style={{
+                    color:
+                      invariant.violations === 0
+                        ? 'var(--viridian)'
+                        : invariant.severity === 'hard'
+                          ? 'var(--gall)'
+                          : 'var(--ink-2)',
+                  }}
+                >
+                  {invariant.violations}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block">{invariant.name}</span>
+                  {invariant.violations > 0 && (
+                    <span className="block text-[11px] text-[var(--ink-2)]">
+                      {invariant.describes}
+                    </span>
+                  )}
+                </span>
+                {invariant.severity === 'upstream' && invariant.violations > 0 && (
+                  <span className="tag shrink-0">theirs, not ours</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+/** One counted figure, with the total it is a part of when there is one. */
+function Figure({ label, value, of }: { label: string; value: number; of?: number }) {
+  return (
+    <div className="py-1">
+      <dt className="text-[11px] text-[var(--ink-2)]">{label}</dt>
+      <dd className="mono text-[15px]">
+        {value.toLocaleString()}
+        {of !== undefined && (
+          <span className="text-[11px] text-[var(--faint)]"> / {of.toLocaleString()}</span>
+        )}
+      </dd>
     </div>
   );
 }
