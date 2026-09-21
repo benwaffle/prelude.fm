@@ -20,6 +20,7 @@ import {
   workPartV2,
 } from '@/lib/db/schema';
 import {
+  abbreviates,
   decidePromotion,
   formFromWorkType,
   movementTitleFromMusicBrainz,
@@ -31,7 +32,7 @@ import {
 const apply = process.argv.includes('--apply');
 const showDetails = process.argv.includes('--details');
 
-type Outcome = 'filled' | 'agreed' | 'conflict' | 'skipped';
+type Outcome = 'filled' | 'agreed' | 'replaced' | 'conflict' | 'skipped';
 
 type Plan = {
   field: string;
@@ -116,20 +117,35 @@ async function promoteWorkForm() {
     const held = current.get(fact.entityId) ?? null;
     const incoming = formFromWorkType(fact.value);
 
-    // Our parser is frequently more specific than MusicBrainz's 29-term
-    // vocabulary — "chorale prelude" has no MusicBrainz equivalent — so a
-    // difference here usually means ours is the better value, not the wrong one.
-    const outcome = decidePromotion(held, incoming, textuallyEqual);
+    /*
+     * MusicBrainz owns `form`. Ours came from the parser reading a Spotify
+     * track title, and although it is often the more specific of the two —
+     * "violin concerto" where MusicBrainz says "concerto" — specific is not
+     * the same as checked. The parser's value is kept in `parser_form` for
+     * the things that do not have to be right, like grouping and
+     * recommendation.
+     */
+    const outcome = decidePromotion(held, incoming, textuallyEqual, 'musicbrainz-wins');
     plans.push({
       field: 'form',
       entityId: fact.entityId,
       current: held,
       incoming,
-      outcome: outcome === 'fill' ? 'filled' : outcome === 'agree' ? 'agreed' : 'conflict',
+      outcome:
+        outcome === 'fill'
+          ? 'filled'
+          : outcome === 'agree'
+            ? 'agreed'
+            : outcome === 'replace'
+              ? 'replaced'
+              : 'conflict',
     });
 
-    if (outcome === 'fill' && apply) {
-      await db.update(work).set({ form: incoming }).where(eq(work.id, fact.entityId));
+    if ((outcome === 'fill' || outcome === 'replace') && apply) {
+      await db
+        .update(work)
+        .set({ form: incoming, parserForm: sql`coalesce(parser_form, form)` })
+        .where(eq(work.id, fact.entityId));
       await clearStaleDecision('work', String(fact.entityId), 'no_form');
     }
   }
@@ -160,17 +176,38 @@ async function promotePartTitles() {
       continue;
     }
 
-    const outcome = decidePromotion(row.title, incoming, textuallyEqual);
+    /*
+     * MusicBrainz owns the movement title too, with one exception: it does
+     * not get to shorten one. "Sicut Locutus" against our "Sicut lucutus est
+     * ad Patres nostros" is an abbreviation, not a correction, and adopting
+     * it would lose text in the name of provenance.
+     */
+    if (row.title && abbreviates(incoming, row.title)) {
+      unusable++;
+      continue;
+    }
+
+    const outcome = decidePromotion(row.title, incoming, textuallyEqual, 'musicbrainz-wins');
     plans.push({
       field: 'part_title',
       entityId: fact.entityId,
       current: row.title,
       incoming,
-      outcome: outcome === 'fill' ? 'filled' : outcome === 'agree' ? 'agreed' : 'conflict',
+      outcome:
+        outcome === 'fill'
+          ? 'filled'
+          : outcome === 'agree'
+            ? 'agreed'
+            : outcome === 'replace'
+              ? 'replaced'
+              : 'conflict',
     });
 
-    if (outcome === 'fill' && apply) {
-      await db.update(workPartV2).set({ title: incoming }).where(eq(workPartV2.id, fact.entityId));
+    if ((outcome === 'fill' || outcome === 'replace') && apply) {
+      await db
+        .update(workPartV2)
+        .set({ title: incoming, parserTitle: sql`coalesce(parser_title, title)` })
+        .where(eq(workPartV2.id, fact.entityId));
       await clearStaleDecision('work_part_v2', String(fact.entityId), 'no_part_name');
     }
   }
@@ -257,7 +294,13 @@ async function main() {
 
   const summary = new Map<string, Record<Outcome, number>>();
   for (const plan of plans) {
-    const row = summary.get(plan.field) ?? { filled: 0, agreed: 0, conflict: 0, skipped: 0 };
+    const row = summary.get(plan.field) ?? {
+      filled: 0,
+      agreed: 0,
+      replaced: 0,
+      conflict: 0,
+      skipped: 0,
+    };
     row[plan.outcome]++;
     summary.set(plan.field, row);
   }

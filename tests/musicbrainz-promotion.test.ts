@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  abbreviates,
+  chooseGroupTitles,
   composerMatchIsCredible,
   decidePromotion,
   formFromWorkType,
   movementTitleFromMusicBrainz,
-  chooseGroupTitles,
   saysLessThan,
   textuallyEqual,
   workTitleFromMusicBrainz,
@@ -253,4 +254,55 @@ test('recognises a title that adds information', () => {
     saysLessThan('Concerto in F major, RV 293 “L’autunno”', 'Violin Concerto in F major'),
     false,
   );
+});
+
+/* -------------------------------------------------------- promotion policy */
+
+test('by default a disagreement is a conflict for a person to settle', () => {
+  assert.equal(decidePromotion('violin concerto', 'concerto'), 'conflict');
+});
+
+test('where ours is the parser guessing, MusicBrainz wins instead', () => {
+  // A movement title and a musical form are both read off a Spotify track
+  // title by the parser. A disagreement is not two opinions of equal
+  // standing: one side checked and the other guessed.
+  assert.equal(
+    decidePromotion('violin concerto', 'concerto', textuallyEqual, 'musicbrainz-wins'),
+    'replace',
+  );
+});
+
+test('the policy does not change agreement or filling a gap', () => {
+  assert.equal(decidePromotion(null, 'concerto', textuallyEqual, 'musicbrainz-wins'), 'fill');
+  assert.equal(decidePromotion('  ', 'concerto', textuallyEqual, 'musicbrainz-wins'), 'fill');
+  assert.equal(
+    decidePromotion('Concerto', 'concerto', textuallyEqual, 'musicbrainz-wins'),
+    'agree',
+  );
+});
+
+test('a catalogue number anywhere in the title disqualifies it as a movement name', () => {
+  // The bug this covers: the guard ended with a single digit and a word
+  // boundary, so "op. 30" could never match and the work title
+  // "Lied ohne Worte D-Dur, op. 30 Nr. 5" was written into a movement.
+  assert.equal(movementTitleFromMusicBrainz('Lied ohne Worte D-Dur, op. 30 Nr. 5', null), null);
+  assert.equal(movementTitleFromMusicBrainz('Hommage à Joseph Haydn, L. 115, CD 123', null), null);
+  assert.equal(movementTitleFromMusicBrainz('Andante grazioso, MWV U97', null), null);
+});
+
+test('a key signature is not a catalogue reference', () => {
+  assert.equal(movementTitleFromMusicBrainz('Adagio in C minor', null), 'Adagio in C minor');
+  assert.equal(movementTitleFromMusicBrainz('Largo in D major', null), 'Largo in D major');
+});
+
+test('an abbreviated MusicBrainz title is recognised despite a spelling difference', () => {
+  // One letter apart, so every-word containment misses it; ours is plainly
+  // the fuller title.
+  assert.equal(abbreviates('Sicut Locutus', 'Sicut lucutus est ad Patres nostros'), true);
+  assert.equal(saysLessThan('Sicut Locutus', 'Sicut lucutus est ad Patres nostros'), false);
+});
+
+test('a genuinely different title is not treated as an abbreviation', () => {
+  assert.equal(abbreviates('Fra karnevalet', 'From the Carnival'), false);
+  assert.equal(abbreviates('Rondo. Allegro', 'Rondo. Allegro – Presto'), true);
 });

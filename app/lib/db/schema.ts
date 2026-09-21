@@ -144,7 +144,25 @@ export const work = sqliteTable(
     catalogSystem: text('catalog_system'), // "BWV", "K", "Op" - nullable for works without catalog numbers
     catalogNumber: text('catalog_number'), // "1052", "27/2" - nullable for works without catalog numbers
     yearComposed: integer('year_composed'),
-    form: text('form'), // "concerto", "sonata", "fugue"
+    /**
+     * The musical form, as MusicBrainz states it.
+     *
+     * Empty where MusicBrainz has no type for the work. That is a gap rather
+     * than a failure: the parser's guess is kept in `parser_form` and is not
+     * shown, because it was inferred from a Spotify track title and nobody
+     * has checked it.
+     */
+    form: text('form'),
+    /**
+     * What the parser guessed the form was, before MusicBrainz was consulted.
+     *
+     * Kept rather than discarded because it is useful for things that do not
+     * need to be right — recommendation, grouping, categorisation — and it is
+     * more specific than MusicBrainz's fixed vocabulary: "violin concerto"
+     * where MusicBrainz says "concerto". It is simply not evidence, so it
+     * does not sit in the column the reader displays.
+     */
+    parserForm: text('parser_form'),
     /** MusicBrainz work MBID of the *parent* work, when matched. */
     musicbrainzId: text('musicbrainz_id').unique(),
   },
@@ -304,6 +322,8 @@ export const workPartV2 = sqliteTable(
     position: integer('position').notNull(),
     label: text('label'),
     title: text('title'),
+    /** What the parser called this movement, where MusicBrainz replaced it. */
+    parserTitle: text('parser_title'),
     /** MusicBrainz work MBID of the movement/leaf work, when matched. */
     musicbrainzId: text('musicbrainz_id'),
   },

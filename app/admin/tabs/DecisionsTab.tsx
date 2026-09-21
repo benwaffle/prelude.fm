@@ -21,8 +21,6 @@ type ContestedGroup = {
 const FIELD_NAME: Record<DisagreementField, string> = {
   birth_year: 'birth year',
   death_year: 'death year',
-  work_type: 'form',
-  part_title: 'movement title',
 };
 
 export function DecisionsTab() {

@@ -12,7 +12,13 @@ export type PromotionOutcome =
   | 'fill'
   /** Both sources agree. Nothing to do, but worth counting as confirmation. */
   | 'agree'
-  /** Both hold a value and they differ. Never resolved automatically. */
+  /**
+   * They differ, and MusicBrainz's value is taken — for fields where ours is
+   * the parser's inference from a track title rather than a checked value.
+   * Ours is kept in a `parser_*` column, not discarded.
+   */
+  | 'replace'
+  /** Both hold a value and they differ. A person settles it. */
   | 'conflict';
 
 /**
@@ -25,13 +31,36 @@ export type PromotionOutcome =
  * wearing a value's clothes, and treating it as a claim would keep MusicBrainz
  * from filling something that has no content.
  */
+/**
+ * Who wins when both sides have a value.
+ *
+ * `fill-gaps` is the cautious default and suits anything we might know better
+ * than MusicBrainz does.
+ *
+ * `musicbrainz-wins` is for the fields where our own value is an LLM's
+ * inference from a Spotify track title. A movement title and a musical form
+ * are both read off the track text by the parser, so a disagreement there is
+ * not two opinions of equal standing: one side checked and the other guessed.
+ * Leaving those as conflicts for a person to settle one at a time treats the
+ * guess as evidence.
+ *
+ * The parser's value is preserved either way — `work.parser_form`,
+ * `work_part_v2.parser_title` — because being unverified does not make it
+ * useless. It is more specific than MusicBrainz's fixed vocabulary ("violin
+ * concerto" against "concerto") and that specificity is worth having for
+ * recommendation and grouping, which do not have to be right.
+ */
+export type PromotionPolicy = 'fill-gaps' | 'musicbrainz-wins';
+
 export function decidePromotion(
   current: string | null | undefined,
   incoming: string,
   equal: (a: string, b: string) => boolean = textuallyEqual,
+  policy: PromotionPolicy = 'fill-gaps',
 ): PromotionOutcome {
   if (current == null || current.trim() === '') return 'fill';
-  return equal(current, incoming) ? 'agree' : 'conflict';
+  if (equal(current, incoming)) return 'agree';
+  return policy === 'musicbrainz-wins' ? 'replace' : 'conflict';
 }
 
 /** Compares display text without being distracted by case, accents or punctuation. */
@@ -90,9 +119,22 @@ export function composerMatchIsCredible(
 /** Numbering MusicBrainz puts in front of a movement title: "III.", "4.", "No. 16". */
 const LEADING_NUMBER = /^\s*(?:(?:no\.?\s*)?\d+|[ivxlcdm]+)\s*[.:)]?\s+/i;
 
-/** Catalogue tokens. Their presence means the text names a work, not a movement. */
+/**
+ * Catalogue tokens. Their presence means the text names a work, not a movement.
+ *
+ * The sigils that are words of their own are matched as words. The ones that
+ * are a letter or two — Debussy's L., Chausson's CD, an opus number — are
+ * matched only when a number follows, so a key signature like "in D major" or
+ * "in C minor" is not mistaken for a catalogue reference.
+ *
+ * Note `\d+` and no trailing `\b`: an earlier version ended the alternation
+ * with a single `\d` followed by a word boundary, which cannot match "op. 30"
+ * at all, because the boundary has to fall between the 3 and the 0. Every
+ * multi-digit catalogue number slipped through, and "Lied ohne Worte D-Dur,
+ * op. 30 Nr. 5" was being written into a movement title.
+ */
 const CATALOGUE_TOKEN =
-  /\b(?:bwv|kv?\.?\s*\d|rv|hwv|hob|buxwv|zwv|twv|wq|woo|d\.\s*\d|op\.?\s*\d|opus)\b/i;
+  /\b(?:bwv|rv|hwv|hob|buxwv|zwv|twv|wq|woo|opus|mwv|trv|anh|deest)\b|\b(?:op|kv|k|cd|sz|bv)\.?\s*\d+|\b(?:d|l|s|b|c|p|f)\.\s*\d+/i;
 
 /**
  * Turn a MusicBrainz work title into something that belongs in `work_part_v2.title`.
@@ -191,6 +233,25 @@ export function saysLessThan(incoming: string, ourTitle: string): boolean {
   const theirs = normalizeMetadataText(incoming).split(' ').filter(Boolean);
   if (theirs.length === 0) return true;
   return theirs.every((token) => ours.has(token));
+}
+
+/**
+ * Whether MusicBrainz's title is a shortened form of ours.
+ *
+ * `saysLessThan` only catches the case where every one of their words is also
+ * one of ours, which a single spelling difference defeats: MusicBrainz's
+ * "Sicut Locutus" against our "Sicut lucutus est ad Patres nostros" differs
+ * in one letter and so looks like a different title rather than a shorter
+ * one. Requiring most of their words rather than all of them catches the
+ * abbreviation while still letting a genuinely different title through.
+ */
+export function abbreviates(incoming: string, ourTitle: string): boolean {
+  const ours = new Set(normalizeMetadataText(ourTitle).split(' ').filter(Boolean));
+  const theirs = normalizeMetadataText(incoming).split(' ').filter(Boolean);
+  if (theirs.length === 0) return true;
+  if (theirs.length >= ours.size) return false;
+  const shared = theirs.filter((token) => ours.has(token)).length;
+  return shared * 2 >= theirs.length;
 }
 
 /**

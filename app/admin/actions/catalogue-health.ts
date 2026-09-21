@@ -11,11 +11,6 @@ import {
   work,
   workPartV2,
 } from '@/lib/db/schema';
-import {
-  formFromWorkType,
-  movementTitleFromMusicBrainz,
-  textuallyEqual,
-} from '@/lib/musicbrainz-promotion';
 import { resolveWorkLevel, type MatchedPart } from '@/lib/musicbrainz';
 import { titlesAreCompatible } from '@/lib/metadata-matching';
 import { checkAuth } from './auth';
@@ -44,7 +39,22 @@ export type CatalogueHealth = {
   disagreementsByField: { field: DisagreementField; label: string; count: number }[];
 };
 
-export type DisagreementField = 'birth_year' | 'death_year' | 'work_type' | 'part_title';
+/**
+ * The fields where a difference is still a question.
+ *
+ * `work_type` and `part_title` used to be here and no longer are. Both of our
+ * values came from the parser reading a Spotify track title, so a difference
+ * with MusicBrainz was never two opinions of equal standing — one side had
+ * checked and the other had guessed. They are settled by policy now:
+ * MusicBrainz wins, except where its value carries a catalogue number or
+ * merely abbreviates ours, and the parser's reading is kept in
+ * `work.parser_form` and `work_part_v2.parser_title`. Listing thousands of
+ * them as decisions asked a person to re-make the same judgement every time.
+ *
+ * A composer's dates are different: ours were not guessed from a track
+ * title, so a disagreement there is worth a look.
+ */
+export type DisagreementField = 'birth_year' | 'death_year';
 
 /** A variant reading: what we hold, and what MusicBrainz holds instead. */
 export type Disagreement = {
@@ -60,8 +70,6 @@ export type Disagreement = {
 const FIELD_LABELS: Record<DisagreementField, string> = {
   birth_year: 'composer born',
   death_year: 'composer died',
-  work_type: 'work form',
-  part_title: 'movement title',
 };
 
 export async function getCatalogueHealth(): Promise<CatalogueHealth> {
@@ -189,53 +197,6 @@ async function loadDisagreements(): Promise<Disagreement[]> {
     });
   }
 
-  const forms = await db
-    .select({ id: work.id, title: work.title, form: work.form, value: musicbrainzFact.value })
-    .from(musicbrainzFact)
-    .innerJoin(work, eq(work.id, musicbrainzFact.entityId))
-    .where(and(eq(musicbrainzFact.entityType, 'work'), eq(musicbrainzFact.field, 'work_type')));
-  for (const row of forms) {
-    const incoming = formFromWorkType(row.value);
-    if (!row.form || textuallyEqual(row.form, incoming)) continue;
-    if (settled.has(`work_form:${row.id}`)) continue;
-    out.push({
-      key: `work_type:${row.id}`,
-      field: 'work_type',
-      entityId: row.id,
-      context: row.title,
-      ours: row.form,
-      theirs: incoming,
-    });
-  }
-
-  const titles = await db
-    .select({
-      id: workPartV2.id,
-      label: workPartV2.label,
-      title: workPartV2.title,
-      workTitle: work.title,
-      value: musicbrainzFact.value,
-    })
-    .from(musicbrainzFact)
-    .innerJoin(workPartV2, eq(workPartV2.id, musicbrainzFact.entityId))
-    .innerJoin(work, eq(work.id, workPartV2.workId))
-    .where(
-      and(eq(musicbrainzFact.entityType, 'work_part'), eq(musicbrainzFact.field, 'part_title')),
-    );
-  for (const row of titles) {
-    const incoming = movementTitleFromMusicBrainz(row.value, row.label);
-    if (!incoming || !row.title || textuallyEqual(row.title, incoming)) continue;
-    if (settled.has(`work_part_title:${row.id}`)) continue;
-    out.push({
-      key: `part_title:${row.id}`,
-      field: 'part_title',
-      entityId: row.id,
-      context: `${row.workTitle}${row.label ? ` · ${row.label}` : ''}`,
-      ours: row.title,
-      theirs: incoming,
-    });
-  }
-
   return out;
 }
 
@@ -252,8 +213,6 @@ export async function getDisagreements(
 const AUDIT_ENTITY: Record<DisagreementField, string> = {
   birth_year: 'composer_birth_year',
   death_year: 'composer_death_year',
-  work_type: 'work_form',
-  part_title: 'work_part_title',
 };
 
 /**
