@@ -129,6 +129,38 @@ export function CoverageTab({ onPick }: { onPick: (state: AlbumState) => void })
         </section>
       )}
 
+      {health && health.unsettled.count > 0 && (
+        <section>
+          <p className="eyebrow mb-2">Works whose place in the tree is unsettled</p>
+          <div className="slip">
+            <p className="px-4 pt-3 text-[var(--ink-2)]">
+              {health.unsettled.count} works are childless, untyped, and titled without naming their
+              parent. Each is either a movement whose parent is written differently or a piece
+              inside a collection, and those want opposite answers. They stay where they are:
+              folding a piece into its collection cannot be spotted afterwards.
+            </p>
+            {health.unsettled.samples.map((work) => (
+              <div key={work.mbid} className="row">
+                <span className="min-w-0 flex-1">
+                  <span className="block">{work.title}</span>
+                  <span className="block text-[11px] text-[var(--ink-2)]">
+                    filed under {work.parentTitle}
+                  </span>
+                </span>
+                <a
+                  className="act shrink-0"
+                  href={`https://musicbrainz.org/work/${work.mbid}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Work
+                </a>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {health && health.invariants.length > 0 && (
         <section>
           <p className="eyebrow mb-2">Cache checks</p>
