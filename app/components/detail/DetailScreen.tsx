@@ -6,8 +6,10 @@ import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import {
   getWorkDetail,
+  getWorkParent,
   type OtherRecording,
   type WorkDetail,
+  type WorkParent,
   type WorkSummary,
 } from '@/app/actions/library';
 import {
@@ -35,6 +37,21 @@ export function DetailScreen({
   const { currentTrack, play } = useSpotifyPlayer();
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading');
+  const [parent, setParent] = useState<WorkParent | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getWorkParent(workId)
+      .then((found) => {
+        if (!cancelled) setParent(found);
+      })
+      .catch(() => {
+        if (!cancelled) setParent(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,12 +138,77 @@ export function DetailScreen({
         onToggleLike={toggleLike}
       />
 
+      {parent && <Collection parent={parent} />}
+
       {others.length > 0 && <OtherRecordings workId={workId} others={others} />}
 
       {moreByComposer.length > 0 && (
         <MoreByComposer composer={work.composerFull} works={moreByComposer} />
       )}
     </main>
+  );
+}
+
+/**
+ * The collection this work belongs to.
+ *
+ * Our own model is flat, so until MusicBrainz's tree was cached nothing could
+ * say that a prelude and fugue is one of forty-eight. Parts MusicBrainz lists
+ * that we hold nothing for are shown greyed rather than dropped: a book of
+ * twenty-four showing twenty-three should look incomplete, not look like a
+ * book of twenty-three.
+ */
+function Collection({ parent }: { parent: WorkParent }) {
+  return (
+    <section className="border-b border-rule pt-8 pb-7">
+      <div className="mb-3 flex items-baseline gap-3">
+        <h2 className="m-0 font-display text-[17px] text-ink">{parent.title}</h2>
+        <span className="font-meta text-[10px] tracking-[0.14em] text-muted uppercase">
+          {parent.held} of {parent.siblings.length} here
+        </span>
+      </div>
+      <ol className="m-0 grid list-none grid-cols-2 gap-x-8 gap-y-[2px] p-0 max-[900px]:grid-cols-1">
+        {parent.siblings.map((sibling, index) => {
+          const key = `${sibling.workId ?? 'absent'}-${sibling.ordering ?? index}`;
+          const label = (
+            <>
+              <span className="w-6 shrink-0 text-right font-meta text-[10px] text-muted tabular-nums">
+                {sibling.ordering ?? '·'}
+              </span>
+              <span className="truncate">{sibling.title}</span>
+            </>
+          );
+          if (sibling.isCurrent) {
+            return (
+              <li key={key} className="flex items-baseline gap-3 py-[3px] text-[13px] text-ink">
+                {label}
+              </li>
+            );
+          }
+          if (sibling.workId === null) {
+            return (
+              <li
+                key={key}
+                className="flex items-baseline gap-3 py-[3px] text-[13px] text-muted italic"
+                title="Not in your library"
+              >
+                {label}
+              </li>
+            );
+          }
+          return (
+            <li key={key} className="flex items-baseline gap-3 py-[3px] text-[13px]">
+              <Link
+                href={`/work/${sibling.workId}`}
+                className="flex min-w-0 items-baseline gap-3 text-ink-2 no-underline transition-colors duration-150 hover:text-ink"
+              >
+                {label}
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
