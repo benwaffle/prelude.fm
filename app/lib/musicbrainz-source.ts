@@ -17,6 +17,8 @@ export type MbRelation = {
   type: string;
   direction: 'forward' | 'backward';
   'target-type'?: string;
+  /** A part's position within its parent, on the backward `parts` relation. */
+  'ordering-key'?: number;
   'attribute-values'?: Record<string, string>;
   attributes?: string[];
   work?: { id: string; title: string };
@@ -34,6 +36,7 @@ export type MbWork = {
 export type MbArtist = {
   id: string;
   name: string;
+  'sort-name'?: string | null;
   type?: string | null;
   'life-span'?: { begin?: string | null; end?: string | null };
 };
@@ -100,6 +103,16 @@ export interface MusicBrainzSource {
 
   /** Release MBIDs whose own barcode is exactly this one. */
   releasesByBarcode(barcode: string): Promise<string[]>;
+
+  /**
+   * Release MBIDs whose title matches and which carry exactly this many
+   * tracks, best match first.
+   *
+   * The track count belongs in the query rather than in a filter afterwards:
+   * the search index knows it, and a common title would otherwise return
+   * dozens of candidates that each cost a request to rule out.
+   */
+  searchReleases(title: string, trackCount: number): Promise<string[]>;
 
   /**
    * A release with its tracklist, recordings, ISRCs, work relationships and

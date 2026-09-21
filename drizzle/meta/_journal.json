@@ -50,6 +50,20 @@
       "when": 1789970788442,
       "tag": "0006_short_swarm",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789971012517,
+      "tag": "0007_absent_owl",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789971126789,
+      "tag": "0008_dashing_genesis",
+      "breakpoints": true
     }
   ]
 }

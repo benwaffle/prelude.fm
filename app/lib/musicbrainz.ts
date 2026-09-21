@@ -161,6 +161,29 @@ export async function findReleasesByBarcode(
 }
 
 /**
+ * Releases with this title and exactly this many tracks.
+ *
+ * This is the route to releases MusicBrainz holds without a barcode, which
+ * sampling suggests is a real share of the albums currently filed as absent.
+ * The search is fuzzy by design, so it only produces a shortlist — the caller
+ * confirms each candidate against the album's durations before believing it.
+ */
+export async function searchReleasesByTitle(
+  title: string,
+  trackCount: number,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+): Promise<string[]> {
+  const cleaned = title.replace(/["\\]/g, ' ').trim();
+  if (!cleaned) return [];
+  const query = `release:"${cleaned}" AND tracks:${trackCount}`;
+  const result = await mbGet<{ releases?: { id: string; score?: number }[] }>(
+    `/release?query=${encodeURIComponent(query)}&fmt=json&limit=10`,
+    channel,
+  );
+  return (result?.releases ?? []).map((release) => release.id);
+}
+
+/**
  * The recordings a release contains, in order.
  *
  * Used to decide whether releases sharing a barcode actually differ. A record
@@ -329,6 +352,7 @@ export function musicBrainzApi(channel: MusicBrainzChannel = DEFAULT_CHANNEL): M
   return {
     name: `musicbrainz-api:${channel}`,
     releasesByBarcode: (barcode) => findReleasesByBarcode(barcode, channel),
+    searchReleases: (title, trackCount) => searchReleasesByTitle(title, trackCount, channel),
     releaseWithRecordings: (releaseId) => getReleaseWithRecordings(releaseId, channel),
     releaseRecordingIds: (releaseId) => getReleaseRecordingIds(releaseId, channel),
     recordingsByIsrc: (isrcs) => findRecordingsByIsrcs(isrcs, channel),
@@ -345,6 +369,28 @@ export function parentWorkOf(work: MbWork): MbWorkRef | null {
   for (const relation of work.relations ?? []) {
     if (relation.type === 'parts' && relation.direction === 'backward' && relation.work) {
       return relation.work;
+    }
+  }
+  return null;
+}
+
+/**
+ * The parent work and this work's position in it.
+ *
+ * MusicBrainz puts the position on the child's own view of the relationship,
+ * so a child fetch answers both questions at once and the parent never has to
+ * be fetched just to learn what order its parts come in.
+ */
+export function parentPartOf(
+  work: MbWork,
+): { id: string; title: string; orderingKey: number | null } | null {
+  for (const relation of work.relations ?? []) {
+    if (relation.type === 'parts' && relation.direction === 'backward' && relation.work) {
+      return {
+        id: relation.work.id,
+        title: relation.work.title,
+        orderingKey: relation['ordering-key'] ?? null,
+      };
     }
   }
   return null;

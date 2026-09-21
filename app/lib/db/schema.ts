@@ -619,3 +619,255 @@ export const mbGatewayControl = sqliteTable('mb_gateway_control', {
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
 });
+
+/*
+ * The MusicBrainz cache
+ *
+ * MusicBrainz entities as MusicBrainz states them, keyed by MBID and shared by
+ * every user. These tables are a cache of somebody else's database, not our
+ * interpretation of it: nothing here is edited by hand, and anything we
+ * believe that MusicBrainz does not is recorded elsewhere.
+ *
+ * There is deliberately no `mb_fetch_log`. Freshness is the `fetched_at` on
+ * each row, "have we read this work properly or only seen it named" is
+ * `mb_work.detail`, and request accounting is `mb_request_budget`. A separate
+ * log would restate all three and could disagree with them.
+ */
+
+export const mbArtist = sqliteTable('mb_artist', {
+  mbid: text('mbid').primaryKey(),
+  name: text('name').notNull(),
+  sortName: text('sort_name'),
+  /** 'Person' | 'Group' | 'Orchestra' | 'Choir' | ... */
+  type: text('type'),
+  beginYear: integer('begin_year'),
+  endYear: integer('end_year'),
+  fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+});
+
+/**
+ * A MusicBrainz work, and the parent it is a part of.
+ *
+ * The parent link is the whole point of this table. Our own model is flat —
+ * a work owns a list of leaf parts — and that flatness is what produced
+ * eighteen separate works called "The Well-Tempered Clavier, Book 2", because
+ * there was nowhere to say which prelude each one was. MusicBrainz's tree is
+ * recursive and arbitrarily deep, so we store it as it is and decide which
+ * level to show when reading.
+ *
+ * `detail` distinguishes a work we have actually fetched from one we only know
+ * the name of because a recording pointed at it. A release fetch names dozens
+ * of works and gives their parents for none of them, so without this the cache
+ * could not tell "no parent" from "not looked yet".
+ */
+export const mbWork = sqliteTable(
+  'mb_work',
+  {
+    mbid: text('mbid').primaryKey(),
+    title: text('title').notNull(),
+    /** MusicBrainz work type: 'Sonata', 'Symphony', 'Aria', ... */
+    type: text('type'),
+    parentMbid: text('parent_mbid'),
+    /** This work's position among its parent's parts, from the relation's ordering-key. */
+    orderingKey: integer('ordering_key'),
+    composerMbid: text('composer_mbid'),
+    /** 'stub': named by a recording. 'full': fetched with its relations. */
+    detail: text('detail', { enum: ['stub', 'full'] })
+      .default('stub')
+      .notNull(),
+    fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index('mb_work_parent_idx').on(table.parentMbid),
+    index('mb_work_composer_idx').on(table.composerMbid),
+    index('mb_work_detail_idx').on(table.detail),
+  ],
+);
+
+/**
+ * Catalogue references — BWV, Köchel, Ryom, Longo — from a work's Catalogue
+ * series relationships.
+ *
+ * Normalised with our own `classical-normalization`, which is better at this
+ * than MusicBrainz's series-name-plus-free-text: the number arrives as an
+ * attribute string like "BWV 1067" and has to be parsed back out either way.
+ */
+export const mbWorkCatalogue = sqliteTable(
+  'mb_work_catalogue',
+  {
+    workMbid: text('work_mbid').notNull(),
+    seriesMbid: text('series_mbid').notNull(),
+    system: text('system').notNull(),
+    number: text('number').notNull(),
+    normalizedSystem: text('normalized_system').notNull(),
+    normalizedNumber: text('normalized_number').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workMbid, table.seriesMbid, table.number] }),
+    index('mb_work_catalogue_lookup_idx').on(table.normalizedSystem, table.normalizedNumber),
+  ],
+);
+
+/**
+ * A recording: one performance, independent of the releases carrying it.
+ *
+ * Our current model ties a recording to a Spotify album, so the same
+ * performance issued twice becomes two recordings of two works. MusicBrainz
+ * has it the right way round and this table follows.
+ */
+export const mbRecording = sqliteTable('mb_recording', {
+  mbid: text('mbid').primaryKey(),
+  title: text('title').notNull(),
+  /** Milliseconds, as MusicBrainz reports it. */
+  length: integer('length'),
+  fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+});
+
+/**
+ * The ISRCs a recording carries.
+ *
+ * Stored because this is the join that anchors a Spotify track to a
+ * MusicBrainz recording, and it has to be a local lookup rather than a search
+ * request: Spotify gives us the ISRC, and everything downstream depends on
+ * turning that into a recording without spending budget.
+ *
+ * Not keyed on the ISRC alone. An ISRC should identify one recording, but
+ * MusicBrainz genuinely holds cases where a label attached the same one to
+ * two — that is how Haydn's Symphony 87 lost its link — and a unique key here
+ * would hide the conflict instead of letting us find and report it.
+ */
+export const mbRecordingIsrc = sqliteTable(
+  'mb_recording_isrc',
+  {
+    isrc: text('isrc').notNull(),
+    recordingMbid: text('recording_mbid').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.isrc, table.recordingMbid] }),
+    index('mb_recording_isrc_recording_idx').on(table.recordingMbid),
+  ],
+);
+
+/** The works a recording performs. Usually one; a medley has several. */
+export const mbRecordingWork = sqliteTable(
+  'mb_recording_work',
+  {
+    recordingMbid: text('recording_mbid').notNull(),
+    workMbid: text('work_mbid').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.recordingMbid, table.workMbid] }),
+    index('mb_recording_work_work_idx').on(table.workMbid),
+  ],
+);
+
+/**
+ * Who played, and what they did.
+ *
+ * This replaces counting artist name strings and calling the second most
+ * frequent one the performer — a heuristic that cannot tell a conductor from
+ * an orchestra and silently merges two artists who share a name. `role` is the
+ * MusicBrainz relationship type; `instrument` qualifies it, so a violinist is
+ * `instrument` + `violin` rather than a role of their own.
+ */
+export const mbRecordingCredit = sqliteTable(
+  'mb_recording_credit',
+  {
+    recordingMbid: text('recording_mbid').notNull(),
+    artistMbid: text('artist_mbid').notNull(),
+    role: text('role').notNull(),
+    /**
+     * The instrument, or '' for a role that has none.
+     *
+     * Empty rather than null because this column is part of the key, and
+     * SQLite allows duplicate rows when a key column is null — two identical
+     * conductor credits would both be stored. Readers map '' back to absent.
+     */
+    instrument: text('instrument').default('').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.recordingMbid, table.artistMbid, table.role, table.instrument],
+    }),
+    index('mb_recording_credit_artist_idx').on(table.artistMbid),
+  ],
+);
+
+export const mbRelease = sqliteTable(
+  'mb_release',
+  {
+    mbid: text('mbid').primaryKey(),
+    title: text('title').notNull(),
+    barcode: text('barcode'),
+    /** MusicBrainz release date, as given: 'YYYY', 'YYYY-MM' or 'YYYY-MM-DD'. */
+    date: text('date'),
+    country: text('country'),
+    fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [index('mb_release_barcode_idx').on(table.barcode)],
+);
+
+/**
+ * A release's tracklist.
+ *
+ * This is what replaces the parser's album-local `recordingGroup` string and
+ * the 0.55 Jaccard overlap used to reconcile it: an exact tracklist, stated by
+ * MusicBrainz, in order.
+ */
+export const mbReleaseTrack = sqliteTable(
+  'mb_release_track',
+  {
+    releaseMbid: text('release_mbid').notNull(),
+    /** Disc, one-based. */
+    medium: integer('medium').notNull(),
+    /** Position within the disc, one-based. */
+    position: integer('position').notNull(),
+    recordingMbid: text('recording_mbid').notNull(),
+    /** The title as printed on this release, which can differ from the recording's. */
+    title: text('title').notNull(),
+    length: integer('length'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.releaseMbid, table.medium, table.position] }),
+    index('mb_release_track_recording_idx').on(table.recordingMbid),
+  ],
+);
+
+/**
+ * How a Spotify track was anchored to a MusicBrainz recording.
+ *
+ * `matched_by` is kept because the two routes do not deserve equal trust. An
+ * ISRC is the label's own identifier and is nearly always right; a position on
+ * a release is only as right as the release match behind it. Recording which
+ * one was used means a later doubt can be narrowed to the rows that earned it,
+ * rather than discarding everything.
+ */
+export const trackRecording = sqliteTable(
+  'track_recording',
+  {
+    spotifyTrackId: text('spotify_track_id')
+      .primaryKey()
+      .references(() => spotifyTrack.spotifyId),
+    recordingMbid: text('recording_mbid').notNull(),
+    /** The ISRC that resolved it, when that is how it was resolved. */
+    isrc: text('isrc'),
+    matchedBy: text('matched_by', {
+      enum: ['isrc', 'release_position'],
+    }).notNull(),
+    matchedAt: integer('matched_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index('track_recording_recording_idx').on(table.recordingMbid),
+    index('track_recording_matched_by_idx').on(table.matchedBy),
+  ],
+);
