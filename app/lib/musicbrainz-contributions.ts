@@ -223,12 +223,99 @@ export async function contestedIsrcs(limit = 100): Promise<ContestedIsrc[]> {
     .limit(limit);
 }
 
+/**
+ * Albums MusicBrainz does not hold as a release.
+ *
+ * The largest remaining gap by a distance, and the one class that stays
+ * human permanently: a duplicate release is expensive for other people to
+ * merge away, and that cost is not ours to impose. Harmony seeds the form
+ * from the Spotify album, so the human step is checking rather than typing.
+ *
+ * Ordered by how much of the library each would unlock, because adding a
+ * thirty-track box set is worth more than adding a single.
+ */
+export type MissingRelease = {
+  albumId: string;
+  albumTitle: string;
+  year: number | null;
+  upc: string | null;
+  tracks: number;
+  /** Tracks still reaching no MusicBrainz recording at all. */
+  unanchored: number;
+  /** Why the lookup failed, as far as we know. */
+  reason: string;
+};
+
+export async function missingReleases(limit = 60): Promise<MissingRelease[]> {
+  return db
+    .select({
+      albumId: spotifyAlbum.spotifyId,
+      albumTitle: spotifyAlbum.title,
+      year: spotifyAlbum.year,
+      upc: spotifyAlbum.upc,
+      tracks: sql<number>`count(distinct ${spotifyTrack.spotifyId})`,
+      unanchored: sql<number>`count(distinct case when not exists (
+        select 1 from ${trackRecording} tr where tr.spotify_track_id = ${spotifyTrack.spotifyId}
+      ) then ${spotifyTrack.spotifyId} end)`,
+      reason: sql<string>`case
+        when ${spotifyAlbum.upc} is null or ${spotifyAlbum.upc} = '' then 'Spotify gives no barcode'
+        when coalesce(${spotifyAlbum.mbReleaseCandidates}, 0) > 1 then 'several releases share the barcode'
+        else 'no release carries this barcode'
+      end`,
+    })
+    .from(spotifyAlbum)
+    .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyAlbumId, spotifyAlbum.spotifyId))
+    .where(sql`${spotifyAlbum.mbReleaseId} is null`)
+    .groupBy(spotifyAlbum.spotifyId)
+    .orderBy(sql`count(distinct ${spotifyTrack.spotifyId}) desc`)
+    .limit(limit);
+}
+
+/**
+ * Releases MusicBrainz holds without a barcode, where Spotify gives us one.
+ *
+ * Small, because a release is usually found *by* its barcode in the first
+ * place — these are the ones matched on title and duration instead.
+ */
+export type BarcodeGap = {
+  releaseMbid: string;
+  releaseTitle: string;
+  albumId: string;
+  barcode: string;
+};
+
+export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
+  return db
+    .select({
+      releaseMbid: mbRelease.mbid,
+      releaseTitle: mbRelease.title,
+      albumId: spotifyAlbum.spotifyId,
+      barcode: sql<string>`${spotifyAlbum.upc}`,
+    })
+    .from(spotifyAlbum)
+    .innerJoin(mbRelease, eq(mbRelease.mbid, spotifyAlbum.mbReleaseId))
+    .where(
+      and(
+        sql`${mbRelease.barcode} is null or ${mbRelease.barcode} = ''`,
+        sql`${spotifyAlbum.upc} is not null and ${spotifyAlbum.upc} <> ''`,
+        sql`not exists (
+          select 1 from ${mbSubmission}
+          where ${mbSubmission.kind} = 'barcode'
+            and ${mbSubmission.targetMbid} = ${mbRelease.mbid}
+        )`,
+      ),
+    )
+    .limit(limit);
+}
+
 /** How much of each kind of contribution is waiting. */
 export async function contributionCounts() {
-  const [isrc, works, contested, submitted] = await Promise.all([
+  const [isrc, works, contested, missing, barcodes, submitted] = await Promise.all([
     isrcGaps(5_000).then((rows) => rows.length),
     workRelationshipGaps(5_000).then((rows) => rows.length),
     contestedIsrcs(5_000).then((rows) => rows.length),
+    missingReleases(5_000).then((rows) => rows.length),
+    barcodeGaps(5_000).then((rows) => rows.length),
     db
       .select({ outcome: mbSubmission.outcome, n: sql<number>`count(*)` })
       .from(mbSubmission)
@@ -238,6 +325,8 @@ export async function contributionCounts() {
     isrc,
     workRelationships: works,
     contestedIsrcs: contested,
+    missingReleases: missing,
+    barcodes,
     submissions: Object.fromEntries(submitted.map((row) => [row.outcome, row.n])),
   };
 }

@@ -266,6 +266,66 @@ export function ContributeTab() {
 
       <section className="panel">
         <div className="panel-head">
+          <span className="panel-title">Albums MusicBrainz does not have</span>
+          <span className="mono text-[var(--ink-2)]">{view.counts.missingReleases}</span>
+        </div>
+        <p className="px-4 pt-3 text-[var(--ink-2)]">
+          The largest gap left, and the one class that stays manual for good: a duplicate release is
+          expensive for other people to merge away. Harmony fills the form from the Spotify album,
+          so the work is checking rather than typing. Biggest first, since adding a box set unlocks
+          more than adding a single.
+        </p>
+        {view.missing.map((album) => (
+          <div key={album.albumId} className="row">
+            <span className="mono w-10 shrink-0 text-[var(--gall)]">{album.tracks}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{album.albumTitle}</span>
+              <span className="block text-[11px] text-[var(--ink-2)]">
+                {album.year ? `${album.year} · ` : ''}
+                {album.reason}
+                {album.unanchored < album.tracks &&
+                  ` · ${album.tracks - album.unanchored} track(s) already reach a recording elsewhere`}
+              </span>
+            </span>
+            <a className="act shrink-0" href={album.harmony} target="_blank" rel="noreferrer">
+              Harmony
+            </a>
+            <a
+              className="act shrink-0"
+              href={`https://open.spotify.com/album/${album.albumId}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Spotify
+            </a>
+          </div>
+        ))}
+      </section>
+
+      {view.barcodes.length > 0 && (
+        <section className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Releases with no barcode</span>
+            <span className="mono text-[var(--ink-2)]">{view.counts.barcodes}</span>
+          </div>
+          <p className="px-4 pt-3 text-[var(--ink-2)]">
+            Found by title and duration rather than by barcode, which is why they have none. Adding
+            it makes the release findable the way every other one is.
+          </p>
+          {view.barcodes.map((gap) => (
+            <div key={gap.releaseMbid} className="row">
+              <span className="min-w-0 flex-1 truncate">{gap.releaseTitle}</span>
+              <span className="mono shrink-0 text-[var(--ink-2)]">{gap.barcode}</span>
+              <a className="act shrink-0" href={gap.edit} target="_blank" rel="noreferrer">
+                Add it
+              </a>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section className="panel">
+        <div className="panel-head">
           <span className="panel-title">Recordings with no work</span>
           <span className="mono text-[var(--ink-2)]">{view.counts.workRelationships}</span>
         </div>
