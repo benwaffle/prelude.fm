@@ -42,7 +42,7 @@ const escapeXml = (value: string) =>
  * ISRCs — the same performance issued in two territories — and the format
  * nests them under one `<recording>` element.
  */
-export function buildIsrcSubmission(items: IsrcSubmissionItem[]): string {
+export function buildIsrcSubmission(items: IsrcSubmissionItem[], editNote = ''): string {
   const byRecording = new Map<string, Set<string>>();
   for (const item of items) {
     const isrc = item.isrc.trim().toUpperCase();
@@ -63,10 +63,19 @@ export function buildIsrcSubmission(items: IsrcSubmissionItem[]): string {
     })
     .join('\n');
 
+  /*
+   * The edit note travels inside the document, not as a query parameter.
+   * The server reads it with the XPath /mb:metadata/mb:edit-note — which is
+   * why the first version of this submitted edits with no note at all: the
+   * note was built, stored in our ledger, and never sent.
+   */
+  const note = editNote.trim() ? `  <edit-note>${escapeXml(editNote.trim())}</edit-note>\n` : '';
+
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<metadata xmlns="http://musicbrainz.org/ns/mmd-2.0#">\n` +
     `  <recording-list>\n${recordings}\n  </recording-list>\n` +
+    note +
     `</metadata>\n`
   );
 }
@@ -88,6 +97,18 @@ export function editCount(items: IsrcSubmissionItem[]): number {
  * comes from, and give a way to reach whoever runs it — and that somebody
  * answers when an editor replies.
  */
+/**
+ * The worst duration difference, in the unit that does not misrepresent it.
+ *
+ * Rounding 1ms to "0.0s" reads like a rounding artefact and invites the
+ * suspicion that the number is decorative; below a second, milliseconds say
+ * what actually happened.
+ */
+function describeDelta(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 export function editNoteFor(gaps: IsrcGap[]): string {
   const [first] = gaps;
   if (!first) return '';
@@ -121,7 +142,7 @@ export function editNoteFor(gaps: IsrcGap[]): string {
   return [
     `${gaps.length} ISRC(s) from the Spotify release with ${barcodes}.`,
     `Source: ${source}`,
-    `Each ISRC is taken from the Spotify track at the same disc and track position; every track's duration agrees with MusicBrainz to within ${(worst / 1000).toFixed(1)}s (tolerance 3s).`,
+    `Each ISRC is taken from the Spotify track at the same disc and track position; every track's duration agrees with MusicBrainz to within ${describeDelta(worst)} (tolerance 3s).`,
     `Submitted by prelude_fm_bot, operated by ${contact}. Replies to this note are read.`,
   ].join('\n\n');
 }

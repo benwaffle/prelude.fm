@@ -132,9 +132,9 @@ export async function runIsrcBot(
     isrc: gap.isrc,
   }));
 
-  const payload = buildIsrcSubmission(items);
   const edits = editCount(items);
   const editNote = editNoteFor(gaps);
+  const payload = buildIsrcSubmission(items, editNote);
 
   if (!options.apply || edits === 0) {
     return {

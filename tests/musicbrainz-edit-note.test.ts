@@ -71,3 +71,11 @@ test('the note does not restate which ISRC went where', () => {
 test('an empty batch has no note', () => {
   assert.equal(editNoteFor([]), '');
 });
+
+test('a sub-second difference is stated in milliseconds', () => {
+  // "within 0.0s" reads like a rounding artefact and makes the number look
+  // decorative rather than measured.
+  assert.match(editNoteFor([gap({ durationDeltaMs: 1 })]), /within 1ms/);
+  assert.match(editNoteFor([gap({ durationDeltaMs: 940 })]), /within 940ms/);
+  assert.match(editNoteFor([gap({ durationDeltaMs: 2586 })]), /within 2\.6s/);
+});

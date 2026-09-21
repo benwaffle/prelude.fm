@@ -69,3 +69,29 @@ test('an id containing XML syntax cannot break out of the document', () => {
   assert.doesNotMatch(xml, /<evil\/>/);
   assert.match(xml, /&quot;&gt;&lt;evil\/&gt;/);
 });
+
+test('the edit note travels inside the document', () => {
+  // The server reads it with the XPath /mb:metadata/mb:edit-note. The first
+  // version of this built a note, stored it in our ledger, and submitted
+  // four edits without one — which the bot code of conduct requires.
+  const xml = buildIsrcSubmission(
+    [{ recordingMbid: 'rec-1', isrc: 'GBAYE0601498' }],
+    'Because of reasons.',
+  );
+  assert.match(xml, /<edit-note>Because of reasons\.<\/edit-note>/);
+  assert.match(xml, /<\/recording-list>[\s\S]*<edit-note>/);
+});
+
+test('a note containing XML syntax cannot break the document', () => {
+  const xml = buildIsrcSubmission(
+    [{ recordingMbid: 'rec-1', isrc: 'GBAYE0601498' }],
+    'see <this> & "that"',
+  );
+  assert.match(xml, /see &lt;this&gt; &amp; &quot;that&quot;/);
+  assert.doesNotMatch(xml, /<this>/);
+});
+
+test('no note means no element rather than an empty one', () => {
+  const xml = buildIsrcSubmission([{ recordingMbid: 'rec-1', isrc: 'GBAYE0601498' }]);
+  assert.doesNotMatch(xml, /edit-note/);
+});
