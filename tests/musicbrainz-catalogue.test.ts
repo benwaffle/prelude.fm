@@ -65,3 +65,25 @@ test('a bare number keeps the series name, rather than inventing a sigil', () =>
 test('an empty reference is not a catalogue reference', () => {
   assert.equal(splitCatalogueReference('Bach-Werke-Verzeichnis', '   '), null);
 });
+
+test('a bare-numbered series takes the sigil it is written with', () => {
+  // MusicBrainz's Köchel series calls Mozart's 41st symphony "551" and
+  // nothing else. Filed under the series name it cannot be found by the K
+  // number every listener knows.
+  assert.deepEqual(printed('Köchelverzeichnis', '551'), { system: 'KV', number: '551' });
+  assert.deepEqual(
+    printed("Alessandro Longo's catalog of Domenico Scarlatti's keyboard works", '375'),
+    { system: 'L', number: '375' },
+  );
+});
+
+test('a series whose sigil we do not know keeps its name rather than inventing one', () => {
+  assert.deepEqual(printed('Some Unknown Catalogue', '12'), {
+    system: 'Some Unknown Catalogue',
+    number: '12',
+  });
+});
+
+test('a sigil in the reference still wins over the series lookup', () => {
+  assert.deepEqual(printed('Köchelverzeichnis', 'KV 551'), { system: 'KV', number: '551' });
+});

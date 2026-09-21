@@ -30,6 +30,37 @@ const SIGIL_THEN_NUMBER = /^([A-Za-z]+\.?)\s+(\S.*)$/;
 const SIGIL_JOINED = /^([A-Za-z]+\.?)\s*(\d.*)$/;
 
 /**
+ * Sigils for the catalogues MusicBrainz numbers without one.
+ *
+ * Most series put the sigil in the reference — "BWV 912" — and need nothing
+ * here. A few number their works bare: the Köchel series calls Mozart's 41st
+ * symphony "551" and nothing else, so the reference alone cannot say what
+ * kind of number it is, and filing it under the series' full name leaves it
+ * unfindable by the K number every listener knows it by.
+ *
+ * This is reference data rather than a guess — these are the standard
+ * abbreviations — and matching is on a distinctive fragment so that
+ * punctuation and spelling variants in the series name do not defeat it.
+ */
+const BARE_NUMBERED_SERIES: { contains: string; sigil: string }[] = [
+  { contains: 'kochelverzeichnis', sigil: 'KV' },
+  { contains: 'kirkpatrick', sigil: 'K' },
+  { contains: 'longo', sigil: 'L' },
+  { contains: 'cajkovskij', sigil: 'ČW' },
+  { contains: 'biamonti', sigil: 'Bia' },
+  { contains: 'hensel', sigil: 'H-U' },
+];
+
+/** The sigil a bare-numbered series is written with, if we know it. */
+export function sigilForSeries(seriesName: string): string | null {
+  const normalized = normalizeCatalogSystem(seriesName);
+  for (const entry of BARE_NUMBERED_SERIES) {
+    if (normalized.includes(entry.contains)) return entry.sigil;
+  }
+  return null;
+}
+
+/**
  * Split a MusicBrainz catalogue reference into a system and a number.
  *
  * When the reference carries no sigil of its own — a series whose numbers are
@@ -44,7 +75,10 @@ export function splitCatalogueReference(
   if (!value) return null;
 
   const match = SIGIL_THEN_NUMBER.exec(value) ?? SIGIL_JOINED.exec(value);
-  const system = match ? match[1] : seriesName.trim();
+  // A reference with no sigil of its own takes the one its series is written
+  // with, and falls back to the series name when we do not know it — a long
+  // system is worse than a short one, but inventing a sigil is worse still.
+  const system = match ? match[1] : (sigilForSeries(seriesName) ?? seriesName.trim());
   const number = match ? match[2].trim() : value;
   if (!system || !number) return null;
 

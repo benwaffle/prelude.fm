@@ -24,7 +24,8 @@
     "mb:backfill": "tsx scripts/mb-backfill.ts",
     "mb:promote": "tsx scripts/mb-promote.ts",
     "mb:ingest": "tsx scripts/mb-ingest.ts",
-    "metadata:adopt-mb": "tsx scripts/adopt-musicbrainz-fields.ts"
+    "metadata:adopt-mb": "tsx scripts/adopt-musicbrainz-fields.ts",
+    "metadata:repair-catalogues": "tsx scripts/repair-catalogue-normalisation.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.15.15",
