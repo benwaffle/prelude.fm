@@ -10,6 +10,7 @@ import { GatewayBar } from './components/GatewayBar';
 import { CoverageTab } from './tabs/CoverageTab';
 import { AlbumsTab } from './tabs/AlbumsTab';
 import { DecisionsTab } from './tabs/DecisionsTab';
+import { ContributeTab } from './tabs/ContributeTab';
 import { TracksTab } from './tabs/TracksTab';
 import { ComposersTab } from './tabs/ComposersTab';
 import { WorksTab } from './tabs/WorksTab';
@@ -21,12 +22,13 @@ import { WorksTab } from './tabs/WorksTab';
  * editors are still here, but they are the fallback for what MusicBrainz
  * cannot answer rather than the main event.
  */
-type TabId = 'coverage' | 'albums' | 'decisions' | 'library';
+type TabId = 'coverage' | 'albums' | 'contribute' | 'decisions' | 'library';
 type LibraryView = 'queue' | 'works' | 'composers';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'coverage', label: 'Coverage' },
   { id: 'albums', label: 'Albums' },
+  { id: 'contribute', label: 'Contribute' },
   { id: 'decisions', label: 'Decisions' },
   { id: 'library', label: 'Library' },
 ];
@@ -126,6 +128,8 @@ export default function AdminPage() {
         )}
 
         {tab === 'albums' && <AlbumsTab state={albumFilter} onStateChange={setAlbumFilter} />}
+
+        {tab === 'contribute' && <ContributeTab />}
 
         {tab === 'decisions' && <DecisionsTab />}
 

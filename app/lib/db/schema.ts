@@ -892,3 +892,65 @@ export const trackRecording = sqliteTable(
     index('track_recording_matched_by_idx').on(table.matchedBy),
   ],
 );
+
+/*
+ * Contributions back to MusicBrainz
+ */
+
+/**
+ * Every edit we have sent to MusicBrainz, whoever sent it.
+ *
+ * A human clicking through a prefilled form and a bot posting the same edit
+ * are recorded identically, on purpose. Automation is something each class of
+ * edit earns rather than a different pipeline: when the last step changes
+ * from a click to a POST, nothing downstream of this table changes with it.
+ *
+ * It is also the cross-user deduplicator. Two people owning the same album
+ * must not both submit its ISRCs, and once prelude has more than one user
+ * nothing else knows that the first submission happened.
+ *
+ * `outcome` stays `pending` until somebody confirms the edit landed, because
+ * a submitted edit is a proposal: MusicBrainz editors vote, and some of ours
+ * will be voted down. Recording a submission as a success at the moment we
+ * make it would be recording our intention rather than the result.
+ */
+export const mbSubmission = sqliteTable(
+  'mb_submission',
+  {
+    id: integer('id').primaryKey(),
+    /**
+     * What kind of edit. 'isrc' and 'barcode' are mechanical and will one day
+     * be the bot's; 'release', 'work' and 'work_relationship' stay human
+     * because a wrong one of those is expensive for other people to undo.
+     */
+    kind: text('kind', {
+      enum: ['isrc', 'barcode', 'streaming_url', 'release', 'work', 'work_relationship', 'error'],
+    }).notNull(),
+    /** The MusicBrainz entity being edited, or null when it does not exist yet. */
+    targetMbid: text('target_mbid'),
+    /** Our side of it: the Spotify track or album the evidence comes from. */
+    subject: text('subject').notNull(),
+    /** The value submitted — an ISRC, a barcode, a URL — for reconciliation. */
+    value: text('value'),
+    /** What convinced us, kept so a rejected edit can be understood later. */
+    evidence: text('evidence', { mode: 'json' }).$type<Record<string, unknown>>(),
+    /** 'human:<name>' or 'bot:prelude_fm_bot'. */
+    submittedBy: text('submitted_by').notNull(),
+    submittedAt: integer('submitted_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    /** The MusicBrainz edit number, once known. */
+    editId: text('edit_id'),
+    outcome: text('outcome', { enum: ['pending', 'applied', 'rejected', 'withdrawn'] })
+      .default('pending')
+      .notNull(),
+    outcomeAt: integer('outcome_at', { mode: 'timestamp_ms' }),
+    note: text('note'),
+  },
+  (table) => [
+    // One submission per value per target: the deduplicator.
+    uniqueIndex('mb_submission_identity_idx').on(table.kind, table.targetMbid, table.value),
+    index('mb_submission_outcome_idx').on(table.outcome),
+    index('mb_submission_subject_idx').on(table.subject),
+  ],
+);

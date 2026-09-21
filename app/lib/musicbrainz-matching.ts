@@ -218,3 +218,31 @@ export function tracklistAligns(
 
   return true;
 }
+
+/**
+ * The tolerance for a track we hold in isolation.
+ *
+ * Three seconds, not fifteen. When the whole tracklist lines up, one track
+ * being seconds out is explained by the rest; a single track out of a
+ * hundred-track box set has nothing standing behind it but its own duration,
+ * so it has to carry the weight on its own.
+ */
+export const LONE_TRACK_TOLERANCE_MS = 3_000;
+
+/**
+ * Does this one track sit at this position on the release?
+ *
+ * Used where the album is a fragment of the release rather than the whole of
+ * it — a liked track from a box set, which is most of what a personal library
+ * is made of. There is no tracklist to corroborate the position, so the
+ * duration has to agree closely and an untimed release track is not enough.
+ */
+export function loneTrackFits(
+  track: PositionedTrack,
+  releaseTrack: PositionedReleaseTrack | undefined,
+  toleranceMs = LONE_TRACK_TOLERANCE_MS,
+): boolean {
+  if (!releaseTrack) return false;
+  if (releaseTrack.length == null) return false;
+  return Math.abs(releaseTrack.length - track.durationMs) <= toleranceMs;
+}

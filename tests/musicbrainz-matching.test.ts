@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   findReleaseForAlbum,
+  loneTrackFits,
   releaseFitsAlbum,
   tracklistAligns,
 } from '../app/lib/musicbrainz-matching';
@@ -241,5 +242,43 @@ test('a release with no durations aligns on shape alone', () => {
   assert.equal(
     tracklistAligns(spotifyTracks([200_000, 300_000]), releaseTracks([null, null])),
     true,
+  );
+});
+
+/* ------------------------------------------------------------ loneTrackFits */
+
+test('a lone track fits a position whose duration agrees closely', () => {
+  assert.equal(
+    loneTrackFits(
+      { discNumber: 1, trackNumber: 11, durationMs: 133_066 },
+      { medium: 1, position: 11, length: 134_000 },
+    ),
+    true,
+  );
+});
+
+test('a lone track is held to a tighter tolerance than an aligned tracklist', () => {
+  // Six seconds is fine when every other track on the album agrees; on its
+  // own it is the difference between two performances.
+  const track = { discNumber: 1, trackNumber: 11, durationMs: 133_066 };
+  const releaseTrack = { medium: 1, position: 11, length: 139_500 };
+  assert.equal(loneTrackFits(track, releaseTrack), false);
+  assert.equal(tracklistAligns([track], [releaseTrack]), true);
+});
+
+test('a lone track cannot be placed against an untimed release track', () => {
+  assert.equal(
+    loneTrackFits(
+      { discNumber: 1, trackNumber: 11, durationMs: 133_066 },
+      { medium: 1, position: 11, length: null },
+    ),
+    false,
+  );
+});
+
+test('a lone track with no counterpart at its position does not fit', () => {
+  assert.equal(
+    loneTrackFits({ discNumber: 1, trackNumber: 11, durationMs: 133_066 }, undefined),
+    false,
   );
 });

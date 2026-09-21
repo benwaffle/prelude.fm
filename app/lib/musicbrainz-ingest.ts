@@ -15,15 +15,22 @@ import { db } from './db';
 import {
   mbRecording,
   mbRecordingIsrc,
+  mbRecordingWork,
   mbRelease,
   mbReleaseTrack,
   spotifyAlbum,
   spotifyTrack,
   trackRecording,
 } from './db/schema';
-import { ingestRelease, type ReleaseIngestReport } from './musicbrainz-cache';
+import {
+  ingestRelease,
+  ingestWorkTree,
+  worksNeedingDetail,
+  type ReleaseIngestReport,
+} from './musicbrainz-cache';
 import {
   findReleaseForAlbum,
+  loneTrackFits,
   tracklistAligns,
   type ReleaseMatch,
   type ReleaseMatchFailure,
@@ -165,7 +172,23 @@ export async function anchorAlbumTracks(
       report.contestedIsrcs.push(track.isrc);
     }
 
-    if (aligned && positional) {
+    // Two different strengths of evidence. When the whole tracklist lines up,
+    // the position is corroborated by every other track and a generous
+    // tolerance is safe. When we hold a fragment of the release — a liked
+    // track from a box set, which most of a personal library is — the
+    // position stands alone and the duration has to agree closely.
+    const positionHolds = aligned
+      ? Boolean(positional)
+      : loneTrackFits(
+          track,
+          positional && {
+            medium: positional.medium,
+            position: positional.position,
+            length: positional.trackLength ?? positional.recordingLength,
+          },
+        );
+
+    if (positional && positionHolds) {
       rows.push({
         spotifyTrackId: track.spotifyId,
         recordingMbid: positional.recordingMbid,
@@ -252,7 +275,11 @@ export async function ingestAlbum(
     };
   }
 
-  const release = await ingestRelease(source, match.releaseMbid, options);
+  // Works are read after anchoring, not with the release, so a box set we own
+  // one track of costs one request rather than a hundred. Reading the tree
+  // above a recording nobody in the library has is work for a library that
+  // does not exist yet.
+  const release = await ingestRelease(source, match.releaseMbid, { fetchWorks: false });
   requests += release.requests;
 
   if (!release.found) {
@@ -278,6 +305,15 @@ export async function ingestAlbum(
 
   const anchors = await anchorAlbumTracks(albumId, match.releaseMbid);
 
+  if (options.fetchWorks !== false) {
+    const reachable = await worksReachedByAlbum(albumId);
+    for (const workMbid of await worksNeedingDetail(reachable)) {
+      const { requests: spent } = await ingestWorkTree(source, workMbid);
+      requests += spent;
+      if (spent > 0) release.worksFetched++;
+    }
+  }
+
   return {
     albumId,
     releaseMbid: match.releaseMbid,
@@ -287,6 +323,17 @@ export async function ingestAlbum(
     release,
     anchors,
   };
+}
+
+/** The works reachable from the recordings this album's tracks are anchored to. */
+export async function worksReachedByAlbum(albumId: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ workMbid: mbRecordingWork.workMbid })
+    .from(trackRecording)
+    .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
+    .innerJoin(mbRecordingWork, eq(mbRecordingWork.recordingMbid, trackRecording.recordingMbid))
+    .where(eq(spotifyTrack.spotifyAlbumId, albumId));
+  return rows.map((row) => row.workMbid);
 }
 
 /**
