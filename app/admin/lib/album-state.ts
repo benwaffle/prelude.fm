@@ -72,7 +72,7 @@ export type AlbumTrackRow = {
   discNumber: number;
   trackNumber: number;
   isrc: string | null;
-  mbRecordingId: string | null;
+  recordingMbid: string | null;
   /**
    * The movements this track covers. Usually one, but a single Spotify track
    * can hold several — a whole prelude and fugue, or a set of variations — and

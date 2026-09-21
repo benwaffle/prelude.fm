@@ -6,12 +6,11 @@ import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import {
   getWorkDetail,
-  getWorkParent,
   type OtherRecording,
   type WorkDetail,
-  type WorkParent,
   type WorkSummary,
 } from '@/app/actions/library';
+import { getWorkParent, type WorkParent } from '@/app/actions/work-hierarchy';
 import {
   hexToRgba,
   initialsOf,

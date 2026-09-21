@@ -110,7 +110,7 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
       discNumber: spotifyTrack.discNumber,
       trackNumber: spotifyTrack.trackNumber,
       isrc: spotifyTrack.isrc,
-      mbRecordingId: sql<
+      recordingMbid: sql<
         string | null
       >`(select tr.recording_mbid from track_recording tr where tr.spotify_track_id = ${spotifyTrack.spotifyId})`,
       workId: work.id,
@@ -139,7 +139,7 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
         discNumber: row.discNumber,
         trackNumber: row.trackNumber,
         isrc: row.isrc,
-        mbRecordingId: row.mbRecordingId,
+        recordingMbid: row.recordingMbid,
         parts: [],
       };
       byTrack.set(row.id, track);

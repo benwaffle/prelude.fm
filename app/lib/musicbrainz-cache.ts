@@ -28,10 +28,26 @@ import {
 } from './db/schema';
 import { cataloguesOf, composerOf, parentPartOf, yearOf } from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
-import type { MbArtist, MbRelease, MbWork, MusicBrainzSource } from './musicbrainz-source';
+import type {
+  MbArtist,
+  MbRelease,
+  MbReleaseRecording,
+  MbWork,
+  MusicBrainzSource,
+} from './musicbrainz-source';
 
 /** libSQL takes large statements, but not unbounded ones. */
 const INSERT_CHUNK = 200;
+
+/** A transaction or the root client; the cache writes through either. */
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Collapse rows that would collide on their key before they reach SQLite. */
+function dedupe<T>(rows: T[], key: (row: T) => string): T[] {
+  const byKey = new Map<string, T>();
+  for (const row of rows) byKey.set(key(row), row);
+  return [...byKey.values()];
+}
 
 function chunk<T>(items: T[], size = INSERT_CHUNK): T[][] {
   const out: T[][] = [];
@@ -68,10 +84,13 @@ export async function cacheArtist(artist: MbArtist) {
  * full — hence the do-nothing — or every release read would erase the tree
  * built by the work reads.
  */
-async function cacheWorkStubs(works: { id: string; title: string; type?: string | null }[]) {
+async function cacheWorkStubs(
+  works: { id: string; title: string; type?: string | null }[],
+  executor: Transaction | typeof db = db,
+) {
   const unique = new Map(works.map((work) => [work.id, work]));
   for (const batch of chunk([...unique.values()])) {
-    await db
+    await executor
       .insert(mbWork)
       .values(
         batch.map((work) => ({
@@ -145,118 +164,117 @@ export type CachedRelease = {
 };
 
 export async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
-  const releaseRow = {
-    mbid: release.id,
-    title: release.title,
-    barcode: release.barcode,
-    date: release.date,
-    country: release.country,
-    fetchedAt: new Date(),
-  };
-  await db
-    .insert(mbRelease)
-    .values(releaseRow)
-    .onConflictDoUpdate({ target: mbRelease.mbid, set: releaseRow });
-
   const recordings = new Map(release.tracks.map((track) => [track.recording.id, track.recording]));
-  const recordingIds = [...recordings.keys()];
+  const recordingIds = [...recordings.values()].map((recording) => recording.id);
 
-  // Rewrite rather than merge: a tracklist that changed upstream should not
-  // leave our copy holding both readings at once.
-  await db.delete(mbReleaseTrack).where(eq(mbReleaseTrack.releaseMbid, release.id));
-  for (const batch of chunk(release.tracks)) {
-    await db.insert(mbReleaseTrack).values(
-      batch.map((track) => ({
-        releaseMbid: release.id,
-        medium: track.medium,
-        position: track.position,
-        recordingMbid: track.recording.id,
-        title: track.title,
-        length: track.length,
+  const workLinks = dedupe(
+    [...recordings.values()].flatMap((recording) =>
+      recording.works.map((work) => ({ recordingMbid: recording.id, workMbid: work.id })),
+    ),
+    (row) => `${row.recordingMbid}:${row.workMbid}`,
+  );
+
+  const credits = dedupe(
+    [...recordings.values()].flatMap((recording) =>
+      recording.credits.map((credit) => ({
+        recordingMbid: recording.id,
+        artistMbid: credit.artistId,
+        role: credit.role,
+        instrument: credit.instrument ?? '',
       })),
-    );
-  }
-
-  for (const batch of chunk([...recordings.values()])) {
-    for (const recording of batch) {
-      const row = {
-        mbid: recording.id,
-        title: recording.title,
-        length: recording.length,
-        detail: 'full' as const,
-        fetchedAt: new Date(),
-      };
-      await db
-        .insert(mbRecording)
-        .values(row)
-        .onConflictDoUpdate({ target: mbRecording.mbid, set: row });
-    }
-  }
-
-  if (recordingIds.length > 0) {
-    for (const batch of chunk(recordingIds)) {
-      await db.delete(mbRecordingWork).where(inArray(mbRecordingWork.recordingMbid, batch));
-      await db.delete(mbRecordingCredit).where(inArray(mbRecordingCredit.recordingMbid, batch));
-      await db.delete(mbRecordingIsrc).where(inArray(mbRecordingIsrc.recordingMbid, batch));
-    }
-  }
-
-  const workLinks = [...recordings.values()].flatMap((recording) =>
-    recording.works.map((work) => ({ recordingMbid: recording.id, workMbid: work.id })),
+    ),
+    (row) => `${row.recordingMbid}:${row.artistMbid}:${row.role}:${row.instrument}`,
   );
-  for (const batch of chunk(workLinks)) {
-    await db.insert(mbRecordingWork).values(batch).onConflictDoNothing();
-  }
 
-  const isrcs = [...recordings.values()].flatMap((recording) =>
-    recording.isrcs.map((isrc) => ({ isrc, recordingMbid: recording.id })),
+  const isrcs = dedupe(
+    [...recordings.values()].flatMap((recording) =>
+      recording.isrcs.map((isrc) => ({ isrc, recordingMbid: recording.id })),
+    ),
+    (row) => `${row.isrc}:${row.recordingMbid}`,
   );
-  for (const batch of chunk(isrcs)) {
-    await db.insert(mbRecordingIsrc).values(batch).onConflictDoNothing();
-  }
-
-  const credits = [...recordings.values()].flatMap((recording) =>
-    recording.credits.map((credit) => ({
-      recordingMbid: recording.id,
-      artistMbid: credit.artistId,
-      role: credit.role,
-      instrument: credit.instrument ?? '',
-    })),
-  );
-  for (const batch of chunk(credits)) {
-    await db.insert(mbRecordingCredit).values(batch).onConflictDoNothing();
-  }
-
-  const namedArtists = new Map<string, { name: string; creditedName: string | null }>();
-  for (const recording of recordings.values()) {
-    for (const credit of recording.credits) {
-      if (!namedArtists.has(credit.artistId)) {
-        namedArtists.set(credit.artistId, { name: credit.name, creditedName: null });
-      }
-    }
-    for (const credited of recording.artistCredit) {
-      const existing = namedArtists.get(credited.artistId);
-      if (existing) existing.creditedName ??= credited.name;
-      else
-        namedArtists.set(credited.artistId, { name: credited.name, creditedName: credited.name });
-    }
-  }
-  for (const batch of chunk([...namedArtists])) {
-    for (const [mbid, artist] of batch) {
-      await db
-        .insert(mbArtist)
-        .values({ mbid, name: artist.name, creditedName: artist.creditedName })
-        .onConflictDoUpdate({
-          target: mbArtist.mbid,
-          // Only fills a gap: a name we already learned is not replaced by a
-          // later release crediting the same artist differently.
-          set: { creditedName: sql`coalesce(${mbArtist.creditedName}, excluded.credited_name)` },
-        });
-    }
-  }
 
   const works = [...recordings.values()].flatMap((recording) => recording.works);
-  await cacheWorkStubs(works);
+
+  /*
+   * One transaction, because the tracklist, work links, credits and ISRCs are
+   * rewritten rather than merged: each is deleted and reinserted so the cache
+   * converges on what MusicBrainz currently says instead of holding a mixture
+   * of two readings. Half of that applied is worse than none of it — a
+   * release whose tracklist was deleted and not put back looks to every
+   * invariant like a release with no tracks.
+   */
+  await db.transaction(async (tx) => {
+    const releaseRow = {
+      mbid: release.id,
+      title: release.title,
+      barcode: release.barcode,
+      date: release.date,
+      country: release.country,
+      fetchedAt: new Date(),
+    };
+    await tx
+      .insert(mbRelease)
+      .values(releaseRow)
+      .onConflictDoUpdate({ target: mbRelease.mbid, set: releaseRow });
+
+    await tx.delete(mbReleaseTrack).where(eq(mbReleaseTrack.releaseMbid, release.id));
+    for (const batch of chunk(release.tracks)) {
+      await tx.insert(mbReleaseTrack).values(
+        batch.map((track) => ({
+          releaseMbid: release.id,
+          medium: track.medium,
+          position: track.position,
+          recordingMbid: track.recording.id,
+          title: track.title,
+          length: track.length,
+        })),
+      );
+    }
+
+    // One statement per batch rather than one per recording: a box set is a
+    // few hundred rows, and a round trip each made caching one a minute's work.
+    for (const batch of chunk([...recordings.values()])) {
+      await tx
+        .insert(mbRecording)
+        .values(
+          batch.map((recording) => ({
+            mbid: recording.id,
+            title: recording.title,
+            length: recording.length,
+            detail: 'full' as const,
+            fetchedAt: new Date(),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: mbRecording.mbid,
+          set: {
+            title: sql`excluded.title`,
+            length: sql`excluded.length`,
+            detail: sql`excluded.detail`,
+            fetchedAt: sql`excluded.fetched_at`,
+          },
+        });
+    }
+
+    for (const batch of chunk(recordingIds)) {
+      await tx.delete(mbRecordingWork).where(inArray(mbRecordingWork.recordingMbid, batch));
+      await tx.delete(mbRecordingCredit).where(inArray(mbRecordingCredit.recordingMbid, batch));
+      await tx.delete(mbRecordingIsrc).where(inArray(mbRecordingIsrc.recordingMbid, batch));
+    }
+
+    for (const batch of chunk(workLinks)) {
+      await tx.insert(mbRecordingWork).values(batch).onConflictDoNothing();
+    }
+    for (const batch of chunk(credits)) {
+      await tx.insert(mbRecordingCredit).values(batch).onConflictDoNothing();
+    }
+    for (const batch of chunk(isrcs)) {
+      await tx.insert(mbRecordingIsrc).values(batch).onConflictDoNothing();
+    }
+
+    await cacheArtistNames(tx, [...recordings.values()]);
+    await cacheWorkStubs(works, tx);
+  });
 
   return {
     releaseMbid: release.id,
@@ -266,6 +284,38 @@ export async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
     isrcs: isrcs.length,
     workMbids: [...new Set(works.map((work) => work.id))],
   };
+}
+
+/**
+ * Artist names learned from a release: the relationship gives their
+ * MusicBrainz name, the artist credit gives the name this release printed.
+ */
+async function cacheArtistNames(tx: Transaction, recordings: MbReleaseRecording[]) {
+  const named = new Map<string, { name: string; creditedName: string | null }>();
+  for (const recording of recordings) {
+    for (const credit of recording.credits) {
+      if (!named.has(credit.artistId)) {
+        named.set(credit.artistId, { name: credit.name, creditedName: null });
+      }
+    }
+    for (const credited of recording.artistCredit) {
+      const existing = named.get(credited.artistId);
+      if (existing) existing.creditedName ??= credited.name;
+      else named.set(credited.artistId, { name: credited.name, creditedName: credited.name });
+    }
+  }
+
+  for (const batch of chunk([...named])) {
+    await tx
+      .insert(mbArtist)
+      .values(batch.map(([mbid, artist]) => ({ mbid, ...artist })))
+      .onConflictDoUpdate({
+        target: mbArtist.mbid,
+        // Only fills a gap: a name we already learned is not replaced by a
+        // later release crediting the same artist differently.
+        set: { creditedName: sql`coalesce(${mbArtist.creditedName}, excluded.credited_name)` },
+      });
+  }
 }
 
 /* -------------------------------------------------------------- ingest --- */

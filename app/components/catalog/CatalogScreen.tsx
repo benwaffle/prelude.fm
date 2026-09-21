@@ -7,12 +7,11 @@ import {
   getCatalogRecordings,
   getCatalogWorkHeader,
   getCatalogWorks,
-  searchWorks,
   type CatalogComposer,
   type CatalogRecording,
   type CatalogWork,
-  type WorkSearchHit,
 } from '@/app/actions/library';
+import { searchWorks, type WorkSearchHit } from '@/app/actions/catalogue-search';
 import { useLibrary } from '@/lib/library-context';
 import { useNavSearch } from '../AppShell';
 import { initialsOf } from '@/lib/prelude';

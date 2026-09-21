@@ -320,10 +320,10 @@ export function AlbumsTab({
                                 {track.isrc ?? <span className="absent">none</span>}
                               </td>
                               <td>
-                                {track.mbRecordingId ? (
+                                {track.recordingMbid ? (
                                   <a
                                     className="mono text-[11px] text-[var(--viridian)]"
-                                    href={`https://musicbrainz.org/recording/${track.mbRecordingId}`}
+                                    href={`https://musicbrainz.org/recording/${track.recordingMbid}`}
                                     target="_blank"
                                     rel="noreferrer"
                                   >

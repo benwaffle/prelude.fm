@@ -265,13 +265,8 @@ export const spotifyTrack = sqliteTable(
      * whole library costs a full pass over the Spotify API.
      */
     isrc: text('isrc'),
-    /** MusicBrainz recording MBID this ISRC resolves to, when it resolves. */
-    mbRecordingId: text('mb_recording_id'),
   },
-  (table) => [
-    index('spotify_track_isrc_idx').on(table.isrc),
-    index('spotify_track_mb_recording_idx').on(table.mbRecordingId),
-  ],
+  (table) => [index('spotify_track_isrc_idx').on(table.isrc)],
 );
 
 /**
