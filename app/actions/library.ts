@@ -13,9 +13,20 @@ import {
   spotifyAlbum,
   spotifyArtist,
   trackArtists,
+  mbArtist,
+  mbRecordingCredit,
+  trackRecording,
 } from '@/lib/db/schema';
 import { and, eq, inArray, desc, asc, sql } from 'drizzle-orm';
 import { mappedTrackCount } from '@/lib/db/expressions';
+import {
+  creditLine,
+  displayName,
+  hasPerformingCredits,
+  performingCredits,
+  type PerformingCredits,
+  type StoredCredit,
+} from '@/lib/musicbrainz-credits';
 import {
   type Era,
   catalogLabel,
@@ -153,9 +164,13 @@ async function buildWorks(recordingIds: number[], liked: Set<string>): Promise<L
   }
   if (rows.length === 0) return [];
 
-  const performers = await performersFor(
-    rows.map((r) => r.trackId).filter((trackId): trackId is string => trackId !== null),
-  );
+  const trackIds = rows
+    .map((r) => r.trackId)
+    .filter((trackId): trackId is string => trackId !== null);
+  const [performers, mbCredits] = await Promise.all([
+    performersFor(trackIds),
+    musicbrainzCreditsFor(trackIds),
+  ]);
   const allParts = await partsForWorks(rows.map((r) => r.workId));
 
   // A track can carry more than one movement, so collapse part rows per track.
@@ -252,6 +267,7 @@ async function buildWorks(recordingIds: number[], liked: Set<string>): Promise<L
       trackRows.flatMap((parts) => (parts[0].trackId === null ? [] : [parts[0].trackId])),
       performers,
       head.composerArtistId,
+      mbCredits,
     );
     const { tint, ink } = tintFor(head.albumId);
 
@@ -374,9 +390,65 @@ async function performersFor(
 }
 
 /**
- * The design credits a recording as "performer · ensemble". Spotify gives us
- * a flat artist list, so take the most frequently credited non-composer
- * artists across the recording and read the first two in that order.
+ * trackId -> what MusicBrainz says about who played on that recording.
+ *
+ * Only tracks anchored to a recording appear. Names prefer what a release
+ * credited the artist as, because MusicBrainz files an artist under their own
+ * script and the credited name is the Latin form the label printed.
+ */
+async function musicbrainzCreditsFor(trackIds: string[]): Promise<Map<string, PerformingCredits>> {
+  const unique = Array.from(new Set(trackIds));
+  const byTrack = new Map<string, PerformingCredits>();
+  if (unique.length === 0) return byTrack;
+
+  const raw = new Map<string, StoredCredit[]>();
+  for (const batch of chunked(unique)) {
+    const rows = await db
+      .select({
+        trackId: trackRecording.spotifyTrackId,
+        artistMbid: mbRecordingCredit.artistMbid,
+        name: mbArtist.name,
+        creditedName: mbArtist.creditedName,
+        role: mbRecordingCredit.role,
+        instrument: mbRecordingCredit.instrument,
+      })
+      .from(trackRecording)
+      .innerJoin(
+        mbRecordingCredit,
+        eq(mbRecordingCredit.recordingMbid, trackRecording.recordingMbid),
+      )
+      .innerJoin(mbArtist, eq(mbArtist.mbid, mbRecordingCredit.artistMbid))
+      .where(inArray(trackRecording.spotifyTrackId, batch));
+
+    for (const row of rows) {
+      const printed = displayName(row);
+      if (!printed) continue;
+      const list = raw.get(row.trackId) ?? [];
+      list.push({
+        artistMbid: row.artistMbid,
+        name: printed,
+        role: row.role,
+        instrument: row.instrument,
+      });
+      raw.set(row.trackId, list);
+    }
+  }
+
+  for (const [trackId, credits] of raw) byTrack.set(trackId, performingCredits(credits));
+  return byTrack;
+}
+
+/**
+ * The design credits a recording as "performer · ensemble".
+ *
+ * MusicBrainz states the roles outright — soloist, conductor, orchestra — so
+ * it answers wherever it reaches. Where it does not, Spotify's flat artist
+ * list is all there is, and the fallback takes the most frequently credited
+ * non-composer artists across the recording and reads the first two.
+ *
+ * MusicBrainz only gets to replace that line, never to blank it: a recording
+ * it holds but credits to nobody would otherwise turn a real name into an
+ * empty slot.
  *
  * Some records credit nobody but the composer — a film composer conducting
  * their own score, say. There the composer *is* the performing credit, so fall
@@ -386,7 +458,13 @@ function creditsFor(
   trackIds: string[],
   performers: Map<string, { id: string; name: string }[]>,
   composerArtistId: string | null,
+  musicbrainz?: Map<string, PerformingCredits>,
 ): { performer: string | null; ensemble: string | null } {
+  for (const trackId of trackIds) {
+    const credits = musicbrainz?.get(trackId);
+    if (credits && hasPerformingCredits(credits)) return creditLine(credits);
+  }
+
   const rank = (excludeComposer: boolean) => {
     const counts = new Map<string, number>();
     for (const trackId of trackIds) {
@@ -519,9 +597,13 @@ async function recordingSummaries(recordingIds: number[]): Promise<OtherRecordin
     .innerJoin(composer, eq(work.composerId, composer.id))
     .where(inArray(recordingV2.id, recordingIds.slice(0, CHUNK)));
 
-  const performers = await performersFor(
-    rows.map((r) => r.trackId).filter((trackId): trackId is string => trackId !== null),
-  );
+  const trackIds = rows
+    .map((r) => r.trackId)
+    .filter((trackId): trackId is string => trackId !== null);
+  const [performers, mbCredits] = await Promise.all([
+    performersFor(trackIds),
+    musicbrainzCreditsFor(trackIds),
+  ]);
 
   const byRecording = new Map<number, typeof rows>();
   for (const row of rows) {
@@ -541,7 +623,7 @@ async function recordingSummaries(recordingIds: number[]): Promise<OtherRecordin
       seen.add(row.trackId);
       durationMs += row.durationMs;
     }
-    const credited = creditsFor(Array.from(seen), performers, head.composerArtistId);
+    const credited = creditsFor(Array.from(seen), performers, head.composerArtistId, mbCredits);
     summaries.push({
       recordingId,
       albumId: head.albumId,
@@ -806,9 +888,13 @@ export async function getCatalogRecordings(
     .innerJoin(composer, eq(work.composerId, composer.id))
     .where(eq(recordingV2.workId, workId));
 
-  const performers = await performersFor(
-    rows.map((r) => r.trackId).filter((trackId): trackId is string => trackId !== null),
-  );
+  const trackIds = rows
+    .map((r) => r.trackId)
+    .filter((trackId): trackId is string => trackId !== null);
+  const [performers, mbCredits] = await Promise.all([
+    performersFor(trackIds),
+    musicbrainzCreditsFor(trackIds),
+  ]);
   const liked = new Set(likedTrackIds);
 
   const byRecording = new Map<number, typeof rows>();
@@ -834,7 +920,7 @@ export async function getCatalogRecordings(
     const orderedTrackIds = ordered.flatMap((track) =>
       track.trackId === null ? [] : [track.trackId],
     );
-    const credited = creditsFor(orderedTrackIds, performers, head.composerArtistId);
+    const credited = creditsFor(orderedTrackIds, performers, head.composerArtistId, mbCredits);
     out.push({
       id: recordingId,
       album: head.album,
