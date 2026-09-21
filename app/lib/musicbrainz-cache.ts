@@ -57,7 +57,7 @@ function chunk<T>(items: T[], size = INSERT_CHUNK): T[][] {
 
 /* ------------------------------------------------------------ entities --- */
 
-export async function cacheArtist(artist: MbArtist) {
+async function cacheArtist(artist: MbArtist) {
   const row = {
     mbid: artist.id,
     name: artist.name,
@@ -111,7 +111,7 @@ async function cacheWorkStubs(
  * Returns the parent's MBID so a caller can walk upwards without re-reading
  * the relations.
  */
-export async function cacheWork(work: MbWork): Promise<{ parentMbid: string | null }> {
+async function cacheWork(work: MbWork): Promise<{ parentMbid: string | null }> {
   const parent = parentPartOf(work);
   const composer = composerOf(work);
 
@@ -163,7 +163,7 @@ export type CachedRelease = {
   workMbids: string[];
 };
 
-export async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
+async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
   const recordings = new Map(release.tracks.map((track) => [track.recording.id, track.recording]));
   const recordingIds = [...recordings.values()].map((recording) => recording.id);
 
@@ -580,7 +580,7 @@ export async function refreshCachedReleases(
  * work in a period, which is a thing the reader shows, while a session
  * engineer's are not.
  */
-export async function artistsNeedingDetail(limit: number): Promise<string[]> {
+async function artistsNeedingDetail(limit: number): Promise<string[]> {
   const composers = await db
     .selectDistinct({ mbid: mbArtist.mbid })
     .from(mbArtist)

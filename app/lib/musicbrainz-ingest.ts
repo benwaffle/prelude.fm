@@ -395,7 +395,7 @@ export async function anchorTracksByIsrc(
 }
 
 /** The works reachable from the recordings this album's tracks are anchored to. */
-export async function worksReachedByAlbum(albumId: string): Promise<string[]> {
+async function worksReachedByAlbum(albumId: string): Promise<string[]> {
   const rows = await db
     .selectDistinct({ workMbid: mbRecordingWork.workMbid })
     .from(trackRecording)

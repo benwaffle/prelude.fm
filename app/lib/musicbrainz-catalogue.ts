@@ -52,7 +52,7 @@ const BARE_NUMBERED_SERIES: { contains: string; sigil: string }[] = [
 ];
 
 /** The sigil a bare-numbered series is written with, if we know it. */
-export function sigilForSeries(seriesName: string): string | null {
+function sigilForSeries(seriesName: string): string | null {
   const normalized = normalizeCatalogSystem(seriesName);
   for (const entry of BARE_NUMBERED_SERIES) {
     if (normalized.includes(entry.contains)) return entry.sigil;

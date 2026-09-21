@@ -80,7 +80,7 @@ export class MusicBrainzBudgetError extends Error {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The UTC day a request counts against. */
-export function budgetDay(now: Date = new Date()): string {
+function budgetDay(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
 
