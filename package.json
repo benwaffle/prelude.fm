@@ -25,8 +25,7 @@
     "mb:ingest": "tsx scripts/mb-ingest.ts",
     "metadata:repair-catalogues": "tsx scripts/repair-catalogue-normalisation.ts",
     "mb:bot": "tsx scripts/mb-bot.ts",
-    "metadata:link-works": "tsx scripts/link-works-to-musicbrainz.ts",
-    "metadata:name-parts": "tsx scripts/name-parts-from-musicbrainz.ts"
+    "metadata:link-works": "tsx scripts/link-works-to-musicbrainz.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.15.15",

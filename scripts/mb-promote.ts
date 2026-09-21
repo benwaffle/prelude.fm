@@ -11,11 +11,13 @@
  *   pnpm mb:promote --apply    write it
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from '@/lib/db';
 import {
   composer,
+  mbArtist,
+  mbWork,
   metadataMigrationAudit,
-  musicbrainzFact,
   work,
   workPartV2,
 } from '@/lib/db/schema';
@@ -24,6 +26,7 @@ import {
   decidePromotion,
   formFromWorkType,
   movementTitleFromMusicBrainz,
+  workTitleFromMusicBrainz,
   chooseGroupTitles,
   textuallyEqual,
   yearsEqual,
@@ -42,11 +45,94 @@ type Plan = {
   outcome: Outcome;
 };
 
-async function load(entityType: 'composer' | 'work' | 'work_part', field: string) {
-  return db
-    .select({ entityId: musicbrainzFact.entityId, value: musicbrainzFact.value })
-    .from(musicbrainzFact)
-    .where(and(eq(musicbrainzFact.entityType, entityType), eq(musicbrainzFact.field, field)));
+/**
+ * What MusicBrainz says, read from the cache.
+ *
+ * This used to read `musicbrainz_fact`, a key-value shadow of the same
+ * information filled by a backfill that no longer exists. The cache holds all
+ * of it natively and reaches further — every field below has a column, and
+ * the part titles in particular reach movements the fact table never covered,
+ * because anchoring finds a recording's work even where no per-work fact was
+ * ever written.
+ *
+ * Each reader returns the same `{ entityId, value }` shape the policies
+ * already consume, so changing the source changed nothing about the rules.
+ */
+type Fact = { entityId: number; value: string };
+
+/** Composer dates, via the artist their MBID points at. */
+async function composerYears(field: 'birth_year' | 'death_year'): Promise<Fact[]> {
+  const column = field === 'birth_year' ? mbArtist.beginYear : mbArtist.endYear;
+  const rows = await db
+    .select({ entityId: composer.id, year: column })
+    .from(composer)
+    .innerJoin(mbArtist, eq(mbArtist.mbid, composer.musicbrainzId))
+    .where(sql`${column} is not null`);
+  return rows.flatMap((row) =>
+    row.year === null ? [] : [{ entityId: row.entityId, value: String(row.year) }],
+  );
+}
+
+/** The MusicBrainz work type, for works we have linked. */
+async function workTypes(): Promise<Fact[]> {
+  const rows = await db
+    .select({ entityId: work.id, value: mbWork.type })
+    .from(work)
+    .innerJoin(mbWork, eq(mbWork.mbid, work.musicbrainzId))
+    .where(sql`${mbWork.type} is not null`);
+  return rows.flatMap((row) => (row.value ? [{ entityId: row.entityId, value: row.value }] : []));
+}
+
+/**
+ * Work titles, with the collection prefix and catalogue reference removed.
+ *
+ * The transform runs here rather than at write time, so there is one place
+ * that decides how a MusicBrainz title becomes one of ours.
+ */
+async function workTitles(): Promise<Fact[]> {
+  const parent = alias(mbWork, 'parent_work');
+  const rows = await db
+    .select({ entityId: work.id, title: mbWork.title, parentTitle: parent.title })
+    .from(work)
+    .innerJoin(mbWork, eq(mbWork.mbid, work.musicbrainzId))
+    .leftJoin(parent, eq(parent.mbid, mbWork.parentMbid));
+
+  return rows.flatMap((row) => {
+    const title = workTitleFromMusicBrainz(row.title, row.parentTitle);
+    return title ? [{ entityId: row.entityId, value: title }] : [];
+  });
+}
+
+/**
+ * Movement titles, reached through the recordings a part's tracks are
+ * anchored to.
+ *
+ * A part reached through two different MusicBrainz works has no single
+ * answer, so it is dropped rather than resolved arbitrarily.
+ */
+async function partTitles(): Promise<Fact[]> {
+  const rows = await db.all<{ entityId: number; label: string | null; title: string }>(sql`
+    select distinct wp.id as entityId, wp.label, mw.title
+      from work_part_v2 wp
+      join track_work_part_v2 twp on twp.work_part_id = wp.id
+      join track_recording tr on tr.spotify_track_id = twp.spotify_track_id
+      join mb_recording_work rw on rw.recording_mbid = tr.recording_mbid
+      join mb_work mw on mw.mbid = rw.work_mbid
+  `);
+
+  const byPart = new Map<number, string | null>();
+  const contested = new Set<number>();
+  for (const row of rows) {
+    const title = movementTitleFromMusicBrainz(row.title, row.label);
+    if (!title) continue;
+    const seen = byPart.get(row.entityId);
+    if (seen !== undefined && seen !== title) contested.add(row.entityId);
+    byPart.set(row.entityId, title);
+  }
+
+  return [...byPart.entries()].flatMap(([entityId, value]) =>
+    value && !contested.has(entityId) ? [{ entityId, value }] : [],
+  );
 }
 
 /**
@@ -69,7 +155,7 @@ async function clearStaleDecision(entityType: string, sourceId: string, decision
 
 async function promoteComposerYears(field: 'birth_year' | 'death_year') {
   const isBirth = field === 'birth_year';
-  const facts = await load('composer', field);
+  const facts = await composerYears(field);
   const current = new Map(
     (
       await db
@@ -106,7 +192,7 @@ async function promoteComposerYears(field: 'birth_year' | 'death_year') {
 }
 
 async function promoteWorkForm() {
-  const facts = await load('work', 'work_type');
+  const facts = await workTypes();
   const current = new Map(
     (await db.select({ id: work.id, form: work.form }).from(work)).map((r) => [r.id, r.form]),
   );
@@ -153,7 +239,7 @@ async function promoteWorkForm() {
 }
 
 async function promotePartTitles() {
-  const facts = await load('work_part', 'part_title');
+  const facts = await partTitles();
   const current = new Map(
     (
       await db
@@ -230,7 +316,7 @@ async function promotePartTitles() {
  * group, so that is how it is judged.
  */
 async function promoteWorkTitles() {
-  const facts = new Map((await load('work', 'work_title')).map((f) => [f.entityId, f.value]));
+  const facts = new Map((await workTitles()).map((f) => [f.entityId, f.value]));
   const rows = await db
     .select({ id: work.id, title: work.title, composerId: work.composerId })
     .from(work);
@@ -278,9 +364,9 @@ function normaliseTitle(value: string) {
 }
 
 async function main() {
-  const factCount = await db.select({ n: sql<number>`count(*)` }).from(musicbrainzFact);
-  if (!factCount[0]?.n) {
-    console.log('No MusicBrainz facts recorded yet — run `pnpm mb:backfill works` first.');
+  const [cached] = await db.select({ n: sql<number>`count(*)` }).from(mbWork);
+  if (!cached?.n) {
+    console.log('The MusicBrainz cache is empty — run `pnpm mb:ingest albums` first.');
     return;
   }
 
