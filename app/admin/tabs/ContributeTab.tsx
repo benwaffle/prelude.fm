@@ -156,32 +156,74 @@ export function ContributeTab() {
             <table>
               <thead>
                 <tr>
+                  <th>Disc/track</th>
+                  <th>Our track</th>
+                  <th>MusicBrainz recording</th>
+                  <th>Barcode</th>
+                  <th>Δ</th>
                   <th>ISRC</th>
-                  <th>Recording</th>
                 </tr>
               </thead>
               <tbody>
-                {bot.items.slice(0, 12).map((item) => (
-                  <tr key={`${item.recordingMbid}-${item.isrc}`}>
-                    <td className="mono">{item.isrc}</td>
-                    <td>
-                      <a
-                        href={`https://musicbrainz.org/recording/${item.recordingMbid}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {item.recordingMbid}
-                      </a>
-                    </td>
-                  </tr>
-                ))}
+                {bot.items.map((item) => {
+                  // The query already requires these to be equal ignoring
+                  // zero padding, so a mismatch here means the rule broke
+                  // rather than the album differing.
+                  const strip = (value: string | null) => (value ?? '').replace(/^0+/, '');
+                  const barcodesAgree =
+                    strip(item.upc) !== '' && strip(item.upc) === strip(item.barcode);
+                  return (
+                    <tr key={`${item.recordingMbid}-${item.isrc}`}>
+                      <td className="mono whitespace-nowrap">
+                        {item.medium}-{item.position}
+                      </td>
+                      <td>
+                        <span className="block">{item.trackTitle}</span>
+                        <span className="block text-[11px] text-[var(--faint)]">
+                          {item.albumTitle}
+                        </span>
+                      </td>
+                      <td>
+                        <a
+                          href={`https://musicbrainz.org/recording/${item.recordingMbid}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {item.recordingTitle}
+                        </a>
+                      </td>
+                      <td className="mono whitespace-nowrap text-[11px]">
+                        {barcodesAgree ? (
+                          <>
+                            <span style={{ color: 'var(--viridian)' }}>{item.barcode}</span>
+                            {/*
+                              The same barcode written two ways: Spotify pads a
+                              UPC-12 to thirteen digits. Showing both where the
+                              raw text differs keeps the zero-stripping visible
+                              instead of quietly asserting a match.
+                            */}
+                            {item.upc !== item.barcode && (
+                              <span className="block text-[var(--faint)]">ours {item.upc}</span>
+                            )}
+                          </>
+                        ) : (
+                          <span style={{ color: 'var(--gall)' }}>
+                            {item.upc ?? '—'} ≠ {item.barcode ?? '—'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="mono whitespace-nowrap">{item.deltaMs}ms</td>
+                      <td className="mono whitespace-nowrap">{item.isrc}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
-            {bot.items.length > 12 && (
-              <p className="mt-2 text-[var(--faint)]">
-                and {bot.items.length - 12} more in this batch
-              </p>
-            )}
+            <p className="mt-2 text-[11px] text-[var(--faint)]">
+              The barcode is shown rather than ticked: it is the same value on both sides, and
+              seeing the pair is what makes the match checkable. Δ is how far our duration is from
+              MusicBrainz&apos;s — the batch only includes tracks within 3 seconds.
+            </p>
             <div className="toolbar">
               <button className="act" onClick={() => setShowPayload((value) => !value)}>
                 {showPayload ? 'Hide' : 'Show'} the exact payload

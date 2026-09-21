@@ -14,6 +14,7 @@ function gap(partial: Partial<IsrcGap>): IsrcGap {
     recordingTitle: 'A Recording',
     releaseMbid: 'rel',
     barcode: '123',
+    upc: '0000123',
     medium: 1,
     position: 1,
     durationDeltaMs: 0,

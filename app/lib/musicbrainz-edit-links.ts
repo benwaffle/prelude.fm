@@ -20,7 +20,16 @@ export type IsrcGap = {
   recordingMbid: string;
   recordingTitle: string;
   releaseMbid: string;
+  /** The barcode MusicBrainz holds for the release. */
   barcode: string | null;
+  /**
+   * The barcode Spotify reports for the album.
+   *
+   * Kept beside MusicBrainz's rather than collapsed into a boolean: the query
+   * already requires them to match, so a "yes" column would only restate its
+   * own precondition. The pair on screen is what lets a person check it.
+   */
+  upc: string | null;
   /** Where the recording sits on the release, which is how MagicISRC addresses it. */
   medium: number;
   position: number;

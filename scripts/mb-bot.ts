@@ -31,13 +31,19 @@ async function main() {
 
   console.log(`\n  edit note:\n    ${run.editNote}`);
 
-  if (run.items.length > 0) {
-    console.log('\n  first few:');
-    for (const item of run.items.slice(0, 8)) {
-      console.log(`    ${item.isrc}  ->  ${item.recordingMbid}`);
+  if (run.evidence.length > 0) {
+    const strip = (value: string | null) => (value ?? '').replace(/^0+/, '');
+    console.log('\n  what would be submitted:');
+    for (const gap of run.evidence.slice(0, 8)) {
+      const agree = strip(gap.upc) !== '' && strip(gap.upc) === strip(gap.barcode);
+      console.log(
+        `    ${gap.medium}-${String(gap.position).padEnd(3)} ${gap.isrc}  ${gap.durationDeltaMs}ms  ${agree ? 'barcode ok' : 'BARCODE MISMATCH'}`,
+      );
+      console.log(`         ours: ${gap.trackTitle}`);
+      console.log(`         them: ${gap.recordingTitle}`);
     }
     console.log(
-      `\n  verify a sample: https://musicbrainz.org/recording/${run.items[0].recordingMbid}`,
+      `\n  verify a sample: https://musicbrainz.org/recording/${run.evidence[0].recordingMbid}`,
     );
   }
 

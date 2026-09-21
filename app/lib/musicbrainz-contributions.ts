@@ -76,6 +76,7 @@ export async function isrcGaps(limit = 200): Promise<IsrcGap[]> {
       recordingTitle: mbRecording.title,
       releaseMbid: mbRelease.mbid,
       barcode: mbRelease.barcode,
+      upc: sql<string | null>`${spotifyAlbum.upc}`,
       medium: mbReleaseTrack.medium,
       position: mbReleaseTrack.position,
       durationDeltaMs: delta,
@@ -252,7 +253,7 @@ export async function missingReleases(limit = 60): Promise<MissingRelease[]> {
       albumId: spotifyAlbum.spotifyId,
       albumTitle: spotifyAlbum.title,
       year: spotifyAlbum.year,
-      upc: spotifyAlbum.upc,
+      upc: sql<string | null>`${spotifyAlbum.upc}`,
       tracks: sql<number>`count(distinct ${spotifyTrack.spotifyId})`,
       unanchored: sql<number>`count(distinct case when not exists (
         select 1 from ${trackRecording} tr where tr.spotify_track_id = ${spotifyTrack.spotifyId}

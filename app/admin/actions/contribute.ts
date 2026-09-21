@@ -34,7 +34,18 @@ export type BotPreview = {
   edits: number;
   editNote: string;
   payload: string;
-  items: { isrc: string; recordingMbid: string }[];
+  items: {
+    isrc: string;
+    recordingMbid: string;
+    trackTitle: string;
+    recordingTitle: string;
+    albumTitle: string;
+    upc: string | null;
+    barcode: string | null;
+    deltaMs: number;
+    medium: number;
+    position: number;
+  }[];
   error: string | null;
 };
 
@@ -50,7 +61,18 @@ export async function previewBotBatch(maxEdits = 25): Promise<BotPreview> {
       edits: run.edits,
       editNote: run.editNote,
       payload: run.payload,
-      items: run.items,
+      items: run.evidence.map((gap) => ({
+        isrc: gap.isrc,
+        recordingMbid: gap.recordingMbid,
+        trackTitle: gap.trackTitle,
+        recordingTitle: gap.recordingTitle,
+        albumTitle: gap.albumTitle,
+        upc: gap.upc,
+        barcode: gap.barcode,
+        deltaMs: gap.durationDeltaMs,
+        medium: gap.medium,
+        position: gap.position,
+      })),
       error: null,
     };
   } catch (error) {

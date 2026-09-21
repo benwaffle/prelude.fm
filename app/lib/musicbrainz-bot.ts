@@ -20,6 +20,7 @@ import { db } from './db';
 import { mbSubmission } from './db/schema';
 import { scheduleMusicBrainzRequest } from './musicbrainz-gateway';
 import { isrcGaps } from './musicbrainz-contributions';
+import type { IsrcGap } from './musicbrainz-edit-links';
 import {
   buildIsrcSubmission,
   editCount,
@@ -52,6 +53,16 @@ export class MusicBrainzBotError extends Error {}
 export type BotRun = {
   /** What would be, or was, submitted. */
   items: IsrcSubmissionItem[];
+  /**
+   * The evidence behind each item.
+   *
+   * Carried through rather than summarised, because the point of showing a
+   * batch before it goes is that somebody can check it — and an ISRC and an
+   * MBID alone are two opaque strings. The titles say what is being claimed
+   * about what, and the two barcodes let the match be seen rather than
+   * trusted.
+   */
+  evidence: IsrcGap[];
   edits: number;
   /** Edits already made today, before this run. */
   spentToday: number;
@@ -122,7 +133,7 @@ export async function runIsrcBot(
   const editNote = editNoteFor(items);
 
   if (!options.apply || edits === 0) {
-    return { items, edits, spentToday, submitted: false, editNote, payload };
+    return { items, evidence: gaps, edits, spentToday, submitted: false, editNote, payload };
   }
 
   // Exchanged from the refresh token on demand, because access tokens expire
@@ -174,5 +185,5 @@ export async function runIsrcBot(
       .onConflictDoNothing();
   }
 
-  return { items, edits, spentToday, submitted: true, editNote, payload };
+  return { items, evidence: gaps, edits, spentToday, submitted: true, editNote, payload };
 }
