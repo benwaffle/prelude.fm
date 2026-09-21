@@ -31,6 +31,16 @@ export type MusicBrainzControl = {
 
 export interface MusicBrainzBudgetStore {
   /**
+   * Claim the next moment a request may be sent, and return how long to wait
+   * for it in milliseconds.
+   *
+   * Claiming rather than checking is what makes this work across processes:
+   * the caller takes a slot nobody else can have, instead of reading a
+   * timestamp that somebody else is about to read too.
+   */
+  claimSlot(intervalMs: number): Promise<number>;
+
+  /**
    * Count one request against `channel` on `day` and return the channel's new
    * total. Incrementing and reading together is what lets two workers agree on
    * whether the cap has been reached.

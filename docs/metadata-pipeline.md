@@ -32,6 +32,20 @@ prioritise it against.
 The read caps are runaway protection rather than policy. The bot cap is 1,000
 because the MusicBrainz bot code of conduct caps a bot at 1,000 edits a day.
 
+Spacing is claimed, not measured. `mb_rate_slot` holds one row: the next
+moment a request may be sent. A caller moves it forward by one interval in a
+single atomic update and waits for the moment it moved from, so two processes
+asking at once take consecutive slots rather than the same one. This matters
+because there is never only one process — a serverless deployment runs several
+instances, and a backfill on a laptop runs beside them — and each of them
+spacing its own requests a second apart still adds up to more than one request
+per second at the far end. Times come from the database's clock, so the
+processes need not agree on what time it is.
+
+The consequence to know about: priority is still per process. Channels are
+ordered within one scheduler, so a backfill in one process can take a slot
+ahead of an interactive request in another.
+
 Counts live in `mb_request_budget`, one row per UTC day and channel, because
 serverless instances come and go and a per-process tally would measure one
 lambda rather than the service. It is also the number that decides when the
@@ -65,7 +79,19 @@ rate-limited web service usable at all.
 8. Base Spotify, composer, and work rows are saved while preserving a compatible existing work assignment.
 9. The v2 reconciliation pass resolves canonical works and parts, groups tracks into recordings, replaces each processed track’s part links, and assigns review status.
 10. Tracks with a usable link become `matched`. Non-classical tracks become terminal `not_classical`. Errors become `pending` or `failed` according to retryability.
-11. After successfully processing one album, the Vercel route calls itself to drain the next album. It stops when the queue is empty or a retryable failure indicates backoff is needed.
+11. The album's MusicBrainz side is cached: its release is identified and its tracks anchored to recordings, on the `interactive` channel, costing about one request.
+12. If no album was pending, the pass instead reads a slice of work stubs — works a release named but nobody has looked at — on the `backfill` channel.
+13. The route then calls itself to continue. It stops when there is nothing left to do, when a retryable failure indicates backoff is needed, when the MusicBrainz budget is spent or paused, or after 200 links.
+
+Steps 11 and 12 are split because they have different audiences. Caching a
+release is one request and answers what a waiting user asked. Reading the work
+tree above those recordings can be dozens of requests for one compilation and
+nobody is waiting on it, so it only happens when there are no albums left and
+it can be starved without anyone noticing.
+
+The chain is what makes processing continuous: a daily cron cannot serve a
+signup. The cron remains as the restart, and every link recovers stale claims
+before doing its own work.
 
 ## LLM contract
 

@@ -602,6 +602,27 @@ export const mbRequestBudget = sqliteTable(
 );
 
 /**
+ * The next moment a MusicBrainz request may be sent.
+ *
+ * One row, shared by every process. The in-process scheduler can only space
+ * out its own requests, and there is never only one process: a serverless
+ * deployment runs several instances, and a backfill on somebody's laptop runs
+ * beside them. Each of them spacing its own requests a second apart still
+ * adds up to more than one request per second at the far end.
+ *
+ * So a slot is claimed here first. The claim is a single atomic update that
+ * moves the marker forward by one interval and returns the moment it moved
+ * from, which is that caller's turn; the caller then waits for it. Two
+ * processes asking at once get consecutive slots rather than the same one.
+ * Times are the database's own clock, so the processes do not need to agree
+ * on what time it is.
+ */
+export const mbRateSlot = sqliteTable('mb_rate_slot', {
+  id: integer('id').primaryKey(),
+  nextSlotAt: integer('next_slot_at').notNull(),
+});
+
+/**
  * Per-channel pause flags and cap overrides.
  *
  * A row for the pseudo-channel `all` applies to every channel. This exists so

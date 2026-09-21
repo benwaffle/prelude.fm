@@ -43,6 +43,15 @@ export interface QueueWorkerResult {
   recovered: number;
   retried: number;
   exhausted: number;
+  /** What the MusicBrainz side of the pass did, when it ran. */
+  musicbrainz: {
+    albumsCached: number;
+    tracksAnchored: number;
+    worksRead: number;
+    requests: number;
+    /** Set when the budget refused the pass, so a caller can stop chaining. */
+    stopped: string | null;
+  };
 }
 
 function now() {
@@ -340,6 +349,26 @@ export async function processNextPendingAlbum(
   return processQueuedAlbum(claim.albumId, claimOwnerId, claim.trackIds);
 }
 
+/**
+ * How many work stubs a pass reads when the match queue is empty.
+ *
+ * Small, because each one is a request and the pass has a five-minute
+ * ceiling. The chain carries on while stubs remain, so the sweep makes
+ * progress without any one invocation trying to finish it.
+ */
+const WORK_SWEEP_SIZE = 40;
+
+/**
+ * One pass of the worker: some albums, then MusicBrainz.
+ *
+ * The MusicBrainz side is deliberately split in two. Caching an album's
+ * release is one request and answers what a waiting user asked — which
+ * recordings are these — so it runs on the interactive channel for every
+ * album the pass touched. Reading the work tree above those recordings can be
+ * dozens of requests for one compilation and nobody is waiting on it, so it
+ * happens only when there are no albums left to process, on the backfill
+ * channel, in bounded slices.
+ */
 export async function runMatchQueueWorker(
   options: {
     maxAlbums?: number;
@@ -347,6 +376,7 @@ export async function runMatchQueueWorker(
     recover?: boolean;
     retryFailed?: boolean;
     staleMinutes?: number;
+    musicbrainz?: boolean;
   } = {},
 ): Promise<QueueWorkerResult> {
   const maxAlbums = options.maxAlbums ?? 1;
@@ -369,7 +399,52 @@ export async function runMatchQueueWorker(
     albums.push(result);
   }
 
-  return { albums, ...prepared };
+  const musicbrainz = {
+    albumsCached: 0,
+    tracksAnchored: 0,
+    worksRead: 0,
+    requests: 0,
+    stopped: null as string | null,
+  };
+
+  if (options.musicbrainz !== false) {
+    const [{ ingestAlbum }, { drainWorkStubs }, { musicBrainzApi }, { MusicBrainzBudgetError }] =
+      await Promise.all([
+        import('@/lib/musicbrainz-ingest'),
+        import('@/lib/musicbrainz-cache'),
+        import('@/lib/musicbrainz'),
+        import('@/lib/musicbrainz-gateway'),
+      ]);
+
+    try {
+      for (const album of albums) {
+        const report = await ingestAlbum(musicBrainzApi('interactive'), album.albumId, {
+          fetchWorks: false,
+        });
+        musicbrainz.requests += report.requests;
+        if (report.releaseMbid) musicbrainz.albumsCached++;
+        musicbrainz.tracksAnchored += report.anchors?.anchored ?? 0;
+      }
+
+      if (albums.length === 0) {
+        const swept = await drainWorkStubs(musicBrainzApi('backfill'), WORK_SWEEP_SIZE);
+        musicbrainz.worksRead += swept.works;
+        musicbrainz.requests += swept.requests;
+      }
+    } catch (error) {
+      // A paused gateway or an exhausted daily cap is not a failure of the
+      // album: the classical metadata was still saved. It does mean there is
+      // no point chaining another pass, so it is reported rather than thrown.
+      if (error instanceof MusicBrainzBudgetError) {
+        musicbrainz.stopped = error.message;
+      } else {
+        console.error('MusicBrainz ingest failed:', error);
+        musicbrainz.stopped = error instanceof Error ? error.message : String(error);
+      }
+    }
+  }
+
+  return { albums, ...prepared, musicbrainz };
 }
 
 export async function claimPendingAlbum(

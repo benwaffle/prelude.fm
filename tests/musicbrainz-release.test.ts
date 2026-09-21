@@ -23,6 +23,9 @@ const fixture = JSON.parse(
 );
 
 const countingStore: MusicBrainzBudgetStore = {
+  async claimSlot() {
+    return 0;
+  },
   async spend() {
     return 1;
   },

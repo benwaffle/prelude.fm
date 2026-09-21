@@ -331,6 +331,7 @@ export type ReleaseIngestReport = {
 export async function ingestRelease(
   source: MusicBrainzSource,
   releaseMbid: string,
+  options: { fetchWorks?: boolean } = {},
 ): Promise<ReleaseIngestReport> {
   const release = await source.releaseWithRecordings(releaseMbid);
   let requests = 1;
@@ -350,7 +351,7 @@ export async function ingestRelease(
   }
 
   const cached = await cacheRelease(release);
-  const pending = await worksNeedingDetail(cached.workMbids);
+  const pending = options.fetchWorks === false ? [] : await worksNeedingDetail(cached.workMbids);
   let worksFetched = 0;
 
   for (const workMbid of pending) {
@@ -370,6 +371,39 @@ export async function ingestRelease(
     worksSeen: cached.workMbids.length,
     worksFetched,
   };
+}
+
+/**
+ * Read works that a release named but nobody has looked at.
+ *
+ * This is the unbounded half of ingest, separated from the album-facing half
+ * on purpose. Caching a release is one request and answers the question a
+ * user is waiting on — which recordings are these? Reading the work tree
+ * above them can be fifty requests for one compilation, and nobody is waiting
+ * on it, so it belongs on the backfill channel where it can be starved
+ * without anyone noticing.
+ *
+ * The stub rows are the queue: `mb_work.detail = 'stub'` means named but
+ * never read, so there is no separate work list to keep in step.
+ */
+export async function drainWorkStubs(
+  source: MusicBrainzSource,
+  limit: number,
+): Promise<{ works: number; requests: number }> {
+  const stubs = await db
+    .select({ mbid: mbWork.mbid })
+    .from(mbWork)
+    .where(eq(mbWork.detail, 'stub'))
+    .limit(limit);
+
+  let requests = 0;
+  let works = 0;
+  for (const stub of stubs) {
+    const { requests: spent } = await ingestWorkTree(source, stub.mbid);
+    requests += spent;
+    if (spent > 0) works++;
+  }
+  return { works, requests };
 }
 
 /** Composers named by cached works but never read as artists. */

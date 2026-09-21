@@ -8,15 +8,34 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { mbGatewayControl, mbRequestBudget } from '@/lib/db/schema';
+import { mbGatewayControl, mbRateSlot, mbRequestBudget } from '@/lib/db/schema';
 import type {
   MusicBrainzBudgetStore,
   MusicBrainzChannel,
   MusicBrainzControl,
 } from './musicbrainz-budget';
 
+/** Milliseconds on the database's clock, so callers need not agree on the time. */
+const DB_NOW = sql`cast(unixepoch('subsecond') * 1000 as integer)`;
+
 export function createMusicBrainzBudgetStore(): MusicBrainzBudgetStore {
   return {
+    async claimSlot(intervalMs: number) {
+      // One statement, so two processes asking at once take consecutive slots
+      // rather than the same one. `max` with the current time keeps an idle
+      // gateway from banking credit for a burst.
+      const rows = await db.all<{ slot: number; now: number }>(sql`
+        insert into ${mbRateSlot} (id, next_slot_at)
+        values (1, ${DB_NOW} + ${intervalMs})
+        on conflict(id) do update
+          set next_slot_at = max(${DB_NOW}, next_slot_at) + ${intervalMs}
+        returning next_slot_at - ${intervalMs} as slot, ${DB_NOW} as now
+      `);
+      const row = rows[0];
+      if (!row) return intervalMs;
+      return Math.max(0, row.slot - row.now);
+    },
+
     async spend(day: string, channel: MusicBrainzChannel) {
       const [row] = await db
         .insert(mbRequestBudget)

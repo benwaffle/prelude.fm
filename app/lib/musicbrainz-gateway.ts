@@ -107,7 +107,14 @@ export function setMusicBrainzBudgetStore(store: MusicBrainzBudgetStore | null) 
  */
 function createMemoryStore(): MusicBrainzBudgetStore {
   const usage = new Map<string, number>();
+  let nextSlotAt = 0;
   return {
+    async claimSlot(intervalMs) {
+      const now = Date.now();
+      const slot = Math.max(now, nextSlotAt);
+      nextSlotAt = slot + intervalMs;
+      return Math.max(0, slot - now);
+    },
     async spend(day, channel) {
       const key = `${day}:${channel}`;
       const next = (usage.get(key) ?? 0) + 1;
@@ -212,7 +219,6 @@ const queues: Record<MusicBrainzChannel, Waiter[]> = {
 };
 
 let pumping = false;
-let lastRequestAt = 0;
 
 /**
  * Count one request against the day's budget, or refuse it.
@@ -274,15 +280,17 @@ async function pump() {
       if (!waiter) return;
 
       try {
-        const wait = minIntervalMs - (Date.now() - lastRequestAt);
-        // The reservation round trip overlaps the interval it has to wait out.
-        await Promise.all([reserve(waiter.channel), wait > 0 ? sleep(wait) : null]);
+        await reserve(waiter.channel);
+        // Spacing is claimed from the store, not measured here, so that every
+        // process sending to MusicBrainz shares one queue of slots.
+        const store = await resolveStore();
+        const wait = await store.claimSlot(minIntervalMs);
+        if (wait > 0) await sleep(wait);
       } catch (error) {
         waiter.reject(error);
         continue;
       }
 
-      lastRequestAt = Date.now();
       try {
         waiter.resolve(await waiter.run());
       } catch (error) {
@@ -369,7 +377,6 @@ export function invalidateMusicBrainzControls() {
  */
 export function resetMusicBrainzGatewayForTests(options: { minIntervalMs?: number } = {}) {
   for (const channel of MUSICBRAINZ_CHANNELS) queues[channel].length = 0;
-  lastRequestAt = 0;
   controlsCache = null;
   storeIsFallback = false;
   minIntervalMs = options.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;

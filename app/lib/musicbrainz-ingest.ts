@@ -208,6 +208,7 @@ export type AlbumIngestReport = {
 export async function ingestAlbum(
   source: MusicBrainzSource,
   albumId: string,
+  options: { fetchWorks?: boolean } = {},
 ): Promise<AlbumIngestReport> {
   const [album] = await db
     .select({
@@ -251,7 +252,7 @@ export async function ingestAlbum(
     };
   }
 
-  const release = await ingestRelease(source, match.releaseMbid);
+  const release = await ingestRelease(source, match.releaseMbid, options);
   requests += release.requests;
 
   if (!release.found) {

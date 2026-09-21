@@ -17,8 +17,15 @@ import type {
 /** A store that counts in a Map, so the scheduler can be tested without a database. */
 function fakeStore(controls: Record<string, Partial<MusicBrainzControl>> = {}) {
   const spent = new Map<string, number>();
+  let nextSlotAt = 0;
   const store: MusicBrainzBudgetStore & { spendCalls: number } = {
     spendCalls: 0,
+    async claimSlot(intervalMs) {
+      const now = Date.now();
+      const slot = Math.max(now, nextSlotAt);
+      nextSlotAt = slot + intervalMs;
+      return Math.max(0, slot - now);
+    },
     async spend(day, channel) {
       store.spendCalls++;
       const key = `${day}:${channel}`;
@@ -248,3 +255,36 @@ test('a control change takes effect once the cache is dropped', async () => {
 });
 
 test.after(() => setMusicBrainzBudgetStore(null));
+
+test('spacing comes from the store, so every process shares one queue of slots', async () => {
+  // The gateway must not measure the interval itself: an in-process timer
+  // spaces out one lambda's requests while three others send their own.
+  const asked: number[] = [];
+  let released = 0;
+  setMusicBrainzBudgetStore({
+    async claimSlot(intervalMs) {
+      asked.push(intervalMs);
+      released += 1;
+      // The store, not the gateway, decides how long to wait.
+      return released === 2 ? 30 : 0;
+    },
+    async spend() {
+      return 1;
+    },
+    async refund() {},
+    async usage() {
+      return {};
+    },
+    async controls() {
+      return {};
+    },
+  });
+  resetMusicBrainzGatewayForTests({ minIntervalMs: 77 });
+
+  const started = Date.now();
+  await scheduleMusicBrainzRequest('backfill', async () => 'first');
+  await scheduleMusicBrainzRequest('backfill', async () => 'second');
+
+  assert.deepEqual(asked, [77, 77], 'the configured interval is what the store is asked for');
+  assert.ok(Date.now() - started >= 25, 'the gateway waited the slot the store handed it');
+});
