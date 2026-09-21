@@ -43,9 +43,8 @@ async function main() {
     throw new Error('TURSO_DATABASE_URL is required (put it in .env.local or export it)');
   }
 
-  const [{ db }, schema, ingest, cache, mb, gateway, drizzle] = await Promise.all([
+  const [{ db }, ingest, cache, mb, gateway, drizzle] = await Promise.all([
     import('@/lib/db'),
-    import('@/lib/db/schema'),
     import('@/lib/musicbrainz-ingest'),
     import('@/lib/musicbrainz-cache'),
     import('@/lib/musicbrainz'),
@@ -54,11 +53,6 @@ async function main() {
   ]);
   const { sql } = drizzle;
   const source = mb.musicBrainzApi('backfill');
-
-  const count = async (query: ReturnType<typeof sql>) => {
-    const [row] = await db.get<{ n: number }>(query).then((r) => [r]);
-    return row?.n ?? 0;
-  };
 
   async function report() {
     const rows = await db.all<{ label: string; n: number }>(sql`
