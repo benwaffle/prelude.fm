@@ -10,7 +10,7 @@
  * wrong recording, and that error is invisible afterwards — the tracks all
  * have plausible titles and plausible works.
  */
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from './db';
 import {
   mbRecording,
