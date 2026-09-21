@@ -63,6 +63,37 @@ export {
  * the recording, MusicBrainz already had it.
  */
 export async function isrcGaps(limit = 200): Promise<IsrcGap[]> {
+  return dedupeByRecording(await isrcGapRows(limit));
+}
+
+/**
+ * One row per recording, not per position it occupies.
+ *
+ * A hybrid SACD is three mediums in MusicBrainz — a CD layer and two SACD
+ * layers — listing the same recordings on each, so a join through the
+ * tracklist returns every ISRC three times. Left alone that inflates the
+ * count on the button, and spends the bot's per-album allowance on the same
+ * edit repeatedly.
+ *
+ * The earliest position wins, which for a hybrid disc is the CD layer.
+ */
+function dedupeByRecording(rows: IsrcGap[]): IsrcGap[] {
+  const byPair = new Map<string, IsrcGap>();
+  for (const row of rows) {
+    const key = `${row.recordingMbid}:${row.isrc}`;
+    const seen = byPair.get(key);
+    if (
+      !seen ||
+      row.medium < seen.medium ||
+      (row.medium === seen.medium && row.position < seen.position)
+    ) {
+      byPair.set(key, row);
+    }
+  }
+  return [...byPair.values()];
+}
+
+async function isrcGapRows(limit: number): Promise<IsrcGap[]> {
   const delta = sql<number>`abs(coalesce(${mbReleaseTrack.length}, ${mbRecording.length}) - ${spotifyTrack.durationMs})`;
 
   return db

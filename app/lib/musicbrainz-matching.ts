@@ -203,8 +203,38 @@ export function tracklistAligns(
   toleranceMs = POSITION_TOLERANCE_MS,
 ): boolean {
   if (tracks.length === 0) return false;
-  if (tracks.length !== releaseTracks.length) return false;
 
+  /*
+   * A Spotify album is one edition; a MusicBrainz release can be several
+   * mediums of the same content. A hybrid SACD is three — a CD layer and two
+   * SACD layers — so an eighteen-track album meets a fifty-four-track
+   * release and nothing lines up, even though the album is exactly medium
+   * one. Where the whole release does not match, a single medium that does
+   * is tried instead.
+   */
+  if (tracks.length !== releaseTracks.length) {
+    const mediums = new Set(releaseTracks.map((track) => track.medium));
+    if (mediums.size < 2) return false;
+    return [...mediums].some((medium) => {
+      const onlyThis = releaseTracks.filter((track) => track.medium === medium);
+      if (onlyThis.length !== tracks.length) return false;
+      // Compare on position alone: the album's disc numbering is its own.
+      return alignsByPosition(
+        tracks.map((track, index) => ({ ...track, discNumber: 1, trackNumber: index + 1 })),
+        onlyThis.map((track, index) => ({ ...track, medium: 1, position: index + 1 })),
+        toleranceMs,
+      );
+    });
+  }
+
+  return alignsByPosition(tracks, releaseTracks, toleranceMs);
+}
+
+function alignsByPosition(
+  tracks: PositionedTrack[],
+  releaseTracks: PositionedReleaseTrack[],
+  toleranceMs: number,
+): boolean {
   const byPosition = new Map(
     releaseTracks.map((track) => [`${track.medium}:${track.position}`, track]),
   );

@@ -283,3 +283,33 @@ test('a lone track with no counterpart at its position does not fit', () => {
     false,
   );
 });
+
+test('an album matching one medium of a multi-medium release aligns', () => {
+  // A hybrid SACD is three mediums of the same content in MusicBrainz, so an
+  // 18-track album meets a 54-track release. It is exactly medium one.
+  const album = spotifyTracks([200_000, 300_000, 250_000]);
+  const threeLayers = [1, 2, 3].flatMap((medium) =>
+    [200_000, 300_000, 250_000].map((length, index) => ({
+      medium,
+      position: index + 1,
+      length,
+    })),
+  );
+  assert.equal(tracklistAligns(album, threeLayers), true);
+});
+
+test('a medium with the right count but wrong durations does not rescue it', () => {
+  const album = spotifyTracks([200_000, 300_000, 250_000]);
+  const twoDiscs = [1, 2].flatMap((medium) =>
+    [900_000, 910_000, 920_000].map((length, index) => ({
+      medium,
+      position: index + 1,
+      length,
+    })),
+  );
+  assert.equal(tracklistAligns(album, twoDiscs), false);
+});
+
+test('a single-medium release of the wrong length still does not align', () => {
+  assert.equal(tracklistAligns(spotifyTracks([200_000]), releaseTracks([200_000, 300_000])), false);
+});
