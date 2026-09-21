@@ -10,6 +10,7 @@ import {
   harmonyImportLink,
   isrcGapsByRelease,
   magicIsrcLink,
+  misalignedAlbums,
   missingReleases,
   releaseEditLink,
   workRelationshipGaps,
@@ -111,6 +112,7 @@ export type ContributionView = {
   contested: Awaited<ReturnType<typeof contestedIsrcs>>;
   missing: (Awaited<ReturnType<typeof missingReleases>>[number] & { harmony: string })[];
   barcodes: (Awaited<ReturnType<typeof barcodeGaps>>[number] & { edit: string })[];
+  misaligned: Awaited<ReturnType<typeof misalignedAlbums>>;
   recent: {
     id: number;
     kind: string;
@@ -126,28 +128,30 @@ export type ContributionView = {
 export async function getContributions(): Promise<ContributionView> {
   await checkAuth();
 
-  const [counts, releases, workGaps, contested, missing, barcodes, recent] = await Promise.all([
-    contributionCounts(),
-    isrcGapsByRelease(40),
-    workRelationshipGaps(40),
-    contestedIsrcs(20),
-    missingReleases(40),
-    barcodeGaps(20),
-    db
-      .select({
-        id: mbSubmission.id,
-        kind: mbSubmission.kind,
-        targetMbid: mbSubmission.targetMbid,
-        value: mbSubmission.value,
-        submittedBy: mbSubmission.submittedBy,
-        submittedAt: mbSubmission.submittedAt,
-        outcome: mbSubmission.outcome,
-        note: mbSubmission.note,
-      })
-      .from(mbSubmission)
-      .orderBy(desc(mbSubmission.submittedAt))
-      .limit(30),
-  ]);
+  const [counts, releases, workGaps, contested, missing, barcodes, misaligned, recent] =
+    await Promise.all([
+      contributionCounts(),
+      isrcGapsByRelease(40),
+      workRelationshipGaps(40),
+      contestedIsrcs(20),
+      missingReleases(40),
+      barcodeGaps(20),
+      misalignedAlbums(30),
+      db
+        .select({
+          id: mbSubmission.id,
+          kind: mbSubmission.kind,
+          targetMbid: mbSubmission.targetMbid,
+          value: mbSubmission.value,
+          submittedBy: mbSubmission.submittedBy,
+          submittedAt: mbSubmission.submittedAt,
+          outcome: mbSubmission.outcome,
+          note: mbSubmission.note,
+        })
+        .from(mbSubmission)
+        .orderBy(desc(mbSubmission.submittedAt))
+        .limit(30),
+    ]);
 
   return {
     counts,
@@ -175,6 +179,7 @@ export async function getContributions(): Promise<ContributionView> {
     contested,
     missing: missing.map((album) => ({ ...album, harmony: harmonyImportLink(album.albumId) })),
     barcodes: barcodes.map((gap) => ({ ...gap, edit: releaseEditLink(gap.releaseMbid) })),
+    misaligned,
     recent,
   };
 }

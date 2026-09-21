@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  diagnoseTracklist,
   findReleaseForAlbum,
   loneTrackFits,
   releaseFitsAlbum,
@@ -312,4 +313,67 @@ test('a medium with the right count but wrong durations does not rescue it', () 
 
 test('a single-medium release of the wrong length still does not align', () => {
   assert.equal(tracklistAligns(spotifyTracks([200_000]), releaseTracks([200_000, 300_000])), false);
+});
+
+/* ------------------------------------------------------ diagnoseTracklist */
+
+test('a rotated tracklist is recognised as reordered, not as different music', () => {
+  // A real release: the same three recordings, shifted by one, durations
+  // pairing off to a millisecond.
+  const ours = spotifyTracks([176653, 235800, 194600]);
+  const theirs = releaseTracks([194601, 176654, 235801]);
+  assert.deepEqual(diagnoseTracklist(ours, theirs), { kind: 'reordered', matched: 3 });
+});
+
+test('a release with a different number of tracks says so', () => {
+  const diagnosis = diagnoseTracklist(spotifyTracks([200_000]), releaseTracks([200_000, 300_000]));
+  assert.deepEqual(diagnosis, { kind: 'different-length', ours: 1, theirs: 2 });
+});
+
+test('durations that pair off nowhere are different recordings', () => {
+  const diagnosis = diagnoseTracklist(
+    spotifyTracks([200_000, 300_000, 250_000]),
+    releaseTracks([600_000, 700_000, 800_000]),
+  );
+  assert.equal(diagnosis.kind, 'different-recordings');
+});
+
+test('an album that lines up is not diagnosed at all', () => {
+  assert.deepEqual(
+    diagnoseTracklist(spotifyTracks([200_000, 300_000]), releaseTracks([200_500, 299_000])),
+    { kind: 'aligned' },
+  );
+});
+
+test('one duplicated duration cannot pair with the same track twice', () => {
+  // Two tracks of the same length must consume two release tracks, not one.
+  const diagnosis = diagnoseTracklist(
+    spotifyTracks([200_000, 200_000, 900_000]),
+    releaseTracks([200_000, 500_000, 500_000]),
+  );
+  assert.equal(diagnosis.kind, 'different-recordings');
+});
+
+test('a release Spotify flattened into one disc still aligns', () => {
+  // MusicBrainz holds this as 9 tracks then 12; Spotify sells it as a single
+  // run of 21. The totals agree, but track 10 has no disc 1 position 10.
+  const album = spotifyTracks([100_000, 200_000, 300_000, 400_000]);
+  const twoDiscs = [
+    { medium: 1, position: 1, length: 100_000 },
+    { medium: 1, position: 2, length: 200_000 },
+    { medium: 2, position: 1, length: 300_000 },
+    { medium: 2, position: 2, length: 400_000 },
+  ];
+  assert.equal(tracklistAligns(album, twoDiscs), true);
+});
+
+test('flattening does not rescue a tracklist in the wrong order', () => {
+  const album = spotifyTracks([100_000, 200_000, 300_000, 400_000]);
+  const shuffled = [
+    { medium: 1, position: 1, length: 400_000 },
+    { medium: 1, position: 2, length: 300_000 },
+    { medium: 2, position: 1, length: 200_000 },
+    { medium: 2, position: 2, length: 100_000 },
+  ];
+  assert.equal(tracklistAligns(album, shuffled), false);
 });

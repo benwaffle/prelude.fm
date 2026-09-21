@@ -227,7 +227,38 @@ export function tracklistAligns(
     });
   }
 
-  return alignsByPosition(tracks, releaseTracks, toleranceMs);
+  if (alignsByPosition(tracks, releaseTracks, toleranceMs)) return true;
+
+  /*
+   * Spotify flattens a multi-disc release into one numbered run: a release
+   * MusicBrainz holds as 9 tracks then 12 becomes a single album of 21. The
+   * totals agree, so the counts look fine, but track 10 goes looking for
+   * disc 1 position 10 and there is no such thing.
+   *
+   * Comparing them in order rather than by disc and position handles that,
+   * and is safe because every duration still has to agree: a genuinely
+   * reordered tracklist fails this exactly as it fails the other.
+   */
+  return alignsInOrder(tracks, releaseTracks, toleranceMs);
+}
+
+/** Both tracklists read straight through, ignoring how they are divided. */
+function alignsInOrder(
+  tracks: PositionedTrack[],
+  releaseTracks: PositionedReleaseTrack[],
+  toleranceMs: number,
+): boolean {
+  const ours = [...tracks].sort(
+    (a, b) => a.discNumber - b.discNumber || a.trackNumber - b.trackNumber,
+  );
+  const theirs = [...releaseTracks].sort((a, b) => a.medium - b.medium || a.position - b.position);
+
+  for (let i = 0; i < ours.length; i++) {
+    const length = theirs[i]?.length;
+    if (length == null) continue;
+    if (Math.abs(length - ours[i].durationMs) > toleranceMs) return false;
+  }
+  return true;
 }
 
 function alignsByPosition(
@@ -275,4 +306,61 @@ export function loneTrackFits(
   if (!releaseTrack) return false;
   if (releaseTrack.length == null) return false;
   return Math.abs(releaseTrack.length - track.durationMs) <= toleranceMs;
+}
+
+/* ------------------------------------------------------ misalignment --- */
+
+export type TracklistDiagnosis =
+  /** Same recordings, different order. Somebody's tracklist is wrong. */
+  | { kind: 'reordered'; matched: number }
+  /** The release has a different number of tracks, and no single medium fits. */
+  | { kind: 'different-length'; ours: number; theirs: number }
+  /** Same length, but the durations do not correspond in any order. */
+  | { kind: 'different-recordings'; matched: number }
+  | { kind: 'aligned' };
+
+/**
+ * Why an album and a release do not line up.
+ *
+ * Refusing to anchor is the right behaviour, but "did not align" is not a
+ * useful thing to show a person: a release with an extra disc and a release
+ * whose tracklist is in the wrong order need completely different work, and
+ * one of them is an error worth reporting upstream.
+ *
+ * Reordering is detected by matching durations as a set rather than in
+ * sequence. Three tracks whose durations pair off to the millisecond but sit
+ * at different positions are the same three recordings in a different order,
+ * which is a real case: one release here lists them rotated by one.
+ */
+export function diagnoseTracklist(
+  tracks: PositionedTrack[],
+  releaseTracks: PositionedReleaseTrack[],
+  toleranceMs = POSITION_TOLERANCE_MS,
+): TracklistDiagnosis {
+  if (tracklistAligns(tracks, releaseTracks, toleranceMs)) return { kind: 'aligned' };
+
+  if (tracks.length !== releaseTracks.length) {
+    return { kind: 'different-length', ours: tracks.length, theirs: releaseTracks.length };
+  }
+
+  // Pair each of ours with an unused release track of about the same length.
+  const unused = releaseTracks.filter((track) => track.length != null);
+  const taken = new Set<number>();
+  let matched = 0;
+  for (const track of tracks) {
+    const index = unused.findIndex(
+      (candidate, i) =>
+        !taken.has(i) && Math.abs(candidate.length! - track.durationMs) <= toleranceMs,
+    );
+    if (index !== -1) {
+      taken.add(index);
+      matched++;
+    }
+  }
+
+  // Nearly all of them pairing off means the same recordings in another
+  // order; only some pairing off means these are different performances.
+  return matched >= Math.ceil(tracks.length * 0.8)
+    ? { kind: 'reordered', matched }
+    : { kind: 'different-recordings', matched };
 }

@@ -290,6 +290,89 @@ export function ContributeTab() {
         </section>
       )}
 
+      {view.misaligned.length > 0 && (
+        <section className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Tracklists that do not line up</span>
+            <span className="mono text-[var(--ink-2)]">{view.counts.misaligned}</span>
+          </div>
+          <p className="px-4 pt-3 text-[var(--ink-2)]">
+            MusicBrainz has the release, but its tracklist and the album&apos;s disagree, so no
+            track can be placed by position. Where the same recordings appear in a different order,
+            one of the two is wrong — and it is not always MusicBrainz&apos;s, which is why these
+            are reported rather than submitted.
+          </p>
+          {view.misaligned.map((album) => (
+            <details key={album.albumId} className="fold">
+              <summary>
+                <span className="album-title">{album.albumTitle}</span>
+                <span className="album-meta">
+                  {album.diagnosis.kind === 'reordered'
+                    ? 'same recordings, different order'
+                    : album.diagnosis.kind === 'different-length'
+                      ? `${album.ourCount} tracks here, ${album.theirCount} on the release`
+                      : 'durations do not correspond'}
+                  {album.anchoredByIsrc > 0 &&
+                    ` · ${album.anchoredByIsrc} anchored by ISRC regardless`}
+                </span>
+              </summary>
+              <div className="fold-body">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Position</th>
+                      <th>Ours</th>
+                      <th>MusicBrainz</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {album.mismatches.map((row) => (
+                      <tr key={row.position}>
+                        <td className="mono">{row.position}</td>
+                        <td>
+                          {row.ourTitle ?? <span className="text-[var(--faint)]">nothing</span>}
+                          {row.ourMs !== null && (
+                            <span className="mono block text-[11px] text-[var(--faint)]">
+                              {row.ourMs}ms
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {row.theirTitle ?? <span className="text-[var(--faint)]">nothing</span>}
+                          {row.theirMs !== null && (
+                            <span className="mono block text-[11px] text-[var(--faint)]">
+                              {row.theirMs}ms
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="toolbar">
+                  <a
+                    className="act"
+                    href={`https://musicbrainz.org/release/${album.releaseMbid}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Release
+                  </a>
+                  <a
+                    className="act"
+                    href={`https://open.spotify.com/album/${album.albumId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Spotify
+                  </a>
+                </div>
+              </div>
+            </details>
+          ))}
+        </section>
+      )}
+
       <section className="panel">
         <div className="panel-head">
           <span className="panel-title">Recordings with no work</span>

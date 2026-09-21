@@ -16,6 +16,11 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from './db';
+import {
+  diagnoseTracklist,
+  POSITION_TOLERANCE_MS,
+  type TracklistDiagnosis,
+} from './musicbrainz-matching';
 import type { IsrcGap } from './musicbrainz-edit-links';
 import {
   mbRecording,
@@ -340,14 +345,142 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
     .limit(limit);
 }
 
+/**
+ * Albums whose tracklist does not line up with the release we matched.
+ *
+ * Anchoring refuses these, which is right, but refusing silently makes them
+ * look like albums MusicBrainz simply has nothing for. They are the
+ * opposite: MusicBrainz has the release and one of the two tracklists is
+ * wrong. A reordered one is an error somebody can fix — and it is not
+ * always MusicBrainz's, which is why this reports rather than submits.
+ */
+export type MisalignedAlbum = {
+  albumId: string;
+  albumTitle: string;
+  releaseMbid: string;
+  diagnosis: TracklistDiagnosis;
+  /**
+   * Only the positions that disagree.
+   *
+   * An album can line up for twenty tracks and part company on the
+   * twenty-first; showing the first few rows would show the agreement and
+   * hide the problem.
+   */
+  mismatches: {
+    position: number;
+    ourTitle: string | null;
+    ourMs: number | null;
+    theirTitle: string | null;
+    theirMs: number | null;
+  }[];
+  ourCount: number;
+  theirCount: number;
+  /** Tracks anchored anyway, by ISRC, which needs no tracklist at all. */
+  anchoredByIsrc: number;
+};
+
+export async function misalignedAlbums(limit = 40): Promise<MisalignedAlbum[]> {
+  const albums = await db
+    .select({
+      albumId: spotifyAlbum.spotifyId,
+      albumTitle: spotifyAlbum.title,
+      releaseMbid: sql<string>`${spotifyAlbum.mbReleaseId}`,
+    })
+    .from(spotifyAlbum)
+    .where(
+      and(
+        sql`${spotifyAlbum.mbReleaseId} is not null`,
+        sql`exists (select 1 from ${mbReleaseTrack} where ${mbReleaseTrack.releaseMbid} = ${spotifyAlbum.mbReleaseId})`,
+      ),
+    );
+
+  const out: MisalignedAlbum[] = [];
+  for (const album of albums) {
+    const ours = await db
+      .select({
+        medium: spotifyTrack.discNumber,
+        position: spotifyTrack.trackNumber,
+        title: spotifyTrack.title,
+        durationMs: spotifyTrack.durationMs,
+      })
+      .from(spotifyTrack)
+      .where(eq(spotifyTrack.spotifyAlbumId, album.albumId))
+      .orderBy(spotifyTrack.discNumber, spotifyTrack.trackNumber);
+
+    const theirs = await db
+      .select({
+        medium: mbReleaseTrack.medium,
+        position: mbReleaseTrack.position,
+        title: mbReleaseTrack.title,
+        length: mbReleaseTrack.length,
+      })
+      .from(mbReleaseTrack)
+      .where(eq(mbReleaseTrack.releaseMbid, album.releaseMbid))
+      .orderBy(mbReleaseTrack.medium, mbReleaseTrack.position);
+
+    const diagnosis = diagnoseTracklist(
+      ours.map((t) => ({
+        discNumber: t.medium,
+        trackNumber: t.position,
+        durationMs: t.durationMs,
+      })),
+      theirs.map((t) => ({ medium: t.medium, position: t.position, length: t.length })),
+    );
+    if (diagnosis.kind === 'aligned') continue;
+
+    const [anchored] = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(trackRecording)
+      .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
+      .where(
+        and(eq(spotifyTrack.spotifyAlbumId, album.albumId), eq(trackRecording.matchedBy, 'isrc')),
+      );
+
+    const mismatches: MisalignedAlbum['mismatches'] = [];
+    for (let i = 0; i < Math.max(ours.length, theirs.length); i++) {
+      const ourTrack = ours[i];
+      const theirTrack = theirs[i];
+      const agree =
+        ourTrack &&
+        theirTrack &&
+        theirTrack.length != null &&
+        Math.abs(theirTrack.length - ourTrack.durationMs) <= POSITION_TOLERANCE_MS;
+      if (agree) continue;
+      mismatches.push({
+        position: i + 1,
+        ourTitle: ourTrack?.title ?? null,
+        ourMs: ourTrack?.durationMs ?? null,
+        theirTitle: theirTrack?.title ?? null,
+        theirMs: theirTrack?.length ?? null,
+      });
+      if (mismatches.length >= 8) break;
+    }
+
+    out.push({
+      ...album,
+      diagnosis,
+      mismatches,
+      ourCount: ours.length,
+      theirCount: theirs.length,
+      anchoredByIsrc: anchored?.n ?? 0,
+    });
+    if (out.length >= limit) break;
+  }
+
+  // Reordered first: it is the one that is plainly somebody's error.
+  const rank = (a: MisalignedAlbum) => (a.diagnosis.kind === 'reordered' ? 0 : 1);
+  return out.sort((a, b) => rank(a) - rank(b));
+}
+
 /** How much of each kind of contribution is waiting. */
 export async function contributionCounts() {
-  const [isrc, works, contested, missing, barcodes, submitted] = await Promise.all([
+  const [isrc, works, contested, missing, barcodes, misaligned, submitted] = await Promise.all([
     isrcGaps(5_000).then((rows) => rows.length),
     workRelationshipGaps(5_000).then((rows) => rows.length),
     contestedIsrcs(5_000).then((rows) => rows.length),
     missingReleases(5_000).then((rows) => rows.length),
     barcodeGaps(5_000).then((rows) => rows.length),
+    misalignedAlbums(5_000).then((rows) => rows.length),
     db
       .select({ outcome: mbSubmission.outcome, n: sql<number>`count(*)` })
       .from(mbSubmission)
@@ -359,6 +492,7 @@ export async function contributionCounts() {
     contestedIsrcs: contested,
     missingReleases: missing,
     barcodes,
+    misaligned,
     submissions: Object.fromEntries(submitted.map((row) => [row.outcome, row.n])),
   };
 }
