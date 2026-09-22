@@ -141,7 +141,7 @@ export function DetailScreen({
 
       {others.length > 0 && <OtherRecordings workId={workId} others={others} />}
 
-      {moreByComposer.length > 0 && (
+      {moreByComposer.length > 0 && work.composerFull && (
         <MoreByComposer composer={work.composerFull} works={moreByComposer} />
       )}
     </main>
@@ -568,9 +568,11 @@ function Plate({ work }: { work: LibraryWork }) {
         className="flex h-full w-full flex-col items-center justify-center gap-[6px] bg-paper-2 p-3 text-center"
         style={{ background: hexToRgba(work.tint, 0.16) }}
       >
-        <span className="font-display text-[56px] leading-none font-medium text-ink-2">
-          {initialsOf(work.composerFull)}
-        </span>
+        {work.composerFull && (
+          <span className="font-display text-[56px] leading-none font-medium text-ink-2">
+            {initialsOf(work.composerFull)}
+          </span>
+        )}
         <span className="font-meta text-[10px] tracking-[0.18em] text-muted uppercase">
           {work.catalog ?? work.era ?? work.album}
         </span>

@@ -42,8 +42,8 @@ export function LibraryScreen() {
     if (q) {
       list = list.filter(
         (w) =>
-          w.composerFull.toLowerCase().includes(q) ||
-          w.title.toLowerCase().includes(q) ||
+          (w.composerFull ?? '').toLowerCase().includes(q) ||
+          (w.title ?? '').toLowerCase().includes(q) ||
           (w.nickname ?? '').toLowerCase().includes(q) ||
           (w.catalog ?? '').toLowerCase().includes(q) ||
           (w.performer ?? '').toLowerCase().includes(q),
@@ -53,8 +53,8 @@ export function LibraryScreen() {
     if (sort === 'composer') {
       return [...list].sort(
         (a, b) =>
-          a.composerFull.localeCompare(b.composerFull, 'en') ||
-          a.title.localeCompare(b.title, 'en'),
+          (a.composerFull ?? '').localeCompare(b.composerFull ?? '', 'en') ||
+          (a.title ?? '').localeCompare(b.title ?? '', 'en'),
       );
     }
     if (sort === 'era') {
@@ -62,7 +62,8 @@ export function LibraryScreen() {
       // masquerading as the most recent.
       const rank = (w: LibraryWork) => (w.era === null ? ERAS.length : ERAS.indexOf(w.era));
       return [...list].sort(
-        (a, b) => rank(a) - rank(b) || a.composerFull.localeCompare(b.composerFull, 'en'),
+        (a, b) =>
+          rank(a) - rank(b) || (a.composerFull ?? '').localeCompare(b.composerFull ?? '', 'en'),
       );
     }
     return [...list].sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''));
@@ -74,7 +75,8 @@ export function LibraryScreen() {
     if (sort === 'added') return [{ key: null as string | null, works: likedWorks }];
     const by = new Map<string, LibraryWork[]>();
     for (const w of likedWorks) {
-      const key = sort === 'composer' ? w.composerFull : (w.era ?? 'Era unknown');
+      const key =
+        sort === 'composer' ? (w.composerFull ?? 'Composer unknown') : (w.era ?? 'Era unknown');
       const bucket = by.get(key);
       if (bucket) bucket.push(w);
       else by.set(key, [w]);

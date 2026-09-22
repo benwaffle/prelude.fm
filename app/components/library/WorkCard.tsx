@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Icon, Waveform } from '../Icon';
 import { initialsOf, numeralPrefix, type LibraryWork, type Movement } from '@/lib/prelude';
+import type { MusicBrainzGapCode } from '@/lib/musicbrainz-library';
 
 /** Movements beyond this fold behind a "+ n more" link into the detail view. */
 const CAP = 8;
@@ -45,7 +46,7 @@ export function WorkCard({
 
       <Link
         href={href}
-        aria-label={`${work.title} — recording detail`}
+        aria-label={`${work.title ?? 'Untitled in MusicBrainz'} — recording detail`}
         className="relative block self-start no-underline"
       >
         <span className="relative block aspect-square overflow-hidden shadow-soft">
@@ -65,7 +66,7 @@ export function WorkCard({
             href="/catalog"
             className="border-b border-transparent font-display text-[15px] font-bold no-underline transition-colors duration-150 hover:border-muted"
           >
-            {work.composer}
+            {work.composer ?? <Missing>composer</Missing>}
           </Link>
           {work.years && <span className="font-meta text-[10px] text-muted">{work.years}</span>}
         </div>
@@ -73,7 +74,7 @@ export function WorkCard({
         <h2 className="mt-1 flex items-baseline gap-[9px] font-display text-[26px] leading-[1.1] font-medium text-balance max-[900px]:text-[19px]">
           <button
             type="button"
-            title={`Play ${work.title}`}
+            title={`Play ${work.title ?? 'this recording'}`}
             onClick={() => onPlayWork(work)}
             className="flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center self-center rounded-full border border-rule text-muted transition-colors duration-150 group-hover:border-muted group-hover:text-ink-2 hover:border-ink hover:bg-ink hover:text-paper focus-visible:border-ink focus-visible:bg-ink focus-visible:text-paper"
           >
@@ -85,7 +86,7 @@ export function WorkCard({
             href={href}
             className="border-b border-transparent no-underline transition-colors duration-150 hover:border-rule"
           >
-            {work.title}
+            {work.title ?? <Missing>title</Missing>}
             {work.nickname && (
               <>
                 , <span className="text-accent italic">“{work.nickname}”</span>
@@ -105,6 +106,8 @@ export function WorkCard({
           )}
           {work.year && <span>{work.year}</span>}
         </div>
+
+        <Gaps codes={work.gaps} />
 
         <div className="mt-2 text-[12.5px] text-ink-2 max-[900px]:mt-[6px] max-[900px]:text-[12px]">
           <Link
@@ -190,7 +193,7 @@ function MovementRow({
           <span className="truncate line-through decoration-rule">{movement.name}</span>
         </div>
         <span className="font-meta text-[10.5px] text-muted tabular-nums">—</span>
-        <span className="sr-only">{work.title} — not on this recording</span>
+        <span className="sr-only">{work.title ?? 'This work'} — not on this recording</span>
       </div>
     );
   }
@@ -260,7 +263,7 @@ function MovementRow({
       >
         {movement.duration}
       </span>
-      <span className="sr-only">{work.title}</span>
+      <span className="sr-only">{work.title ?? 'Untitled in MusicBrainz'}</span>
     </div>
   );
 }
@@ -280,9 +283,11 @@ function CoverArt({ work }: { work: LibraryWork }) {
           style={{ background: work.tint }}
           aria-hidden
         />
-        <span className="relative font-display text-[40px] leading-none font-medium text-ink-2 max-[900px]:text-[26px]">
-          {initialsOf(work.composerFull)}
-        </span>
+        {work.composerFull && (
+          <span className="relative font-display text-[40px] leading-none font-medium text-ink-2 max-[900px]:text-[26px]">
+            {initialsOf(work.composerFull)}
+          </span>
+        )}
         <span className="relative font-meta text-[9px] tracking-[0.18em] text-muted uppercase max-[900px]:text-[7.5px]">
           {work.catalog ?? work.era ?? work.album}
         </span>
@@ -298,5 +303,28 @@ function CoverArt({ work }: { work: LibraryWork }) {
       onError={() => setFailed(true)}
       className="block h-full w-full object-cover transition-transform duration-[600ms] ease-[cubic-bezier(.2,.7,.2,1)] group-hover:scale-[1.03]"
     />
+  );
+}
+
+/**
+ * A field MusicBrainz has not filled. Shown rather than left blank, because
+ * a blank reads as "nothing to say" and this is "nobody has said it yet" —
+ * the difference is the whole point of the gap vocabulary.
+ */
+function Missing({ children }: { children: ReactNode }) {
+  return (
+    <span className="font-meta text-[0.62em] tracking-[0.14em] text-muted uppercase italic">
+      no {children} in MusicBrainz
+    </span>
+  );
+}
+
+/** What this card cannot show, listed plainly under it. */
+function Gaps({ codes }: { codes: MusicBrainzGapCode[] }) {
+  if (codes.length === 0) return null;
+  return (
+    <p className="mt-[6px] font-meta text-[10px] tracking-[0.12em] text-muted uppercase">
+      Incomplete in MusicBrainz: {codes.join(', ')}
+    </p>
   );
 }

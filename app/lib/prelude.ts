@@ -1,3 +1,5 @@
+import type { MusicBrainzGapCode } from './musicbrainz-library';
+
 /**
  * Shared vocabulary for the three editorial screens: library, recording
  * detail, catalogue. Pure helpers only, so both server actions and client
@@ -234,14 +236,16 @@ export interface LibraryWork {
    */
   workId: string | null;
   recordingId: string | null;
-  composer: string;
-  composerFull: string;
+  /** Null where the reader has no composer for the work, not "Unknown". */
+  composer: string | null;
+  composerFull: string | null;
   composerId: string | null;
   /** The composer's Spotify artist portrait, when we have one. */
   composerImage: string | null;
   era: Era | null;
   years: string;
-  title: string;
+  /** Null where the reader has no title for the work. The card says so. */
+  title: string | null;
   nickname: string | null;
   catalog: string | null;
   year: number | null;
@@ -254,6 +258,12 @@ export interface LibraryWork {
   movements: Movement[];
   /** No track in this recording has canonical work-part metadata yet. */
   unmatched: boolean;
+  /**
+   * What is missing from this card, named. Empty from the reader in
+   * production, which has no vocabulary for a gap; the MusicBrainz reader
+   * fills it so a card can show a hole instead of looking complete.
+   */
+  gaps: MusicBrainzGapCode[];
   /** When the user saved the most recent of these movements, ISO 8601. */
   addedAt: string | null;
 }

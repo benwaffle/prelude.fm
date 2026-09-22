@@ -289,6 +289,9 @@ async function buildWorks(recordingIds: number[], liked: Set<string>): Promise<L
       composer: shortName(head.composerName),
       composerFull: head.composerName,
       composerId: String(head.composerId),
+      // This reader has no vocabulary for a gap; it either found the row or
+      // did not return the card at all.
+      gaps: [],
       composerImage: pickImage(head.composerImages, 320),
       era: eraFor(head.birthYear),
       years: lifespan(head.birthYear, head.deathYear),

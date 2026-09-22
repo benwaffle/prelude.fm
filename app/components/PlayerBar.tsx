@@ -59,6 +59,7 @@ export function PlayerBar() {
       composer: currentTrack.artists?.[0]?.name ?? '',
       composerFull: currentTrack.artists?.[0]?.name ?? '',
       composerId: null,
+      gaps: [],
       composerImage: null,
       era: null,
       years: '',
@@ -384,7 +385,7 @@ function Cover({ work }: { work: LibraryWork }) {
         className="flex h-14 w-14 items-center justify-center rounded-[2px] font-display text-lg max-[900px]:h-11 max-[900px]:w-11"
         style={{ background: hexToRgba(work.ink, 0.14) }}
       >
-        {work.composer.slice(0, 1)}
+        {work.composer?.slice(0, 1) ?? ''}
       </div>
     );
   }

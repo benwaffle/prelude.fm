@@ -25,10 +25,12 @@ export function ComposerStrip({
   const byComposer = new Map<string, ComposerRow>();
   for (const w of works) {
     const liked = w.movements.filter((m) => m.liked).length;
-    if (!liked) continue;
+    // A work we cannot attribute has no composer to file it under. It stays
+    // in the library; it just is not in this strip.
+    if (!liked || !w.composerFull) continue;
     const row = byComposer.get(w.composerFull) ?? {
       full: w.composerFull,
-      short: w.composer,
+      short: w.composer ?? w.composerFull,
       image: w.composerImage,
       liked: 0,
       works: 0,

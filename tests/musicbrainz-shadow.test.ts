@@ -43,6 +43,7 @@ function legacyWork(overrides: Partial<LibraryWork> & { id: string }): LibraryWo
     movements: [],
     unmatched: false,
     addedAt: null,
+    gaps: [],
     ...overrides,
   };
 }
