@@ -4,6 +4,9 @@ import {
   barcodeSubmissionDraft,
   describeLedgerState,
   errorReportDraft,
+  errorReportDraftFromContested,
+  errorReportDraftFromMisaligned,
+  requireErrorDisposition,
   ManualSubmissionError,
   normalizeEditId,
   normalizeMbid,
@@ -399,6 +402,59 @@ test('a misaligned tracklist report shows both sides of every disagreement', () 
   assert.deepEqual(draft.evidence.mismatches, [
     { position: 21, ourTitle: 'Allegro', ourMs: 401_000, theirTitle: 'Adagio', theirMs: 220_000 },
   ]);
+});
+
+test('an error confirmation re-reads the contradiction and refuses a made-up disposition', () => {
+  const contested = errorReportDraftFromContested(
+    {
+      isrc: 'GBAYE0601498',
+      recordingMbids: [RECORDING_MBID, OTHER_WORK_MBID],
+      titles: 'Symphony 87 / Symphony 82',
+    },
+    'reported',
+  );
+  assert.equal(contested.evidence.disposition, 'reported');
+  assert.deepEqual(contested.evidence.recordingMbids, [OTHER_WORK_MBID, RECORDING_MBID].sort());
+  assert.equal(
+    submissionIdentity(contested),
+    submissionIdentity(
+      errorReportDraftFromContested(
+        {
+          isrc: 'GBAYE0601498',
+          recordingMbids: [RECORDING_MBID, OTHER_WORK_MBID],
+          titles: 'Symphony 87 / Symphony 82',
+        },
+        'fixed',
+      ),
+    ),
+  );
+
+  const misaligned = errorReportDraftFromMisaligned(
+    {
+      albumId: 'spotify-1',
+      albumTitle: 'A Recital',
+      releaseMbid: '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46',
+      diagnosis: { kind: 'reordered' },
+      ourCount: 21,
+      theirCount: 21,
+      mismatches: [
+        {
+          position: 21,
+          ourTitle: 'Allegro',
+          ourMs: 401_000,
+          theirTitle: 'Adagio',
+          theirMs: 220_000,
+        },
+      ],
+    },
+    'fixed',
+  );
+  assert.equal(misaligned.evidence.diagnosis, 'reordered');
+  assert.equal(misaligned.evidence.ourTrackCount, 21);
+  assert.equal(misaligned.evidence.theirTrackCount, 21);
+
+  assert.throws(() => requireErrorDisposition('resolved'), ManualSubmissionError);
+  assert.throws(() => requireErrorDisposition(''), ManualSubmissionError);
 });
 
 test('every draft class carries a non-null ledger value', () => {

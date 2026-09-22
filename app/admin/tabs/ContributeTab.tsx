@@ -6,11 +6,14 @@ import {
   getBotStatus,
   getContributions,
   recordBarcodeSubmission,
+  recordContestedIsrcReport,
   recordIsrcSubmission,
+  recordMisalignedTracklistReport,
   recordReleaseSubmission,
   recordWorkCreationSubmission,
   recordWorkRelationshipSubmission,
   recheckCreatedWork,
+  recheckErrorReport,
   reconcileSubmissions,
   setSubmissionOutcome,
   submitBotBatch,
@@ -111,6 +114,34 @@ export function ContributeTab() {
           editId: form.editId,
         }),
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submittedContestedIsrc(isrc: string, disposition: 'reported' | 'fixed') {
+    setBusy(true);
+    try {
+      setView(await recordContestedIsrcReport(isrc, disposition));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submittedMisaligned(albumId: string, disposition: 'reported' | 'fixed') {
+    setBusy(true);
+    try {
+      setView(await recordMisalignedTracklistReport(albumId, disposition));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recheckError(kind: 'contested_isrc' | 'misaligned_tracklist', key: string) {
+    setBusy(true);
+    try {
+      const result = await recheckErrorReport(kind, key);
+      setView(result.view);
     } finally {
       setBusy(false);
     }
@@ -432,7 +463,8 @@ export function ContributeTab() {
             MusicBrainz has the release, but its tracklist and the album&apos;s disagree, so no
             track can be placed by position. Where the same recordings appear in a different order,
             one of the two is wrong — and it is not always MusicBrainz&apos;s, which is why these
-            are reported rather than submitted.
+            are reported rather than submitted. Both sides stay visible. Opening a link does not
+            write the ledger, and nothing here changes the cached MusicBrainz tracklist.
           </p>
           {view.misaligned.map((album) => (
             <details key={album.albumId} className="fold">
@@ -446,6 +478,7 @@ export function ContributeTab() {
                       : 'durations do not correspond'}
                   {album.anchoredByIsrc > 0 &&
                     ` · ${album.anchoredByIsrc} anchored by ISRC regardless`}
+                  {album.ledger && ` · ${album.ledger.disposition ?? album.ledger.label}`}
                 </span>
               </summary>
               <div className="fold-body">
@@ -492,12 +525,52 @@ export function ContributeTab() {
                   </a>
                   <a
                     className="act"
+                    href={`https://musicbrainz.org/release/${album.releaseMbid}/edit`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Edit release
+                  </a>
+                  <a
+                    className="act"
                     href={`https://open.spotify.com/album/${album.albumId}`}
                     target="_blank"
                     rel="noreferrer"
                   >
                     Spotify
                   </a>
+                  {album.ledger ? (
+                    <>
+                      <span className="album-meta">
+                        {album.ledger.disposition} · {album.ledger.label}
+                      </span>
+                      <button
+                        className="act"
+                        disabled={busy}
+                        onClick={() => recheckError('misaligned_tracklist', album.albumId)}
+                      >
+                        Recheck
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="act"
+                        data-variant="primary"
+                        disabled={busy}
+                        onClick={() => submittedMisaligned(album.albumId, 'reported')}
+                      >
+                        I reported it
+                      </button>
+                      <button
+                        className="act"
+                        disabled={busy}
+                        onClick={() => submittedMisaligned(album.albumId, 'fixed')}
+                      >
+                        I fixed it
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </details>
@@ -725,12 +798,63 @@ export function ContributeTab() {
           </div>
           <p className="px-4 pt-3 text-[var(--ink-2)]">
             An upstream error rather than a gap: an ISRC identifies one recording, so two holding it
-            means one of them is wrong. These cost us real links, and they are fixable.
+            means one of them is wrong. These cost us real links, and they are fixable. Both
+            recordings stay listed. Opening a recording or the ISRC page does not write the ledger,
+            and nothing here removes the cached mapping.
           </p>
           {view.contested.map((row) => (
             <div key={row.isrc} className="row">
-              <span className="mono">{row.isrc}</span>
-              <span className="ml-3 text-[var(--ink-2)]">{row.titles}</span>
+              <span className="min-w-0 flex-1">
+                <a className="mono" href={row.isrcUrl} target="_blank" rel="noreferrer">
+                  {row.isrc}
+                </a>
+                <span className="block text-[11px] text-[var(--ink-2)]">{row.titles}</span>
+                <span className="album-meta">
+                  {row.recordingMbids.map((mbid) => (
+                    <a
+                      key={mbid}
+                      className="mono"
+                      href={`https://musicbrainz.org/recording/${mbid}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {mbid}
+                    </a>
+                  ))}
+                </span>
+              </span>
+              {row.ledger ? (
+                <>
+                  <span className="album-meta shrink-0">
+                    {row.ledger.disposition} · {row.ledger.label}
+                  </span>
+                  <button
+                    className="act shrink-0"
+                    disabled={busy}
+                    onClick={() => recheckError('contested_isrc', row.isrc)}
+                  >
+                    Recheck
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="act shrink-0"
+                    data-variant="primary"
+                    disabled={busy}
+                    onClick={() => submittedContestedIsrc(row.isrc, 'reported')}
+                  >
+                    I reported it
+                  </button>
+                  <button
+                    className="act shrink-0"
+                    disabled={busy}
+                    onClick={() => submittedContestedIsrc(row.isrc, 'fixed')}
+                  >
+                    I fixed it
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </section>

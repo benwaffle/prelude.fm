@@ -507,20 +507,30 @@ export type ContestedIsrc = {
   isrc: string;
   recordings: number;
   titles: string;
+  /** Every recording MusicBrainz currently maps this ISRC to. */
+  recordingMbids: string[];
 };
 
 export async function contestedIsrcs(limit = 100): Promise<ContestedIsrc[]> {
-  return db
+  const groups = await db
     .select({
       isrc: mbRecordingIsrc.isrc,
       recordings: sql<number>`count(*)`,
       titles: sql<string>`group_concat(${mbRecording.title}, ' / ')`,
+      recordingMbids: sql<string>`group_concat(${mbRecordingIsrc.recordingMbid})`,
     })
     .from(mbRecordingIsrc)
     .innerJoin(mbRecording, eq(mbRecording.mbid, mbRecordingIsrc.recordingMbid))
     .groupBy(mbRecordingIsrc.isrc)
     .having(sql`count(*) > 1`)
     .limit(limit);
+
+  return groups.map((group) => ({
+    isrc: group.isrc,
+    recordings: group.recordings,
+    titles: group.titles,
+    recordingMbids: [...new Set((group.recordingMbids ?? '').split(',').filter(Boolean))].sort(),
+  }));
 }
 
 /**

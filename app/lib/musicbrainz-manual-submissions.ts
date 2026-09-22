@@ -539,3 +539,60 @@ export function errorReportDraft(
     },
   };
 }
+
+export function requireErrorDisposition(input: string): ErrorDisposition {
+  if (input === 'reported' || input === 'fixed') return input;
+  throw new ManualSubmissionError('A contradiction is reported or fixed, not guessed away');
+}
+
+export type ContestedIsrcGapInput = {
+  isrc: string;
+  recordingMbids: string[];
+  titles: string;
+  albumId?: string | null;
+};
+
+export function errorReportDraftFromContested(
+  gap: ContestedIsrcGapInput,
+  dispositionInput: string,
+): ManualSubmissionDraft {
+  return errorReportDraft(
+    {
+      kind: 'contested_isrc',
+      isrc: gap.isrc,
+      recordingMbids: gap.recordingMbids,
+      titles: gap.titles,
+      albumId: gap.albumId ?? null,
+    },
+    requireErrorDisposition(dispositionInput),
+  );
+}
+
+export type MisalignedTracklistGapInput = {
+  albumId: string;
+  albumTitle: string;
+  releaseMbid: string;
+  diagnosis: { kind: string };
+  ourCount: number;
+  theirCount: number;
+  mismatches: MisalignedTracklistReport['mismatches'];
+};
+
+export function errorReportDraftFromMisaligned(
+  gap: MisalignedTracklistGapInput,
+  dispositionInput: string,
+): ManualSubmissionDraft {
+  return errorReportDraft(
+    {
+      kind: 'misaligned_tracklist',
+      albumId: gap.albumId,
+      albumTitle: gap.albumTitle,
+      releaseMbid: gap.releaseMbid,
+      diagnosis: gap.diagnosis.kind,
+      ourTrackCount: gap.ourCount,
+      theirTrackCount: gap.theirCount,
+      mismatches: gap.mismatches,
+    },
+    requireErrorDisposition(dispositionInput),
+  );
+}

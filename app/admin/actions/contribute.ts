@@ -1,6 +1,6 @@
 'use server';
 
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { mbSubmission, mbWork } from '@/lib/db/schema';
 import {
@@ -27,6 +27,8 @@ import {
   createdWorkCacheState,
   createdWorkLanded,
   describeLedgerState,
+  errorReportDraftFromContested,
+  errorReportDraftFromMisaligned,
   ManualSubmissionError,
   normalizeEditId,
   requireMbid,
@@ -139,7 +141,16 @@ export type ContributionView = {
       label: string;
     }[];
   })[];
-  contested: Awaited<ReturnType<typeof contestedIsrcs>>;
+  contested: (Awaited<ReturnType<typeof contestedIsrcs>>[number] & {
+    isrcUrl: string;
+    ledger: {
+      id: number;
+      outcome: string;
+      editId: string | null;
+      disposition: string | null;
+      label: string;
+    } | null;
+  })[];
   missing: (Awaited<ReturnType<typeof missingReleases>>[number] & {
     harmony: string;
     ledger: {
@@ -151,7 +162,15 @@ export type ContributionView = {
     } | null;
   })[];
   barcodes: (Awaited<ReturnType<typeof barcodeGaps>>[number] & { edit: string })[];
-  misaligned: Awaited<ReturnType<typeof misalignedAlbums>>;
+  misaligned: (Awaited<ReturnType<typeof misalignedAlbums>>[number] & {
+    ledger: {
+      id: number;
+      outcome: string;
+      editId: string | null;
+      disposition: string | null;
+      label: string;
+    } | null;
+  })[];
   recent: {
     id: number;
     kind: string;
@@ -301,6 +320,55 @@ export async function getContributions(): Promise<ContributionView> {
     }),
   );
 
+  const contestedIsrcValues = contested.map((row) => row.isrc);
+  const misalignedAlbumIds = misaligned.map((album) => album.albumId);
+  const errorLedgerRows =
+    contestedIsrcValues.length === 0 && misalignedAlbumIds.length === 0
+      ? []
+      : await db
+          .select({
+            id: mbSubmission.id,
+            targetMbid: mbSubmission.targetMbid,
+            subject: mbSubmission.subject,
+            value: mbSubmission.value,
+            outcome: mbSubmission.outcome,
+            editId: mbSubmission.editId,
+            evidence: mbSubmission.evidence,
+          })
+          .from(mbSubmission)
+          .where(
+            and(
+              eq(mbSubmission.kind, 'error'),
+              or(
+                contestedIsrcValues.length > 0
+                  ? inArray(mbSubmission.value, contestedIsrcValues)
+                  : undefined,
+                misalignedAlbumIds.length > 0
+                  ? inArray(mbSubmission.subject, misalignedAlbumIds)
+                  : undefined,
+              ),
+            ),
+          );
+
+  function errorLedgerOf(match: (row: (typeof errorLedgerRows)[number]) => boolean): {
+    id: number;
+    outcome: string;
+    editId: string | null;
+    disposition: string | null;
+    label: string;
+  } | null {
+    const row = errorLedgerRows.find(match);
+    if (!row) return null;
+    const disposition = (row.evidence as { disposition?: unknown } | null)?.disposition;
+    return {
+      id: row.id,
+      outcome: row.outcome,
+      editId: row.editId,
+      disposition: typeof disposition === 'string' ? disposition : null,
+      label: describeLedgerState(row),
+    };
+  }
+
   return {
     counts,
     isrcReleases: releases.map((release) => ({
@@ -338,14 +406,21 @@ export async function getContributions(): Promise<ContributionView> {
         label: describeLedgerState(row),
       })),
     })),
-    contested,
+    contested: contested.map((row) => ({
+      ...row,
+      isrcUrl: `https://musicbrainz.org/isrc/${row.isrc}`,
+      ledger: errorLedgerOf((entry) => entry.value === row.isrc),
+    })),
     missing: missing.map((album) => ({
       ...album,
       harmony: harmonyImportLink(album.albumId),
       ledger: releaseLedgerByAlbum.get(album.albumId) ?? null,
     })),
     barcodes: barcodes.map((gap) => ({ ...gap, edit: releaseEditLink(gap.releaseMbid) })),
-    misaligned,
+    misaligned: misaligned.map((album) => ({
+      ...album,
+      ledger: errorLedgerOf((entry) => entry.subject === album.albumId),
+    })),
     recent,
   };
 }
@@ -483,6 +558,86 @@ export async function recordReleaseSubmission(
     options,
   );
   return getContributions();
+}
+
+/**
+ * Record that a person reported or fixed a contested ISRC. Does not change
+ * cached MusicBrainz facts: the contradiction stays visible until upstream
+ * does and a later recheck observes that.
+ */
+export async function recordContestedIsrcReport(
+  isrc: string,
+  disposition: string,
+  options: { note?: string; editId?: string } = {},
+) {
+  const session = await checkAuth();
+  const gap = (await contestedIsrcs(5_000)).find((row) => row.isrc === isrc);
+  if (!gap) {
+    throw new ManualSubmissionError('That ISRC is not currently contested in the cache');
+  }
+
+  await recordManualSubmission(
+    `human:${session.user.name}`,
+    errorReportDraftFromContested(gap, disposition),
+    options,
+  );
+  return getContributions();
+}
+
+/**
+ * Record that a person reported or fixed a misaligned tracklist. The cache
+ * is left as MusicBrainz stated it.
+ */
+export async function recordMisalignedTracklistReport(
+  albumId: string,
+  disposition: string,
+  options: { note?: string; editId?: string } = {},
+) {
+  const session = await checkAuth();
+  const gap = (await misalignedAlbums(5_000)).find((album) => album.albumId === albumId);
+  if (!gap) {
+    throw new ManualSubmissionError('That album is not currently a misaligned tracklist');
+  }
+
+  await recordManualSubmission(
+    `human:${session.user.name}`,
+    errorReportDraftFromMisaligned(gap, disposition),
+    options,
+  );
+  return getContributions();
+}
+
+/**
+ * Observe whether a recorded contradiction is still in the cache.
+ *
+ * Reads only. If MusicBrainz still maps the ISRC to several recordings, or
+ * the tracklists still disagree, the row stays pending. Applied only when the
+ * cache no longer shows the contradiction — never by deleting our copy of it.
+ */
+export async function recheckErrorReport(
+  kind: 'contested_isrc' | 'misaligned_tracklist',
+  key: string,
+) {
+  await checkAuth();
+  const stillPresent =
+    kind === 'contested_isrc'
+      ? Boolean((await contestedIsrcs(5_000)).find((row) => row.isrc === key))
+      : Boolean((await misalignedAlbums(5_000)).find((album) => album.albumId === key));
+
+  if (!stillPresent) {
+    await db
+      .update(mbSubmission)
+      .set({ outcome: 'applied', outcomeAt: new Date() })
+      .where(
+        and(
+          eq(mbSubmission.kind, 'error'),
+          eq(mbSubmission.outcome, 'pending'),
+          kind === 'contested_isrc' ? eq(mbSubmission.value, key) : eq(mbSubmission.subject, key),
+        ),
+      );
+  }
+
+  return { stillPresent, view: await getContributions() };
 }
 
 /**
