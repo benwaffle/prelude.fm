@@ -73,6 +73,7 @@ function heldRecording(recordingMbid: string, heldTrackIds: string[], work?: obj
         displayWorkMbid: 'work-1',
         workLevelReason: 'no-parent' as const,
         hierarchy: [],
+        parts: [],
         title: 'Goldberg Variations',
         type: 'Theme and variations',
         catalogues: [

@@ -113,6 +113,12 @@ export type ProjectedRecordingWork = {
   displayWorkMbid: string | null;
   workLevelReason: 'has-parts' | 'typed' | 'no-parent' | 'titled-as-part' | 'unresolved' | null;
   hierarchy: ProjectedWorkNode[];
+  /**
+   * The displayed work's own parts, in MusicBrainz's ordering. This is what
+   * lets a reader show that a holding is partial — the movements of the work
+   * a performance does not carry — without guessing how many there are.
+   */
+  parts: ProjectedWorkNode[];
   title: string | null;
   type: string | null;
   catalogues: ProjectedCatalogueReference[];
@@ -256,6 +262,7 @@ function compareNullableNumberDescending(left: number | null, right: number | nu
  */
 type LibraryIndex = {
   classificationByTrack: Map<string, TrackClassification>;
+  childWorksByParent: Map<string, MbWorkFact[]>;
   albumById: Map<string, ProviderAlbumFact>;
   trackById: Map<string, ProviderTrackFact>;
   anchorByTrack: Map<string, TrackAnchorFact>;
@@ -290,6 +297,10 @@ function indexFacts(facts: MusicBrainzLibraryFacts): LibraryIndex {
     classificationByTrack: oneByKey(
       facts.classifications,
       (classification) => classification.spotifyTrackId,
+    ),
+    childWorksByParent: manyByKey(
+      facts.mbWorks.filter((work) => work.parentMbid !== null),
+      (work) => work.parentMbid!,
     ),
     albumById: oneByKey(facts.providerAlbums, (album) => album.spotifyAlbumId),
     trackById,
@@ -597,6 +608,7 @@ function projectRecordingWork(
       displayWorkMbid: null,
       workLevelReason: null,
       hierarchy: [],
+      parts: [],
       title: null,
       type: null,
       catalogues: [],
@@ -710,13 +722,14 @@ function projectRecordingWork(
     relatedWorkMbid,
     displayWorkMbid: displayWork?.mbid ?? null,
     workLevelReason: level.reason,
-    hierarchy: [...hierarchyLeafFirst].reverse().map((work) => ({
-      mbid: work.mbid,
-      title: nonBlank(work.title),
-      type: nonBlank(work.type),
-      orderingKey: work.orderingKey,
-      detail: work.detail,
-    })),
+    hierarchy: [...hierarchyLeafFirst].reverse().map(asNode),
+    parts: [...(index.childWorksByParent.get(level.mbid) ?? [])]
+      .sort(
+        (left, right) =>
+          (left.orderingKey ?? Number.MAX_SAFE_INTEGER) -
+            (right.orderingKey ?? Number.MAX_SAFE_INTEGER) || left.mbid.localeCompare(right.mbid),
+      )
+      .map(asNode),
     title,
     type,
     catalogues,
@@ -749,6 +762,16 @@ function describeAnchoredTrack(
         instrument: nonBlank(credit.instrument),
       };
     }),
+  };
+}
+
+function asNode(work: MbWorkFact): ProjectedWorkNode {
+  return {
+    mbid: work.mbid,
+    title: nonBlank(work.title),
+    type: nonBlank(work.type),
+    orderingKey: work.orderingKey,
+    detail: work.detail,
   };
 }
 
