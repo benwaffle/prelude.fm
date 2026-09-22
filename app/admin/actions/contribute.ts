@@ -3,6 +3,7 @@
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { mbSubmission, mbWork } from '@/lib/db/schema';
+import { resolveContributionLimits, type ContributionListLimits } from '@/lib/contribution-list';
 import {
   barcodeGaps,
   contestedIsrcs,
@@ -258,8 +259,11 @@ export type ContributionView = {
   }[];
 };
 
-export async function getContributions(): Promise<ContributionView> {
+export async function getContributions(
+  limits?: Partial<ContributionListLimits>,
+): Promise<ContributionView> {
   await checkAuth();
+  const page = resolveContributionLimits(limits);
 
   const [
     counts,
@@ -273,13 +277,13 @@ export async function getContributions(): Promise<ContributionView> {
     recent,
   ] = await Promise.all([
     contributionCounts(),
-    isrcGapsByRelease(40),
-    workRelationshipGaps(40),
-    contestedIsrcs(20),
-    missingReleases(40),
-    barcodeGaps(20),
-    streamingUrlGaps(20),
-    misalignedAlbums(30),
+    isrcGapsByRelease(page.isrcReleases),
+    workRelationshipGaps(page.workGaps),
+    contestedIsrcs(page.contested),
+    missingReleases(page.missing),
+    barcodeGaps(page.barcodes),
+    streamingUrlGaps(page.streamingUrls),
+    misalignedAlbums(page.misaligned),
     db
       .select({
         id: mbSubmission.id,

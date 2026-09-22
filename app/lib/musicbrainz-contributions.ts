@@ -15,6 +15,7 @@
  * submit.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { pageSlice } from './contribution-list';
 import { db } from './db';
 import {
   diagnoseTracklist,
@@ -265,15 +266,18 @@ export type IsrcGapRelease = {
   gaps: IsrcGap[];
 };
 
-export async function isrcGapsByRelease(limit = 100): Promise<IsrcGapRelease[]> {
-  return groupIsrcGapsByRelease(await isrcGaps(2_000), limit);
+export async function isrcGapsByRelease(limit = 100, offset = 0): Promise<IsrcGapRelease[]> {
+  return groupIsrcGapsByRelease(await isrcGaps(2_000), limit, offset);
 }
 
-export async function isrcEligibleGapsByRelease(limit = 100): Promise<IsrcGapRelease[]> {
-  return groupIsrcGapsByRelease(await isrcEligibleGaps(2_000), limit);
+export async function isrcEligibleGapsByRelease(
+  limit = 100,
+  offset = 0,
+): Promise<IsrcGapRelease[]> {
+  return groupIsrcGapsByRelease(await isrcEligibleGaps(2_000), limit, offset);
 }
 
-function groupIsrcGapsByRelease(gaps: IsrcGap[], limit: number): IsrcGapRelease[] {
+function groupIsrcGapsByRelease(gaps: IsrcGap[], limit: number, offset = 0): IsrcGapRelease[] {
   const byRelease = new Map<string, IsrcGapRelease>();
   for (const gap of gaps) {
     const existing = byRelease.get(gap.releaseMbid);
@@ -290,7 +294,13 @@ function groupIsrcGapsByRelease(gaps: IsrcGap[], limit: number): IsrcGapRelease[
       });
     }
   }
-  return [...byRelease.values()].sort((a, b) => b.missing - a.missing).slice(0, limit);
+  return pageSlice(
+    [...byRelease.values()].sort(
+      (a, b) => b.missing - a.missing || a.releaseMbid.localeCompare(b.releaseMbid),
+    ),
+    limit,
+    offset,
+  );
 }
 
 /**
@@ -333,7 +343,10 @@ export type WorkCreationProposal = {
   provenance: 'legacy_proposal';
 };
 
-export async function workRelationshipGaps(limit = 100): Promise<WorkRelationshipGap[]> {
+export async function workRelationshipGaps(
+  limit = 100,
+  offset = 0,
+): Promise<WorkRelationshipGap[]> {
   const gaps = await db
     .select({
       recordingMbid: trackRecording.recordingMbid,
@@ -355,7 +368,9 @@ export async function workRelationshipGaps(limit = 100): Promise<WorkRelationshi
       )`,
     )
     .groupBy(trackRecording.recordingMbid)
-    .limit(limit);
+    .orderBy(sql`count(*) desc`, trackRecording.recordingMbid)
+    .limit(limit)
+    .offset(offset);
   if (gaps.length === 0) return [];
 
   const recordingMbids = gaps.map((gap) => gap.recordingMbid);
@@ -541,7 +556,7 @@ export type ContestedIsrc = {
   recordingMbids: string[];
 };
 
-export async function contestedIsrcs(limit = 100): Promise<ContestedIsrc[]> {
+export async function contestedIsrcs(limit = 100, offset = 0): Promise<ContestedIsrc[]> {
   const groups = await db
     .select({
       isrc: mbRecordingIsrc.isrc,
@@ -553,7 +568,9 @@ export async function contestedIsrcs(limit = 100): Promise<ContestedIsrc[]> {
     .innerJoin(mbRecording, eq(mbRecording.mbid, mbRecordingIsrc.recordingMbid))
     .groupBy(mbRecordingIsrc.isrc)
     .having(sql`count(*) > 1`)
-    .limit(limit);
+    .orderBy(mbRecordingIsrc.isrc)
+    .limit(limit)
+    .offset(offset);
 
   return groups.map((group) => ({
     isrc: group.isrc,
@@ -586,7 +603,7 @@ export type MissingRelease = {
   reason: string;
 };
 
-export async function missingReleases(limit = 60): Promise<MissingRelease[]> {
+export async function missingReleases(limit = 60, offset = 0): Promise<MissingRelease[]> {
   return db
     .select({
       albumId: spotifyAlbum.spotifyId,
@@ -607,8 +624,9 @@ export async function missingReleases(limit = 60): Promise<MissingRelease[]> {
     .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyAlbumId, spotifyAlbum.spotifyId))
     .where(sql`${spotifyAlbum.mbReleaseId} is null`)
     .groupBy(spotifyAlbum.spotifyId)
-    .orderBy(sql`count(distinct ${spotifyTrack.spotifyId}) desc`)
-    .limit(limit);
+    .orderBy(sql`count(distinct ${spotifyTrack.spotifyId}) desc`, spotifyAlbum.spotifyId)
+    .limit(limit)
+    .offset(offset);
 }
 
 /**
@@ -630,7 +648,7 @@ export type BarcodeGap = {
   maxDurationDeltaMs: number;
 };
 
-export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
+export async function barcodeGaps(limit = 50, offset = 0): Promise<BarcodeGap[]> {
   const candidates = await db
     .select({
       releaseMbid: mbRelease.mbid,
@@ -689,7 +707,7 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
     musicbrainzByRelease.set(row.releaseMbid, rows);
   }
 
-  return candidates
+  const verified = candidates
     .flatMap((candidate) => {
       const verification = verifyBarcodeRelease(
         spotifyByAlbum.get(candidate.albumId) ?? [],
@@ -697,7 +715,11 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
       );
       return verification ? [{ ...candidate, ...verification }] : [];
     })
-    .slice(0, limit);
+    .sort(
+      (a, b) =>
+        a.releaseTitle.localeCompare(b.releaseTitle) || a.releaseMbid.localeCompare(b.releaseMbid),
+    );
+  return pageSlice(verified, limit, offset);
 }
 
 /**
@@ -706,7 +728,7 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
  * The displayed list is `barcodeGaps`, which keeps pending ledger rows visible.
  * The bot only receives rows from this set.
  */
-export async function barcodeEligibleGaps(limit = 200): Promise<BarcodeGap[]> {
+export async function barcodeEligibleGaps(limit = 200, offset = 0): Promise<BarcodeGap[]> {
   const gaps = await barcodeGaps(5_000);
   if (gaps.length === 0) return [];
 
@@ -721,9 +743,11 @@ export async function barcodeEligibleGaps(limit = 200): Promise<BarcodeGap[]> {
 
   const ledgered = new Set(ledgerRows.map((row) => `${row.targetMbid}\u0000${row.value ?? ''}`));
 
-  return gaps
-    .filter((gap) => !ledgered.has(`${gap.releaseMbid}\u0000${gap.barcode}`))
-    .slice(0, limit);
+  return pageSlice(
+    gaps.filter((gap) => !ledgered.has(`${gap.releaseMbid}\u0000${gap.barcode}`)),
+    limit,
+    offset,
+  );
 }
 
 /** What the cache currently holds as this release's barcode, if anything. */
@@ -807,7 +831,7 @@ export async function observeSpotifyFreeStreamingUrlState(
   });
 }
 
-export async function streamingUrlGaps(limit = 50): Promise<StreamingUrlGap[]> {
+export async function streamingUrlGaps(limit = 50, offset = 0): Promise<StreamingUrlGap[]> {
   const candidates = await db
     .select({
       releaseMbid: mbRelease.mbid,
@@ -831,7 +855,7 @@ export async function streamingUrlGaps(limit = 50): Promise<StreamingUrlGap[]> {
     relationsByRelease.set(relation.releaseMbid, list);
   }
 
-  return candidates
+  const rows = candidates
     .filter((candidate) =>
       isStreamingUrlContributionGap(
         spotifyFreeStreamingUrlState({
@@ -846,7 +870,11 @@ export async function streamingUrlGaps(limit = 50): Promise<StreamingUrlGap[]> {
       albumId,
       albumTitle,
     }))
-    .slice(0, limit);
+    .sort(
+      (a, b) =>
+        a.releaseTitle.localeCompare(b.releaseTitle) || a.releaseMbid.localeCompare(b.releaseMbid),
+    );
+  return pageSlice(rows, limit, offset);
 }
 
 /**
@@ -883,7 +911,7 @@ export type MisalignedAlbum = {
   anchoredByIsrc: number;
 };
 
-export async function misalignedAlbums(limit = 40): Promise<MisalignedAlbum[]> {
+export async function misalignedAlbums(limit = 40, offset = 0): Promise<MisalignedAlbum[]> {
   const albums = await db
     .select({
       albumId: spotifyAlbum.spotifyId,
@@ -968,19 +996,22 @@ export async function misalignedAlbums(limit = 40): Promise<MisalignedAlbum[]> {
       theirCount: theirs.length,
       anchoredByIsrc: anchored?.n ?? 0,
     });
-    if (out.length >= limit) break;
   }
 
   // Reordered first: it is the one that is plainly somebody's error.
   const rank = (a: MisalignedAlbum) => (a.diagnosis.kind === 'reordered' ? 0 : 1);
-  return out.sort((a, b) => rank(a) - rank(b));
+  return pageSlice(
+    out.sort((a, b) => rank(a) - rank(b) || a.albumId.localeCompare(b.albumId)),
+    limit,
+    offset,
+  );
 }
 
 /** How much of each kind of contribution is waiting. */
 export async function contributionCounts() {
-  const [isrc, works, contested, missing, barcodes, streamingUrls, misaligned, submitted] =
+  const [isrcRows, works, contested, missing, barcodes, streamingUrls, misaligned, submitted] =
     await Promise.all([
-      isrcGaps(5_000).then((rows) => rows.length),
+      isrcGaps(5_000),
       workRelationshipGaps(5_000).then((rows) => rows.length),
       contestedIsrcs(5_000).then((rows) => rows.length),
       missingReleases(5_000).then((rows) => rows.length),
@@ -993,7 +1024,8 @@ export async function contributionCounts() {
         .groupBy(mbSubmission.outcome),
     ]);
   return {
-    isrc,
+    isrc: isrcRows.length,
+    isrcReleases: new Set(isrcRows.map((row) => row.releaseMbid)).size,
     workRelationships: works,
     contestedIsrcs: contested,
     missingReleases: missing,

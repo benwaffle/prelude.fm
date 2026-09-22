@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
+  DEFAULT_CONTRIBUTION_LIMITS,
+  hasMoreToLoad,
+  nextListLimit,
+  shownOfTotalLabel,
+  type ContributionListLimits,
+} from '@/lib/contribution-list';
+import {
   getBotPayload,
   getBarcodeBotPayload,
   getBotStatus,
@@ -69,14 +76,17 @@ export function ContributeTab({
     Record<string, { editId: string }>
   >({});
   const [errorForms, setErrorForms] = useState<Record<string, { editId: string }>>({});
+  const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
 
-  const refresh = useCallback(() => {
-    getContributions()
+  const reload = useCallback(() => {
+    return getContributions(limits)
       .then(setView)
       .catch(() => setView(null));
-  }, []);
+  }, [limits]);
 
-  useEffect(refresh, [refresh]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   useEffect(() => {
     if (!focus || !view) return;
@@ -98,12 +108,19 @@ export function ContributeTab({
       .catch(() => setBot(null));
   }, []);
 
+  function loadMore(key: keyof ContributionListLimits, total: number) {
+    setLimits((current) => ({
+      ...current,
+      [key]: nextListLimit(current[key], total),
+    }));
+  }
+
   async function submitAlbum(releaseMbid: string, albumTitle: string) {
     setBusy(true);
     setBotResult(null);
     try {
       const result = await submitBotBatch(releaseMbid);
-      setView(result.view);
+      await reload();
       setBot(await getBotStatus());
       setBotResult(
         result.error
@@ -140,7 +157,7 @@ export function ContributeTab({
     setBotResult(null);
     try {
       const result = await submitBarcodeBotBatch(releaseMbid);
-      setView(result.view);
+      await reload();
       setBot(await getBotStatus());
       setBotResult(
         result.error
@@ -158,7 +175,8 @@ export function ContributeTab({
     const form = isrcForms[releaseMbid] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordIsrcSubmission(releaseMbid, { editId: form.editId }));
+      await recordIsrcSubmission(releaseMbid, { editId: form.editId });
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -167,8 +185,8 @@ export function ContributeTab({
   async function recheckIsrcs(releaseMbid: string) {
     setBusy(true);
     try {
-      const result = await recheckIsrcRelease(releaseMbid);
-      setView(result.view);
+      await recheckIsrcRelease(releaseMbid);
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -178,7 +196,8 @@ export function ContributeTab({
     const form = barcodeForms[releaseMbid] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordBarcodeSubmission(releaseMbid, { editId: form.editId }));
+      await recordBarcodeSubmission(releaseMbid, { editId: form.editId });
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -187,8 +206,8 @@ export function ContributeTab({
   async function recheckBarcodeRow(releaseMbid: string) {
     setBusy(true);
     try {
-      const result = await recheckBarcode(releaseMbid);
-      setView(result.view);
+      await recheckBarcode(releaseMbid);
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -198,11 +217,10 @@ export function ContributeTab({
     const form = streamingUrlForms[albumId] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(
-        await recordStreamingUrlSubmission(releaseMbid, albumId, {
-          editId: form.editId,
-        }),
-      );
+      await recordStreamingUrlSubmission(releaseMbid, albumId, {
+        editId: form.editId,
+      });
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -211,8 +229,8 @@ export function ContributeTab({
   async function recheckStreaming(releaseMbid: string) {
     setBusy(true);
     try {
-      const result = await recheckStreamingUrl(releaseMbid);
-      setView(result.view);
+      await recheckStreamingUrl(releaseMbid);
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -222,12 +240,11 @@ export function ContributeTab({
     const form = releaseForms[albumId] ?? { releaseMbid: '', editId: '' };
     setBusy(true);
     try {
-      setView(
-        await recordReleaseSubmission(albumId, {
-          releaseMbid: form.releaseMbid,
-          editId: form.editId,
-        }),
-      );
+      await recordReleaseSubmission(albumId, {
+        releaseMbid: form.releaseMbid,
+        editId: form.editId,
+      });
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -236,8 +253,8 @@ export function ContributeTab({
   async function recheckRelease(albumId: string) {
     setBusy(true);
     try {
-      const result = await recheckReleaseSubmission(albumId);
-      setView(result.view);
+      await recheckReleaseSubmission(albumId);
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -247,7 +264,8 @@ export function ContributeTab({
     const form = errorForms[isrc] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordContestedIsrcReport(isrc, disposition, { editId: form.editId }));
+      await recordContestedIsrcReport(isrc, disposition, { editId: form.editId });
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -257,7 +275,8 @@ export function ContributeTab({
     const form = errorForms[albumId] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordMisalignedTracklistReport(albumId, disposition, { editId: form.editId }));
+      await recordMisalignedTracklistReport(albumId, disposition, { editId: form.editId });
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -266,8 +285,8 @@ export function ContributeTab({
   async function recheckError(kind: 'contested_isrc' | 'misaligned_tracklist', key: string) {
     setBusy(true);
     try {
-      const result = await recheckErrorReport(kind, key);
-      setView(result.view);
+      await recheckErrorReport(kind, key);
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -277,9 +296,8 @@ export function ContributeTab({
     const form = workRelationshipForms[`${recordingMbid}:${workMbid}`] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(
-        await recordWorkRelationshipSubmission(recordingMbid, workMbid, { editId: form.editId }),
-      );
+      await recordWorkRelationshipSubmission(recordingMbid, workMbid, { editId: form.editId });
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -288,8 +306,8 @@ export function ContributeTab({
   async function recheckRelationship(recordingMbid: string, workMbid: string) {
     setBusy(true);
     try {
-      const result = await recheckWorkRelationship(recordingMbid, workMbid);
-      setView(result.view);
+      await recheckWorkRelationship(recordingMbid, workMbid);
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -299,11 +317,10 @@ export function ContributeTab({
     const form = workCreateForms[recordingMbid] ?? { workMbid: '', editId: '' };
     setBusy(true);
     try {
-      setView(
-        await recordWorkCreationSubmission(recordingMbid, form.workMbid, {
-          editId: form.editId,
-        }),
-      );
+      await recordWorkCreationSubmission(recordingMbid, form.workMbid, {
+        editId: form.editId,
+      });
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -312,8 +329,8 @@ export function ContributeTab({
   async function recheckWork(workMbid: string) {
     setBusy(true);
     try {
-      const result = await recheckCreatedWork(workMbid);
-      setView(result.view);
+      await recheckCreatedWork(workMbid);
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -322,8 +339,8 @@ export function ContributeTab({
   async function reconcile() {
     setBusy(true);
     try {
-      const result = await reconcileSubmissions();
-      setView(result.view);
+      await reconcileSubmissions();
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -332,7 +349,8 @@ export function ContributeTab({
   async function outcome(id: number, next: 'applied' | 'rejected' | 'withdrawn') {
     setBusy(true);
     try {
-      setView(await setSubmissionOutcome(id, next));
+      await setSubmissionOutcome(id, next);
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -367,7 +385,8 @@ export function ContributeTab({
         <div className="panel-head">
           <span className="panel-title">ISRCs</span>
           <span className="mono text-[var(--ink-2)]">
-            {view.counts.isrc} on {view.isrcReleases.length} releases
+            {view.counts.isrc} tracks ·{' '}
+            {shownOfTotalLabel(view.isrcReleases.length, view.counts.isrcReleases)} releases
           </span>
         </div>
         {view.isrcReleases.length === 0 && (
@@ -502,12 +521,20 @@ export function ContributeTab({
             </div>
           </details>
         ))}
+        <LoadMoreRows
+          shown={view.isrcReleases.length}
+          total={view.counts.isrcReleases}
+          busy={busy}
+          onMore={() => loadMore('isrcReleases', view.counts.isrcReleases)}
+        />
       </section>
 
       <section className="panel">
         <div className="panel-head">
           <span className="panel-title">Albums MusicBrainz does not have</span>
-          <span className="mono text-[var(--ink-2)]">{view.counts.missingReleases}</span>
+          <span className="mono text-[var(--ink-2)]">
+            {shownOfTotalLabel(view.missing.length, view.counts.missingReleases)}
+          </span>
         </div>
         <p className="px-4 pt-3 text-[var(--ink-2)]">
           The largest gap left, and the one class that stays manual for good: a duplicate release is
@@ -591,13 +618,21 @@ export function ContributeTab({
             </div>
           );
         })}
+        <LoadMoreRows
+          shown={view.missing.length}
+          total={view.counts.missingReleases}
+          busy={busy}
+          onMore={() => loadMore('missing', view.counts.missingReleases)}
+        />
       </section>
 
-      {view.barcodes.length > 0 && (
+      {view.counts.barcodes > 0 && (
         <section className="panel">
           <div className="panel-head">
             <span className="panel-title">Releases with no barcode</span>
-            <span className="mono text-[var(--ink-2)]">{view.counts.barcodes}</span>
+            <span className="mono text-[var(--ink-2)]">
+              {shownOfTotalLabel(view.barcodes.length, view.counts.barcodes)}
+            </span>
           </div>
           <p className="px-4 pt-3 text-[var(--ink-2)]">
             Found by title and duration rather than by barcode, which is why they have none. Adding
@@ -689,14 +724,22 @@ export function ContributeTab({
               {barcodePayload.xml}
             </pre>
           )}
+          <LoadMoreRows
+            shown={view.barcodes.length}
+            total={view.counts.barcodes}
+            busy={busy}
+            onMore={() => loadMore('barcodes', view.counts.barcodes)}
+          />
         </section>
       )}
 
-      {view.streamingUrls.length > 0 && (
+      {view.counts.streamingUrls > 0 && (
         <section className="panel">
           <div className="panel-head">
             <span className="panel-title">Releases with no Spotify streaming URL</span>
-            <span className="mono text-[var(--ink-2)]">{view.counts.streamingUrls}</span>
+            <span className="mono text-[var(--ink-2)]">
+              {shownOfTotalLabel(view.streamingUrls.length, view.counts.streamingUrls)}
+            </span>
           </div>
           <p className="px-4 pt-3 text-[var(--ink-2)]">
             Only releases whose URL relations we have already fetched. Unfetched stays unknown, not
@@ -763,14 +806,22 @@ export function ContributeTab({
               </div>
             );
           })}
+          <LoadMoreRows
+            shown={view.streamingUrls.length}
+            total={view.counts.streamingUrls}
+            busy={busy}
+            onMore={() => loadMore('streamingUrls', view.counts.streamingUrls)}
+          />
         </section>
       )}
 
-      {view.misaligned.length > 0 && (
+      {view.counts.misaligned > 0 && (
         <section className="panel">
           <div className="panel-head">
             <span className="panel-title">Tracklists that do not line up</span>
-            <span className="mono text-[var(--ink-2)]">{view.counts.misaligned}</span>
+            <span className="mono text-[var(--ink-2)]">
+              {shownOfTotalLabel(view.misaligned.length, view.counts.misaligned)}
+            </span>
           </div>
           <p className="px-4 pt-3 text-[var(--ink-2)]">
             MusicBrainz has the release, but its tracklist and the album&apos;s disagree, so no
@@ -899,13 +950,21 @@ export function ContributeTab({
               </div>
             </details>
           ))}
+          <LoadMoreRows
+            shown={view.misaligned.length}
+            total={view.counts.misaligned}
+            busy={busy}
+            onMore={() => loadMore('misaligned', view.counts.misaligned)}
+          />
         </section>
       )}
 
       <section className="panel">
         <div className="panel-head">
           <span className="panel-title">Recordings with no work</span>
-          <span className="mono text-[var(--ink-2)]">{view.counts.workRelationships}</span>
+          <span className="mono text-[var(--ink-2)]">
+            {shownOfTotalLabel(view.workGaps.length, view.counts.workRelationships)}
+          </span>
         </div>
         <p className="px-4 pt-3 text-[var(--ink-2)]">
           MusicBrainz holds the recording but has never said what it is a performance of. This is
@@ -1144,13 +1203,21 @@ export function ContributeTab({
             </details>
           );
         })}
+        <LoadMoreRows
+          shown={view.workGaps.length}
+          total={view.counts.workRelationships}
+          busy={busy}
+          onMore={() => loadMore('workGaps', view.counts.workRelationships)}
+        />
       </section>
 
-      {view.contested.length > 0 && (
+      {view.counts.contestedIsrcs > 0 && (
         <section className="panel">
           <div className="panel-head">
             <span className="panel-title">One ISRC, several recordings</span>
-            <span className="mono text-[var(--ink-2)]">{view.contested.length}</span>
+            <span className="mono text-[var(--ink-2)]">
+              {shownOfTotalLabel(view.contested.length, view.counts.contestedIsrcs)}
+            </span>
           </div>
           <p className="px-4 pt-3 text-[var(--ink-2)]">
             An upstream error rather than a gap: an ISRC identifies one recording, so two holding it
@@ -1224,6 +1291,12 @@ export function ContributeTab({
               )}
             </div>
           ))}
+          <LoadMoreRows
+            shown={view.contested.length}
+            total={view.counts.contestedIsrcs}
+            busy={busy}
+            onMore={() => loadMore('contested', view.counts.contestedIsrcs)}
+          />
         </section>
       )}
 
@@ -1265,6 +1338,27 @@ export function ContributeTab({
           </div>
         ))}
       </section>
+    </div>
+  );
+}
+
+function LoadMoreRows({
+  shown,
+  total,
+  busy,
+  onMore,
+}: {
+  shown: number;
+  total: number;
+  busy: boolean;
+  onMore: () => void;
+}) {
+  if (!hasMoreToLoad(shown, total)) return null;
+  return (
+    <div className="toolbar">
+      <button className="act" disabled={busy} onClick={onMore}>
+        Load more
+      </button>
     </div>
   );
 }
