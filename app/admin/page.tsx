@@ -1,59 +1,35 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
-import { getAdminStats } from './actions/admin-stats';
-import type { AlbumState } from './lib/album-state';
-import { Spinner } from './components/Spinner';
 import { GatewayBar } from './components/GatewayBar';
-import { CoverageTab } from './tabs/CoverageTab';
+import { Spinner } from './components/Spinner';
 import { AlbumsTab } from './tabs/AlbumsTab';
-import { DecisionsTab } from './tabs/DecisionsTab';
 import { ContributeTab } from './tabs/ContributeTab';
-import { TracksTab } from './tabs/TracksTab';
-import { ComposersTab } from './tabs/ComposersTab';
-import { WorksTab } from './tabs/WorksTab';
+import { HealthTab } from './tabs/HealthTab';
+import type { AlbumState } from './lib/album-state';
+import type { InboxFocus } from './lib/inbox-focus';
 
 /*
- * The page is organised around one goal: let MusicBrainz describe as much of
- * the library as possible. Coverage says how far that has got, Albums is where
- * the work happens, and Decisions holds what only a person can settle. The
- * editors are still here, but they are the fallback for what MusicBrainz
- * cannot answer rather than the main event.
+ * A workbench for closing MusicBrainz gaps — not a second catalogue.
+ * /catalog and the player stay the map; admin is Inbox, Albums, and Health.
  */
-type TabId = 'coverage' | 'albums' | 'contribute' | 'decisions' | 'library';
-type LibraryView = 'queue' | 'works' | 'composers';
+type TabId = 'inbox' | 'albums' | 'health';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'coverage', label: 'Coverage' },
+  { id: 'inbox', label: 'Inbox' },
   { id: 'albums', label: 'Albums' },
-  { id: 'contribute', label: 'Contribute' },
-  { id: 'decisions', label: 'Decisions' },
-  { id: 'library', label: 'Library' },
-];
-
-const LIBRARY_VIEWS: { id: LibraryView; label: string }[] = [
-  { id: 'queue', label: 'Unmatched tracks' },
-  { id: 'works', label: 'Works' },
-  { id: 'composers', label: 'Composers' },
+  { id: 'health', label: 'Health' },
 ];
 
 export default function AdminPage() {
   const { data: session, isPending } = authClient.useSession();
-  const [tab, setTab] = useState<TabId>('coverage');
-  const [library, setLibrary] = useState<LibraryView>('queue');
+  const [tab, setTab] = useState<TabId>('inbox');
   const [albumFilter, setAlbumFilter] = useState<AlbumState | undefined>();
-  const [queueCount, setQueueCount] = useState<number | null>(null);
+  const [inboxFocus, setInboxFocus] = useState<InboxFocus | null>(null);
 
   const isAdmin = session?.user?.name === 'benwaffle';
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    getAdminStats()
-      .then((stats) => setQueueCount(stats.pendingTracks))
-      .catch(() => setQueueCount(null));
-  }, [isAdmin]);
 
   if (isPending) {
     return (
@@ -92,6 +68,11 @@ export default function AdminPage() {
     );
   }
 
+  function openInbox(focus: InboxFocus) {
+    setInboxFocus(focus);
+    setTab('inbox');
+  }
+
   return (
     <>
       <header className="desk-rail relative">
@@ -118,47 +99,15 @@ export default function AdminPage() {
       </div>
 
       <main className="mx-auto max-w-[1400px] px-5 pt-6">
-        {tab === 'coverage' && (
-          <CoverageTab
-            onPick={(state) => {
-              setAlbumFilter(state);
-              setTab('albums');
-            }}
-          />
+        {tab === 'inbox' && (
+          <ContributeTab focus={inboxFocus} onFocusHandled={() => setInboxFocus(null)} />
         )}
 
-        {tab === 'albums' && <AlbumsTab state={albumFilter} onStateChange={setAlbumFilter} />}
-
-        {tab === 'contribute' && <ContributeTab />}
-
-        {tab === 'decisions' && <DecisionsTab />}
-
-        {tab === 'library' && (
-          <div className="flex flex-col gap-5">
-            <p className="max-w-[70ch] text-[var(--ink-2)]">
-              For what MusicBrainz cannot answer. Anything edited here is ours alone — MusicBrainz
-              will not confirm it, and it stays as entered.
-            </p>
-            <nav className="tab-strip" aria-label="Library">
-              {LIBRARY_VIEWS.map((view) => (
-                <button
-                  key={view.id}
-                  className="tab"
-                  aria-current={library === view.id ? 'page' : undefined}
-                  onClick={() => setLibrary(view.id)}
-                >
-                  {view.label}
-                  {view.id === 'queue' && queueCount !== null && (
-                    <span className="tab-n">{queueCount}</span>
-                  )}
-                </button>
-              ))}
-            </nav>
-            {library === 'queue' && <TracksTab onSwitchTab={(next) => setLibrary(next)} />}
-            {library === 'works' && <WorksTab />}
-            {library === 'composers' && <ComposersTab />}
-          </div>
+        {tab === 'albums' && (
+          <AlbumsTab state={albumFilter} onStateChange={setAlbumFilter} onOpenInbox={openInbox} />
         )}
+
+        {tab === 'health' && <HealthTab />}
       </main>
     </>
   );

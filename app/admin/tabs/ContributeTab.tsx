@@ -27,6 +27,7 @@ import {
   type ContributionView,
 } from '../actions/contribute';
 import { Spinner } from '../components/Spinner';
+import type { InboxFocus } from '../lib/inbox-focus';
 
 /**
  * What we can tell MusicBrainz that it does not already know.
@@ -36,7 +37,13 @@ import { Spinner } from '../components/Spinner';
  * merges — the last step is a person clicking that link, so the job of this
  * page is to make the click a confirmation rather than a search.
  */
-export function ContributeTab() {
+export function ContributeTab({
+  focus = null,
+  onFocusHandled,
+}: {
+  focus?: InboxFocus | null;
+  onFocusHandled?: () => void;
+}) {
   const [view, setView] = useState<ContributionView | null>(null);
   const [busy, setBusy] = useState(false);
   const [bot, setBot] = useState<BotStatus | null>(null);
@@ -65,6 +72,20 @@ export function ContributeTab() {
   }, []);
 
   useEffect(refresh, [refresh]);
+
+  useEffect(() => {
+    if (!focus || !view) return;
+    const selector =
+      focus.kind === 'release'
+        ? `[data-inbox-release="${focus.id}"]`
+        : `[data-inbox-album="${focus.id}"]`;
+    const element = document.querySelector(selector);
+    if (element instanceof HTMLElement) {
+      if (element.tagName === 'DETAILS') (element as HTMLDetailsElement).open = true;
+      element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    onFocusHandled?.();
+  }, [focus, onFocusHandled, view]);
 
   useEffect(() => {
     getBotStatus()
@@ -323,7 +344,11 @@ export function ContributeTab() {
           </p>
         )}
         {view.isrcReleases.map((release) => (
-          <details key={release.releaseMbid} className="fold">
+          <details
+            key={release.releaseMbid}
+            className="fold"
+            data-inbox-release={release.releaseMbid}
+          >
             <summary>
               <span className="album-title">{release.albumTitle}</span>
               <span className="album-meta">
@@ -463,7 +488,7 @@ export function ContributeTab() {
         {view.missing.map((album) => {
           const form = releaseForms[album.albumId] ?? { releaseMbid: '', editId: '' };
           return (
-            <div key={album.albumId} className="row">
+            <div key={album.albumId} className="row" data-inbox-album={album.albumId}>
               <span className="mono w-10 shrink-0 text-[var(--gall)]">{album.tracks}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{album.albumTitle}</span>

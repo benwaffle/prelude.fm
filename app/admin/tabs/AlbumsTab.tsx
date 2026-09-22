@@ -4,36 +4,32 @@ import { useEffect, useState } from 'react';
 import {
   getAlbumTracks,
   getAlbums,
+  getCoverage,
   getIsrcSubmissionLinks,
   recheckAlbum,
 } from '../actions/coverage';
 import {
+  COVERAGE_LISTENER_NOTE,
   STATE_LABEL,
+  WHAT_IT_NEEDS,
   type AlbumRow,
   type AlbumState,
   type AlbumTrackRow,
+  type Coverage,
 } from '../lib/album-state';
+import { inboxFocusForAlbum, type InboxFocus } from '../lib/inbox-focus';
 import { Spinner } from '../components/Spinner';
 
-const HARMONY = 'https://harmony.pulsewidth.org.uk';
 /**
- * The one thing to do about this album, and the tool that does it.
+ * The one thing to do about this album, and where to do it in the Inbox.
  *
- * Both link into Harmony, which already talks to Spotify and MusicBrainz and
- * carries the client attribution MusicBrainz editors look for. Sending someone
- * to a tool the community already trusts beats anything we would build here.
+ * Harmony and MagicISRC only run through the Inbox ledger — never as naked
+ * links that skip mb_submission.
  */
 function nextStep(
   album: AlbumRow,
-  submission?: { href: string; missing: number },
-): { label: string; href?: string; hint: string } | null {
-  const spotifyUrl = `https://open.spotify.com/album/${album.id}`;
-  const addRelease = {
-    label: 'Add release',
-    href: `${HARMONY}/release?url=${encodeURIComponent(spotifyUrl)}`,
-    hint: 'Opens Harmony with this Spotify album loaded, ready to import into MusicBrainz.',
-  };
-
+  submission?: { missing: number },
+): { label: string; hint: string; focus: InboxFocus | null } | null {
   switch (album.state) {
     case 'anchored':
     case 'unchecked':
@@ -41,32 +37,42 @@ function nextStep(
 
     case 'partial':
     case 'needs_isrcs':
-      // With the release known, the missing piece is ISRCs. Without it, some of
-      // these recordings are in MusicBrainz already — reached through some other
-      // release — but this pressing is not, so it is the release that is missing.
       return album.mbReleaseId
         ? submission
           ? {
-              label: `Submit ${submission.missing} ISRC${submission.missing === 1 ? '' : 's'}`,
-              href: submission.href,
-              hint: 'Opens MagicISRC using verified MusicBrainz medium/positions. The complete release has the same barcode and track count, and every duration agrees within 3s.',
+              label:
+                submission.missing > 0
+                  ? `Submit ${submission.missing} ISRC${submission.missing === 1 ? '' : 's'} in Inbox`
+                  : 'No verified ISRC action',
+              hint:
+                submission.missing > 0
+                  ? 'Open the matching ISRC row in Inbox. MagicISRC and the bot only receive ledger-eligible rows.'
+                  : 'The gap stays visible until eligibility checks pass.',
+              focus: inboxFocusForAlbum(album),
             }
           : {
               label: 'No verified ISRC action',
-              hint: 'The gap stays visible, but no submission is offered until the complete release has the same barcode and track count, every track is anchored to its MusicBrainz recording, and every duration agrees within 3s.',
+              hint: 'The gap stays visible, but no submission is offered until eligibility checks pass.',
+              focus: inboxFocusForAlbum(album),
             }
-        : addRelease;
+        : {
+            label: 'Add release in Inbox',
+            hint: 'Some recordings may already be in MusicBrainz under another release; this pressing still needs adding through Harmony with ledger confirmation.',
+            focus: inboxFocusForAlbum(album),
+          };
 
     case 'absent':
-      return addRelease;
+      return {
+        label: 'Add release in Inbox',
+        hint: 'Harmony fills the form from the Spotify album. Confirm in Inbox after submitting so mb_submission records it.',
+        focus: inboxFocusForAlbum(album),
+      };
 
     case 'ambiguous':
       return {
-        label: 'Pick release',
-        href: `https://musicbrainz.org/search?type=release&query=${encodeURIComponent(
-          album.upc ?? album.title,
-        )}`,
-        hint: 'Several releases share this barcode. The release exists — choose the right one.',
+        label: 'Pick release by hand',
+        hint: 'Several releases share this barcode. Search MusicBrainz for the right one, then align the album in Inbox if needed.',
+        focus: null,
       };
   }
 }
@@ -74,11 +80,14 @@ function nextStep(
 export function AlbumsTab({
   state,
   onStateChange,
+  onOpenInbox,
 }: {
   state?: AlbumState;
   onStateChange: (state?: AlbumState) => void;
+  onOpenInbox: (focus: InboxFocus) => void;
 }) {
   const [search, setSearch] = useState('');
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [albums, setAlbums] = useState<AlbumRow[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [tracks, setTracks] = useState<Record<string, AlbumTrackRow[]>>({});
@@ -88,17 +97,15 @@ export function AlbumsTab({
   const [rechecking, setRechecking] = useState<string | null>(null);
   const [recheckResult, setRecheckResult] = useState<Record<string, string>>({});
 
-  // The filter lives with the page, because Coverage sets it when you click a
-  // row there. Keeping a second copy here only created two things to keep in
-  // step. Previous results stay on screen while the next set loads, so
-  // changing filter does not blank the page.
+  useEffect(() => {
+    void getCoverage().then(setCoverage);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void getAlbums(state, search).then(async (rows) => {
       if (cancelled) return;
       setAlbums(rows);
-      // Only the albums whose next step is an ISRC submission need their
-      // ISRCs, and only those on screen.
       const needSeeds = rows
         .filter(
           (row) => row.mbReleaseId && (row.state === 'partial' || row.state === 'needs_isrcs'),
@@ -128,13 +135,7 @@ export function AlbumsTab({
             : `no change — ${result.anchored}/${result.tracks} anchored`,
       }));
       setAlbums(await getAlbums(state, search));
-      const refreshed = await getIsrcSubmissionLinks([albumId]);
-      setSubmissionLinks((current) => {
-        const next = { ...current };
-        if (refreshed[albumId]) next[albumId] = refreshed[albumId];
-        else delete next[albumId];
-        return next;
-      });
+      setCoverage(await getCoverage());
     } finally {
       setRechecking(null);
     }
@@ -161,8 +162,59 @@ export function AlbumsTab({
     'unchecked',
   ];
 
+  const share =
+    coverage && coverage.tracks
+      ? Math.round((coverage.anchoredTracks / coverage.tracks) * 100)
+      : null;
+
   return (
     <div className="flex flex-col gap-5 pb-16">
+      {coverage && (
+        <section className="panel px-4 py-4">
+          <p className="eyebrow mb-2">Album pipeline</p>
+          <p className="mono text-[26px] leading-none">
+            {share}%
+            <span className="ml-3 text-[13px] text-[var(--faint)]">
+              {coverage.anchoredTracks.toLocaleString()} of {coverage.tracks.toLocaleString()}{' '}
+              tracks anchored
+            </span>
+          </p>
+          <div className="mt-3 flex h-1.5 w-full overflow-hidden bg-[var(--slip-2)]">
+            <div className="bg-[var(--viridian)]" style={{ width: `${share ?? 0}%` }} />
+          </div>
+          <p className="mt-3 max-w-[70ch] text-[var(--ink-2)]">{COVERAGE_LISTENER_NOTE}</p>
+          <div className="mt-4 border-t border-[var(--rule)] pt-3">
+            <p className="eyebrow mb-2">By state</p>
+            <div className="slip">
+              {coverage.byState.map((row) => (
+                <button
+                  key={row.state}
+                  className="row w-full text-left"
+                  onClick={() => onStateChange(row.state)}
+                >
+                  <span
+                    className={`mono w-12 shrink-0 text-[15px] ${
+                      row.state === 'anchored' ? 'text-[var(--viridian)]' : 'text-[var(--gall)]'
+                    }`}
+                  >
+                    {row.albums}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block">{STATE_LABEL[row.state]}</span>
+                    <span className="block text-[11px] text-[var(--ink-2)]">
+                      {WHAT_IT_NEEDS[row.state]}
+                    </span>
+                  </span>
+                  <span className="mono shrink-0 text-[11px] text-[var(--faint)]">
+                    {row.tracks.toLocaleString()} tracks
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <div className="panel">
         <div className="toolbar">
           <input
@@ -233,22 +285,29 @@ export function AlbumsTab({
                       {rechecking === album.id ? 'Checking…' : 'Re-check'}
                     </button>
                   )}
-                  {step?.href ? (
-                    <a
-                      className="act shrink-0"
-                      data-variant="primary"
-                      href={step.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={step.hint}
-                    >
-                      {step.label}
-                    </a>
-                  ) : step ? (
-                    <span className="tag shrink-0" title={step.hint}>
-                      {step.label}
-                    </span>
-                  ) : null}
+                  {step && (
+                    <>
+                      {step.focus ? (
+                        <button
+                          className="act shrink-0"
+                          data-variant="primary"
+                          title={step.hint}
+                          onClick={() => onOpenInbox(step.focus!)}
+                        >
+                          Open in Inbox
+                        </button>
+                      ) : (
+                        <span className="tag shrink-0" title={step.hint}>
+                          {step.label}
+                        </span>
+                      )}
+                      {step.focus && (
+                        <span className="mono shrink-0 text-[11px] text-[var(--faint)]">
+                          {step.label}
+                        </span>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {isOpen && (

@@ -10,7 +10,12 @@
    something unresolved, green for something two sources agree on.
    ========================================================= */
 
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Archivo+Narrow:wght@500;600;700&family=Fragment+Mono&display=swap');
+
 .desk {
+  --font-archivo: 'Archivo', system-ui, sans-serif;
+  --font-archivo-narrow: 'Archivo Narrow', system-ui, sans-serif;
+  --font-fragment: 'Fragment Mono', ui-monospace, monospace;
   --board: #e3e7e1;
   --slip: #f3f5f1;
   --slip-2: #eaeee7;
