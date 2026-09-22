@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   getAlbumTracks,
   getAlbums,
-  getFullIsrcSeed,
-  getIsrcSeeds,
+  getIsrcSubmissionLinks,
   recheckAlbum,
 } from '../actions/coverage';
 import {
@@ -17,37 +16,6 @@ import {
 import { Spinner } from '../components/Spinner';
 
 const HARMONY = 'https://harmony.pulsewidth.org.uk';
-const MAGICISRC = 'https://magicisrc.kepstin.ca';
-
-/**
- * A MagicISRC link for a release, with the ISRCs already placed where we can
- * place them safely.
- *
- * MagicISRC seeds by medium and track (`isrcM-T`). We do not store which
- * MusicBrainz medium a track sits on, so positions are only filled in for an
- * album on a single disc, where medium 1 is the only possibility. A multi-disc
- * album gets the release alone and the ISRCs pasted by hand, because a seed
- * off by one medium attaches every ISRC to the wrong recording.
- *
- * Each ISRC goes to the track it actually sits on. We hold only the tracks
- * that have been ingested, so numbering the list from one would place a
- * lone track 3 at position 1.
- */
-function magicIsrcUrl(
-  releaseMbid: string,
-  seed?: { discs: number; tracks: { track: number; isrc: string }[] },
-) {
-  const params = new URLSearchParams({ musicbrainzid: releaseMbid });
-  if (seed && seed.discs === 1) {
-    for (const { track, isrc } of seed.tracks) params.set(`isrc1-${track}`, isrc);
-    params.set(
-      'edit-note',
-      'ISRCs sourced from Spotify, matched to this release by barcode (UPC).',
-    );
-  }
-  return `${MAGICISRC}/?${params.toString()}`;
-}
-
 /**
  * The one thing to do about this album, and the tool that does it.
  *
@@ -57,8 +25,8 @@ function magicIsrcUrl(
  */
 function nextStep(
   album: AlbumRow,
-  seed?: { discs: number; tracks: { track: number; isrc: string }[] },
-): { label: string; href: string; hint: string } | null {
+  submission?: { href: string; missing: number },
+): { label: string; href?: string; hint: string } | null {
   const spotifyUrl = `https://open.spotify.com/album/${album.id}`;
   const addRelease = {
     label: 'Add release',
@@ -77,14 +45,16 @@ function nextStep(
       // these recordings are in MusicBrainz already — reached through some other
       // release — but this pressing is not, so it is the release that is missing.
       return album.mbReleaseId
-        ? {
-            label: 'Submit ISRCs',
-            href: magicIsrcUrl(album.mbReleaseId, seed),
-            hint:
-              seed && seed.discs === 1
-                ? 'Opens MagicISRC with the ISRCs filled in. It shows a diff before anything is written.'
-                : 'Opens MagicISRC for this release. Multi-disc, so the ISRCs need placing by hand.',
-          }
+        ? submission
+          ? {
+              label: `Submit ${submission.missing} ISRC${submission.missing === 1 ? '' : 's'}`,
+              href: submission.href,
+              hint: 'Opens MagicISRC using verified MusicBrainz medium/positions. The complete release has the same barcode and track count, and every duration agrees within 3s.',
+            }
+          : {
+              label: 'No verified ISRC action',
+              hint: 'The gap stays visible, but no submission is offered until the complete release has the same barcode and track count, every track is anchored to its MusicBrainz recording, and every duration agrees within 3s.',
+            }
         : addRelease;
 
     case 'absent':
@@ -112,12 +82,11 @@ export function AlbumsTab({
   const [albums, setAlbums] = useState<AlbumRow[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [tracks, setTracks] = useState<Record<string, AlbumTrackRow[]>>({});
-  const [seeds, setSeeds] = useState<
-    Record<string, { discs: number; tracks: { track: number; isrc: string }[] }>
+  const [submissionLinks, setSubmissionLinks] = useState<
+    Record<string, { href: string; missing: number }>
   >({});
   const [rechecking, setRechecking] = useState<string | null>(null);
   const [recheckResult, setRecheckResult] = useState<Record<string, string>>({});
-  const [fullSeeded, setFullSeeded] = useState<Record<string, number>>({});
 
   // The filter lives with the page, because Coverage sets it when you click a
   // row there. Keeping a second copy here only created two things to keep in
@@ -135,28 +104,17 @@ export function AlbumsTab({
           (row) => row.mbReleaseId && (row.state === 'partial' || row.state === 'needs_isrcs'),
         )
         .map((row) => row.id);
-      if (needSeeds.length === 0) return;
-      const fetched = await getIsrcSeeds(needSeeds);
-      if (!cancelled) setSeeds(fetched);
+      if (needSeeds.length === 0) {
+        setSubmissionLinks({});
+        return;
+      }
+      const fetched = await getIsrcSubmissionLinks(needSeeds);
+      if (!cancelled) setSubmissionLinks(fetched);
     });
     return () => {
       cancelled = true;
     };
   }, [state, search]);
-
-  /**
-   * Replace an album's seed with every ISRC Spotify lists, not just the tracks
-   * we kept. Triggered by opening the album, which is when someone is deciding
-   * whether to submit it, and keeps the Spotify round trip off the list view.
-   */
-  async function loadFullSeed(albumId: string) {
-    const full = await getFullIsrcSeed(albumId);
-    setSeeds((current) => ({
-      ...current,
-      [albumId]: { discs: full.discs, tracks: full.tracks },
-    }));
-    setFullSeeded((current) => ({ ...current, [albumId]: full.tracks.length }));
-  }
 
   async function recheck(albumId: string) {
     setRechecking(albumId);
@@ -170,6 +128,13 @@ export function AlbumsTab({
             : `no change — ${result.anchored}/${result.tracks} anchored`,
       }));
       setAlbums(await getAlbums(state, search));
+      const refreshed = await getIsrcSubmissionLinks([albumId]);
+      setSubmissionLinks((current) => {
+        const next = { ...current };
+        if (refreshed[albumId]) next[albumId] = refreshed[albumId];
+        else delete next[albumId];
+        return next;
+      });
     } finally {
       setRechecking(null);
     }
@@ -184,11 +149,6 @@ export function AlbumsTab({
     if (!tracks[albumId]) {
       const rows = await getAlbumTracks(albumId);
       setTracks((current) => ({ ...current, [albumId]: rows }));
-    }
-    const album = albums?.find((row) => row.id === albumId);
-    const wantsIsrcs = album && (album.state === 'partial' || album.state === 'needs_isrcs');
-    if (wantsIsrcs && album?.mbReleaseId && fullSeeded[albumId] === undefined) {
-      await loadFullSeed(albumId);
     }
   }
 
@@ -237,7 +197,7 @@ export function AlbumsTab({
       ) : (
         <div className="slip">
           {albums.map((album) => {
-            const step = nextStep(album, seeds[album.id]);
+            const step = nextStep(album, submissionLinks[album.id]);
             const isOpen = open === album.id;
             return (
               <div key={album.id} className="rule-b last:border-b-0">
@@ -273,7 +233,7 @@ export function AlbumsTab({
                       {rechecking === album.id ? 'Checking…' : 'Re-check'}
                     </button>
                   )}
-                  {step && (
+                  {step?.href ? (
                     <a
                       className="act shrink-0"
                       data-variant="primary"
@@ -284,18 +244,15 @@ export function AlbumsTab({
                     >
                       {step.label}
                     </a>
-                  )}
+                  ) : step ? (
+                    <span className="tag shrink-0" title={step.hint}>
+                      {step.label}
+                    </span>
+                  ) : null}
                 </div>
 
                 {isOpen && (
                   <div className="px-4 pb-3">
-                    {fullSeeded[album.id] !== undefined && fullSeeded[album.id] > album.tracks && (
-                      <p className="mb-2 text-[11px] text-[var(--ink-2)]">
-                        Spotify lists {fullSeeded[album.id]} ISRCs for this album; we keep{' '}
-                        {album.tracks} track{album.tracks === 1 ? '' : 's'}. The submission covers
-                        all {fullSeeded[album.id]}.
-                      </p>
-                    )}
                     {!tracks[album.id] ? (
                       <Spinner className="h-3 w-3" />
                     ) : (

@@ -14,7 +14,7 @@
  * So a track can be confidently anchored and still not be evidence enough to
  * submit.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from './db';
 import {
   diagnoseTracklist,
@@ -22,6 +22,13 @@ import {
   type TracklistDiagnosis,
 } from './musicbrainz-matching';
 import type { IsrcGap } from './musicbrainz-edit-links';
+import {
+  ISRC_SUBMISSION_TOLERANCE_MS,
+  releaseMediumKey,
+  verifiedIsrcReleaseMedia,
+  type MusicBrainzReleaseEvidence,
+  type SpotifyReleaseEvidence,
+} from './musicbrainz-contribution-safety';
 import {
   mbRecording,
   mbRecordingIsrc,
@@ -42,8 +49,6 @@ import {
  * track can be confidently ours and still not be proof enough for somebody
  * else's database.
  */
-const SUBMISSION_TOLERANCE_MS = 3_000;
-
 export type { IsrcGap } from './musicbrainz-edit-links';
 export {
   harmonyImportLink,
@@ -59,8 +64,10 @@ export {
  *
  * - the album's barcode is exactly the release's, so this really is the
  *   record the label pressed;
- * - the track sits at a position on that release whose duration agrees within
- *   three seconds, so it really is this recording;
+ * - the complete Spotify album and MusicBrainz release have identical track
+ *   counts (or every repeated hybrid layer does), and every track maps
+ *   one-to-one by anchored recording with its duration agreeing within three
+ *   seconds;
  * - MusicBrainz holds no ISRC for that recording yet; and
  * - we have not already submitted this one, whoever submitted it.
  *
@@ -68,7 +75,22 @@ export {
  * the recording, MusicBrainz already had it.
  */
 export async function isrcGaps(limit = 200): Promise<IsrcGap[]> {
-  return dedupeByRecording(await isrcGapRows(limit));
+  const candidates = await isrcGapRows();
+  if (candidates.length === 0) return [];
+
+  const albumIds = [...new Set(candidates.map((row) => row.albumId))];
+  const releaseMbids = [...new Set(candidates.map((row) => row.releaseMbid))];
+  const [spotifyEvidence, musicbrainzEvidence] = await Promise.all([
+    spotifyReleaseEvidence(albumIds),
+    musicbrainzReleaseEvidence(releaseMbids),
+  ]);
+  const verified = verifiedIsrcReleaseMedia(spotifyEvidence, musicbrainzEvidence);
+
+  return dedupeByRecording(
+    candidates.filter((gap) =>
+      verified.has(releaseMediumKey(gap.albumId, gap.releaseMbid, gap.medium)),
+    ),
+  ).slice(0, limit);
 }
 
 /**
@@ -98,7 +120,7 @@ function dedupeByRecording(rows: IsrcGap[]): IsrcGap[] {
   return [...byPair.values()];
 }
 
-async function isrcGapRows(limit: number): Promise<IsrcGap[]> {
+async function isrcGapRows(): Promise<IsrcGap[]> {
   const delta = sql<number>`abs(coalesce(${mbReleaseTrack.length}, ${mbRecording.length}) - ${spotifyTrack.durationMs})`;
 
   return db
@@ -138,7 +160,7 @@ async function isrcGapRows(limit: number): Promise<IsrcGap[]> {
         sql`ltrim(coalesce(${spotifyAlbum.upc}, ''), '0') = ltrim(coalesce(${mbRelease.barcode}, ''), '0')`,
         sql`ltrim(coalesce(${spotifyAlbum.upc}, ''), '0') <> ''`,
         sql`coalesce(${mbReleaseTrack.length}, ${mbRecording.length}) is not null`,
-        sql`${delta} <= ${SUBMISSION_TOLERANCE_MS}`,
+        sql`${delta} <= ${ISRC_SUBMISSION_TOLERANCE_MS}`,
         sql`not exists (
           select 1 from ${mbRecordingIsrc}
           where ${mbRecordingIsrc.recordingMbid} = ${trackRecording.recordingMbid}
@@ -151,8 +173,45 @@ async function isrcGapRows(limit: number): Promise<IsrcGap[]> {
             and ${mbSubmission.value} = ${spotifyTrack.isrc}
         )`,
       ),
-    )
-    .limit(limit);
+    );
+}
+
+async function spotifyReleaseEvidence(albumIds: string[]): Promise<SpotifyReleaseEvidence[]> {
+  const rows = await db
+    .select({
+      albumId: spotifyAlbum.spotifyId,
+      releaseMbid: spotifyAlbum.mbReleaseId,
+      upc: spotifyAlbum.upc,
+      spotifyTrackId: spotifyTrack.spotifyId,
+      recordingMbid: trackRecording.recordingMbid,
+      durationMs: spotifyTrack.durationMs,
+    })
+    .from(spotifyTrack)
+    .innerJoin(spotifyAlbum, eq(spotifyAlbum.spotifyId, spotifyTrack.spotifyAlbumId))
+    .leftJoin(trackRecording, eq(trackRecording.spotifyTrackId, spotifyTrack.spotifyId))
+    .where(inArray(spotifyAlbum.spotifyId, albumIds));
+
+  return rows.flatMap((row) =>
+    row.releaseMbid === null ? [] : [{ ...row, releaseMbid: row.releaseMbid }],
+  );
+}
+
+async function musicbrainzReleaseEvidence(
+  releaseMbids: string[],
+): Promise<MusicBrainzReleaseEvidence[]> {
+  return db
+    .select({
+      releaseMbid: mbReleaseTrack.releaseMbid,
+      barcode: mbRelease.barcode,
+      medium: mbReleaseTrack.medium,
+      position: mbReleaseTrack.position,
+      recordingMbid: mbReleaseTrack.recordingMbid,
+      durationMs: sql<number | null>`coalesce(${mbReleaseTrack.length}, ${mbRecording.length})`,
+    })
+    .from(mbReleaseTrack)
+    .innerJoin(mbRelease, eq(mbRelease.mbid, mbReleaseTrack.releaseMbid))
+    .innerJoin(mbRecording, eq(mbRecording.mbid, mbReleaseTrack.recordingMbid))
+    .where(inArray(mbReleaseTrack.releaseMbid, releaseMbids));
 }
 
 /**

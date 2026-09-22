@@ -1,11 +1,11 @@
 'use server';
 
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { spotifyAlbum, spotifyTrack, trackWorkPartV2, work, workPartV2 } from '@/lib/db/schema';
 import { musicBrainzApi } from '@/lib/musicbrainz';
 import { anchorTracksByIsrc } from '@/lib/musicbrainz-ingest';
-import { getSpotifyAlbumTracks } from '@/lib/spotify-app-client';
+import { isrcGapsByRelease, magicIsrcLink } from '@/lib/musicbrainz-contributions';
 import { checkAuth } from './auth';
 import {
   type AlbumRow,
@@ -158,77 +158,28 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
 }
 
 /**
- * The ISRCs an album could contribute, for seeding a submission.
+ * Canonical ISRC contribution links for albums on screen.
  *
- * Fetched for the albums on screen rather than with the album list, because a
- * 121-track box set carries more ISRC text than every other field on its row
- * put together.
- *
- * Each ISRC carries the disc and track it actually sits on, because we hold
- * only the tracks that have been ingested, not whole albums. "Les Sauvages"
- * is one track here and it is track 3; numbering the list from one would
- * attach its ISRC to the release's first recording instead.
- *
- * `discs` comes back so the caller can tell whether it may place them at all.
- * MagicISRC seeds by medium and track, and we do not store MusicBrainz's
- * medium layout, so only a single-disc album can be placed safely.
+ * This intentionally delegates to the same evidence query as the contribution
+ * console and bot. Its positions are MusicBrainz medium/positions, and it
+ * returns nothing unless the complete release passes the submission standard.
  */
-export async function getIsrcSeeds(
+export async function getIsrcSubmissionLinks(
   albumIds: string[],
-): Promise<Record<string, { discs: number; tracks: { track: number; isrc: string }[] }>> {
+): Promise<Record<string, { href: string; missing: number }>> {
   await checkAuth();
   if (albumIds.length === 0) return {};
 
-  const rows = await db
-    .select({
-      albumId: spotifyTrack.spotifyAlbumId,
-      discNumber: spotifyTrack.discNumber,
-      trackNumber: spotifyTrack.trackNumber,
-      isrc: spotifyTrack.isrc,
-    })
-    .from(spotifyTrack)
-    .where(and(inArray(spotifyTrack.spotifyAlbumId, albumIds), isNotNull(spotifyTrack.isrc)))
-    .orderBy(spotifyTrack.spotifyAlbumId, spotifyTrack.discNumber, spotifyTrack.trackNumber);
-
-  const seeds: Record<string, { discs: number; tracks: { track: number; isrc: string }[] }> = {};
-  const discs: Record<string, Set<number>> = {};
-  for (const row of rows) {
-    seeds[row.albumId] ??= { discs: 1, tracks: [] };
-    discs[row.albumId] ??= new Set();
-    discs[row.albumId].add(row.discNumber);
-    seeds[row.albumId].tracks.push({ track: row.trackNumber, isrc: row.isrc as string });
+  const wanted = new Set(albumIds);
+  const links: Record<string, { href: string; missing: number }> = {};
+  for (const release of await isrcGapsByRelease(5_000)) {
+    if (!wanted.has(release.albumId)) continue;
+    links[release.albumId] = {
+      href: magicIsrcLink(release.releaseMbid, release.gaps),
+      missing: release.missing,
+    };
   }
-  for (const albumId of Object.keys(seeds)) seeds[albumId].discs = discs[albumId].size;
-  return seeds;
-}
-
-/**
- * Every ISRC on an album, read from Spotify rather than from what we kept.
- *
- * We store only the tracks worth keeping for a classical catalogue — a
- * compilation can arrive with eleven tracks and leave two behind, the other
- * nine marked not classical. Submitting two ISRCs when we can see eleven makes
- * us a worse contributor than we need to be, and the nine we discarded are
- * still real recordings that MusicBrainz wants identified.
- *
- * Read on demand, because it is a Spotify round trip per album and most rows
- * never need it.
- */
-export async function getFullIsrcSeed(
-  albumId: string,
-): Promise<{ discs: number; tracks: { track: number; isrc: string }[]; total: number }> {
-  await checkAuth();
-  const { album, tracks } = await getSpotifyAlbumTracks(albumId);
-  void album;
-
-  const discs = new Set<number>();
-  const seeded: { track: number; isrc: string }[] = [];
-  for (const track of tracks) {
-    discs.add(track.disc_number);
-    const isrc = track.external_ids?.isrc;
-    if (isrc) seeded.push({ track: track.track_number, isrc });
-  }
-  return { discs: discs.size || 1, tracks: seeded, total: tracks.length };
+  return links;
 }
 
 /**

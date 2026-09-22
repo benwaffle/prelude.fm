@@ -52,3 +52,14 @@ test('a second disc is addressed by its own medium', () => {
   );
   assert.equal(link.searchParams.get('isrc2-4'), 'GBAAA0000009');
 });
+
+test('an out-of-order album still seeds the canonical MusicBrainz positions', () => {
+  const link = new URL(
+    magicIsrcLink('rel-1', [
+      gap({ spotifyTrackId: 'spotify-1', isrc: 'GBAAA0000001', position: 2 }),
+      gap({ spotifyTrackId: 'spotify-2', isrc: 'GBAAA0000002', position: 1 }),
+    ]),
+  );
+  assert.equal(link.searchParams.get('isrc1-1'), 'GBAAA0000002');
+  assert.equal(link.searchParams.get('isrc1-2'), 'GBAAA0000001');
+});
