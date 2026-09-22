@@ -7,7 +7,9 @@ import {
   getContributions,
   recordBarcodeSubmission,
   recordIsrcSubmission,
+  recordWorkCreationSubmission,
   recordWorkRelationshipSubmission,
+  recheckCreatedWork,
   reconcileSubmissions,
   setSubmissionOutcome,
   submitBotBatch,
@@ -30,6 +32,9 @@ export function ContributeTab() {
   const [bot, setBot] = useState<BotStatus | null>(null);
   const [botResult, setBotResult] = useState<string | null>(null);
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
+  const [workCreateForms, setWorkCreateForms] = useState<
+    Record<string, { workMbid: string; editId: string }>
+  >({});
 
   const refresh = useCallback(() => {
     getContributions()
@@ -96,6 +101,30 @@ export function ContributeTab() {
     setBusy(true);
     try {
       setView(await recordWorkRelationshipSubmission(recordingMbid, workMbid));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submittedWorkCreation(recordingMbid: string) {
+    const form = workCreateForms[recordingMbid] ?? { workMbid: '', editId: '' };
+    setBusy(true);
+    try {
+      setView(
+        await recordWorkCreationSubmission(recordingMbid, form.workMbid, {
+          editId: form.editId,
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recheckWork(workMbid: string) {
+    setBusy(true);
+    try {
+      const result = await recheckCreatedWork(workMbid);
+      setView(result.view);
     } finally {
       setBusy(false);
     }
@@ -424,132 +453,207 @@ export function ContributeTab() {
           MusicBrainz holds the recording but has never said what it is a performance of. This is
           the gap that stops a track reaching a work even when everything else lines up.
         </p>
-        {view.workGaps.map((gap) => (
-          <details key={gap.recordingMbid} className="fold">
-            <summary>
-              <span className="album-title">{gap.recordingTitle}</span>
-              <span className="album-meta">
-                {gap.albumTitle} · {gap.candidates.length} MB candidate
-                {gap.candidates.length === 1 ? '' : 's'}
-                {gap.ledger.length > 0 &&
-                  ` · ${gap.ledger.length} recorded${gap.ledger.some((row) => !row.editId) ? ', edit ID missing' : ''}`}
-              </span>
-            </summary>
-            <div className="fold-body">
-              {gap.candidates.length > 0 ? (
+        {view.workGaps.map((gap) => {
+          const created = gap.ledger.find((row) => row.kind === 'work');
+          const form = workCreateForms[gap.recordingMbid] ?? { workMbid: '', editId: '' };
+          return (
+            <details key={gap.recordingMbid} className="fold">
+              <summary>
+                <span className="album-title">{gap.recordingTitle}</span>
+                <span className="album-meta">
+                  {gap.albumTitle} · {gap.candidates.length} MB candidate
+                  {gap.candidates.length === 1 ? '' : 's'}
+                  {gap.ledger.length > 0 &&
+                    ` · ${gap.ledger.length} recorded${gap.ledger.some((row) => !row.editId) ? ', edit ID missing' : ''}`}
+                </span>
+              </summary>
+              <div className="fold-body">
+                {gap.candidates.length > 0 ? (
+                  <div className="mb-3">
+                    <div className="mb-2 text-[11px] text-[var(--ink-2)]">
+                      Existing MusicBrainz candidates. Catalogue matches identify a possible work;
+                      they do not prove the recording relationship. Opening a work or the recording
+                      editor does not write the ledger.
+                    </div>
+                    {gap.candidates.map((candidate) => {
+                      const recorded = gap.ledger.find(
+                        (row) =>
+                          row.kind === 'work_relationship' && row.workMbid === candidate.workMbid,
+                      );
+                      return (
+                        <div key={candidate.workMbid} className="row px-0">
+                          <span className="min-w-0 flex-1">
+                            <a
+                              href={`https://musicbrainz.org/work/${candidate.workMbid}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {candidate.title}
+                            </a>
+                            <span className="album-meta">
+                              {[candidate.type, candidate.composerName].filter(Boolean).join(' · ')}
+                              {candidate.catalogues.length > 0 &&
+                                ` · ${candidate.catalogues.map((catalogue) => `${catalogue.system} ${catalogue.number}`).join(', ')}`}
+                              {' · '}
+                              {candidate.evidence.join(', ')}
+                            </span>
+                          </span>
+                          {recorded ? (
+                            <span className="album-meta shrink-0">{recorded.label}</span>
+                          ) : (
+                            <button
+                              className="act shrink-0"
+                              data-variant="primary"
+                              disabled={busy}
+                              onClick={() =>
+                                submittedWorkRelationship(gap.recordingMbid, candidate.workMbid)
+                              }
+                            >
+                              I submitted this link
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mb-3 text-[var(--ink-2)]">
+                    No existing MusicBrainz work is identified by cached MBIDs or an exact catalogue
+                    match.
+                  </p>
+                )}
+
+                {gap.proposals.map((proposal) => (
+                  <div
+                    key={proposal.localWorkId}
+                    className="mb-3 border-l border-[var(--gall)] pl-3"
+                  >
+                    <div className="text-[11px] text-[var(--gall)]">
+                      Proposal only — legacy parser/manual evidence, not MusicBrainz fact
+                    </div>
+                    <div>
+                      <span className="text-[var(--faint)]">Title: </span>
+                      <code className="select-all">{proposal.title}</code>
+                    </div>
+                    <div>
+                      <span className="text-[var(--faint)]">Type: </span>
+                      {proposal.type ? (
+                        <code className="select-all">{proposal.type}</code>
+                      ) : (
+                        <span className="absent">missing</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-[var(--faint)]">Composer: </span>
+                      <code className="select-all">{proposal.composerName}</code>
+                      {proposal.composerMbid ? (
+                        <a
+                          className="mono ml-2 text-[11px]"
+                          href={`https://musicbrainz.org/artist/${proposal.composerMbid}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          MB
+                        </a>
+                      ) : (
+                        <span className="absent ml-2">MB identity missing</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-[var(--faint)]">Catalogue: </span>
+                      {proposal.catalogues.length > 0 ? (
+                        <code className="select-all">
+                          {proposal.catalogues
+                            .map((catalogue) => `${catalogue.system} ${catalogue.number}`)
+                            .join(', ')}
+                        </code>
+                      ) : (
+                        <span className="absent">missing</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {gap.proposals.length === 0 && (
+                  <p className="mb-3 absent">
+                    No local proposal evidence exists for this recording.
+                  </p>
+                )}
+
                 <div className="mb-3">
                   <div className="mb-2 text-[11px] text-[var(--ink-2)]">
-                    Existing MusicBrainz candidates. Catalogue matches identify a possible work;
-                    they do not prove the recording relationship. Opening a work or the recording
-                    editor does not write the ledger.
+                    Creating a work does not fill the form from the proposal. After you create it on
+                    MusicBrainz, paste the new work MBID here. An edit ID is optional and stays
+                    missing if you do not have it. Recheck reads the work into our cache; it does
+                    not submit anything.
                   </div>
-                  {gap.candidates.map((candidate) => {
-                    const recorded = gap.ledger.find((row) => row.workMbid === candidate.workMbid);
-                    return (
-                      <div key={candidate.workMbid} className="row px-0">
-                        <span className="min-w-0 flex-1">
-                          <a
-                            href={`https://musicbrainz.org/work/${candidate.workMbid}`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {candidate.title}
-                          </a>
-                          <span className="album-meta">
-                            {[candidate.type, candidate.composerName].filter(Boolean).join(' · ')}
-                            {candidate.catalogues.length > 0 &&
-                              ` · ${candidate.catalogues.map((catalogue) => `${catalogue.system} ${catalogue.number}`).join(', ')}`}
-                            {' · '}
-                            {candidate.evidence.join(', ')}
-                          </span>
-                        </span>
-                        {recorded ? (
-                          <span className="album-meta shrink-0">{recorded.label}</span>
-                        ) : (
-                          <button
-                            className="act shrink-0"
-                            data-variant="primary"
-                            disabled={busy}
-                            onClick={() =>
-                              submittedWorkRelationship(gap.recordingMbid, candidate.workMbid)
-                            }
-                          >
-                            I submitted this link
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="mb-3 text-[var(--ink-2)]">
-                  No existing MusicBrainz work is identified by cached MBIDs or an exact catalogue
-                  match.
-                </p>
-              )}
-
-              {gap.proposals.map((proposal) => (
-                <div key={proposal.localWorkId} className="mb-3 border-l border-[var(--gall)] pl-3">
-                  <div className="text-[11px] text-[var(--gall)]">
-                    Proposal only — legacy parser/manual evidence, not MusicBrainz fact
-                  </div>
-                  <div>
-                    <span className="text-[var(--faint)]">Title: </span>
-                    <code className="select-all">{proposal.title}</code>
-                  </div>
-                  <div>
-                    <span className="text-[var(--faint)]">Type: </span>
-                    {proposal.type ? (
-                      <code className="select-all">{proposal.type}</code>
-                    ) : (
-                      <span className="absent">missing</span>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-[var(--faint)]">Composer: </span>
-                    <code className="select-all">{proposal.composerName}</code>
-                    {proposal.composerMbid ? (
-                      <a
-                        className="mono ml-2 text-[11px]"
-                        href={`https://musicbrainz.org/artist/${proposal.composerMbid}`}
-                        target="_blank"
-                        rel="noreferrer"
+                  {created ? (
+                    <div className="row px-0">
+                      <span className="min-w-0 flex-1">
+                        <a
+                          href={`https://musicbrainz.org/work/${created.workMbid}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {created.workMbid}
+                        </a>
+                        <span className="album-meta">{created.label}</span>
+                      </span>
+                      <button
+                        className="act shrink-0"
+                        disabled={busy || !created.workMbid}
+                        onClick={() => created.workMbid && recheckWork(created.workMbid)}
                       >
-                        MB
-                      </a>
-                    ) : (
-                      <span className="absent ml-2">MB identity missing</span>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-[var(--faint)]">Catalogue: </span>
-                    {proposal.catalogues.length > 0 ? (
-                      <code className="select-all">
-                        {proposal.catalogues
-                          .map((catalogue) => `${catalogue.system} ${catalogue.number}`)
-                          .join(', ')}
-                      </code>
-                    ) : (
-                      <span className="absent">missing</span>
-                    )}
-                  </div>
+                        Recheck from MusicBrainz
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="row px-0">
+                      <input
+                        className="mono min-w-0 flex-1"
+                        placeholder="new work MBID"
+                        value={form.workMbid}
+                        onChange={(event) =>
+                          setWorkCreateForms((current) => ({
+                            ...current,
+                            [gap.recordingMbid]: { ...form, workMbid: event.target.value },
+                          }))
+                        }
+                      />
+                      <input
+                        className="mono w-36 shrink-0"
+                        placeholder="edit ID (optional)"
+                        value={form.editId}
+                        onChange={(event) =>
+                          setWorkCreateForms((current) => ({
+                            ...current,
+                            [gap.recordingMbid]: { ...form, editId: event.target.value },
+                          }))
+                        }
+                      />
+                      <button
+                        className="act shrink-0"
+                        data-variant="primary"
+                        disabled={busy || form.workMbid.trim() === ''}
+                        onClick={() => submittedWorkCreation(gap.recordingMbid)}
+                      >
+                        I created it
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ))}
-              {gap.proposals.length === 0 && (
-                <p className="mb-3 absent">No local proposal evidence exists for this recording.</p>
-              )}
 
-              <div className="toolbar">
-                <a className="act" href={gap.recordingEdit} target="_blank" rel="noreferrer">
-                  Edit recording relationships
-                </a>
-                <a className="act" href={gap.workCreate} target="_blank" rel="noreferrer">
-                  Create work
-                </a>
+                <div className="toolbar">
+                  <a className="act" href={gap.recordingEdit} target="_blank" rel="noreferrer">
+                    Edit recording relationships
+                  </a>
+                  <a className="act" href={gap.workCreate} target="_blank" rel="noreferrer">
+                    Create work
+                  </a>
+                </div>
               </div>
-            </div>
-          </details>
-        ))}
+            </details>
+          );
+        })}
       </section>
 
       {view.contested.length > 0 && (

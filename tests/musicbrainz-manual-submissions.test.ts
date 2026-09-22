@@ -11,8 +11,11 @@ import {
   requireMbid,
   submissionIdentity,
   workCreationDraft,
+  workCreationDraftFromGap,
   workRelationshipDraft,
   workRelationshipDraftFromGap,
+  createdWorkCacheState,
+  createdWorkLanded,
   type ManualSubmissionDraft,
 } from '../app/lib/musicbrainz-manual-submissions';
 
@@ -209,6 +212,67 @@ test('a created work with no local proposal records the absence rather than a pl
     proposal: null,
   });
   assert.equal(draft.evidence.proposal, null);
+});
+
+test('a work-creation confirmation requires a real MBID and keeps every proposal as a proposal', () => {
+  const gap = {
+    recordingMbid: RECORDING_MBID,
+    recordingTitle: 'Allegro',
+    albumId: 'spotify-1',
+    albumTitle: 'A Recital',
+    proposals: [
+      {
+        localWorkId: 7,
+        title: 'Piano Concerto No. 20',
+        type: 'Concerto' as string | null,
+        composerName: 'Mozart',
+        composerMbid: null,
+        catalogues: [{ system: 'K.', number: '466' }],
+        provenance: 'legacy_proposal' as const,
+      },
+      {
+        localWorkId: 8,
+        title: 'Concerto in D minor',
+        type: null,
+        composerName: 'Mozart',
+        composerMbid: null,
+        catalogues: [],
+        provenance: 'legacy_proposal' as const,
+      },
+    ],
+  };
+
+  assert.throws(() => workCreationDraftFromGap(gap, ''), ManualSubmissionError);
+  assert.throws(() => workCreationDraftFromGap(gap, 'K. 466'), ManualSubmissionError);
+
+  const unpicked = workCreationDraftFromGap(gap, `https://musicbrainz.org/work/${WORK_MBID}`);
+  assert.equal(unpicked.kind, 'work');
+  assert.equal(unpicked.value, WORK_MBID);
+  assert.equal(unpicked.evidence.proposal, null);
+  assert.equal((unpicked.evidence.shownProposals as unknown[]).length, 2);
+
+  const only = workCreationDraftFromGap(
+    { ...gap, proposals: gap.proposals.slice(0, 1) },
+    WORK_MBID,
+  );
+  assert.equal((only.evidence.proposal as { localWorkId: number }).localWorkId, 7);
+
+  const picked = workCreationDraftFromGap(gap, WORK_MBID, 7);
+  assert.equal(
+    (picked.evidence.proposal as { provenance: string; localWorkId: number }).provenance,
+    'legacy_proposal',
+  );
+  assert.equal((picked.evidence.proposal as { localWorkId: number }).localWorkId, 7);
+  assert.throws(() => workCreationDraftFromGap(gap, WORK_MBID, 99), ManualSubmissionError);
+});
+
+test('a created work is only observed once MusicBrainz has been fetched in full', () => {
+  assert.equal(createdWorkCacheState(null), 'missing');
+  assert.equal(createdWorkCacheState({ detail: 'stub' }), 'stub');
+  assert.equal(createdWorkCacheState({ detail: 'full' }), 'full');
+  assert.equal(createdWorkLanded('missing'), false);
+  assert.equal(createdWorkLanded('stub'), false);
+  assert.equal(createdWorkLanded('full'), true);
 });
 
 test('a release submitted before its MBID exists is identified by the Spotify album', () => {

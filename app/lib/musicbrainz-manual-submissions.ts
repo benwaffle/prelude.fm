@@ -290,6 +290,66 @@ export function workCreationDraft(submission: WorkCreationSubmission): ManualSub
   };
 }
 
+export type WorkCreationGapInput = {
+  recordingMbid: string;
+  recordingTitle: string;
+  albumId: string;
+  albumTitle: string;
+  proposals: NonNullable<WorkCreationSubmission['proposal']>[];
+};
+
+/**
+ * Confirm a newly created work against the recording it was blocking.
+ *
+ * The MBID is the person's; without a valid one there is nothing to re-ingest.
+ * The proposal is copied from what this recording showed, never invented, and
+ * stays labelled a proposal. Several proposals stay several: we do not pick
+ * one and call it the work they created.
+ */
+export function workCreationDraftFromGap(
+  gap: WorkCreationGapInput,
+  workMbidInput: string,
+  localWorkId?: number,
+): ManualSubmissionDraft {
+  const workMbid = requireMbid(workMbidInput, 'The new work');
+  let proposal: WorkCreationSubmission['proposal'] = null;
+  if (localWorkId != null) {
+    proposal = gap.proposals.find((row) => row.localWorkId === localWorkId) ?? null;
+    if (!proposal) {
+      throw new ManualSubmissionError('That proposal is not on this recording');
+    }
+  } else if (gap.proposals.length === 1) {
+    proposal = gap.proposals[0];
+  }
+  const draft = workCreationDraft({
+    recordingMbid: gap.recordingMbid,
+    recordingTitle: gap.recordingTitle,
+    albumId: gap.albumId,
+    albumTitle: gap.albumTitle,
+    workMbid,
+    proposal,
+  });
+  return {
+    ...draft,
+    evidence: {
+      ...draft.evidence,
+      shownProposals: gap.proposals,
+    },
+  };
+}
+
+/** What the cache knows about a created work after a re-ingest, not before. */
+export function createdWorkCacheState(
+  work: { detail: 'stub' | 'full' } | null,
+): 'missing' | 'stub' | 'full' {
+  return work?.detail ?? 'missing';
+}
+
+/** Only a full fetch is MusicBrainz showing the work; a stub is still a hole. */
+export function createdWorkLanded(state: 'missing' | 'stub' | 'full'): boolean {
+  return state === 'full';
+}
+
 export type ReleaseSubmission = {
   albumId: string;
   albumTitle: string;

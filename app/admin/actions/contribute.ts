@@ -2,7 +2,7 @@
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { mbSubmission } from '@/lib/db/schema';
+import { mbSubmission, mbWork } from '@/lib/db/schema';
 import {
   barcodeGaps,
   contestedIsrcs,
@@ -20,12 +20,17 @@ import {
 } from '@/lib/musicbrainz-contributions';
 import { editsSpentToday, MusicBrainzBotError, runIsrcBot } from '@/lib/musicbrainz-bot';
 import { botCredentials } from '@/lib/musicbrainz-oauth';
+import { musicBrainzApi } from '@/lib/musicbrainz';
+import { ingestWorkTree } from '@/lib/musicbrainz-cache';
 import {
   barcodeSubmissionDraft,
+  createdWorkCacheState,
+  createdWorkLanded,
   describeLedgerState,
   ManualSubmissionError,
   normalizeEditId,
   requireMbid,
+  workCreationDraftFromGap,
   workRelationshipDraftFromGap,
   type ManualSubmissionDraft,
 } from '@/lib/musicbrainz-manual-submissions';
@@ -124,6 +129,7 @@ export type ContributionView = {
     workCreate: string;
     ledger: {
       id: number;
+      kind: string;
       workMbid: string | null;
       outcome: string;
       editId: string | null;
@@ -177,32 +183,80 @@ export async function getContributions(): Promise<ContributionView> {
     ]);
 
   const recordingMbids = workGaps.map((gap) => gap.recordingMbid);
-  const workLedgerRows =
+  const albumIds = [...new Set(workGaps.map((gap) => gap.albumId))];
+  const [relationshipRows, creationRows] =
     recordingMbids.length === 0
-      ? []
-      : await db
-          .select({
-            id: mbSubmission.id,
-            recordingMbid: mbSubmission.targetMbid,
-            workMbid: mbSubmission.value,
-            outcome: mbSubmission.outcome,
-            editId: mbSubmission.editId,
-            submittedAt: mbSubmission.submittedAt,
-            submittedBy: mbSubmission.submittedBy,
-          })
-          .from(mbSubmission)
-          .where(
-            and(
-              eq(mbSubmission.kind, 'work_relationship'),
-              inArray(mbSubmission.targetMbid, recordingMbids),
+      ? [[], []]
+      : await Promise.all([
+          db
+            .select({
+              id: mbSubmission.id,
+              kind: mbSubmission.kind,
+              recordingMbid: mbSubmission.targetMbid,
+              workMbid: mbSubmission.value,
+              outcome: mbSubmission.outcome,
+              editId: mbSubmission.editId,
+              submittedAt: mbSubmission.submittedAt,
+              submittedBy: mbSubmission.submittedBy,
+            })
+            .from(mbSubmission)
+            .where(
+              and(
+                eq(mbSubmission.kind, 'work_relationship'),
+                inArray(mbSubmission.targetMbid, recordingMbids),
+              ),
             ),
-          );
-  const ledgerByRecording = new Map<string, typeof workLedgerRows>();
-  for (const row of workLedgerRows) {
-    if (!row.recordingMbid) continue;
-    const list = ledgerByRecording.get(row.recordingMbid) ?? [];
+          albumIds.length === 0
+            ? Promise.resolve([])
+            : db
+                .select({
+                  id: mbSubmission.id,
+                  kind: mbSubmission.kind,
+                  workMbid: mbSubmission.value,
+                  outcome: mbSubmission.outcome,
+                  editId: mbSubmission.editId,
+                  submittedAt: mbSubmission.submittedAt,
+                  submittedBy: mbSubmission.submittedBy,
+                  evidence: mbSubmission.evidence,
+                })
+                .from(mbSubmission)
+                .where(and(eq(mbSubmission.kind, 'work'), inArray(mbSubmission.subject, albumIds))),
+        ]);
+  const ledgerByRecording = new Map<
+    string,
+    {
+      id: number;
+      kind: string;
+      workMbid: string | null;
+      outcome: string;
+      editId: string | null;
+      submittedAt: Date;
+      submittedBy: string;
+    }[]
+  >();
+  const pushLedger = (
+    recordingMbid: string | null,
+    row: {
+      id: number;
+      kind: string;
+      workMbid: string | null;
+      outcome: string;
+      editId: string | null;
+      submittedAt: Date;
+      submittedBy: string;
+    },
+  ) => {
+    if (!recordingMbid) return;
+    const list = ledgerByRecording.get(recordingMbid) ?? [];
     list.push(row);
-    ledgerByRecording.set(row.recordingMbid, list);
+    ledgerByRecording.set(recordingMbid, list);
+  };
+  for (const row of relationshipRows) {
+    pushLedger(row.recordingMbid, row);
+  }
+  for (const row of creationRows) {
+    const recordingMbid = (row.evidence as { recordingMbid?: unknown } | null)?.recordingMbid;
+    pushLedger(typeof recordingMbid === 'string' ? recordingMbid : null, row);
   }
 
   return {
@@ -233,6 +287,7 @@ export async function getContributions(): Promise<ContributionView> {
       workCreate: workCreateLink(),
       ledger: (ledgerByRecording.get(gap.recordingMbid) ?? []).map((row) => ({
         id: row.id,
+        kind: row.kind,
         workMbid: row.workMbid,
         outcome: row.outcome,
         editId: row.editId,
@@ -340,6 +395,68 @@ export async function recordWorkRelationshipSubmission(
     options,
   );
   return getContributions();
+}
+
+/** Record a newly created work only after the editor pastes its MBID. */
+export async function recordWorkCreationSubmission(
+  recordingMbid: string,
+  workMbid: string,
+  options: { note?: string; editId?: string; localWorkId?: number } = {},
+) {
+  const session = await checkAuth();
+  const recording = requireMbid(recordingMbid, 'The recording');
+  const gap = (await workRelationshipGaps(5_000)).find(
+    (candidate) => candidate.recordingMbid === recording,
+  );
+  if (!gap) {
+    throw new ManualSubmissionError('That recording has no outstanding work relationship');
+  }
+
+  await recordManualSubmission(
+    `human:${session.user.name}`,
+    workCreationDraftFromGap(gap, workMbid, options.localWorkId),
+    options,
+  );
+  return getContributions();
+}
+
+/**
+ * Fetch a confirmed new work into the cache. Does not submit anything to
+ * MusicBrainz. Applied only if the cache then holds a full work; a miss or a
+ * stub stays pending, and a missing edit ID stays missing.
+ */
+export async function recheckCreatedWork(workMbid: string) {
+  await checkAuth();
+  const mbid = requireMbid(workMbid, 'The work');
+  const [confirmed] = await db
+    .select({ id: mbSubmission.id })
+    .from(mbSubmission)
+    .where(and(eq(mbSubmission.kind, 'work'), eq(mbSubmission.targetMbid, mbid)))
+    .limit(1);
+  if (!confirmed) {
+    throw new ManualSubmissionError('That work has no creation confirmation');
+  }
+
+  const { requests } = await ingestWorkTree(musicBrainzApi('interactive'), mbid);
+  const [cached] = await db
+    .select({ detail: mbWork.detail })
+    .from(mbWork)
+    .where(eq(mbWork.mbid, mbid));
+  const state = createdWorkCacheState(cached ?? null);
+  if (createdWorkLanded(state)) {
+    await db
+      .update(mbSubmission)
+      .set({ outcome: 'applied', outcomeAt: new Date() })
+      .where(
+        and(
+          eq(mbSubmission.kind, 'work'),
+          eq(mbSubmission.targetMbid, mbid),
+          eq(mbSubmission.outcome, 'pending'),
+        ),
+      );
+  }
+
+  return { state, requests, view: await getContributions() };
 }
 
 export async function setSubmissionOutcome(
