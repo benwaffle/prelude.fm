@@ -17,7 +17,14 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { pageSlice } from './contribution-list';
 import { db } from './db';
-import { mbReleasePickHit, normalisePickBarcode, type MbPickHit } from './musicbrainz-pick';
+import { releaseIsCached } from './musicbrainz-cache';
+import {
+  mbReleasePickHit,
+  normalisePickBarcode,
+  type MbPickHit,
+  type PickedReleaseAttachOutcome,
+  type PickedReleaseAttachRequest,
+} from './musicbrainz-pick';
 import {
   diagnoseTracklist,
   POSITION_TOLERANCE_MS,
@@ -736,6 +743,39 @@ export async function cachedReleasesSharingBarcodes(
     hits.sort((a, b) => a.title.localeCompare(b.title) || a.mbid.localeCompare(b.mbid));
   }
   return byBarcode;
+}
+
+/**
+ * Attach a picked release to its Spotify album when the release is already
+ * cached. Does not ingest, does not write the ledger, and does not invent
+ * cache rows for releases MusicBrainz returned only on a live lookup.
+ */
+export async function attachPickedRelease(
+  request: PickedReleaseAttachRequest,
+): Promise<PickedReleaseAttachOutcome> {
+  const [album] = await db
+    .select({
+      spotifyId: spotifyAlbum.spotifyId,
+      mbReleaseId: spotifyAlbum.mbReleaseId,
+    })
+    .from(spotifyAlbum)
+    .where(eq(spotifyAlbum.spotifyId, request.albumId));
+  if (!album) return { attached: false, reason: 'album_not_found' };
+  if (album.mbReleaseId) return { attached: false, reason: 'album_already_matched' };
+  if (!(await releaseIsCached(request.releaseMbid))) {
+    return { attached: false, reason: 'release_not_in_cache' };
+  }
+
+  await db
+    .update(spotifyAlbum)
+    .set({
+      mbReleaseId: request.releaseMbid,
+      mbCheckedAt: new Date(),
+      mbReleaseCandidates: 1,
+    })
+    .where(eq(spotifyAlbum.spotifyId, request.albumId));
+
+  return { attached: true, releaseMbid: request.releaseMbid };
 }
 
 /**

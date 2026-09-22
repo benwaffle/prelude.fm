@@ -39,6 +39,13 @@ export type PickedReleaseAttachRequest = {
   releaseMbid: string;
 };
 
+export type PickedReleaseAttachOutcome =
+  | { attached: true; releaseMbid: string }
+  | {
+      attached: false;
+      reason: 'album_not_found' | 'album_already_matched' | 'release_not_in_cache';
+    };
+
 export function normalisePickBarcode(value: string | null | undefined): string | null {
   const barcode = value?.trim().replace(/^0+/, '');
   return barcode ? barcode : null;

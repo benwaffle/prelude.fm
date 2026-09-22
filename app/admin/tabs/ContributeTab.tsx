@@ -13,6 +13,7 @@ import {
   getBarcodeBotPayload,
   getBotStatus,
   getContributions,
+  attachPickedReleaseToAlbum,
   lookupBarcodeReleaseHits,
   recordBarcodeSubmission,
   recordContestedIsrcReport,
@@ -265,11 +266,18 @@ export function ContributeTab({
     }
   }
 
-  function pickRelease(albumId: string, releaseMbid: string) {
+  async function pickRelease(albumId: string, releaseMbid: string) {
     setReleaseForms((current) => ({
       ...current,
       [albumId]: { ...(current[albumId] ?? { releaseMbid: '', editId: '' }), releaseMbid },
     }));
+    setBusy(true);
+    try {
+      const result = await attachPickedReleaseToAlbum({ albumId, releaseMbid });
+      if (result.attached) await reload();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submittedRelease(albumId: string) {
@@ -660,8 +668,9 @@ export function ContributeTab({
                 <div className="fold-body">
                   <p className="mb-2 text-[11px] text-[var(--ink-2)]">
                     Several MusicBrainz releases share this barcode. Pick one here the way the
-                    editor lists search hits. Opening a row does not write the ledger; confirm still
-                    does. Attaching the pick to the album match is integrator-owned.
+                    editor lists search hits. A cached pick attaches the album match immediately;
+                    live lookup fills the MBID for confirm only. Opening a row does not write the
+                    ledger; confirm still does.
                   </p>
                   {hits.map((hit) => (
                     <MbPickHitRow

@@ -5,10 +5,11 @@ import { db } from '@/lib/db';
 import { mbSubmission, mbWork } from '@/lib/db/schema';
 import { resolveContributionLimits, type ContributionListLimits } from '@/lib/contribution-list';
 import {
+  attachPickedRelease,
   barcodeGaps,
-  cachedReleasesSharingBarcodes,
   contestedIsrcs,
   contributionCounts,
+  cachedReleasesSharingBarcodes,
   harmonyImportLink,
   isrcEligibleGapsByRelease,
   isrcGapsByRelease,
@@ -40,6 +41,7 @@ import {
   mbApiReleaseToPickHit,
   normalisePickBarcode,
   type MbPickHit,
+  type PickedReleaseAttachRequest,
 } from '@/lib/musicbrainz-pick';
 import {
   barcodeSubmissionDraft,
@@ -925,6 +927,12 @@ export async function lookupBarcodeReleaseHits(upc: string): Promise<{
     const message = error instanceof Error ? error.message : String(error);
     return { hits: [], error: message };
   }
+}
+
+/** Attach a cached release pick to the Spotify album. Does not ledger or ingest. */
+export async function attachPickedReleaseToAlbum(request: PickedReleaseAttachRequest) {
+  await checkAuth();
+  return attachPickedRelease(request);
 }
 
 /** Record a Harmony submission only after the editor confirms the external edit. */
