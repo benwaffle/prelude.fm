@@ -520,7 +520,8 @@ export interface OtherRecording {
 export interface WorkSummary {
   workId: string;
   recordingId: string;
-  title: string;
+  /** Null where the reader has no title for the work, as on a library card. */
+  title: string | null;
   nickname: string | null;
   catalog: string | null;
   year: number | null;

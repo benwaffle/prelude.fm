@@ -1,4 +1,4 @@
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db, type DatabaseExecutor } from '@/lib/db';
 import {
   mbArtist,
@@ -430,4 +430,70 @@ function emptyFacts(requestedTrackIds: string[]): MusicBrainzLibraryFacts {
     mbReleases: [],
     mbReleaseTracks: [],
   };
+}
+
+/**
+ * The Spotify tracks anchored to any recording of this work or of its parts.
+ *
+ * The reader's other screens start from a work rather than from a holding —
+ * every recording of this work, more works by this composer — and this is
+ * the join that gets from one to the other without touching a legacy table.
+ */
+export async function findProviderTracksForWork(
+  workMbid: string,
+  database: DatabaseExecutor = db,
+): Promise<string[]> {
+  const workMbids = await descendantWorkMbids(workMbid, database);
+  const relations = await forChunks(workMbids, (chunk) =>
+    database
+      .select({ recordingMbid: mbRecordingWork.recordingMbid })
+      .from(mbRecordingWork)
+      .where(inArray(mbRecordingWork.workMbid, chunk)),
+  );
+  const anchors = await forChunks(
+    relations.map((relation) => relation.recordingMbid),
+    (chunk) =>
+      database
+        .select({ spotifyTrackId: trackRecording.spotifyTrackId })
+        .from(trackRecording)
+        .where(inArray(trackRecording.recordingMbid, chunk)),
+  );
+  return Array.from(new Set(anchors.map((anchor) => anchor.spotifyTrackId)));
+}
+
+/** Other works by the same composer that we hold a recording of. */
+export async function findProviderTracksForComposer(
+  composerMbid: string,
+  excludeWorkMbid: string,
+  workLimit = 12,
+  database: DatabaseExecutor = db,
+): Promise<string[]> {
+  const excluded = new Set(await descendantWorkMbids(excludeWorkMbid, database));
+  const works = await database
+    .select({ mbid: mbWork.mbid })
+    .from(mbWork)
+    .where(and(eq(mbWork.composerMbid, composerMbid), isNull(mbWork.parentMbid)));
+  const trackIds: string[] = [];
+  for (const work of works) {
+    if (excluded.has(work.mbid) || trackIds.length >= workLimit * 32) continue;
+    trackIds.push(...(await findProviderTracksForWork(work.mbid, database)));
+  }
+  return Array.from(new Set(trackIds));
+}
+
+/** A work and everything filed beneath it, to a bounded depth. */
+async function descendantWorkMbids(
+  workMbid: string,
+  database: DatabaseExecutor,
+): Promise<string[]> {
+  const found = new Set([workMbid]);
+  let frontier = [workMbid];
+  for (let depth = 0; depth < MAX_WORK_GENERATIONS && frontier.length > 0; depth++) {
+    const children = await forChunks(frontier, (chunk) =>
+      database.select({ mbid: mbWork.mbid }).from(mbWork).where(inArray(mbWork.parentMbid, chunk)),
+    );
+    frontier = children.map((child) => child.mbid).filter((mbid) => !found.has(mbid));
+    for (const mbid of frontier) found.add(mbid);
+  }
+  return Array.from(found);
 }

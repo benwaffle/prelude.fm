@@ -10,6 +10,7 @@ import {
   type WorkDetail,
   type WorkSummary,
 } from '@/app/actions/library';
+import { getMusicBrainzWorkDetail } from '@/app/actions/library-mb';
 import { getWorkParent, type WorkParent } from '@/app/actions/work-hierarchy';
 import {
   hexToRgba,
@@ -32,13 +33,20 @@ export function DetailScreen({
   workId: string;
   recordingId: string | null;
 }) {
-  const { likedTrackIds, registerWorks, toggleLike } = useLibrary();
+  const { likedTrackIds, reader, registerWorks, toggleLike } = useLibrary();
   const { currentTrack, play } = useSpotifyPlayer();
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading');
   const [parent, setParent] = useState<WorkParent | null>(null);
 
   useEffect(() => {
+    // The collection strip reads the legacy hierarchy; under the MusicBrainz
+    // reader the work's place in its tree comes from the projection instead,
+    // so asking would only mislead.
+    if (reader === 'musicbrainz') {
+      setParent(null);
+      return;
+    }
     let cancelled = false;
     getWorkParent(workId)
       .then((found) => {
@@ -50,12 +58,16 @@ export function DetailScreen({
     return () => {
       cancelled = true;
     };
-  }, [workId]);
+  }, [workId, reader]);
 
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    getWorkDetail(workId, recordingId, Array.from(likedTrackIds))
+    const loading =
+      reader === 'musicbrainz'
+        ? getMusicBrainzWorkDetail(workId, recordingId, Array.from(likedTrackIds))
+        : getWorkDetail(workId, recordingId, Array.from(likedTrackIds));
+    loading
       .then((result) => {
         if (cancelled) return;
         if (!result) {
@@ -76,7 +88,7 @@ export function DetailScreen({
     };
     // Liked state is read once for the initial paint; hearts update locally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workId, recordingId]);
+  }, [workId, recordingId, reader]);
 
   // The tinted wash behind the page takes its colour from this recording.
   useEffect(() => {
@@ -467,7 +479,7 @@ function MoreByComposer({ composer, works }: { composer: string; works: WorkSumm
               // eslint-disable-next-line @next/next/no-img-element -- Spotify serves already-sized art
               <img
                 src={w.cover}
-                alt={w.album ?? w.title}
+                alt={w.album ?? w.title ?? ''}
                 className="block h-full w-full object-cover"
               />
             ) : (

@@ -269,3 +269,63 @@ test('every held track is on a card or in the gap list, exactly once', async () 
     requested,
   );
 });
+
+test('the detail of a work gathers every issue of it we can play', async () => {
+  await db.insert(schema.spotifyAlbum).values({
+    spotifyId: 'album-2',
+    title: 'Another Mozart Recital',
+    year: 2015,
+    popularity: 10,
+    images: null,
+    upc: null,
+    mbReleaseId: null,
+    mbReleaseCandidates: null,
+    mbCheckedAt: null,
+  });
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-other-i',
+    title: 'Sonata 16: Allegro',
+    trackNumber: 1,
+    discNumber: 1,
+    durationMs: 250_000,
+    popularity: 9,
+    spotifyAlbumId: 'album-2',
+    isrc: 'GBAAA0000021',
+  });
+  await db.insert(schema.trackRecording).values({
+    spotifyTrackId: 'track-other-i',
+    recordingMbid: 'rec-other-i',
+    isrc: 'GBAAA0000021',
+    matchedBy: 'isrc',
+  });
+  await db.insert(schema.mbRecording).values({
+    mbid: 'rec-other-i',
+    title: 'Allegro',
+    length: 250_000,
+    detail: 'full',
+  });
+  await db.insert(schema.mbRecordingWork).values({
+    recordingMbid: 'rec-other-i',
+    workMbid: 'part-i',
+  });
+
+  const { getMusicBrainzWorkDetail } = await import('@/app/actions/library-mb');
+  const detail = await getMusicBrainzWorkDetail('sonata', null, ['track-i']);
+
+  assert.ok(detail);
+  // The two-movement holding is fuller than the one-movement one, and
+  // fullness is a fact about what we hold, not a guess at which is better.
+  assert.equal(detail.work.movements.filter((movement) => !movement.missing).length, 2);
+  assert.equal(detail.others.length, 1);
+  assert.equal(detail.others[0].album, 'Another Mozart Recital');
+  assert.equal(
+    detail.others[0].popularity,
+    null,
+    'Spotify popularity belongs to a track, and nothing has aggregated it per recording',
+  );
+});
+
+test('asking for a work MusicBrainz cannot play returns nothing, not an empty card', async () => {
+  const { getMusicBrainzWorkDetail } = await import('@/app/actions/library-mb');
+  assert.equal(await getMusicBrainzWorkDetail('not-a-work', null, []), null);
+});

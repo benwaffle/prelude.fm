@@ -39,6 +39,11 @@ import type {
  * missing, because MusicBrainz told us the part exists.
  */
 
+/** Whether a card is the fullest holding of its work, for choosing a default. */
+export function playedMovementCount(work: LibraryWork): number {
+  return work.movements.filter((movement) => !movement.missing).length;
+}
+
 export type MusicBrainzLibrary = {
   works: LibraryWork[];
   /** Every held track that is not on a card, with what is missing. */
