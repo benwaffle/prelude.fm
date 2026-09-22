@@ -16,6 +16,9 @@ test('inboxFocusForAlbum sends partial releases to the ISRC row', () => {
   );
 });
 
-test('inboxFocusForAlbum leaves ambiguous albums without an Inbox target', () => {
-  assert.equal(inboxFocusForAlbum({ id: 'album-1', state: 'ambiguous', mbReleaseId: null }), null);
+test('inboxFocusForAlbum sends ambiguous albums to the release picker', () => {
+  assert.deepEqual(inboxFocusForAlbum({ id: 'album-1', state: 'ambiguous', mbReleaseId: null }), {
+    kind: 'album',
+    id: 'album-1',
+  });
 });

@@ -1,6 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { authClient } from '@/lib/auth-client';
+import { adminGapHref, gapRoute } from '@/app/admin/lib/gap-route';
 import type { MusicBrainzGapCode, UnresolvedLibraryTrack } from '@/lib/musicbrainz-library';
 
 /**
@@ -50,6 +53,8 @@ const REASONS: Record<MusicBrainzGapCode, string> = {
 
 export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
   const [open, setOpen] = useState(false);
+  const { data: session } = authClient.useSession();
+  const isAdmin = session?.user?.name === 'benwaffle';
   if (tracks.length === 0) return null;
 
   const byReason = new Map<MusicBrainzGapCode, UnresolvedLibraryTrack[]>();
@@ -86,20 +91,35 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
                 </span>
               </div>
               <ul className="mt-[3px] list-none pl-0">
-                {group.map((track) => (
-                  <li
-                    key={track.spotifyTrackId}
-                    className="truncate py-[2px] font-display text-[12px] text-muted italic"
-                  >
-                    {track.providerTitle ?? track.spotifyTrackId}
-                    {track.musicBrainz?.recordingTitle && (
-                      <span className="not-italic">
-                        {' '}
-                        · MusicBrainz: {track.musicBrainz.recordingTitle}
+                {group.map((track) => {
+                  const destination = gapRoute(code, {
+                    spotifyAlbumId: track.spotifyAlbumId,
+                  });
+                  return (
+                    <li
+                      key={track.spotifyTrackId}
+                      className="flex min-w-0 items-baseline gap-2 py-[2px] font-display text-[12px] text-muted italic"
+                    >
+                      <span className="min-w-0 truncate">
+                        {track.providerTitle ?? track.spotifyTrackId}
+                        {track.musicBrainz?.recordingTitle && (
+                          <span className="not-italic">
+                            {' '}
+                            · MusicBrainz: {track.musicBrainz.recordingTitle}
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </li>
-                ))}
+                      {isAdmin && destination && (
+                        <Link
+                          href={adminGapHref(destination)}
+                          className="shrink-0 font-meta text-[9px] tracking-[0.12em] text-muted uppercase not-italic hover:text-ink"
+                        >
+                          open in admin
+                        </Link>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}

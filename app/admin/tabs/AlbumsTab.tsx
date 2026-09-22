@@ -70,9 +70,9 @@ function nextStep(
 
     case 'ambiguous':
       return {
-        label: 'Pick release by hand',
-        hint: 'Several releases share this barcode. Search MusicBrainz for the right one, then align the album in Inbox if needed.',
-        focus: null,
+        label: 'Pick release in Inbox',
+        hint: 'Several releases share this barcode. Inbox shows the cached candidates and the existing read-only barcode lookup.',
+        focus: inboxFocusForAlbum(album),
       };
   }
 }

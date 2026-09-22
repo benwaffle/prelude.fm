@@ -1,35 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { GatewayBar } from './components/GatewayBar';
 import { Spinner } from './components/Spinner';
 import { AlbumsTab } from './tabs/AlbumsTab';
 import { ContributeTab } from './tabs/ContributeTab';
 import { HealthTab } from './tabs/HealthTab';
-import type { AlbumState } from './lib/album-state';
 import type { InboxFocus } from './lib/inbox-focus';
+import { parseAdminUrl, patchAdminUrl, type AdminTab, type AdminUrlPatch } from './lib/admin-url';
 
 /*
  * A workbench for closing MusicBrainz gaps — not a second catalogue.
  * /catalog and the player stay the map; admin is Inbox, Albums, and Health.
  */
-type TabId = 'inbox' | 'albums' | 'health';
-
-const TABS: { id: TabId; label: string }[] = [
+const TABS: { id: AdminTab; label: string }[] = [
   { id: 'inbox', label: 'Inbox' },
   { id: 'albums', label: 'Albums' },
   { id: 'health', label: 'Health' },
 ];
 
 export default function AdminPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <Spinner className="h-4 w-4" />
+        </div>
+      }
+    >
+      <AdminPageContent />
+    </Suspense>
+  );
+}
+
+function AdminPageContent() {
   const { data: session, isPending } = authClient.useSession();
-  const [tab, setTab] = useState<TabId>('inbox');
-  const [albumFilter, setAlbumFilter] = useState<AlbumState | undefined>();
-  const [inboxFocus, setInboxFocus] = useState<InboxFocus | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { tab, albumFilter, inboxClass, focus } = parseAdminUrl(searchParams);
 
   const isAdmin = session?.user?.name === 'benwaffle';
+
+  function updateUrl(patch: AdminUrlPatch) {
+    router.push(
+      `${pathname}${patchAdminUrl(new URLSearchParams(searchParams.toString()), patch)}`,
+      {
+        scroll: false,
+      },
+    );
+  }
 
   if (isPending) {
     return (
@@ -46,7 +69,12 @@ export default function AdminPage() {
         action={
           <button
             className="act"
-            onClick={() => authClient.signIn.social({ provider: 'spotify', callbackURL: '/admin' })}
+            onClick={() =>
+              authClient.signIn.social({
+                provider: 'spotify',
+                callbackURL: `${pathname}${searchParams.size ? `?${searchParams}` : ''}`,
+              })
+            }
           >
             Sign in with Spotify
           </button>
@@ -69,8 +97,23 @@ export default function AdminPage() {
   }
 
   function openInbox(focus: InboxFocus) {
-    setInboxFocus(focus);
-    setTab('inbox');
+    updateUrl({
+      tab: 'inbox',
+      class: focus.kind === 'album' ? 'missing' : 'isrc',
+      album: focus.kind === 'album' ? focus.id : null,
+      release: focus.kind === 'release' ? focus.id : null,
+      filter: null,
+    });
+  }
+
+  function selectTab(nextTab: AdminTab) {
+    updateUrl({
+      tab: nextTab,
+      class: nextTab === 'inbox' ? (inboxClass ?? null) : null,
+      album: nextTab === 'inbox' && focus?.kind === 'album' ? focus.id : null,
+      release: nextTab === 'inbox' && focus?.kind === 'release' ? focus.id : null,
+      filter: nextTab === 'albums' ? (albumFilter ?? null) : null,
+    });
   }
 
   return (
@@ -90,7 +133,7 @@ export default function AdminPage() {
               key={item.id}
               className="tab"
               aria-current={tab === item.id ? 'page' : undefined}
-              onClick={() => setTab(item.id)}
+              onClick={() => selectTab(item.id)}
             >
               {item.label}
             </button>
@@ -100,11 +143,35 @@ export default function AdminPage() {
 
       <main className="mx-auto max-w-[1400px] px-5 pt-6">
         {tab === 'inbox' && (
-          <ContributeTab focus={inboxFocus} onFocusHandled={() => setInboxFocus(null)} />
+          <ContributeTab
+            focus={focus}
+            inboxClass={inboxClass}
+            onClassChange={(nextClass) =>
+              updateUrl({
+                tab: 'inbox',
+                class: nextClass,
+                album: null,
+                release: null,
+                filter: null,
+              })
+            }
+          />
         )}
 
         {tab === 'albums' && (
-          <AlbumsTab state={albumFilter} onStateChange={setAlbumFilter} onOpenInbox={openInbox} />
+          <AlbumsTab
+            state={albumFilter}
+            onStateChange={(nextFilter) =>
+              updateUrl({
+                tab: 'albums',
+                filter: nextFilter ?? null,
+                class: null,
+                album: null,
+                release: null,
+              })
+            }
+            onOpenInbox={openInbox}
+          />
         )}
 
         {tab === 'health' && <HealthTab />}

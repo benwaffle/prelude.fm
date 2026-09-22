@@ -6,7 +6,7 @@ export type InboxFocus = { kind: 'release'; id: string } | { kind: 'album'; id: 
 export function inboxFocusForAlbum(
   album: Pick<AlbumRow, 'id' | 'state' | 'mbReleaseId'>,
 ): InboxFocus | null {
-  if (album.state === 'absent' || album.state === 'unchecked') {
+  if (album.state === 'absent' || album.state === 'ambiguous' || album.state === 'unchecked') {
     return { kind: 'album', id: album.id };
   }
   if (album.mbReleaseId && (album.state === 'partial' || album.state === 'needs_isrcs')) {

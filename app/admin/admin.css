@@ -490,6 +490,130 @@
   white-space: nowrap;
 }
 
+/* --------------------------------------------------------- inbox --- */
+
+.desk .inbox-triage {
+  position: sticky;
+  top: 44px;
+  z-index: 20;
+  display: flex;
+  gap: 1px;
+  overflow-x: auto;
+  border: 1px solid var(--rule-strong);
+  background: var(--rule);
+  scrollbar-width: none;
+}
+
+.desk .inbox-triage::-webkit-scrollbar {
+  display: none;
+}
+
+.desk .inbox-triage a {
+  display: flex;
+  min-width: max-content;
+  flex: 1 0 auto;
+  align-items: baseline;
+  gap: 7px;
+  padding: 7px 10px;
+  background: var(--slip);
+  color: var(--ink-2);
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.desk .inbox-triage a:hover,
+.desk .inbox-triage a[aria-current='location'] {
+  background: var(--slip-2);
+  color: var(--gall);
+}
+
+.desk .bot-cap-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  background: var(--slip);
+}
+
+.desk .inbox-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.desk .inbox-stage-label {
+  padding-left: 2px;
+  color: var(--ink-2);
+}
+
+.desk .panel[data-inbox-highlight='true'] {
+  border-left: 3px solid var(--gall);
+}
+
+.desk .inbox-section-note {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 11px;
+}
+
+.desk .inbox-row-wrap,
+.desk .inbox-row {
+  border-bottom: 1px solid var(--rule);
+}
+
+.desk .inbox-row-wrap:last-child,
+.desk .inbox-row:last-child {
+  border-bottom: 0;
+}
+
+.desk .inbox-row-wrap > .inbox-row {
+  border-bottom: 0;
+}
+
+.desk .inbox-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto minmax(76px, auto);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.desk .inbox-row:hover {
+  background: var(--slip-2);
+}
+
+.desk .inbox-evidence {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.desk .inbox-count {
+  min-width: 28px;
+  color: var(--gall);
+}
+
+.desk .inbox-links,
+.desk .inbox-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.desk .inbox-disclosure {
+  padding: 12px 14px;
+  border-top: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--slip-2) 55%, var(--slip));
+}
+
+.desk .mb-picker {
+  min-width: 0;
+}
+
 /* An action is a link, but it should read as the button it behaves like. */
 .desk a.act {
   display: inline-block;
@@ -548,6 +672,18 @@
 
   .desk .row {
     flex-wrap: wrap;
+  }
+
+  .desk .inbox-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .desk .inbox-evidence {
+    grid-column: 1 / -1;
+  }
+
+  .desk .inbox-links {
+    justify-content: flex-start;
   }
 }
 
