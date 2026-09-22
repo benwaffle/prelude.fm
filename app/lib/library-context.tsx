@@ -14,7 +14,10 @@ import type { SavedTrack } from '@spotify/web-api-ts-sdk';
 import { createSpotifySdk } from '@/lib/spotify-sdk';
 import { useLikedSongs } from '@/lib/use-liked-songs';
 import { getLibraryWorks } from '@/app/actions/library';
+import { getMusicBrainzLibrary } from '@/app/actions/library-mb';
 import { getKnownComposerArtists, submitToMatchQueue } from '@/app/actions/spotify';
+import { useReaderChoice, type ReaderChoice } from '@/lib/reader-choice';
+import type { UnresolvedLibraryTrack } from '@/lib/musicbrainz-library';
 import type { LibraryWork, Movement } from '@/lib/prelude';
 
 const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? '';
@@ -32,6 +35,14 @@ interface LibraryContextValue {
   /** Works with at least one saved movement, plus any registered by a page. */
   works: LibraryWork[];
   unmatched: UnmatchedTrack[];
+  /** Which reader drew `works`, so a screen can say so and offer the other. */
+  reader: ReaderChoice;
+  /**
+   * Held tracks the MusicBrainz reader cannot put on a card, each with what
+   * is missing. Empty under the reader in production, which reports a track
+   * it cannot place only as absent.
+   */
+  gapTracks: UnresolvedLibraryTrack[];
   likedTrackIds: Set<string>;
   /** No library to show yet. A stale cache counts as a library. */
   loading: boolean;
@@ -63,8 +74,10 @@ export function LibraryProvider({
   userId: string;
   children: ReactNode;
 }) {
+  const reader = useReaderChoice();
   const { tracks, loading, refreshing, error, total } = useLikedSongs(accessToken, userId);
   const [works, setWorks] = useState<LibraryWork[]>([]);
+  const [gapTracks, setGapTracks] = useState<UnresolvedLibraryTrack[]>([]);
   const [extra, setExtra] = useState<LibraryWork[]>([]);
   // Optimistic overrides so a heart responds before Spotify confirms.
   const [pendingLikes, setPendingLikes] = useState<Map<string, boolean>>(new Map());
@@ -95,13 +108,25 @@ export function LibraryProvider({
      Spotify is re-read. Gated on `loading` only to avoid firing once per page
      of a first, progressive load. */
   useEffect(() => {
-    if (loading || signature === '' || requestedFor.current === signature) return;
-    requestedFor.current = signature;
+    const key = `${reader}:${signature}`;
+    if (loading || signature === '' || requestedFor.current === key) return;
+    requestedFor.current = key;
 
     let cancelled = false;
-    getLibraryWorks(tracks.map((t) => t.track.id))
+    const ids = tracks.map((t) => t.track.id);
+    const resolving =
+      reader === 'musicbrainz'
+        ? getMusicBrainzLibrary(
+            ids,
+            tracks.map((t) => [t.track.id, t.added_at] as [string, string]),
+          )
+        : getLibraryWorks(ids).then((resolved) => ({ works: resolved, unresolvedTracks: [] }));
+
+    resolving
       .then((resolved) => {
-        if (!cancelled) setWorks(resolved);
+        if (cancelled) return;
+        setWorks(resolved.works);
+        setGapTracks(resolved.unresolvedTracks);
       })
       .catch((err) => console.error('Failed to resolve library works:', err))
       .finally(() => {
@@ -111,7 +136,7 @@ export function LibraryProvider({
     return () => {
       cancelled = true;
     };
-  }, [tracks, loading, signature]);
+  }, [tracks, loading, signature, reader]);
 
   const addedAtByTrack = useMemo(
     () => new Map(tracks.map((t) => [t.track.id, t.added_at])),
@@ -239,6 +264,8 @@ export function LibraryProvider({
   const value: LibraryContextValue = {
     works: decorated,
     unmatched,
+    reader,
+    gapTracks,
     likedTrackIds,
     loading,
     refreshing,
