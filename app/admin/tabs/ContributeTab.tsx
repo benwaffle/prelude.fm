@@ -13,6 +13,7 @@ import {
   getBarcodeBotPayload,
   getBotStatus,
   getContributions,
+  lookupBarcodeReleaseHits,
   recordBarcodeSubmission,
   recordContestedIsrcReport,
   recordIsrcSubmission,
@@ -36,7 +37,14 @@ import {
   type ContributionView,
 } from '../actions/contribute';
 import { Spinner } from '../components/Spinner';
+import { MbPickHitRow } from '../components/MbPickHitRow';
 import type { InboxFocus } from '../lib/inbox-focus';
+import {
+  AMBIGUOUS_BARCODE_REASON,
+  barcodeReleaseSearchUrl,
+  mbWorkPickHit,
+  type MbPickHit,
+} from '@/lib/musicbrainz-pick';
 
 /**
  * What we can tell MusicBrainz that it does not already know.
@@ -77,6 +85,8 @@ export function ContributeTab({
   >({});
   const [errorForms, setErrorForms] = useState<Record<string, { editId: string }>>({});
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
+  const [liveBarcodeHits, setLiveBarcodeHits] = useState<Record<string, MbPickHit[]>>({});
+  const [barcodeLookup, setBarcodeLookup] = useState<Record<string, string | 'loading'>>({});
 
   const reload = useCallback(() => {
     return getContributions(limits)
@@ -234,6 +244,32 @@ export function ContributeTab({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function lookupBarcodeHits(albumId: string, upc: string) {
+    setBarcodeLookup((current) => ({ ...current, [albumId]: 'loading' }));
+    try {
+      const result = await lookupBarcodeReleaseHits(upc);
+      setLiveBarcodeHits((current) => ({ ...current, [albumId]: result.hits }));
+      setBarcodeLookup((current) => ({
+        ...current,
+        [albumId]:
+          result.error ??
+          (result.hits.length === 0 ? 'MusicBrainz returned no releases for this barcode' : ''),
+      }));
+    } catch (error) {
+      setBarcodeLookup((current) => ({
+        ...current,
+        [albumId]: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+
+  function pickRelease(albumId: string, releaseMbid: string) {
+    setReleaseForms((current) => ({
+      ...current,
+      [albumId]: { ...(current[albumId] ?? { releaseMbid: '', editId: '' }), releaseMbid },
+    }));
   }
 
   async function submittedRelease(albumId: string) {
@@ -546,74 +582,126 @@ export function ContributeTab({
         </p>
         {view.missing.map((album) => {
           const form = releaseForms[album.albumId] ?? { releaseMbid: '', editId: '' };
+          const ambiguous = album.reason === AMBIGUOUS_BARCODE_REASON;
+          const hits = liveBarcodeHits[album.albumId] ?? album.barcodeHits;
+          const lookupState = barcodeLookup[album.albumId];
           return (
-            <div key={album.albumId} className="row" data-inbox-album={album.albumId}>
-              <span className="mono w-10 shrink-0 text-[var(--gall)]">{album.tracks}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate">{album.albumTitle}</span>
-                <span className="block text-[11px] text-[var(--ink-2)]">
-                  {album.year ? `${album.year} · ` : ''}
-                  {album.reason}
-                  {album.unanchored < album.tracks &&
-                    ` · ${album.tracks - album.unanchored} track(s) already reach a recording elsewhere`}
-                  {album.ledger?.releaseMbid && ` · ${album.ledger.releaseMbid}`}
+            <div key={album.albumId} data-inbox-album={album.albumId}>
+              <div className="row">
+                <span className="mono w-10 shrink-0 text-[var(--gall)]">{album.tracks}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{album.albumTitle}</span>
+                  <span className="block text-[11px] text-[var(--ink-2)]">
+                    {album.year ? `${album.year} · ` : ''}
+                    {album.reason}
+                    {album.unanchored < album.tracks &&
+                      ` · ${album.tracks - album.unanchored} track(s) already reach a recording elsewhere`}
+                    {album.ledger?.releaseMbid && ` · ${album.ledger.releaseMbid}`}
+                  </span>
                 </span>
-              </span>
-              <a className="act shrink-0" href={album.harmony} target="_blank" rel="noreferrer">
-                Harmony
-              </a>
-              <a
-                className="act shrink-0"
-                href={`https://open.spotify.com/album/${album.albumId}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Spotify
-              </a>
-              {album.ledger ? (
-                <>
-                  <span className="album-meta shrink-0">{album.ledger.label}</span>
-                  <button
-                    className="act shrink-0"
-                    disabled={busy}
-                    onClick={() => recheckRelease(album.albumId)}
-                  >
-                    Recheck
-                  </button>
-                </>
-              ) : (
-                <>
-                  <input
-                    className="mono w-40 shrink-0"
-                    placeholder="release MBID (optional)"
-                    value={form.releaseMbid}
-                    onChange={(event) =>
-                      setReleaseForms((current) => ({
-                        ...current,
-                        [album.albumId]: { ...form, releaseMbid: event.target.value },
-                      }))
-                    }
-                  />
-                  <input
-                    className="mono w-32 shrink-0"
-                    placeholder="edit ID (optional)"
-                    value={form.editId}
-                    onChange={(event) =>
-                      setReleaseForms((current) => ({
-                        ...current,
-                        [album.albumId]: { ...form, editId: event.target.value },
-                      }))
-                    }
-                  />
-                  <button
-                    className="act shrink-0"
-                    data-variant="primary"
-                    disabled={busy}
-                    onClick={() => submittedRelease(album.albumId)}
-                  >
-                    I submitted it
-                  </button>
-                </>
+                <a className="act shrink-0" href={album.harmony} target="_blank" rel="noreferrer">
+                  Harmony
+                </a>
+                <a
+                  className="act shrink-0"
+                  href={`https://open.spotify.com/album/${album.albumId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Spotify
+                </a>
+                {album.ledger ? (
+                  <>
+                    <span className="album-meta shrink-0">{album.ledger.label}</span>
+                    <button
+                      className="act shrink-0"
+                      disabled={busy}
+                      onClick={() => recheckRelease(album.albumId)}
+                    >
+                      Recheck
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      className="mono w-40 shrink-0"
+                      placeholder="release MBID (optional)"
+                      value={form.releaseMbid}
+                      onChange={(event) =>
+                        setReleaseForms((current) => ({
+                          ...current,
+                          [album.albumId]: { ...form, releaseMbid: event.target.value },
+                        }))
+                      }
+                    />
+                    <input
+                      className="mono w-32 shrink-0"
+                      placeholder="edit ID (optional)"
+                      value={form.editId}
+                      onChange={(event) =>
+                        setReleaseForms((current) => ({
+                          ...current,
+                          [album.albumId]: { ...form, editId: event.target.value },
+                        }))
+                      }
+                    />
+                    <button
+                      className="act shrink-0"
+                      data-variant="primary"
+                      disabled={busy}
+                      onClick={() => submittedRelease(album.albumId)}
+                    >
+                      I submitted it
+                    </button>
+                  </>
+                )}
+              </div>
+              {ambiguous && (
+                <div className="fold-body">
+                  <p className="mb-2 text-[11px] text-[var(--ink-2)]">
+                    Several MusicBrainz releases share this barcode. Pick one here the way the
+                    editor lists search hits. Opening a row does not write the ledger; confirm still
+                    does. Attaching the pick to the album match is integrator-owned.
+                  </p>
+                  {hits.map((hit) => (
+                    <MbPickHitRow
+                      key={hit.mbid}
+                      hit={hit}
+                      picked={form.releaseMbid === hit.mbid}
+                      busy={busy}
+                      onPick={(mbid) => pickRelease(album.albumId, mbid)}
+                    />
+                  ))}
+                  {hits.length === 0 && lookupState !== 'loading' && (
+                    <p className="mb-2 text-[var(--ink-2)]">
+                      Those releases are not in our cache yet.
+                    </p>
+                  )}
+                  {lookupState && lookupState !== 'loading' && lookupState !== '' && (
+                    <p className="mb-2 text-[var(--ink-2)]">{lookupState}</p>
+                  )}
+                  <div className="toolbar">
+                    {album.upc && (
+                      <button
+                        className="act"
+                        disabled={busy || lookupState === 'loading'}
+                        onClick={() => lookupBarcodeHits(album.albumId, album.upc ?? '')}
+                      >
+                        {lookupState === 'loading' ? 'Looking up…' : 'Look up on MusicBrainz'}
+                      </button>
+                    )}
+                    {album.upc && (
+                      <a
+                        className="act"
+                        href={barcodeReleaseSearchUrl(album.upc)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Barcode search
+                      </a>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           );
@@ -988,32 +1076,20 @@ export function ContributeTab({
                 {gap.candidates.length > 0 ? (
                   <div className="mb-3">
                     <div className="mb-2 text-[11px] text-[var(--ink-2)]">
-                      Existing MusicBrainz candidates. Catalogue matches identify a possible work;
-                      they do not prove the recording relationship. Opening a work or the recording
-                      editor does not write the ledger.
+                      Existing MusicBrainz candidates, listed like the editor&apos;s search hits.
+                      Catalogue matches identify a possible work; they do not prove the recording
+                      relationship. Opening a work does not write the ledger.
                     </div>
                     {gap.candidates.map((candidate) => {
                       const recorded = gap.ledger.find(
                         (row) =>
                           row.kind === 'work_relationship' && row.workMbid === candidate.workMbid,
                       );
+                      const hit = mbWorkPickHit(candidate);
                       return (
-                        <div key={candidate.workMbid} className="row px-0">
-                          <span className="min-w-0 flex-1">
-                            <a
-                              href={`https://musicbrainz.org/work/${candidate.workMbid}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {candidate.title}
-                            </a>
-                            <span className="album-meta">
-                              {[candidate.type, candidate.composerName].filter(Boolean).join(' · ')}
-                              {candidate.catalogues.length > 0 &&
-                                ` · ${candidate.catalogues.map((catalogue) => `${catalogue.system} ${catalogue.number}`).join(', ')}`}
-                              {' · '}
-                              {candidate.evidence.join(', ')}
-                            </span>
+                        <MbPickHitRow key={candidate.workMbid} hit={hit}>
+                          <span className="album-meta shrink-0">
+                            {candidate.evidence.join(', ')}
                           </span>
                           {recorded ? (
                             <>
@@ -1061,7 +1137,7 @@ export function ContributeTab({
                               </button>
                             </>
                           )}
-                        </div>
+                        </MbPickHitRow>
                       );
                     })}
                   </div>

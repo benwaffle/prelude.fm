@@ -6,6 +6,7 @@ import { mbSubmission, mbWork } from '@/lib/db/schema';
 import { resolveContributionLimits, type ContributionListLimits } from '@/lib/contribution-list';
 import {
   barcodeGaps,
+  cachedReleasesSharingBarcodes,
   contestedIsrcs,
   contributionCounts,
   harmonyImportLink,
@@ -34,6 +35,12 @@ import {
 import { botCredentials } from '@/lib/musicbrainz-oauth';
 import { musicBrainzApi } from '@/lib/musicbrainz';
 import { ingestWorkTree } from '@/lib/musicbrainz-cache';
+import {
+  AMBIGUOUS_BARCODE_REASON,
+  mbApiReleaseToPickHit,
+  normalisePickBarcode,
+  type MbPickHit,
+} from '@/lib/musicbrainz-pick';
 import {
   barcodeSubmissionDraft,
   cachedBarcodeLanded,
@@ -211,6 +218,7 @@ export type ContributionView = {
   })[];
   missing: (Awaited<ReturnType<typeof missingReleases>>[number] & {
     harmony: string;
+    barcodeHits: MbPickHit[];
     ledger: {
       id: number;
       outcome: string;
@@ -378,10 +386,10 @@ export async function getContributions(
   }
 
   const missingAlbumIds = missing.map((album) => album.albumId);
-  const releaseLedgerRows =
+  const [releaseLedgerRows, barcodeHitsByUpc] = await Promise.all([
     missingAlbumIds.length === 0
-      ? []
-      : await db
+      ? Promise.resolve([])
+      : db
           .select({
             id: mbSubmission.id,
             albumId: mbSubmission.subject,
@@ -392,7 +400,14 @@ export async function getContributions(
           .from(mbSubmission)
           .where(
             and(eq(mbSubmission.kind, 'release'), inArray(mbSubmission.subject, missingAlbumIds)),
-          );
+          ),
+    cachedReleasesSharingBarcodes(
+      missing
+        .filter((album) => album.reason === AMBIGUOUS_BARCODE_REASON)
+        .map((album) => album.upc)
+        .filter((upc): upc is string => Boolean(upc)),
+    ),
+  ]);
   const releaseLedgerByAlbum = new Map(
     releaseLedgerRows.map((row) => {
       const releaseMbid = (row.evidence as { releaseMbid?: unknown } | null)?.releaseMbid;
@@ -609,6 +624,10 @@ export async function getContributions(
     missing: missing.map((album) => ({
       ...album,
       harmony: harmonyImportLink(album.albumId),
+      barcodeHits:
+        album.reason === AMBIGUOUS_BARCODE_REASON
+          ? (barcodeHitsByUpc.get(normalisePickBarcode(album.upc) ?? '') ?? [])
+          : [],
       ledger: releaseLedgerByAlbum.get(album.albumId) ?? null,
     })),
     barcodes: barcodes.map((gap) => ({
@@ -875,6 +894,37 @@ export async function recordWorkCreationSubmission(
     options,
   );
   return getContributions();
+}
+
+/**
+ * Live MusicBrainz hits for a barcode, used when the cache does not yet hold
+ * the releases that share it.
+ *
+ * Reads only. Does not ingest, does not write the album's matched release,
+ * and does not write the ledger.
+ */
+export async function lookupBarcodeReleaseHits(upc: string): Promise<{
+  hits: MbPickHit[];
+  error: string | null;
+}> {
+  await checkAuth();
+  const barcode = normalisePickBarcode(upc);
+  if (!barcode) return { hits: [], error: 'That album has no barcode to search with' };
+
+  try {
+    const source = musicBrainzApi('interactive');
+    const ids = await source.releasesByBarcode(barcode);
+    const hits: MbPickHit[] = [];
+    for (const id of ids.slice(0, 8)) {
+      const release = await source.releaseWithRecordings(id);
+      if (release) hits.push(mbApiReleaseToPickHit(release));
+    }
+    hits.sort((a, b) => a.title.localeCompare(b.title) || a.mbid.localeCompare(b.mbid));
+    return { hits, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { hits: [], error: message };
+  }
 }
 
 /** Record a Harmony submission only after the editor confirms the external edit. */
