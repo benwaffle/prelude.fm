@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, like, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
   mbArtist,
@@ -34,32 +34,70 @@ import type { WorkSearchHit } from './catalogue-search';
  * the same work and the same identity.
  */
 
-/** Everything anchored, shaped into the works a reader would name. */
-async function heldCatalogue(): Promise<ShapedCatalogueWork[]> {
-  const anchored = await db
-    .selectDistinct({ recordingMbid: trackRecording.recordingMbid })
-    .from(trackRecording);
-  if (anchored.length === 0) return [];
+/**
+ * SQLite binds each list element as a parameter and the limit is ~999, so a
+ * long list has to be read in pieces. Slicing it instead would silently drop
+ * the rest — Bach alone has more works than one statement can carry.
+ */
+const PARAMETER_CHUNK = 400;
 
-  const relations = await db
-    .select({
-      recordingMbid: mbRecordingWork.recordingMbid,
-      workMbid: mbRecordingWork.workMbid,
-    })
-    .from(mbRecordingWork)
-    .innerJoin(trackRecording, eq(trackRecording.recordingMbid, mbRecordingWork.recordingMbid));
+async function forChunks<Input, Row>(
+  values: Iterable<Input>,
+  read: (chunk: Input[]) => Promise<Row[]>,
+): Promise<Row[]> {
+  const unique = [...new Set(values)];
+  const rows: Row[] = [];
+  for (let start = 0; start < unique.length; start += PARAMETER_CHUNK) {
+    rows.push(...(await read(unique.slice(start, start + PARAMETER_CHUNK))));
+  }
+  return rows;
+}
+
+/**
+ * Everything anchored, shaped into the works a reader would name.
+ *
+ * `seedWorkMbids` narrows it to one neighbourhood — one composer, one search
+ * result. Without that every click in the catalogue was a scan of every
+ * anchor, every work relation and every catalogue reference we hold, which
+ * is a great deal of work to answer a question about one composer.
+ */
+async function heldCatalogue(seedWorkMbids?: string[]): Promise<ShapedCatalogueWork[]> {
+  const scope = seedWorkMbids && (await descendantsOf(seedWorkMbids));
+  if (scope && scope.length === 0) return [];
+
+  const selectRelations = (where?: SQL) =>
+    db
+      .select({
+        recordingMbid: mbRecordingWork.recordingMbid,
+        workMbid: mbRecordingWork.workMbid,
+      })
+      .from(mbRecordingWork)
+      .innerJoin(trackRecording, eq(trackRecording.recordingMbid, mbRecordingWork.recordingMbid))
+      .where(where);
+  const relations = scope
+    ? await forChunks(scope, (chunk) => selectRelations(inArray(mbRecordingWork.workMbid, chunk)))
+    : await selectRelations();
+  if (relations.length === 0) return [];
 
   // The related works, their ancestors and one generation of children — the
   // children so the level rule can tell a work with parts from a leaf.
   const works = await readWorkNeighbourhood(relations.map((relation) => relation.workMbid));
-  const references = await db
-    .select({
-      workMbid: mbWorkCatalogue.workMbid,
-      system: mbWorkCatalogue.system,
-      number: mbWorkCatalogue.number,
-    })
-    .from(mbWorkCatalogue);
+  const references = [...(await forWorks(works.map((work) => work.mbid))).values()];
   return shapeHeldCatalogue(relations, works, references);
+}
+
+/** These works and everything filed beneath them, to a bounded depth. */
+async function descendantsOf(seedWorkMbids: string[]): Promise<string[]> {
+  const found = new Set(seedWorkMbids);
+  let frontier = seedWorkMbids;
+  for (let depth = 0; depth < 16 && frontier.length > 0; depth++) {
+    const children = await forChunks(frontier, (chunk) =>
+      db.select({ mbid: mbWork.mbid }).from(mbWork).where(inArray(mbWork.parentMbid, chunk)),
+    );
+    frontier = children.map((child) => child.mbid).filter((mbid) => !found.has(mbid));
+    for (const mbid of frontier) found.add(mbid);
+  }
+  return [...found];
 }
 
 async function readWorkNeighbourhood(seedMbids: string[]) {
@@ -71,33 +109,37 @@ async function readWorkNeighbourhood(seedMbids: string[]) {
       .map((row) => row.parentMbid)
       .filter((mbid): mbid is string => mbid !== null && !byMbid.has(mbid));
   }
-  const children = await db
-    .select({
-      mbid: mbWork.mbid,
-      title: mbWork.title,
-      type: mbWork.type,
-      parentMbid: mbWork.parentMbid,
-      orderingKey: mbWork.orderingKey,
-      composerMbid: mbWork.composerMbid,
-    })
-    .from(mbWork)
-    .where(inArray(mbWork.parentMbid, Array.from(byMbid.keys()).slice(0, 400)));
+  const children = await forChunks(byMbid.keys(), (chunk) =>
+    db
+      .select({
+        mbid: mbWork.mbid,
+        title: mbWork.title,
+        type: mbWork.type,
+        parentMbid: mbWork.parentMbid,
+        orderingKey: mbWork.orderingKey,
+        composerMbid: mbWork.composerMbid,
+      })
+      .from(mbWork)
+      .where(inArray(mbWork.parentMbid, chunk)),
+  );
   for (const row of children) if (!byMbid.has(row.mbid)) byMbid.set(row.mbid, row);
   return Array.from(byMbid.values());
 }
 
 function selectWorks(mbids: string[]) {
-  return db
-    .select({
-      mbid: mbWork.mbid,
-      title: mbWork.title,
-      type: mbWork.type,
-      parentMbid: mbWork.parentMbid,
-      orderingKey: mbWork.orderingKey,
-      composerMbid: mbWork.composerMbid,
-    })
-    .from(mbWork)
-    .where(inArray(mbWork.mbid, mbids.slice(0, 400)));
+  return forChunks(mbids, (chunk) =>
+    db
+      .select({
+        mbid: mbWork.mbid,
+        title: mbWork.title,
+        type: mbWork.type,
+        parentMbid: mbWork.parentMbid,
+        orderingKey: mbWork.orderingKey,
+        composerMbid: mbWork.composerMbid,
+      })
+      .from(mbWork)
+      .where(inArray(mbWork.mbid, chunk)),
+  );
 }
 
 /** Column one: every composer MusicBrainz attributes something we hold to. */
@@ -116,10 +158,9 @@ export async function getMusicBrainzCatalogComposers(): Promise<CatalogComposer[
   }
   if (byComposer.size === 0) return [];
 
-  const artists = await db
-    .select()
-    .from(mbArtist)
-    .where(inArray(mbArtist.mbid, Array.from(byComposer.keys()).slice(0, 400)));
+  const artists = await forChunks(byComposer.keys(), (chunk) =>
+    db.select().from(mbArtist).where(inArray(mbArtist.mbid, chunk)),
+  );
   return artists
     .map((artist): CatalogComposer => {
       const entry = byComposer.get(artist.mbid)!;
@@ -144,7 +185,11 @@ export async function getMusicBrainzCatalogComposers(): Promise<CatalogComposer[
 
 /** Column two: the works of one composer that we hold a recording of. */
 export async function getMusicBrainzCatalogWorks(composerMbid: string): Promise<CatalogWork[]> {
-  const shaped = await heldCatalogue();
+  const byThisComposer = await db
+    .select({ mbid: mbWork.mbid })
+    .from(mbWork)
+    .where(eq(mbWork.composerMbid, composerMbid));
+  const shaped = await heldCatalogue(byThisComposer.map((work) => work.mbid));
   const childCounts = await partCounts(
     shaped.filter((work) => work.composerMbid === composerMbid).map((work) => work.mbid),
   );
@@ -170,11 +215,13 @@ export async function getMusicBrainzCatalogWorks(composerMbid: string): Promise<
 
 async function partCounts(workMbids: string[]): Promise<Map<string, number>> {
   if (workMbids.length === 0) return new Map();
-  const rows = await db
-    .select({ parentMbid: mbWork.parentMbid, count: sql<number>`count(*)` })
-    .from(mbWork)
-    .where(inArray(mbWork.parentMbid, workMbids.slice(0, 400)))
-    .groupBy(mbWork.parentMbid);
+  const rows = await forChunks(workMbids, (chunk) =>
+    db
+      .select({ parentMbid: mbWork.parentMbid, count: sql<number>`count(*)` })
+      .from(mbWork)
+      .where(inArray(mbWork.parentMbid, chunk))
+      .groupBy(mbWork.parentMbid),
+  );
   return new Map(
     rows.flatMap((row) => (row.parentMbid ? [[row.parentMbid, Number(row.count)] as const] : [])),
   );
@@ -278,14 +325,17 @@ export async function searchMusicBrainzWorks(
   const wanted = new Set(matchedWorkMbids.map((row) => row.workMbid));
   if (wanted.size === 0) return [];
 
-  const shaped = await heldCatalogue();
-  const references = await db
-    .select({
-      workMbid: mbWorkCatalogue.workMbid,
-      system: mbWorkCatalogue.system,
-      number: mbWorkCatalogue.number,
-    })
-    .from(mbWorkCatalogue);
+  const shaped = await heldCatalogue([...wanted]);
+  const references = await forChunks([...wanted, ...shaped.map((work) => work.mbid)], (chunk) =>
+    db
+      .select({
+        workMbid: mbWorkCatalogue.workMbid,
+        system: mbWorkCatalogue.system,
+        number: mbWorkCatalogue.number,
+      })
+      .from(mbWorkCatalogue)
+      .where(inArray(mbWorkCatalogue.workMbid, chunk)),
+  );
   const referencesByWork = new Map<string, string[]>();
   for (const reference of references) {
     referencesByWork.set(reference.workMbid, [
@@ -318,14 +368,16 @@ export async function searchMusicBrainzWorks(
 /** The catalogue references these works carry, nearest one per work. */
 async function forWorks(workMbids: string[]): Promise<Map<string, CatalogueReference>> {
   if (workMbids.length === 0) return new Map();
-  const rows = await db
-    .select({
-      workMbid: mbWorkCatalogue.workMbid,
-      system: mbWorkCatalogue.system,
-      number: mbWorkCatalogue.number,
-    })
-    .from(mbWorkCatalogue)
-    .where(inArray(mbWorkCatalogue.workMbid, workMbids.slice(0, 400)));
+  const rows = await forChunks(workMbids, (chunk) =>
+    db
+      .select({
+        workMbid: mbWorkCatalogue.workMbid,
+        system: mbWorkCatalogue.system,
+        number: mbWorkCatalogue.number,
+      })
+      .from(mbWorkCatalogue)
+      .where(inArray(mbWorkCatalogue.workMbid, chunk)),
+  );
   const byWork = new Map<string, CatalogueReference>();
   for (const row of rows) if (!byWork.has(row.workMbid)) byWork.set(row.workMbid, row);
   return byWork;
@@ -336,10 +388,12 @@ async function composerNamesFor(works: ShapedCatalogueWork[]): Promise<Map<strin
     new Set(works.map((work) => work.composerMbid).filter((mbid): mbid is string => !!mbid)),
   );
   if (mbids.length === 0) return new Map();
-  const rows = await db
-    .select({ mbid: mbArtist.mbid, name: mbArtist.name })
-    .from(mbArtist)
-    .where(inArray(mbArtist.mbid, mbids.slice(0, 400)));
+  const rows = await forChunks(mbids, (chunk) =>
+    db
+      .select({ mbid: mbArtist.mbid, name: mbArtist.name })
+      .from(mbArtist)
+      .where(inArray(mbArtist.mbid, chunk)),
+  );
   return new Map(rows.map((row) => [row.mbid, row.name]));
 }
 

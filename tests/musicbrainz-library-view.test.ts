@@ -567,3 +567,62 @@ test('the heading finds a catalogue number filed on the work above', async () =>
   assert.equal(header?.catalog, 'K. 545');
   assert.equal(header?.composerName, 'Wolfgang Amadeus Mozart');
 });
+
+test('a composer with more works than one statement can bind returns all of them', async () => {
+  // Bach has more works than SQLite will take as bound parameters in one
+  // statement. Reading only the first chunk would silently lose the rest,
+  // and the catalogue would look complete while being wrong.
+  const total = 450;
+  const works = Array.from({ length: total }, (unused, index) => ({
+    mbid: `bulk-work-${index}`,
+    title: `Bulk work ${index}`,
+    type: 'Sonata',
+    parentMbid: null,
+    orderingKey: null,
+    composerMbid: 'mozart',
+    detail: 'full' as const,
+  }));
+  const recordings = works.map((work) => ({
+    mbid: `bulk-rec-${work.mbid}`,
+    title: work.title,
+    length: 1_000,
+    detail: 'full' as const,
+  }));
+  const tracks = works.map((work, index) => ({
+    spotifyId: `bulk-track-${index}`,
+    title: work.title,
+    trackNumber: index + 10,
+    discNumber: 1,
+    durationMs: 1_000,
+    popularity: null,
+    spotifyAlbumId: 'album-1',
+    isrc: null,
+  }));
+  for (let start = 0; start < total; start += 100) {
+    await db.insert(schema.mbWork).values(works.slice(start, start + 100));
+    await db.insert(schema.mbRecording).values(recordings.slice(start, start + 100));
+    await db.insert(schema.spotifyTrack).values(tracks.slice(start, start + 100));
+    await db.insert(schema.mbRecordingWork).values(
+      works.slice(start, start + 100).map((work) => ({
+        recordingMbid: `bulk-rec-${work.mbid}`,
+        workMbid: work.mbid,
+      })),
+    );
+    await db.insert(schema.trackRecording).values(
+      tracks.slice(start, start + 100).map((track, offset) => ({
+        spotifyTrackId: track.spotifyId,
+        recordingMbid: `bulk-rec-bulk-work-${start + offset}`,
+        isrc: null,
+        matchedBy: 'isrc' as const,
+      })),
+    );
+  }
+
+  const { getMusicBrainzCatalogWorks, getMusicBrainzCatalogComposers } =
+    await import('@/app/actions/catalog-mb');
+  const listed = await getMusicBrainzCatalogWorks('mozart');
+  // The fixture's own sonata is in there too.
+  assert.equal(listed.length, total + 1);
+  const composers = await getMusicBrainzCatalogComposers();
+  assert.equal(composers.find((entry) => entry.id === 'mozart')?.workCount, total + 1);
+});
