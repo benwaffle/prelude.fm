@@ -54,7 +54,10 @@ work, the credited artist when the composer is the only artist) is fine — that
 a choice between things we actually know.
 
 Run `pnpm metadata:validate` to measure data quality instead of keeping changing
-counts in this file. Its `hardInvariants` section must be clean. Its non-failing
+counts in this file. Its `hardInvariants` and `musicbrainzInvariants` sections
+must both be clean: the first describes the legacy tables, the second the
+MusicBrainz cache the new reader actually reads, and a cutover judged on one of
+them is judged on the wrong one. Its non-failing
 `reviewBacklog` section tracks empty recordings, unnamed parts, missing composer
 birth years, missing work forms, and conservative duplicate-part/work candidates.
 Review backlog is not an instruction to guess values or merge identities

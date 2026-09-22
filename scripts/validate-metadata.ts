@@ -569,9 +569,22 @@ async function main() {
     'memberRecordingsWithoutPopularity',
     'duplicateCatalogWorks',
   ]);
-  const hasHardFailures = [...failingMetrics].some(
+  const hasLegacyFailures = [...failingMetrics].some(
     (metric) => hardInvariants[metric as keyof typeof hardInvariants] > 0,
   );
+
+  // The MusicBrainz invariants, run live and reported in the same breath.
+  // Two commands answering "is the metadata sound" with two vocabularies is
+  // how a cutover gets waved through on the strength of the wrong one: the
+  // legacy hard invariants describe tables the new reader does not read, and
+  // the MusicBrainz ones describe the cache it does. Both must be clean, and
+  // this is the one place that says so.
+  const { runMusicBrainzInvariants, hardViolations } = await import('@/lib/musicbrainz-invariants');
+  const mbInvariants = await runMusicBrainzInvariants({
+    sampleSize: allDetails ? 1_000 : 5,
+  });
+  const mbHardViolations = hardViolations(mbInvariants);
+  const hasHardFailures = hasLegacyFailures || mbHardViolations.length > 0;
 
   if (jsonOutput) {
     console.log(
@@ -580,6 +593,12 @@ async function main() {
           ok: !hasHardFailures,
           hardInvariants,
           reviewBacklog,
+          musicbrainzInvariants: mbInvariants.map((result) => ({
+            name: result.name,
+            severity: result.severity,
+            violations: result.violations,
+            samples: result.samples,
+          })),
           musicbrainz: {
             coverage: mbCoverage,
             conflicts: mbConflicts,
@@ -601,6 +620,14 @@ async function main() {
         metric,
         value,
         status: failingMetrics.has(metric) ? (value === 0 ? 'PASS' : 'FAIL') : 'INFO',
+      })),
+    );
+    console.log('\nMusicBrainz cache invariants (these govern the new reader)');
+    console.table(
+      mbInvariants.map((result) => ({
+        metric: result.name,
+        value: result.violations,
+        status: result.severity === 'hard' ? (result.violations === 0 ? 'PASS' : 'FAIL') : 'INFO',
       })),
     );
     console.log('\nReview backlog (informational; never auto-fix)');
@@ -670,8 +697,20 @@ async function main() {
       console.table(rows);
     }
     if (!allDetails) console.log('\nUse --details for complete affected-row lists; --json for CI.');
+    for (const violation of mbHardViolations) {
+      console.log(`\n${samples}: MusicBrainz hard violation — ${violation.name}`);
+      console.log(`  ${violation.describes}`);
+      console.table(violation.samples);
+    }
     console.log(
-      hasHardFailures ? '\nMetadata validation FAILED.' : '\nMetadata validation passed.',
+      hasHardFailures
+        ? `\nMetadata validation FAILED (${[
+            hasLegacyFailures ? 'legacy hard invariants' : null,
+            mbHardViolations.length > 0 ? 'MusicBrainz hard invariants' : null,
+          ]
+            .filter(Boolean)
+            .join(' and ')}).`
+        : '\nMetadata validation passed.',
     );
   }
 

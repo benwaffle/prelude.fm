@@ -14,7 +14,9 @@ The production metadata is structurally valid only when all of the following hol
 - every stored unlinked track is explicitly terminal `not_classical` rather than silently unexplained; and
 - no two works of one composer share a canonical catalog identity.
 
-`pnpm metadata:validate` is both the structural validator and metadata audit. Its output separates `hardInvariants` from the non-failing `reviewBacklog`. A nonzero `needsReview` count is reported but is not itself a structural failure: review flags represent semantic uncertainty that was preserved instead of overwritten.
+`pnpm metadata:validate` is both the structural validator and metadata audit. Its output separates `hardInvariants` from the non-failing `reviewBacklog`, and reports `musicbrainzInvariants` alongside them.
+
+The two hard sets describe different things and both gate a release. `hardInvariants` describes the legacy `work` / `work_part_v2` / `recording_v2` tables, which the MusicBrainz reader does not read. `musicbrainzInvariants` describes the `mb_*` cache and the anchors, which it does. They run from the same definitions as the admin page and the scheduled sweep at `/api/cron/invariants`, so there is one answer to the question rather than three, and a cutover cannot be waved through on the strength of whichever set happens to be clean. A nonzero `needsReview` count is reported but is not itself a structural failure: review flags represent semantic uncertainty that was preserved instead of overwritten.
 
 `duplicateCatalogWorks` is a hard invariant rather than a review item because it is not a similarity guess. Same composer plus same canonical catalog identity means two rows claim to be the same work, and `upsertWork` then rejects that identity as ambiguous, so ingestion of the affected work stops until the rows are collapsed. `pnpm metadata:dedupe-works` reports the groups and `--apply` collapses them.
 
