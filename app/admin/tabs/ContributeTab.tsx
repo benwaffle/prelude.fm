@@ -16,6 +16,7 @@ import {
   recheckBarcode,
   recheckCreatedWork,
   recheckErrorReport,
+  recheckIsrcRelease,
   recheckReleaseSubmission,
   recheckStreamingUrl,
   recheckWorkRelationship,
@@ -105,6 +106,16 @@ export function ContributeTab() {
     setBusy(true);
     try {
       setView(await recordIsrcSubmission(releaseMbid, { editId: form.editId }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recheckIsrcs(releaseMbid: string) {
+    setBusy(true);
+    try {
+      const result = await recheckIsrcRelease(releaseMbid);
+      setView(result.view);
     } finally {
       setBusy(false);
     }
@@ -316,7 +327,11 @@ export function ContributeTab() {
             <summary>
               <span className="album-title">{release.albumTitle}</span>
               <span className="album-meta">
-                {release.missing} missing · barcode {release.barcode ?? '—'} · durations within 3s
+                {release.missing} missing
+                {release.eligible < release.missing
+                  ? ` · ${release.eligible} still to submit`
+                  : ''}{' '}
+                · barcode {release.barcode ?? '—'} · durations within 3s
               </span>
             </summary>
             <div className="fold-body">
@@ -328,6 +343,7 @@ export function ContributeTab() {
                     <th>MusicBrainz recording</th>
                     <th>Δ</th>
                     <th>ISRC</th>
+                    <th>Ledger</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -348,6 +364,7 @@ export function ContributeTab() {
                       </td>
                       <td className="mono whitespace-nowrap">{track.delta}ms</td>
                       <td className="mono whitespace-nowrap">{track.isrc}</td>
+                      <td className="album-meta whitespace-nowrap">{track.ledger?.label ?? ''}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -355,47 +372,62 @@ export function ContributeTab() {
               <p className="mt-2 text-[11px] text-[var(--faint)]">
                 Every row is on this release, whose barcode is the album&apos;s own
                 {release.upc && release.upc !== release.barcode ? ` (${release.upc} padded)` : ''}.
-                Δ is how far our duration is from MusicBrainz&apos;s.
+                Δ is how far our duration is from MusicBrainz&apos;s. Confirmed ISRCs stay listed
+                until the cache holds them. MagicISRC and the bot only receive rows not yet in the
+                ledger.
               </p>
               <div className="toolbar">
-                {bot?.configured && (
+                {bot?.configured && release.eligible > 0 && (
                   <button
                     className="act"
                     data-variant="primary"
                     disabled={busy}
                     onClick={() => submitAlbum(release.releaseMbid, release.albumTitle)}
                   >
-                    Submit {release.missing} as prelude_fm_bot
+                    Submit {release.eligible} as prelude_fm_bot
                   </button>
                 )}
-                <a className="act" href={release.link} target="_blank" rel="noreferrer">
-                  Open in MagicISRC
-                </a>
-                <input
-                  className="mono w-32 shrink-0"
-                  placeholder="edit ID (optional)"
-                  value={(isrcForms[release.releaseMbid] ?? { editId: '' }).editId}
-                  onChange={(event) =>
-                    setIsrcForms((current) => ({
-                      ...current,
-                      [release.releaseMbid]: { editId: event.target.value },
-                    }))
-                  }
-                />
-                <button
-                  className="act"
-                  disabled={busy}
-                  onClick={() => submitted(release.releaseMbid)}
-                >
-                  I submitted these by hand
-                </button>
-                <button
-                  className="act"
-                  disabled={busy}
-                  onClick={() => revealPayload(release.releaseMbid)}
-                >
-                  {payload?.releaseMbid === release.releaseMbid ? 'Hide' : 'Show'} the payload
-                </button>
+                {release.eligible > 0 && (
+                  <>
+                    <a className="act" href={release.link} target="_blank" rel="noreferrer">
+                      Open in MagicISRC
+                    </a>
+                    <input
+                      className="mono w-32 shrink-0"
+                      placeholder="edit ID (optional)"
+                      value={(isrcForms[release.releaseMbid] ?? { editId: '' }).editId}
+                      onChange={(event) =>
+                        setIsrcForms((current) => ({
+                          ...current,
+                          [release.releaseMbid]: { editId: event.target.value },
+                        }))
+                      }
+                    />
+                    <button
+                      className="act"
+                      disabled={busy}
+                      onClick={() => submitted(release.releaseMbid)}
+                    >
+                      I submitted these by hand
+                    </button>
+                    <button
+                      className="act"
+                      disabled={busy}
+                      onClick={() => revealPayload(release.releaseMbid)}
+                    >
+                      {payload?.releaseMbid === release.releaseMbid ? 'Hide' : 'Show'} the payload
+                    </button>
+                  </>
+                )}
+                {release.tracks.some((track) => track.ledger) && (
+                  <button
+                    className="act"
+                    disabled={busy}
+                    onClick={() => recheckIsrcs(release.releaseMbid)}
+                  >
+                    Recheck
+                  </button>
+                )}
                 <a
                   className="act"
                   href={`https://musicbrainz.org/release/${release.releaseMbid}`}

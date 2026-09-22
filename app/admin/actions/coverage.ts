@@ -5,7 +5,7 @@ import { db } from '@/lib/db';
 import { spotifyAlbum, spotifyTrack, trackWorkPartV2, work, workPartV2 } from '@/lib/db/schema';
 import { musicBrainzApi } from '@/lib/musicbrainz';
 import { anchorTracksByIsrc } from '@/lib/musicbrainz-ingest';
-import { isrcGapsByRelease, magicIsrcLink } from '@/lib/musicbrainz-contributions';
+import { isrcEligibleGapsByRelease, magicIsrcLink } from '@/lib/musicbrainz-contributions';
 import { checkAuth } from './auth';
 import {
   type AlbumRow,
@@ -160,9 +160,11 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
 /**
  * Canonical ISRC contribution links for albums on screen.
  *
- * This intentionally delegates to the same evidence query as the contribution
- * console and bot. Its positions are MusicBrainz medium/positions, and it
- * returns nothing unless the complete release passes the submission standard.
+ * Delegates to bot/MagicISRC eligibility, not the displayed cache-gap list:
+ * already-ledgered ISRCs stay visible on the contribution work item but must
+ * not be seeded into a new submission. Positions are MusicBrainz
+ * medium/positions, and nothing is returned unless the complete release
+ * passes the submission standard.
  */
 export async function getIsrcSubmissionLinks(
   albumIds: string[],
@@ -172,7 +174,7 @@ export async function getIsrcSubmissionLinks(
 
   const wanted = new Set(albumIds);
   const links: Record<string, { href: string; missing: number }> = {};
-  for (const release of await isrcGapsByRelease(5_000)) {
+  for (const release of await isrcEligibleGapsByRelease(5_000)) {
     if (!wanted.has(release.albumId)) continue;
     links[release.albumId] = {
       href: magicIsrcLink(release.releaseMbid, release.gaps),

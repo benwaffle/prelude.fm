@@ -8,6 +8,7 @@ import {
   contestedIsrcs,
   contributionCounts,
   harmonyImportLink,
+  isrcEligibleGapsByRelease,
   isrcGapsByRelease,
   magicIsrcLink,
   misalignedAlbums,
@@ -122,6 +123,7 @@ export type ContributionView = {
     albumId: string;
     albumTitle: string;
     missing: number;
+    eligible: number;
     link: string;
     /** The release's barcode, and ours — identical by construction, shown anyway. */
     barcode: string | null;
@@ -136,6 +138,12 @@ export type ContributionView = {
       upc: string | null;
       barcode: string | null;
       delta: number;
+      ledger: {
+        id: number;
+        outcome: string;
+        editId: string | null;
+        label: string;
+      } | null;
     }[];
   }[];
   workGaps: (Awaited<ReturnType<typeof workRelationshipGaps>>[number] & {
@@ -468,17 +476,48 @@ export async function getContributions(): Promise<ContributionView> {
     ]),
   );
 
+  const isrcRecordingMbids = [
+    ...new Set(releases.flatMap((release) => release.gaps.map((gap) => gap.recordingMbid))),
+  ];
+  const isrcLedgerRows =
+    isrcRecordingMbids.length === 0
+      ? []
+      : await db
+          .select({
+            id: mbSubmission.id,
+            recordingMbid: mbSubmission.targetMbid,
+            isrc: mbSubmission.value,
+            outcome: mbSubmission.outcome,
+            editId: mbSubmission.editId,
+          })
+          .from(mbSubmission)
+          .where(
+            and(
+              eq(mbSubmission.kind, 'isrc'),
+              inArray(mbSubmission.targetMbid, isrcRecordingMbids),
+            ),
+          );
+  const isrcLedgerByPair = new Map(
+    isrcLedgerRows.flatMap((row) => {
+      if (!row.recordingMbid || !row.isrc) return [];
+      return [
+        [
+          `${row.recordingMbid}:${row.isrc}`,
+          {
+            id: row.id,
+            outcome: row.outcome,
+            editId: row.editId,
+            label: describeLedgerState(row),
+          },
+        ] as const,
+      ];
+    }),
+  );
+
   return {
     counts,
-    isrcReleases: releases.map((release) => ({
-      releaseMbid: release.releaseMbid,
-      albumId: release.albumId,
-      albumTitle: release.albumTitle,
-      missing: release.missing,
-      link: magicIsrcLink(release.releaseMbid, release.gaps),
-      barcode: release.gaps[0]?.barcode ?? null,
-      upc: release.gaps[0]?.upc ?? null,
-      tracks: release.gaps.map((gap: IsrcGap) => ({
+    isrcReleases: releases.map((release) => {
+      const tracks = release.gaps.map((gap: IsrcGap) => ({
         isrc: gap.isrc,
         medium: gap.medium,
         position: gap.position,
@@ -488,8 +527,23 @@ export async function getContributions(): Promise<ContributionView> {
         upc: gap.upc,
         barcode: gap.barcode,
         delta: gap.durationDeltaMs,
-      })),
-    })),
+        ledger: isrcLedgerByPair.get(`${gap.recordingMbid}:${gap.isrc}`) ?? null,
+      }));
+      const eligible = release.gaps.filter(
+        (gap) => !isrcLedgerByPair.has(`${gap.recordingMbid}:${gap.isrc}`),
+      );
+      return {
+        releaseMbid: release.releaseMbid,
+        albumId: release.albumId,
+        albumTitle: release.albumTitle,
+        missing: release.missing,
+        eligible: eligible.length,
+        link: eligible.length === 0 ? '' : magicIsrcLink(release.releaseMbid, eligible),
+        barcode: release.gaps[0]?.barcode ?? null,
+        upc: release.gaps[0]?.upc ?? null,
+        tracks,
+      };
+    }),
     workGaps: workGaps.map((gap) => ({
       ...gap,
       recordingEdit: recordingEditLink(gap.recordingMbid),
@@ -550,7 +604,7 @@ export async function recordIsrcSubmission(
   const submitter = `human:${session.user.name}`;
   const editId = normalizeEditId(options.editId);
 
-  const releases = await isrcGapsByRelease(500);
+  const releases = await isrcEligibleGapsByRelease(500);
   const release = releases.find((candidate) => candidate.releaseMbid === releaseMbid);
   if (!release) throw new Error('That release has no outstanding ISRCs');
 
@@ -578,6 +632,51 @@ export async function recordIsrcSubmission(
   }
 
   return getContributions();
+}
+
+/**
+ * Observe whether the cache now holds ISRCs confirmed for this release.
+ *
+ * Reads only. Each pending row is applied only when `mb_recording_isrc`
+ * shows that pair. A still-missing ISRC stays pending, and a missing edit
+ * ID stays missing.
+ */
+export async function recheckIsrcRelease(releaseMbid: string) {
+  await checkAuth();
+  const release = requireMbid(releaseMbid, 'The release');
+  const pending = await db
+    .select({ id: mbSubmission.id })
+    .from(mbSubmission)
+    .where(
+      and(
+        eq(mbSubmission.kind, 'isrc'),
+        eq(mbSubmission.outcome, 'pending'),
+        sql`json_extract(${mbSubmission.evidence}, '$.releaseMbid') = ${release}`,
+      ),
+    )
+    .limit(1);
+  if (!pending[0]) {
+    throw new ManualSubmissionError('That release has no ISRC confirmation');
+  }
+
+  const applied = await db
+    .update(mbSubmission)
+    .set({ outcome: 'applied', outcomeAt: new Date() })
+    .where(
+      and(
+        eq(mbSubmission.kind, 'isrc'),
+        eq(mbSubmission.outcome, 'pending'),
+        sql`json_extract(${mbSubmission.evidence}, '$.releaseMbid') = ${release}`,
+        sql`exists (
+          select 1 from mb_recording_isrc
+          where mb_recording_isrc.recording_mbid = ${mbSubmission.targetMbid}
+            and mb_recording_isrc.isrc = ${mbSubmission.value}
+        )`,
+      ),
+    )
+    .returning({ id: mbSubmission.id });
+
+  return { applied: applied.length, view: await getContributions() };
 }
 
 async function recordManualSubmission(

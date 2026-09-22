@@ -36,6 +36,14 @@ test('every missing ISRC arrives in the link', () => {
   assert.ok(link.searchParams.get('edit-note'));
 });
 
+test('a MagicISRC link seeded from eligible gaps omits already-ledgered ISRCs', () => {
+  const link = new URL(
+    magicIsrcLink('rel-1', [gap({ isrc: 'GBAAA0000002', medium: 1, position: 2 })]),
+  );
+  assert.equal(link.searchParams.get('isrc1-2'), 'GBAAA0000002');
+  assert.equal(link.searchParams.get('isrc1-1'), null);
+});
+
 test('an ISRC is addressed by its position on the release, not its place in the list', () => {
   // The bug this guards against put an ISRC on the first track of a release
   // because it happened to be first in our list, when the track it belongs to

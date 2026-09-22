@@ -87,29 +87,25 @@ export {
  *   counts (or every repeated hybrid layer does), and every track maps
  *   one-to-one by anchored recording with its duration agreeing within three
  *   seconds;
- * - MusicBrainz holds no ISRC for that recording yet; and
- * - we have not already submitted this one, whoever submitted it.
+ * - MusicBrainz holds no ISRC for that recording yet.
  *
  * Tracks anchored *by* ISRC are absent by construction: if the ISRC resolved
- * the recording, MusicBrainz already had it.
+ * the recording, MusicBrainz already had it. Already-ledgered rows stay in
+ * this list until the cache holds the ISRC; bot and MagicISRC eligibility
+ * is `isrcEligibleGaps`, which excludes them.
  */
 export async function isrcGaps(limit = 200): Promise<IsrcGap[]> {
-  const candidates = await isrcGapRows();
-  if (candidates.length === 0) return [];
+  return verifiedIsrcGaps(await isrcGapRows(false), limit);
+}
 
-  const albumIds = [...new Set(candidates.map((row) => row.albumId))];
-  const releaseMbids = [...new Set(candidates.map((row) => row.releaseMbid))];
-  const [spotifyEvidence, musicbrainzEvidence] = await Promise.all([
-    spotifyReleaseEvidence(albumIds),
-    musicbrainzReleaseEvidence(releaseMbids),
-  ]);
-  const verified = verifiedIsrcReleaseMedia(spotifyEvidence, musicbrainzEvidence);
-
-  return dedupeByRecording(
-    candidates.filter((gap) =>
-      verified.has(releaseMediumKey(gap.albumId, gap.releaseMbid, gap.medium)),
-    ),
-  ).slice(0, limit);
+/**
+ * Cache gaps that nobody has submitted yet.
+ *
+ * The bot, MagicISRC links, and hand-confirm write this set. The displayed
+ * list is `isrcGaps`, which keeps pending ledger rows visible.
+ */
+export async function isrcEligibleGaps(limit = 200): Promise<IsrcGap[]> {
+  return verifiedIsrcGaps(await isrcGapRows(true), limit);
 }
 
 /**
@@ -139,7 +135,25 @@ function dedupeByRecording(rows: IsrcGap[]): IsrcGap[] {
   return [...byPair.values()];
 }
 
-async function isrcGapRows(): Promise<IsrcGap[]> {
+async function verifiedIsrcGaps(candidates: IsrcGap[], limit: number): Promise<IsrcGap[]> {
+  if (candidates.length === 0) return [];
+
+  const albumIds = [...new Set(candidates.map((row) => row.albumId))];
+  const releaseMbids = [...new Set(candidates.map((row) => row.releaseMbid))];
+  const [spotifyEvidence, musicbrainzEvidence] = await Promise.all([
+    spotifyReleaseEvidence(albumIds),
+    musicbrainzReleaseEvidence(releaseMbids),
+  ]);
+  const verified = verifiedIsrcReleaseMedia(spotifyEvidence, musicbrainzEvidence);
+
+  return dedupeByRecording(
+    candidates.filter((gap) =>
+      verified.has(releaseMediumKey(gap.albumId, gap.releaseMbid, gap.medium)),
+    ),
+  ).slice(0, limit);
+}
+
+async function isrcGapRows(eligibleOnly: boolean): Promise<IsrcGap[]> {
   const delta = sql<number>`abs(coalesce(${mbReleaseTrack.length}, ${mbRecording.length}) - ${spotifyTrack.durationMs})`;
 
   return db
@@ -185,12 +199,14 @@ async function isrcGapRows(): Promise<IsrcGap[]> {
           where ${mbRecordingIsrc.recordingMbid} = ${trackRecording.recordingMbid}
             and ${mbRecordingIsrc.isrc} = ${spotifyTrack.isrc}
         )`,
-        sql`not exists (
-          select 1 from ${mbSubmission}
-          where ${mbSubmission.kind} = 'isrc'
-            and ${mbSubmission.targetMbid} = ${trackRecording.recordingMbid}
-            and ${mbSubmission.value} = ${spotifyTrack.isrc}
-        )`,
+        eligibleOnly
+          ? sql`not exists (
+              select 1 from ${mbSubmission}
+              where ${mbSubmission.kind} = 'isrc'
+                and ${mbSubmission.targetMbid} = ${trackRecording.recordingMbid}
+                and ${mbSubmission.value} = ${spotifyTrack.isrc}
+            )`
+          : undefined,
       ),
     );
 }
@@ -250,7 +266,14 @@ export type IsrcGapRelease = {
 };
 
 export async function isrcGapsByRelease(limit = 100): Promise<IsrcGapRelease[]> {
-  const gaps = await isrcGaps(2_000);
+  return groupIsrcGapsByRelease(await isrcGaps(2_000), limit);
+}
+
+export async function isrcEligibleGapsByRelease(limit = 100): Promise<IsrcGapRelease[]> {
+  return groupIsrcGapsByRelease(await isrcEligibleGaps(2_000), limit);
+}
+
+function groupIsrcGapsByRelease(gaps: IsrcGap[], limit: number): IsrcGapRelease[] {
   const byRelease = new Map<string, IsrcGapRelease>();
   for (const gap of gaps) {
     const existing = byRelease.get(gap.releaseMbid);

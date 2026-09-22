@@ -19,7 +19,7 @@ import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbSubmission } from './db/schema';
 import { scheduleMusicBrainzRequest } from './musicbrainz-gateway';
-import { isrcGaps } from './musicbrainz-contributions';
+import { isrcEligibleGaps } from './musicbrainz-contributions';
 import type { IsrcGap } from './musicbrainz-edit-links';
 import {
   buildIsrcSubmission,
@@ -124,7 +124,7 @@ export async function runIsrcBot(
    * a bot that picks its own target would be deciding what to submit, which
    * is the part that has not been earned yet.
    */
-  const everything = await isrcGaps(5_000);
+  const everything = await isrcEligibleGaps(5_000);
   const releaseMbid = options.releaseMbid ?? everything[0]?.releaseMbid;
   const gaps = everything.filter((gap) => gap.releaseMbid === releaseMbid).slice(0, allowance);
   const items: IsrcSubmissionItem[] = gaps.map((gap) => ({
