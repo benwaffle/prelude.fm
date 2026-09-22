@@ -20,9 +20,28 @@ import { saveParsedAlbumV2 } from '@/lib/work-parts-v2';
 import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Track } from '@spotify/web-api-ts-sdk';
 import { runMusicBrainzAlbumPass, type TrackPassOutcome } from '@/lib/musicbrainz-worker';
+import type { MusicBrainzSource } from '@/lib/musicbrainz-source';
 import { persistMusicBrainzTrackOutcomes } from '@/lib/musicbrainz-pipeline-state';
 
-export type MatchQueueStatus = 'pending' | 'processing' | 'matched' | 'failed' | 'not_classical';
+/**
+ * Lease/workflow state, not the durable verdict on a track.
+ *
+ * `unresolved` is the pass having finished with nothing to hand the reader:
+ * MusicBrainz has no recording for the track, or none of its evidence settles
+ * whether the track is classical. That is not `failed` — nothing went wrong
+ * and retrying the same request tomorrow asks MusicBrainz the same question —
+ * and it is not `matched`, which the reader takes as ready. Which of the two
+ * it was, and why, lives in `pipeline_outcome` / `pipeline_reason`; the status
+ * only says no worker is holding the row and no worker should pick it up
+ * until MusicBrainz has been given something new to say.
+ */
+export type MatchQueueStatus =
+  | 'pending'
+  | 'processing'
+  | 'matched'
+  | 'failed'
+  | 'not_classical'
+  | 'unresolved';
 
 export interface EnqueueResult {
   submitted: number;
@@ -38,6 +57,8 @@ export interface AlbumProcessResult {
   matched: number;
   failed: number;
   notClassical: number;
+  /** Tracks the pass finished with but could not place. Not errors. */
+  unresolved: number;
   errors: Array<{ trackId?: string; message: string; retryable?: boolean }>;
 }
 
@@ -114,7 +135,12 @@ function normalizeArtistName(name: string) {
 async function setQueueStatus(
   trackIds: string[],
   status: MatchQueueStatus,
-  data: { claimOwnerId?: string | null; errorMessage?: string | null } = {},
+  data: {
+    claimOwnerId?: string | null;
+    errorMessage?: string | null;
+    /** Claim the rows by `claimOwnerId` but leave none held afterwards. */
+    releaseClaim?: boolean;
+  } = {},
 ) {
   if (trackIds.length === 0) return;
 
@@ -124,7 +150,7 @@ async function setQueueStatus(
       status,
       processedAt: status === 'processing' || status === 'pending' ? null : now(),
       errorMessage: data.errorMessage ?? null,
-      claimOwnerId: data.claimOwnerId ?? undefined,
+      claimOwnerId: data.releaseClaim ? null : (data.claimOwnerId ?? undefined),
     })
     .where(
       and(
@@ -647,25 +673,32 @@ async function getAnchoredTrackIds(trackIds: string[]) {
  * An album pass with MusicBrainz as the authority.
  *
  * Nothing is asserted that MusicBrainz did not say. A track it cannot place
- * is recorded as failed with the reason in the message — "no MusicBrainz
- * release carries this album's barcode" — which is a state the contribution
- * console can act on, unlike a composer somebody made up.
+ * keeps the reason MusicBrainz gave us — "no MusicBrainz release carries this
+ * album's barcode" — which is a state the contribution console can act on,
+ * unlike a composer somebody made up.
  *
- * `failed` is the wrong word for "MusicBrainz has not catalogued this yet",
- * and the queue has no better one until the pipeline-completion columns
- * land. The reason string carries the truth in the meantime, and this is
- * the single place that maps an outcome to a status.
+ * This is the single place that maps a pass outcome to a queue status, and
+ * the mapping is deliberately coarse: `ready` is `matched`, a track
+ * MusicBrainz itself files as non-classical is `not_classical`, and both ways
+ * of not knowing — `unanchored`, `unclassified` — are `unresolved`. The
+ * durable difference between those two is already written to
+ * `pipeline_outcome` by `persistMusicBrainzTrackOutcomes`, so repeating it in
+ * the lease vocabulary would give two places to disagree.
  */
 async function processAlbumThroughMusicBrainz(
   albumId: string,
   trackIds: string[],
   result: AlbumProcessResult,
   claimOwnerId?: string,
+  dependencies: AlbumPassDependencies = {},
 ): Promise<AlbumProcessResult> {
-  const { musicBrainzApi } = await import('@/lib/musicbrainz');
+  const source =
+    dependencies.musicBrainzSource ??
+    (await import('@/lib/musicbrainz')).musicBrainzApi('interactive');
   const anchored = await getAnchoredTrackIds(trackIds);
-  const report = await runMusicBrainzAlbumPass(musicBrainzApi('interactive'), albumId, trackIds, {
+  const report = await runMusicBrainzAlbumPass(source, albumId, trackIds, {
     alreadyAnchored: trackIds.length > 0 && trackIds.every((trackId) => anchored.has(trackId)),
+    readAlbum: dependencies.readAlbum,
   });
   await persistMusicBrainzTrackOutcomes(report.tracks, claimOwnerId);
 
@@ -694,16 +727,19 @@ async function processAlbumThroughMusicBrainz(
     result.notClassical += notClassical.length;
   }
 
+  // No `errorMessage`: the reason belongs to the pass, not to a failure, and
+  // it is already durable in `pipeline_reason`. Writing it into the queue's
+  // error column as well would make an admin screen that lists errors report
+  // a gap in MusicBrainz as something the worker got wrong.
   for (const outcome of [
     ...(byState.get('unanchored') ?? []),
     ...(byState.get('unclassified') ?? []),
   ]) {
-    await setQueueStatus([outcome.spotifyTrackId], 'failed', {
+    await setQueueStatus([outcome.spotifyTrackId], 'unresolved', {
       claimOwnerId,
-      errorMessage: outcome.reason,
+      releaseClaim: true,
     });
-    result.failed++;
-    result.errors.push({ trackId: outcome.spotifyTrackId, message: outcome.reason });
+    result.unresolved++;
   }
 
   return result;
@@ -828,10 +864,23 @@ async function prepareParsedTrackSave(
   };
 }
 
+/**
+ * The outside world an album pass touches, injectable so a test can run the
+ * real mapping without a network: Spotify, MusicBrainz, and — on the legacy
+ * path only — the language model. A test that hands all three in can prove
+ * which of them the pass actually asked.
+ */
+export type AlbumPassDependencies = {
+  readAlbum?: typeof getSpotifyAlbumTracks;
+  musicBrainzSource?: MusicBrainzSource;
+  parseAlbum?: typeof parseAlbumTracksV2;
+};
+
 export async function processQueuedAlbum(
   albumId: string,
   claimOwnerId?: string,
   claimedTrackIds?: string[],
+  dependencies: AlbumPassDependencies = {},
 ): Promise<AlbumProcessResult> {
   let trackIdsToProcess = claimedTrackIds;
 
@@ -862,13 +911,14 @@ export async function processQueuedAlbum(
     matched: 0,
     failed: 0,
     notClassical: 0,
+    unresolved: 0,
     errors: [],
   };
 
   if (trackIds.length === 0) return result;
 
   try {
-    const { album, tracks } = await getSpotifyAlbumTracks(albumId);
+    const { album, tracks } = await (dependencies.readAlbum ?? getSpotifyAlbumTracks)(albumId);
     const albumTracks = tracks.sort(compareTrackOrder);
     const albumTrackById = new Map(albumTracks.map((track) => [track.id, track]));
     const missingTrackIds = trackIds.filter((trackId) => !albumTrackById.has(trackId));
@@ -894,6 +944,7 @@ export async function processQueuedAlbum(
         processableTrackIds,
         result,
         claimOwnerId,
+        dependencies,
       );
     }
     const linkedTrackIds = await getLinkedTrackIds(processableTrackIds);
@@ -914,7 +965,7 @@ export async function processQueuedAlbum(
     if (unknownTracks.length === 0) return result;
 
     {
-      const parsedV2 = await parseAlbumTracksV2(
+      const parsedV2 = await (dependencies.parseAlbum ?? parseAlbumTracksV2)(
         album.name,
         unknownTracks.map((track) => ({
           trackName: track.name,

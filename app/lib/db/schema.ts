@@ -405,7 +405,9 @@ export const matchQueue = sqliteTable(
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
     submittedBy: text('submitted_by').notNull(),
-    status: text('status').notNull(), // "pending", "processing", "matched", "failed", "not_classical"
+    // "pending", "processing", "matched", "failed", "not_classical", "unresolved"
+    // (MusicBrainz pass finished without placing the track; see pipeline_outcome)
+    status: text('status').notNull(),
     attempts: integer('attempts').default(0).notNull(),
     lastAttemptAt: integer('last_attempt_at', { mode: 'timestamp_ms' }),
     processedAt: integer('processed_at', { mode: 'timestamp_ms' }),
