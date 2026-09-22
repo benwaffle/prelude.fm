@@ -179,6 +179,61 @@ export function workRelationshipDraft(
   };
 }
 
+export type WorkRelationshipGapInput = {
+  recordingMbid: string;
+  recordingTitle: string;
+  albumId: string;
+  albumTitle: string;
+  candidates: Array<{
+    workMbid: string;
+    title: string;
+    type: string | null;
+    composerMbid: string | null;
+    composerName: string | null;
+    catalogues: { system: string; number: string }[];
+    evidence: WorkCandidateEvidence[];
+  }>;
+};
+
+/**
+ * Confirm a relationship only against a candidate we actually offered.
+ *
+ * The work MBID is taken from the person; everything else is re-read from the
+ * gap so a confirmation cannot smuggle a title or catalogue that was never on
+ * the MusicBrainz candidate. A work we did not offer is refused rather than
+ * recorded as if we had identified it.
+ */
+export function workRelationshipDraftFromGap(
+  gap: WorkRelationshipGapInput,
+  workMbidInput: string,
+): ManualSubmissionDraft {
+  const workMbid = requireMbid(workMbidInput, 'The work');
+  const candidate = gap.candidates.find((row) => row.workMbid === workMbid);
+  if (!candidate) {
+    throw new ManualSubmissionError('That work is not a MusicBrainz candidate for this recording');
+  }
+  return workRelationshipDraft({
+    recordingMbid: gap.recordingMbid,
+    recordingTitle: gap.recordingTitle,
+    albumId: gap.albumId,
+    albumTitle: gap.albumTitle,
+    workMbid: candidate.workMbid,
+    workTitle: candidate.title,
+    workType: candidate.type,
+    composerMbid: candidate.composerMbid,
+    composerName: candidate.composerName,
+    catalogues: candidate.catalogues,
+    candidateEvidence: candidate.evidence,
+  });
+}
+
+/** Ledger readout: outcome plus the edit number, or that the number is missing. */
+export function describeLedgerState(entry: { outcome: string; editId: string | null }): string {
+  return entry.editId
+    ? `${entry.outcome} · edit ${entry.editId}`
+    : `${entry.outcome} · edit ID missing`;
+}
+
 export type WorkCreationSubmission = {
   /** The recording the missing work was blocking, so the re-ingest has a start. */
   recordingMbid: string;

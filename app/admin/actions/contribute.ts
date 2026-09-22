@@ -1,6 +1,6 @@
 'use server';
 
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { mbSubmission } from '@/lib/db/schema';
 import {
@@ -22,6 +22,11 @@ import { editsSpentToday, MusicBrainzBotError, runIsrcBot } from '@/lib/musicbra
 import { botCredentials } from '@/lib/musicbrainz-oauth';
 import {
   barcodeSubmissionDraft,
+  describeLedgerState,
+  ManualSubmissionError,
+  normalizeEditId,
+  requireMbid,
+  workRelationshipDraftFromGap,
   type ManualSubmissionDraft,
 } from '@/lib/musicbrainz-manual-submissions';
 import { checkAuth } from './auth';
@@ -117,6 +122,15 @@ export type ContributionView = {
   workGaps: (Awaited<ReturnType<typeof workRelationshipGaps>>[number] & {
     recordingEdit: string;
     workCreate: string;
+    ledger: {
+      id: number;
+      workMbid: string | null;
+      outcome: string;
+      editId: string | null;
+      submittedAt: Date;
+      submittedBy: string;
+      label: string;
+    }[];
   })[];
   contested: Awaited<ReturnType<typeof contestedIsrcs>>;
   missing: (Awaited<ReturnType<typeof missingReleases>>[number] & { harmony: string })[];
@@ -162,6 +176,35 @@ export async function getContributions(): Promise<ContributionView> {
         .limit(30),
     ]);
 
+  const recordingMbids = workGaps.map((gap) => gap.recordingMbid);
+  const workLedgerRows =
+    recordingMbids.length === 0
+      ? []
+      : await db
+          .select({
+            id: mbSubmission.id,
+            recordingMbid: mbSubmission.targetMbid,
+            workMbid: mbSubmission.value,
+            outcome: mbSubmission.outcome,
+            editId: mbSubmission.editId,
+            submittedAt: mbSubmission.submittedAt,
+            submittedBy: mbSubmission.submittedBy,
+          })
+          .from(mbSubmission)
+          .where(
+            and(
+              eq(mbSubmission.kind, 'work_relationship'),
+              inArray(mbSubmission.targetMbid, recordingMbids),
+            ),
+          );
+  const ledgerByRecording = new Map<string, typeof workLedgerRows>();
+  for (const row of workLedgerRows) {
+    if (!row.recordingMbid) continue;
+    const list = ledgerByRecording.get(row.recordingMbid) ?? [];
+    list.push(row);
+    ledgerByRecording.set(row.recordingMbid, list);
+  }
+
   return {
     counts,
     isrcReleases: releases.map((release) => ({
@@ -188,6 +231,15 @@ export async function getContributions(): Promise<ContributionView> {
       ...gap,
       recordingEdit: recordingEditLink(gap.recordingMbid),
       workCreate: workCreateLink(),
+      ledger: (ledgerByRecording.get(gap.recordingMbid) ?? []).map((row) => ({
+        id: row.id,
+        workMbid: row.workMbid,
+        outcome: row.outcome,
+        editId: row.editId,
+        submittedAt: row.submittedAt,
+        submittedBy: row.submittedBy,
+        label: describeLedgerState(row),
+      })),
     })),
     contested,
     missing: missing.map((album) => ({ ...album, harmony: harmonyImportLink(album.albumId) })),
@@ -249,7 +301,7 @@ async function recordManualSubmission(
       ...draft,
       submittedBy,
       note: options.note?.trim() || null,
-      editId: options.editId?.trim() || null,
+      editId: normalizeEditId(options.editId),
     })
     .onConflictDoNothing();
 }
@@ -264,6 +316,29 @@ export async function recordBarcodeSubmission(
   if (!gap) throw new Error('That release has no outstanding barcode contribution');
 
   await recordManualSubmission(`human:${session.user.name}`, barcodeSubmissionDraft(gap), options);
+  return getContributions();
+}
+
+/** Record a recording–work link only after the editor confirms the external edit. */
+export async function recordWorkRelationshipSubmission(
+  recordingMbid: string,
+  workMbid: string,
+  options: { note?: string; editId?: string } = {},
+) {
+  const session = await checkAuth();
+  const recording = requireMbid(recordingMbid, 'The recording');
+  const gap = (await workRelationshipGaps(5_000)).find(
+    (candidate) => candidate.recordingMbid === recording,
+  );
+  if (!gap) {
+    throw new ManualSubmissionError('That recording has no outstanding work relationship');
+  }
+
+  await recordManualSubmission(
+    `human:${session.user.name}`,
+    workRelationshipDraftFromGap(gap, workMbid),
+    options,
+  );
   return getContributions();
 }
 

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   barcodeSubmissionDraft,
+  describeLedgerState,
   errorReportDraft,
   ManualSubmissionError,
   normalizeEditId,
@@ -11,6 +12,7 @@ import {
   submissionIdentity,
   workCreationDraft,
   workRelationshipDraft,
+  workRelationshipDraftFromGap,
   type ManualSubmissionDraft,
 } from '../app/lib/musicbrainz-manual-submissions';
 
@@ -64,7 +66,10 @@ test('a manual draft always has a non-null dedupe value', () => {
 test('an MBID is accepted bare, pasted as a URL, and never guessed at', () => {
   assert.equal(normalizeMbid(` ${WORK_MBID.toUpperCase()} `), WORK_MBID);
   assert.equal(normalizeMbid(`https://musicbrainz.org/work/${WORK_MBID}`), WORK_MBID);
-  assert.equal(normalizeMbid(`https://musicbrainz.org/recording/${RECORDING_MBID}/edit`), RECORDING_MBID);
+  assert.equal(
+    normalizeMbid(`https://musicbrainz.org/recording/${RECORDING_MBID}/edit`),
+    RECORDING_MBID,
+  );
   assert.equal(normalizeMbid('K. 466'), null);
   assert.equal(normalizeMbid(''), null);
   assert.equal(normalizeMbid('5b2b84a0-1b1f-4b3f-9a0e-2b8d0a4e6c3'), null);
@@ -100,7 +105,52 @@ test('a work relationship dedupes per work so a medley can gain several', () => 
   assert.equal(first.targetMbid, RECORDING_MBID);
   assert.equal(first.value, WORK_MBID);
   assert.notEqual(submissionIdentity(first), submissionIdentity(second));
-  assert.equal(submissionIdentity(first), submissionIdentity(workRelationshipDraft({ ...base, workMbid: WORK_MBID })));
+  assert.equal(
+    submissionIdentity(first),
+    submissionIdentity(workRelationshipDraft({ ...base, workMbid: WORK_MBID })),
+  );
+});
+
+test('a confirmation re-reads the candidate and refuses a work we did not offer', () => {
+  const gap = {
+    recordingMbid: RECORDING_MBID,
+    recordingTitle: 'Allegro',
+    albumId: 'spotify-1',
+    albumTitle: 'A Recital',
+    candidates: [
+      {
+        workMbid: WORK_MBID,
+        title: 'Piano Concerto No. 20',
+        type: 'Concerto' as const,
+        composerMbid: null,
+        composerName: 'Mozart',
+        catalogues: [{ system: 'K.', number: '466' }],
+        evidence: ['catalogue_match' as const],
+      },
+    ],
+  };
+
+  const draft = workRelationshipDraftFromGap(gap, `https://musicbrainz.org/work/${WORK_MBID}`);
+  assert.equal(draft.value, WORK_MBID);
+  assert.equal(draft.evidence.workTitle, 'Piano Concerto No. 20');
+  assert.deepEqual(draft.evidence.candidateEvidence, ['catalogue_match']);
+
+  assert.throws(() => workRelationshipDraftFromGap(gap, OTHER_WORK_MBID), ManualSubmissionError);
+  assert.throws(
+    () => workRelationshipDraftFromGap({ ...gap, candidates: [] }, WORK_MBID),
+    ManualSubmissionError,
+  );
+});
+
+test('ledger state names a missing edit ID rather than inventing one', () => {
+  assert.equal(
+    describeLedgerState({ outcome: 'pending', editId: null }),
+    'pending · edit ID missing',
+  );
+  assert.equal(
+    describeLedgerState({ outcome: 'pending', editId: '114857392' }),
+    'pending · edit 114857392',
+  );
 });
 
 test('a work relationship records what we offered, not that it was proved', () => {
@@ -238,7 +288,13 @@ test('a misaligned tracklist report shows both sides of every disagreement', () 
       ourTrackCount: 21,
       theirTrackCount: 21,
       mismatches: [
-        { position: 21, ourTitle: 'Allegro', ourMs: 401_000, theirTitle: 'Adagio', theirMs: 220_000 },
+        {
+          position: 21,
+          ourTitle: 'Allegro',
+          ourMs: 401_000,
+          theirTitle: 'Adagio',
+          theirMs: 220_000,
+        },
       ],
     },
     'fixed',

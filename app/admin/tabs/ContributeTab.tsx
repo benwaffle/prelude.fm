@@ -7,6 +7,7 @@ import {
   getContributions,
   recordBarcodeSubmission,
   recordIsrcSubmission,
+  recordWorkRelationshipSubmission,
   reconcileSubmissions,
   setSubmissionOutcome,
   submitBotBatch,
@@ -86,6 +87,15 @@ export function ContributeTab() {
     setBusy(true);
     try {
       setView(await recordBarcodeSubmission(releaseMbid));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submittedWorkRelationship(recordingMbid: string, workMbid: string) {
+    setBusy(true);
+    try {
+      setView(await recordWorkRelationshipSubmission(recordingMbid, workMbid));
     } finally {
       setBusy(false);
     }
@@ -421,6 +431,8 @@ export function ContributeTab() {
               <span className="album-meta">
                 {gap.albumTitle} · {gap.candidates.length} MB candidate
                 {gap.candidates.length === 1 ? '' : 's'}
+                {gap.ledger.length > 0 &&
+                  ` · ${gap.ledger.length} recorded${gap.ledger.some((row) => !row.editId) ? ', edit ID missing' : ''}`}
               </span>
             </summary>
             <div className="fold-body">
@@ -428,28 +440,46 @@ export function ContributeTab() {
                 <div className="mb-3">
                   <div className="mb-2 text-[11px] text-[var(--ink-2)]">
                     Existing MusicBrainz candidates. Catalogue matches identify a possible work;
-                    they do not prove the recording relationship.
+                    they do not prove the recording relationship. Opening a work or the recording
+                    editor does not write the ledger.
                   </div>
-                  {gap.candidates.map((candidate) => (
-                    <div key={candidate.workMbid} className="row px-0">
-                      <span className="min-w-0 flex-1">
-                        <a
-                          href={`https://musicbrainz.org/work/${candidate.workMbid}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {candidate.title}
-                        </a>
-                        <span className="album-meta">
-                          {[candidate.type, candidate.composerName].filter(Boolean).join(' · ')}
-                          {candidate.catalogues.length > 0 &&
-                            ` · ${candidate.catalogues.map((catalogue) => `${catalogue.system} ${catalogue.number}`).join(', ')}`}
-                          {' · '}
-                          {candidate.evidence.join(', ')}
+                  {gap.candidates.map((candidate) => {
+                    const recorded = gap.ledger.find((row) => row.workMbid === candidate.workMbid);
+                    return (
+                      <div key={candidate.workMbid} className="row px-0">
+                        <span className="min-w-0 flex-1">
+                          <a
+                            href={`https://musicbrainz.org/work/${candidate.workMbid}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {candidate.title}
+                          </a>
+                          <span className="album-meta">
+                            {[candidate.type, candidate.composerName].filter(Boolean).join(' · ')}
+                            {candidate.catalogues.length > 0 &&
+                              ` · ${candidate.catalogues.map((catalogue) => `${catalogue.system} ${catalogue.number}`).join(', ')}`}
+                            {' · '}
+                            {candidate.evidence.join(', ')}
+                          </span>
                         </span>
-                      </span>
-                    </div>
-                  ))}
+                        {recorded ? (
+                          <span className="album-meta shrink-0">{recorded.label}</span>
+                        ) : (
+                          <button
+                            className="act shrink-0"
+                            data-variant="primary"
+                            disabled={busy}
+                            onClick={() =>
+                              submittedWorkRelationship(gap.recordingMbid, candidate.workMbid)
+                            }
+                          >
+                            I submitted this link
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="mb-3 text-[var(--ink-2)]">
