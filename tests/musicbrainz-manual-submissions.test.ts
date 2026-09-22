@@ -21,6 +21,14 @@ import {
   workRelationshipDraftFromGap,
   createdWorkCacheState,
   createdWorkLanded,
+  isSpotifyFreeStreamingRelation,
+  isStreamingUrlContributionGap,
+  RELEASE_SPOTIFY_STREAMING_URL_MISSING,
+  SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID,
+  spotifyAlbumUrl,
+  spotifyFreeStreamingUrlState,
+  streamingUrlDraft,
+  streamingUrlDraftFromGap,
   type ManualSubmissionDraft,
 } from '../app/lib/musicbrainz-manual-submissions';
 
@@ -507,8 +515,140 @@ test('every draft class carries a non-null ledger value', () => {
       },
       'reported',
     ),
+    streamingUrlDraft({
+      releaseMbid: '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46',
+      releaseTitle: 'A Recital',
+      albumId: 'spotify-1',
+      albumTitle: 'A Recital',
+    }),
   ];
   for (const draft of drafts) {
     assert.ok(draft.value.length > 0, `${draft.kind} has an empty ledger value`);
   }
+});
+
+const RELEASE_MBID = '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46';
+const SPOTIFY_ALBUM_URL = 'https://open.spotify.com/album/spotify-1';
+const ACTIVE_SPOTIFY_RELATION = {
+  url: SPOTIFY_ALBUM_URL,
+  relationshipTypeId: SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID,
+  ended: false,
+};
+
+test('unfetched URL relations are unknown, never a streaming contribution', () => {
+  const unknown = spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: null,
+    relations: [],
+  });
+  assert.equal(unknown, 'unknown');
+  assert.equal(isStreamingUrlContributionGap(unknown), false);
+
+  const unknownEvenWithRows = spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: null,
+    relations: [ACTIVE_SPOTIFY_RELATION],
+  });
+  assert.equal(unknownEvenWithRows, 'unknown');
+  assert.equal(isStreamingUrlContributionGap(unknownEvenWithRows), false);
+});
+
+test('fetched URL relations with no Spotify free-streaming link are the missing gap', () => {
+  const missingEmpty = spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: 1,
+    relations: [],
+  });
+  assert.equal(missingEmpty, 'missing');
+  assert.equal(isStreamingUrlContributionGap(missingEmpty), true);
+
+  const missingEnded = spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: 1,
+    relations: [{ ...ACTIVE_SPOTIFY_RELATION, ended: true }],
+  });
+  assert.equal(missingEnded, 'missing');
+
+  const missingOtherHost = spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: 1,
+    relations: [
+      {
+        url: 'https://www.youtube.com/watch?v=abc',
+        relationshipTypeId: SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID,
+        ended: false,
+      },
+    ],
+  });
+  assert.equal(missingOtherHost, 'missing');
+
+  const missingWrongType = spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: 1,
+    relations: [
+      {
+        url: SPOTIFY_ALBUM_URL,
+        relationshipTypeId: '00000000-0000-0000-0000-000000000000',
+        ended: false,
+      },
+    ],
+  });
+  assert.equal(missingWrongType, 'missing');
+});
+
+test('a fetched active Spotify free-streaming relation is present, not a gap', () => {
+  const present = spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: new Date(),
+    relations: [ACTIVE_SPOTIFY_RELATION],
+  });
+  assert.equal(present, 'present');
+  assert.equal(isStreamingUrlContributionGap(present), false);
+
+  const presentTrackUrl = spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: 1,
+    relations: [
+      {
+        url: 'https://open.spotify.com/track/abc',
+        relationshipTypeId: SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID,
+        ended: 0,
+      },
+    ],
+  });
+  assert.equal(presentTrackUrl, 'present');
+});
+
+test('Spotify free-streaming detection uses the hostname, not a LIKE, and ignores junk URLs', () => {
+  assert.equal(isSpotifyFreeStreamingRelation(ACTIVE_SPOTIFY_RELATION), true);
+  assert.equal(
+    isSpotifyFreeStreamingRelation({
+      url: 'https://open.spotify.com.evil.example/album/spotify-1',
+      relationshipTypeId: SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID,
+      ended: false,
+    }),
+    false,
+  );
+  assert.equal(
+    isSpotifyFreeStreamingRelation({
+      url: 'not a url',
+      relationshipTypeId: SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID,
+      ended: false,
+    }),
+    false,
+  );
+});
+
+test('a streaming-URL draft keeps the album URL as identity and names the reader gap', () => {
+  const gap = {
+    releaseMbid: RELEASE_MBID,
+    releaseTitle: 'A Recital',
+    albumId: 'spotify-1',
+    albumTitle: 'A Recital',
+  };
+  const draft = streamingUrlDraftFromGap(gap);
+  assert.equal(draft.kind, 'streaming_url');
+  assert.equal(draft.targetMbid, RELEASE_MBID);
+  assert.equal(draft.subject, 'spotify-1');
+  assert.equal(draft.value, spotifyAlbumUrl('spotify-1'));
+  assert.equal(draft.evidence.gapCode, RELEASE_SPOTIFY_STREAMING_URL_MISSING);
+  assert.equal(draft.evidence.relationshipTypeId, SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID);
+  assert.equal(draft.evidence.spotifyUrl, SPOTIFY_ALBUM_URL);
+  assert.equal(
+    draft.evidence.releaseEditUrl,
+    `https://musicbrainz.org/release/${RELEASE_MBID}/edit`,
+  );
+  assert.equal(submissionIdentity(draft), submissionIdentity(streamingUrlDraft(gap)));
 });

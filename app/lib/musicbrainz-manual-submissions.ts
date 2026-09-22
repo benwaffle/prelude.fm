@@ -596,3 +596,103 @@ export function errorReportDraftFromMisaligned(
     requireErrorDisposition(dispositionInput),
   );
 }
+
+/**
+ * Official Release–URL "free streaming" relationship.
+ *
+ * The URL we offer is always the Spotify album page. Whether MusicBrainz
+ * already has *a* Spotify free-streaming link is a hostname check on that
+ * relation type, matching the library reader: a track URL already present
+ * is present, not a gap.
+ */
+export const SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID = '08445ccf-7b99-4438-9f9a-fb9ac18099ee';
+
+/** Reader gap code. Only emitted when URL relations were fetched and none match. */
+export const RELEASE_SPOTIFY_STREAMING_URL_MISSING = 'release-spotify-streaming-url-missing';
+
+export type ReleaseUrlRelation = {
+  url: string;
+  relationshipTypeId: string;
+  ended: boolean | number;
+};
+
+export type SpotifyFreeStreamingUrlState = 'unknown' | 'present' | 'missing';
+
+/** True when this cached relation is an active Spotify free-streaming link. */
+export function isSpotifyFreeStreamingRelation(relation: ReleaseUrlRelation): boolean {
+  if (
+    relation.ended ||
+    relation.relationshipTypeId !== SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID
+  ) {
+    return false;
+  }
+  try {
+    return new URL(relation.url).hostname.toLowerCase() === 'open.spotify.com';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What the cache knows about a release's Spotify free-streaming URL.
+ *
+ * `unknown` if URL relations have never been fetched — an empty relation
+ * list is then not evidence of absence. `missing` only after a fetch, and
+ * only that state is a contribution.
+ */
+export function spotifyFreeStreamingUrlState(input: {
+  urlRelationsFetchedAt: Date | string | number | null | undefined;
+  relations: ReleaseUrlRelation[];
+}): SpotifyFreeStreamingUrlState {
+  if (input.urlRelationsFetchedAt == null) return 'unknown';
+  return input.relations.some(isSpotifyFreeStreamingRelation) ? 'present' : 'missing';
+}
+
+export function isStreamingUrlContributionGap(state: SpotifyFreeStreamingUrlState): boolean {
+  return state === 'missing';
+}
+
+export function spotifyAlbumUrl(albumId: string): string {
+  return `https://open.spotify.com/album/${albumId}`;
+}
+
+export type StreamingUrlSubmission = {
+  releaseMbid: string;
+  releaseTitle: string;
+  albumId: string;
+  albumTitle: string;
+};
+
+/**
+ * A Spotify album URL somebody added as a free-streaming link on a release.
+ *
+ * The release already exists, so it is the ledger target. The value is the
+ * exact URL that was submitted, which is also the unique identity among
+ * several albums that can share a release.
+ */
+export function streamingUrlDraft(submission: StreamingUrlSubmission): ManualSubmissionDraft {
+  const spotifyUrl = spotifyAlbumUrl(submission.albumId);
+  return {
+    kind: 'streaming_url',
+    targetMbid: submission.releaseMbid,
+    subject: submission.albumId,
+    value: spotifyUrl,
+    evidence: {
+      gapCode: RELEASE_SPOTIFY_STREAMING_URL_MISSING,
+      relationshipTypeId: SPOTIFY_FREE_STREAMING_RELATIONSHIP_TYPE_ID,
+      relationshipType: 'free streaming',
+      releaseMbid: submission.releaseMbid,
+      releaseTitle: submission.releaseTitle,
+      releaseUrl: `https://musicbrainz.org/release/${submission.releaseMbid}`,
+      releaseEditUrl: `https://musicbrainz.org/release/${submission.releaseMbid}/edit`,
+      spotifyAlbumId: submission.albumId,
+      spotifyAlbumTitle: submission.albumTitle,
+      spotifyUrl,
+      confirmedBy: 'human',
+    },
+  };
+}
+
+export function streamingUrlDraftFromGap(gap: StreamingUrlSubmission): ManualSubmissionDraft {
+  return streamingUrlDraft(gap);
+}

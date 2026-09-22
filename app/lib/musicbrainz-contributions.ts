@@ -33,6 +33,12 @@ import {
   type SpotifyReleaseEvidence,
 } from './musicbrainz-contribution-safety';
 import {
+  isStreamingUrlContributionGap,
+  spotifyFreeStreamingUrlState,
+  type ReleaseUrlRelation,
+  type SpotifyFreeStreamingUrlState,
+} from './musicbrainz-manual-submissions';
+import {
   mbRecording,
   mbRecordingIsrc,
   mbArtist,
@@ -672,6 +678,102 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
 }
 
 /**
+ * Matched releases whose URL relations have been fetched, and which have no
+ * active Spotify free-streaming link.
+ *
+ * Unfetched stays unknown, never a contribution: an empty `mb_release_url`
+ * result is not evidence that MusicBrainz has no External Links. The reader
+ * uses the same rule; this list is only the `missing` side of it.
+ *
+ * Schema for those columns lives on master. This query names them in SQL so
+ * the contribution branch does not have to own the cache table.
+ */
+export type StreamingUrlGap = {
+  releaseMbid: string;
+  releaseTitle: string;
+  albumId: string;
+  albumTitle: string;
+};
+
+type CachedReleaseUrlRelation = ReleaseUrlRelation & { releaseMbid: string };
+
+async function cachedReleaseUrlRelations(
+  releaseMbids: string[],
+): Promise<CachedReleaseUrlRelation[]> {
+  if (releaseMbids.length === 0) return [];
+  return db.all<CachedReleaseUrlRelation>(sql`
+    select
+      release_mbid as "releaseMbid",
+      url,
+      relationship_type_id as "relationshipTypeId",
+      ended
+    from mb_release_url
+    where release_mbid in (${sql.join(
+      releaseMbids.map((mbid) => sql`${mbid}`),
+      sql`, `,
+    )})
+  `);
+}
+
+/** What the cache currently knows about one release's Spotify free-streaming URL. */
+export async function observeSpotifyFreeStreamingUrlState(
+  releaseMbid: string,
+): Promise<SpotifyFreeStreamingUrlState> {
+  const [release] = await db.all<{ urlRelationsFetchedAt: number | null }>(sql`
+    select url_relations_fetched_at as "urlRelationsFetchedAt"
+    from mb_release
+    where mbid = ${releaseMbid}
+  `);
+  const relations = await cachedReleaseUrlRelations([releaseMbid]);
+  return spotifyFreeStreamingUrlState({
+    urlRelationsFetchedAt: release?.urlRelationsFetchedAt ?? null,
+    relations,
+  });
+}
+
+export async function streamingUrlGaps(limit = 50): Promise<StreamingUrlGap[]> {
+  const candidates = await db
+    .select({
+      releaseMbid: mbRelease.mbid,
+      releaseTitle: mbRelease.title,
+      albumId: spotifyAlbum.spotifyId,
+      albumTitle: spotifyAlbum.title,
+      urlRelationsFetchedAt: sql<number | null>`mb_release.url_relations_fetched_at`,
+    })
+    .from(spotifyAlbum)
+    .innerJoin(mbRelease, eq(mbRelease.mbid, spotifyAlbum.mbReleaseId))
+    .where(sql`mb_release.url_relations_fetched_at is not null`);
+  if (candidates.length === 0) return [];
+
+  const relations = await cachedReleaseUrlRelations([
+    ...new Set(candidates.map((candidate) => candidate.releaseMbid)),
+  ]);
+  const relationsByRelease = new Map<string, ReleaseUrlRelation[]>();
+  for (const relation of relations) {
+    const list = relationsByRelease.get(relation.releaseMbid) ?? [];
+    list.push(relation);
+    relationsByRelease.set(relation.releaseMbid, list);
+  }
+
+  return candidates
+    .filter((candidate) =>
+      isStreamingUrlContributionGap(
+        spotifyFreeStreamingUrlState({
+          urlRelationsFetchedAt: candidate.urlRelationsFetchedAt,
+          relations: relationsByRelease.get(candidate.releaseMbid) ?? [],
+        }),
+      ),
+    )
+    .map(({ releaseMbid, releaseTitle, albumId, albumTitle }) => ({
+      releaseMbid,
+      releaseTitle,
+      albumId,
+      albumTitle,
+    }))
+    .slice(0, limit);
+}
+
+/**
  * Albums whose tracklist does not line up with the release we matched.
  *
  * Anchoring refuses these, which is right, but refusing silently makes them
@@ -800,24 +902,27 @@ export async function misalignedAlbums(limit = 40): Promise<MisalignedAlbum[]> {
 
 /** How much of each kind of contribution is waiting. */
 export async function contributionCounts() {
-  const [isrc, works, contested, missing, barcodes, misaligned, submitted] = await Promise.all([
-    isrcGaps(5_000).then((rows) => rows.length),
-    workRelationshipGaps(5_000).then((rows) => rows.length),
-    contestedIsrcs(5_000).then((rows) => rows.length),
-    missingReleases(5_000).then((rows) => rows.length),
-    barcodeGaps(5_000).then((rows) => rows.length),
-    misalignedAlbums(5_000).then((rows) => rows.length),
-    db
-      .select({ outcome: mbSubmission.outcome, n: sql<number>`count(*)` })
-      .from(mbSubmission)
-      .groupBy(mbSubmission.outcome),
-  ]);
+  const [isrc, works, contested, missing, barcodes, streamingUrls, misaligned, submitted] =
+    await Promise.all([
+      isrcGaps(5_000).then((rows) => rows.length),
+      workRelationshipGaps(5_000).then((rows) => rows.length),
+      contestedIsrcs(5_000).then((rows) => rows.length),
+      missingReleases(5_000).then((rows) => rows.length),
+      barcodeGaps(5_000).then((rows) => rows.length),
+      streamingUrlGaps(5_000).then((rows) => rows.length),
+      misalignedAlbums(5_000).then((rows) => rows.length),
+      db
+        .select({ outcome: mbSubmission.outcome, n: sql<number>`count(*)` })
+        .from(mbSubmission)
+        .groupBy(mbSubmission.outcome),
+    ]);
   return {
     isrc,
     workRelationships: works,
     contestedIsrcs: contested,
     missingReleases: missing,
     barcodes,
+    streamingUrls,
     misaligned,
     submissions: Object.fromEntries(submitted.map((row) => [row.outcome, row.n])),
   };

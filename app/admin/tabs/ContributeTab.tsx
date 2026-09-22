@@ -10,10 +10,12 @@ import {
   recordIsrcSubmission,
   recordMisalignedTracklistReport,
   recordReleaseSubmission,
+  recordStreamingUrlSubmission,
   recordWorkCreationSubmission,
   recordWorkRelationshipSubmission,
   recheckCreatedWork,
   recheckErrorReport,
+  recheckStreamingUrl,
   reconcileSubmissions,
   setSubmissionOutcome,
   submitBotBatch,
@@ -42,6 +44,9 @@ export function ContributeTab() {
   const [releaseForms, setReleaseForms] = useState<
     Record<string, { releaseMbid: string; editId: string }>
   >({});
+  const [streamingUrlForms, setStreamingUrlForms] = useState<Record<string, { editId: string }>>(
+    {},
+  );
 
   const refresh = useCallback(() => {
     getContributions()
@@ -99,6 +104,30 @@ export function ContributeTab() {
     setBusy(true);
     try {
       setView(await recordBarcodeSubmission(releaseMbid));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submittedStreamingUrl(releaseMbid: string, albumId: string) {
+    const form = streamingUrlForms[albumId] ?? { editId: '' };
+    setBusy(true);
+    try {
+      setView(
+        await recordStreamingUrlSubmission(releaseMbid, albumId, {
+          editId: form.editId,
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recheckStreaming(releaseMbid: string) {
+    setBusy(true);
+    try {
+      const result = await recheckStreamingUrl(releaseMbid);
+      setView(result.view);
     } finally {
       setBusy(false);
     }
@@ -450,6 +479,80 @@ export function ContributeTab() {
               </button>
             </div>
           ))}
+        </section>
+      )}
+
+      {view.streamingUrls.length > 0 && (
+        <section className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Releases with no Spotify streaming URL</span>
+            <span className="mono text-[var(--ink-2)]">{view.counts.streamingUrls}</span>
+          </div>
+          <p className="px-4 pt-3 text-[var(--ink-2)]">
+            Only releases whose URL relations we have already fetched. Unfetched stays unknown, not
+            missing, and is not listed. Copy the Spotify album URL, add it as a free streaming link
+            on the release edit page&apos;s External Links section — not the relationship editor —
+            then confirm here only after submitting the edit. Opening the edit page does not write
+            the ledger.
+          </p>
+          {view.streamingUrls.map((gap) => {
+            const form = streamingUrlForms[gap.albumId] ?? { editId: '' };
+            return (
+              <div key={`${gap.releaseMbid}:${gap.albumId}`} className="row">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{gap.releaseTitle}</span>
+                  <span className="album-meta">{gap.albumTitle}</span>
+                </span>
+                <code className="mono max-w-[28ch] shrink-0 truncate select-all text-[var(--ink-2)]">
+                  {gap.spotifyUrl}
+                </code>
+                <button
+                  className="act shrink-0"
+                  disabled={busy}
+                  onClick={() => navigator.clipboard.writeText(gap.spotifyUrl)}
+                >
+                  Copy URL
+                </button>
+                <a className="act shrink-0" href={gap.edit} target="_blank" rel="noreferrer">
+                  Edit release
+                </a>
+                {gap.ledger ? (
+                  <>
+                    <span className="album-meta shrink-0">{gap.ledger.label}</span>
+                    <button
+                      className="act shrink-0"
+                      disabled={busy}
+                      onClick={() => recheckStreaming(gap.releaseMbid)}
+                    >
+                      Recheck
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      className="mono w-32 shrink-0"
+                      placeholder="edit ID (optional)"
+                      value={form.editId}
+                      onChange={(event) =>
+                        setStreamingUrlForms((current) => ({
+                          ...current,
+                          [gap.albumId]: { editId: event.target.value },
+                        }))
+                      }
+                    />
+                    <button
+                      className="act shrink-0"
+                      data-variant="primary"
+                      disabled={busy}
+                      onClick={() => submittedStreamingUrl(gap.releaseMbid, gap.albumId)}
+                    >
+                      I submitted it
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </section>
       )}
 

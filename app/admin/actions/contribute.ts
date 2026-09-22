@@ -12,8 +12,10 @@ import {
   magicIsrcLink,
   misalignedAlbums,
   missingReleases,
+  observeSpotifyFreeStreamingUrlState,
   releaseEditLink,
   recordingEditLink,
+  streamingUrlGaps,
   workCreateLink,
   workRelationshipGaps,
   type IsrcGap,
@@ -35,6 +37,8 @@ import {
   workCreationDraftFromGap,
   workRelationshipDraftFromGap,
   releaseSubmissionDraftFromGap,
+  spotifyAlbumUrl,
+  streamingUrlDraftFromGap,
   type ManualSubmissionDraft,
 } from '@/lib/musicbrainz-manual-submissions';
 import { checkAuth } from './auth';
@@ -162,6 +166,16 @@ export type ContributionView = {
     } | null;
   })[];
   barcodes: (Awaited<ReturnType<typeof barcodeGaps>>[number] & { edit: string })[];
+  streamingUrls: (Awaited<ReturnType<typeof streamingUrlGaps>>[number] & {
+    edit: string;
+    spotifyUrl: string;
+    ledger: {
+      id: number;
+      outcome: string;
+      editId: string | null;
+      label: string;
+    } | null;
+  })[];
   misaligned: (Awaited<ReturnType<typeof misalignedAlbums>>[number] & {
     ledger: {
       id: number;
@@ -186,30 +200,40 @@ export type ContributionView = {
 export async function getContributions(): Promise<ContributionView> {
   await checkAuth();
 
-  const [counts, releases, workGaps, contested, missing, barcodes, misaligned, recent] =
-    await Promise.all([
-      contributionCounts(),
-      isrcGapsByRelease(40),
-      workRelationshipGaps(40),
-      contestedIsrcs(20),
-      missingReleases(40),
-      barcodeGaps(20),
-      misalignedAlbums(30),
-      db
-        .select({
-          id: mbSubmission.id,
-          kind: mbSubmission.kind,
-          targetMbid: mbSubmission.targetMbid,
-          value: mbSubmission.value,
-          submittedBy: mbSubmission.submittedBy,
-          submittedAt: mbSubmission.submittedAt,
-          outcome: mbSubmission.outcome,
-          note: mbSubmission.note,
-        })
-        .from(mbSubmission)
-        .orderBy(desc(mbSubmission.submittedAt))
-        .limit(30),
-    ]);
+  const [
+    counts,
+    releases,
+    workGaps,
+    contested,
+    missing,
+    barcodes,
+    streamingUrls,
+    misaligned,
+    recent,
+  ] = await Promise.all([
+    contributionCounts(),
+    isrcGapsByRelease(40),
+    workRelationshipGaps(40),
+    contestedIsrcs(20),
+    missingReleases(40),
+    barcodeGaps(20),
+    streamingUrlGaps(20),
+    misalignedAlbums(30),
+    db
+      .select({
+        id: mbSubmission.id,
+        kind: mbSubmission.kind,
+        targetMbid: mbSubmission.targetMbid,
+        value: mbSubmission.value,
+        submittedBy: mbSubmission.submittedBy,
+        submittedAt: mbSubmission.submittedAt,
+        outcome: mbSubmission.outcome,
+        note: mbSubmission.note,
+      })
+      .from(mbSubmission)
+      .orderBy(desc(mbSubmission.submittedAt))
+      .limit(30),
+  ]);
 
   const recordingMbids = workGaps.map((gap) => gap.recordingMbid);
   const albumIds = [...new Set(workGaps.map((gap) => gap.albumId))];
@@ -369,6 +393,36 @@ export async function getContributions(): Promise<ContributionView> {
     };
   }
 
+  const streamingAlbumIds = streamingUrls.map((gap) => gap.albumId);
+  const streamingLedgerRows =
+    streamingAlbumIds.length === 0
+      ? []
+      : await db
+          .select({
+            id: mbSubmission.id,
+            albumId: mbSubmission.subject,
+            outcome: mbSubmission.outcome,
+            editId: mbSubmission.editId,
+          })
+          .from(mbSubmission)
+          .where(
+            and(
+              eq(mbSubmission.kind, 'streaming_url'),
+              inArray(mbSubmission.subject, streamingAlbumIds),
+            ),
+          );
+  const streamingLedgerByAlbum = new Map(
+    streamingLedgerRows.map((row) => [
+      row.albumId,
+      {
+        id: row.id,
+        outcome: row.outcome,
+        editId: row.editId,
+        label: describeLedgerState(row),
+      },
+    ]),
+  );
+
   return {
     counts,
     isrcReleases: releases.map((release) => ({
@@ -417,6 +471,12 @@ export async function getContributions(): Promise<ContributionView> {
       ledger: releaseLedgerByAlbum.get(album.albumId) ?? null,
     })),
     barcodes: barcodes.map((gap) => ({ ...gap, edit: releaseEditLink(gap.releaseMbid) })),
+    streamingUrls: streamingUrls.map((gap) => ({
+      ...gap,
+      edit: releaseEditLink(gap.releaseMbid),
+      spotifyUrl: spotifyAlbumUrl(gap.albumId),
+      ledger: streamingLedgerByAlbum.get(gap.albumId) ?? null,
+    })),
     misaligned: misaligned.map((album) => ({
       ...album,
       ledger: errorLedgerOf((entry) => entry.subject === album.albumId),
@@ -558,6 +618,70 @@ export async function recordReleaseSubmission(
     options,
   );
   return getContributions();
+}
+
+/**
+ * Record a Spotify free-streaming URL only after the editor confirms the
+ * external edit. Opening the release edit page does not write.
+ */
+export async function recordStreamingUrlSubmission(
+  releaseMbid: string,
+  albumId: string,
+  options: { note?: string; editId?: string } = {},
+) {
+  const session = await checkAuth();
+  const release = requireMbid(releaseMbid, 'The release');
+  const gap = (await streamingUrlGaps(5_000)).find(
+    (candidate) => candidate.releaseMbid === release && candidate.albumId === albumId,
+  );
+  if (!gap) {
+    throw new ManualSubmissionError(
+      'That release is not a known-fetched streaming-URL contribution',
+    );
+  }
+
+  await recordManualSubmission(
+    `human:${session.user.name}`,
+    streamingUrlDraftFromGap(gap),
+    options,
+  );
+  return getContributions();
+}
+
+/**
+ * Observe whether the cache now holds an active Spotify free-streaming URL.
+ *
+ * Reads only. Applied only when that relation is present. Missing stays
+ * pending. Unknown — URL relations not fetched — also stays pending: absence
+ * of a fetch is not evidence the edit landed.
+ */
+export async function recheckStreamingUrl(releaseMbid: string) {
+  await checkAuth();
+  const release = requireMbid(releaseMbid, 'The release');
+  const [confirmed] = await db
+    .select({ id: mbSubmission.id })
+    .from(mbSubmission)
+    .where(and(eq(mbSubmission.kind, 'streaming_url'), eq(mbSubmission.targetMbid, release)))
+    .limit(1);
+  if (!confirmed) {
+    throw new ManualSubmissionError('That release has no streaming-URL confirmation');
+  }
+
+  const state = await observeSpotifyFreeStreamingUrlState(release);
+  if (state === 'present') {
+    await db
+      .update(mbSubmission)
+      .set({ outcome: 'applied', outcomeAt: new Date() })
+      .where(
+        and(
+          eq(mbSubmission.kind, 'streaming_url'),
+          eq(mbSubmission.targetMbid, release),
+          eq(mbSubmission.outcome, 'pending'),
+        ),
+      );
+  }
+
+  return { state, view: await getContributions() };
 }
 
 /**
