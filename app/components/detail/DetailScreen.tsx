@@ -10,7 +10,7 @@ import {
   type WorkDetail,
   type WorkSummary,
 } from '@/app/actions/library';
-import { getMusicBrainzWorkDetail } from '@/app/actions/library-mb';
+import { getMusicBrainzWorkDetail, getMusicBrainzWorkParent } from '@/app/actions/library-mb';
 import { getWorkParent, type WorkParent } from '@/app/actions/work-hierarchy';
 import {
   hexToRgba,
@@ -40,15 +40,10 @@ export function DetailScreen({
   const [parent, setParent] = useState<WorkParent | null>(null);
 
   useEffect(() => {
-    // The collection strip reads the legacy hierarchy; under the MusicBrainz
-    // reader the work's place in its tree comes from the projection instead,
-    // so asking would only mislead.
-    if (reader === 'musicbrainz') {
-      setParent(null);
-      return;
-    }
     let cancelled = false;
-    getWorkParent(workId)
+    const asking =
+      reader === 'musicbrainz' ? getMusicBrainzWorkParent(workId) : getWorkParent(workId);
+    asking
       .then((found) => {
         if (!cancelled) setParent(found);
       })

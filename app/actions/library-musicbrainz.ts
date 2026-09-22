@@ -497,3 +497,99 @@ async function descendantWorkMbids(
   }
   return Array.from(found);
 }
+
+/**
+ * Which of these works we hold something playable for, counting anything
+ * filed beneath them.
+ *
+ * A collection's parts often have parts of their own — a prelude and fugue
+ * is two recordings under one part of the Well-Tempered Clavier — so asking
+ * only about the part's own recordings would report a collection as emptier
+ * than it is. One breadth-first walk for the whole set, not one per work.
+ */
+export async function findHeldWorkMbids(
+  workMbids: string[],
+  database: DatabaseExecutor = db,
+): Promise<Set<string>> {
+  const rootOf = new Map(workMbids.map((mbid) => [mbid, mbid]));
+  let frontier = Array.from(new Set(workMbids));
+  for (let depth = 0; depth < MAX_WORK_GENERATIONS && frontier.length > 0; depth++) {
+    const children = await forChunks(frontier, (chunk) =>
+      database
+        .select({ mbid: mbWork.mbid, parentMbid: mbWork.parentMbid })
+        .from(mbWork)
+        .where(inArray(mbWork.parentMbid, chunk)),
+    );
+    frontier = [];
+    for (const child of children) {
+      if (rootOf.has(child.mbid) || !child.parentMbid) continue;
+      const root = rootOf.get(child.parentMbid);
+      if (!root) continue;
+      rootOf.set(child.mbid, root);
+      frontier.push(child.mbid);
+    }
+  }
+
+  const relations = await forChunks(rootOf.keys(), (chunk) =>
+    database
+      .select({ recordingMbid: mbRecordingWork.recordingMbid, workMbid: mbRecordingWork.workMbid })
+      .from(mbRecordingWork)
+      .where(inArray(mbRecordingWork.workMbid, chunk)),
+  );
+  const anchored = new Set(
+    (
+      await forChunks(
+        relations.map((relation) => relation.recordingMbid),
+        (chunk) =>
+          database
+            .select({ recordingMbid: trackRecording.recordingMbid })
+            .from(trackRecording)
+            .where(inArray(trackRecording.recordingMbid, chunk)),
+      )
+    ).map((row) => row.recordingMbid),
+  );
+
+  const held = new Set<string>();
+  for (const relation of relations) {
+    if (!anchored.has(relation.recordingMbid)) continue;
+    const root = rootOf.get(relation.workMbid);
+    if (root) held.add(root);
+  }
+  return held;
+}
+
+/** A work's parent and the parent's other parts, straight from the cache. */
+export async function readWorkCollection(
+  workMbid: string,
+  database: DatabaseExecutor = db,
+): Promise<{
+  parentTitle: string;
+  siblings: Array<{ mbid: string; title: string; orderingKey: number | null }>;
+} | null> {
+  const [self] = await database
+    .select({ parentMbid: mbWork.parentMbid })
+    .from(mbWork)
+    .where(eq(mbWork.mbid, workMbid))
+    .limit(1);
+  if (!self?.parentMbid) return null;
+
+  const [parent] = await database
+    .select({ title: mbWork.title })
+    .from(mbWork)
+    .where(eq(mbWork.mbid, self.parentMbid))
+    .limit(1);
+  if (!parent) return null;
+
+  const siblings = await database
+    .select({ mbid: mbWork.mbid, title: mbWork.title, orderingKey: mbWork.orderingKey })
+    .from(mbWork)
+    .where(eq(mbWork.parentMbid, self.parentMbid));
+  return {
+    parentTitle: parent.title,
+    siblings: siblings.sort(
+      (left, right) =>
+        (left.orderingKey ?? Number.MAX_SAFE_INTEGER) -
+          (right.orderingKey ?? Number.MAX_SAFE_INTEGER) || left.mbid.localeCompare(right.mbid),
+    ),
+  };
+}

@@ -1,12 +1,15 @@
 'use server';
 
 import {
+  findHeldWorkMbids,
   findProviderTracksForComposer,
   findProviderTracksForWork,
   loadMusicBrainzLibraryFacts,
+  readWorkCollection,
 } from './library-musicbrainz';
+import type { WorkParent, WorkSibling } from './work-hierarchy';
 import type { OtherRecording, WorkDetail, WorkSummary } from './library';
-import { formatDuration, type LibraryWork } from '@/lib/prelude';
+import { formatDuration, stripCollectionPrefix, type LibraryWork } from '@/lib/prelude';
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
 import {
   musicBrainzLibraryView,
@@ -139,4 +142,30 @@ async function worksByComposer(
       missing: movement.missing,
     })),
   }));
+}
+
+/**
+ * The collection a work belongs to, as MusicBrainz files it, and which of
+ * its parts we can play.
+ *
+ * Parts MusicBrainz lists that we hold nothing for come back with a null
+ * identity. A collection showing twenty-three of its forty-eight parts
+ * should say so rather than looking like a complete list of twenty-three.
+ */
+export async function getMusicBrainzWorkParent(workMbid: string): Promise<WorkParent | null> {
+  const collection = await readWorkCollection(workMbid);
+  if (!collection) return null;
+
+  const held = await findHeldWorkMbids(collection.siblings.map((sibling) => sibling.mbid));
+  const siblings: WorkSibling[] = collection.siblings.map((sibling) => ({
+    workId: held.has(sibling.mbid) ? sibling.mbid : null,
+    title: stripCollectionPrefix(sibling.title, collection.parentTitle),
+    ordering: sibling.orderingKey,
+    isCurrent: sibling.mbid === workMbid,
+  }));
+  return {
+    title: collection.parentTitle,
+    siblings,
+    held: siblings.filter((sibling) => sibling.workId !== null).length,
+  };
 }

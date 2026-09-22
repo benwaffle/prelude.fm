@@ -329,3 +329,111 @@ test('asking for a work MusicBrainz cannot play returns nothing, not an empty ca
   const { getMusicBrainzWorkDetail } = await import('@/app/actions/library-mb');
   assert.equal(await getMusicBrainzWorkDetail('not-a-work', null, []), null);
 });
+
+test('a collection names every part MusicBrainz lists, held or not', async () => {
+  const { getMusicBrainzWorkParent } = await import('@/app/actions/library-mb');
+  const collection = await getMusicBrainzWorkParent('part-i');
+
+  assert.ok(collection);
+  assert.equal(collection.title, 'Piano Sonata no. 16 in C major, K. 545');
+  assert.deepEqual(
+    collection.siblings.map((sibling) => [sibling.title, sibling.workId !== null]),
+    [
+      ['I. Allegro', true],
+      ['II. Andante', true],
+      // MusicBrainz lists a third movement we hold nothing for. It stays on
+      // the list, unlinked, so the collection reads as two of three.
+      ['III. Rondo', false],
+    ],
+  );
+  assert.equal(collection.held, 2);
+  assert.equal(collection.siblings.filter((sibling) => sibling.isCurrent).length, 1);
+});
+
+test('a work with no collection above it has none, rather than an empty one', async () => {
+  const { getMusicBrainzWorkParent } = await import('@/app/actions/library-mb');
+  assert.equal(await getMusicBrainzWorkParent('sonata'), null);
+});
+
+test('a collection counts a part we hold only through its own parts', async () => {
+  // A prelude and fugue is one part of the Well-Tempered Clavier and two
+  // recordings beneath it. Asking only about the part's own recordings would
+  // report the collection as emptier than it is.
+  await db.insert(schema.mbWork).values([
+    {
+      mbid: 'wtc',
+      title: 'The Well-Tempered Clavier, Book 1',
+      type: 'Suite',
+      parentMbid: null,
+      orderingKey: null,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+    {
+      mbid: 'wtc-1',
+      title: 'The Well-Tempered Clavier, Book 1: Prelude and Fugue no. 1',
+      type: null,
+      parentMbid: 'wtc',
+      orderingKey: 1,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+    {
+      mbid: 'wtc-1-prelude',
+      title: 'Prelude',
+      type: null,
+      parentMbid: 'wtc-1',
+      orderingKey: 1,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+    {
+      mbid: 'wtc-2',
+      title: 'The Well-Tempered Clavier, Book 1: Prelude and Fugue no. 2',
+      type: null,
+      parentMbid: 'wtc',
+      orderingKey: 2,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+  ]);
+  await db.insert(schema.mbRecording).values({
+    mbid: 'rec-wtc-prelude',
+    title: 'Prelude',
+    length: 100_000,
+    detail: 'full',
+  });
+  await db.insert(schema.mbRecordingWork).values({
+    recordingMbid: 'rec-wtc-prelude',
+    workMbid: 'wtc-1-prelude',
+  });
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-wtc',
+    title: 'WTC I: Prelude no. 1',
+    trackNumber: 1,
+    discNumber: 1,
+    durationMs: 100_000,
+    popularity: 1,
+    spotifyAlbumId: 'album-1',
+    isrc: 'GBAAA0000031',
+  });
+  await db.insert(schema.trackRecording).values({
+    spotifyTrackId: 'track-wtc',
+    recordingMbid: 'rec-wtc-prelude',
+    isrc: 'GBAAA0000031',
+    matchedBy: 'isrc',
+  });
+
+  const { getMusicBrainzWorkParent } = await import('@/app/actions/library-mb');
+  const collection = await getMusicBrainzWorkParent('wtc-1');
+
+  assert.ok(collection);
+  assert.deepEqual(
+    collection.siblings.map((sibling) => [sibling.ordering, sibling.workId !== null]),
+    [
+      [1, true],
+      [2, false],
+    ],
+  );
+  assert.equal(collection.held, 1);
+});

@@ -4,6 +4,7 @@ import { asc, eq } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { db } from '@/lib/db';
 import { mbWork, work } from '@/lib/db/schema';
+import { stripCollectionPrefix } from '@/lib/prelude';
 
 export interface WorkSibling {
   /** Our work, when we hold one for this part of the collection. */
@@ -82,14 +83,4 @@ export async function getWorkParent(identity: string): Promise<WorkParent | null
     siblings,
     held: siblings.filter((sibling) => sibling.workId !== null).length,
   };
-}
-
-/**
- * MusicBrainz titles a part with its collection in front. Repeating that on
- * every row of a list headed by the collection is noise.
- */
-function stripCollectionPrefix(title: string, parentTitle: string): string {
-  const prefix = `${parentTitle}:`;
-  if (!title.startsWith(prefix)) return title;
-  return title.slice(prefix.length).trim() || title;
 }

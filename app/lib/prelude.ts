@@ -267,3 +267,13 @@ export interface LibraryWork {
   /** When the user saved the most recent of these movements, ISO 8601. */
   addedAt: string | null;
 }
+
+/**
+ * MusicBrainz titles a part with its collection in front. Repeating that on
+ * every row of a list headed by the collection is noise.
+ */
+export function stripCollectionPrefix(title: string, parentTitle: string): string {
+  const prefix = `${parentTitle}:`;
+  if (!title.startsWith(prefix)) return title;
+  return title.slice(prefix.length).trim() || title;
+}
