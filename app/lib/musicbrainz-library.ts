@@ -1,143 +1,27 @@
 import { workLevelOf } from './musicbrainz-work-level';
+import type {
+  AcceptedAnchorFact,
+  MbArtistFact,
+  MbRecordingCreditFact,
+  MbRecordingFact,
+  MbRecordingWorkFact,
+  MbReleaseFact,
+  MbReleaseTrackFact,
+  MbWorkCatalogueFact,
+  MbWorkFact,
+  MusicBrainzLibraryFacts,
+  ProviderAlbumFact,
+  ProviderTrackFact,
+  TrackAnchorFact,
+  TrackClassification,
+} from './musicbrainz-library-facts';
 
 /**
- * Pure input and output contract for the MusicBrainz-authoritative library.
- *
- * Provider fields describe playback occurrences. Every classical identity and
- * descriptive field in the projection comes from an `mb*` fact below. There
- * is deliberately no place for a legacy work, parser title, or parser form.
+ * The MusicBrainz-authoritative reader projection: pure, IO-free, and fed
+ * only by `MusicBrainzLibraryFacts`, so the authority boundary is
+ * mechanically testable. What it cannot show, it reports as a typed gap
+ * rather than filling in.
  */
-
-export type TrackClassificationState = 'unreviewed' | 'classical' | 'not_classical' | 'uncertain';
-
-export type TrackClassification = {
-  spotifyTrackId: string;
-  state: TrackClassificationState;
-  provenance: 'musicbrainz' | 'manual' | 'llm_proposal';
-  reason: string | null;
-};
-
-export type ReleaseResolution =
-  | { state: 'not_checked' }
-  | { state: 'missing' }
-  | { state: 'ambiguous'; candidateMbids: string[] }
-  | { state: 'misaligned'; releaseMbid: string; reason: string }
-  | { state: 'matched'; releaseMbid: string };
-
-export type ProviderAlbumFact = {
-  spotifyAlbumId: string;
-  title: string;
-  imageUrl: string | null;
-  popularity: number | null;
-  releaseResolution: ReleaseResolution;
-};
-
-export type ProviderTrackFact = {
-  spotifyTrackId: string;
-  title: string;
-  spotifyAlbumId: string;
-  discNumber: number;
-  trackNumber: number;
-  durationMs: number;
-  popularity: number | null;
-};
-
-export type AcceptedAnchorFact = {
-  spotifyTrackId: string;
-  state: 'accepted';
-  recordingMbid: string;
-  matchedBy: 'isrc' | 'release_position' | 'reordered_title_duration';
-  isrc: string | null;
-};
-
-export type ConflictingAnchorFact = {
-  spotifyTrackId: string;
-  state: 'conflicting';
-  candidateRecordingMbids: string[];
-  reason: string;
-};
-
-export type TrackAnchorFact = AcceptedAnchorFact | ConflictingAnchorFact;
-
-export type MbRecordingFact = {
-  mbid: string;
-  title: string | null;
-  lengthMs: number | null;
-  detail: 'stub' | 'full';
-};
-
-export type MbRecordingWorkFact = {
-  recordingMbid: string;
-  workMbid: string;
-};
-
-export type MbWorkFact = {
-  mbid: string;
-  title: string | null;
-  type: string | null;
-  parentMbid: string | null;
-  orderingKey: number | null;
-  composerMbid: string | null;
-  detail: 'stub' | 'full';
-};
-
-export type MbWorkCatalogueFact = {
-  workMbid: string;
-  seriesMbid: string;
-  system: string;
-  number: string;
-  normalizedSystem: string;
-  normalizedNumber: string;
-};
-
-export type MbArtistFact = {
-  mbid: string;
-  name: string | null;
-  creditedName: string | null;
-  sortName: string | null;
-  type: string | null;
-  beginYear: number | null;
-  endYear: number | null;
-};
-
-export type MbRecordingCreditFact = {
-  recordingMbid: string;
-  artistMbid: string;
-  role: string;
-  instrument: string | null;
-};
-
-export type MbReleaseFact = {
-  mbid: string;
-  title: string | null;
-  date: string | null;
-  country: string | null;
-};
-
-export type MbReleaseTrackFact = {
-  releaseMbid: string;
-  medium: number;
-  position: number;
-  recordingMbid: string;
-  title: string | null;
-  lengthMs: number | null;
-};
-
-export type MusicBrainzLibraryFacts = {
-  requestedTrackIds: string[];
-  classifications: TrackClassification[];
-  providerAlbums: ProviderAlbumFact[];
-  providerTracks: ProviderTrackFact[];
-  anchors: TrackAnchorFact[];
-  mbRecordings: MbRecordingFact[];
-  mbRecordingWorks: MbRecordingWorkFact[];
-  mbWorks: MbWorkFact[];
-  mbWorkCatalogues: MbWorkCatalogueFact[];
-  mbArtists: MbArtistFact[];
-  mbRecordingCredits: MbRecordingCreditFact[];
-  mbReleases: MbReleaseFact[];
-  mbReleaseTracks: MbReleaseTrackFact[];
-};
 
 export type MusicBrainzGapCode =
   | 'provider-track-not-fetched'
@@ -340,6 +224,70 @@ function compareNullableNumberDescending(left: number | null, right: number | nu
 }
 
 /**
+ * Every lookup the projection needs, built once per call. The projection is
+ * run over a whole liked library, so rebuilding these per recording or per
+ * work is the difference between linear and quadratic.
+ */
+type LibraryIndex = {
+  classificationByTrack: Map<string, TrackClassification>;
+  albumById: Map<string, ProviderAlbumFact>;
+  trackById: Map<string, ProviderTrackFact>;
+  anchorByTrack: Map<string, TrackAnchorFact>;
+  anchorsByRecording: Map<string, AcceptedAnchorFact[]>;
+  acceptedAnchorCountByAlbum: Map<string, number>;
+  recordingById: Map<string, MbRecordingFact>;
+  worksByRecording: Map<string, MbRecordingWorkFact[]>;
+  workById: Map<string, MbWorkFact>;
+  parentWorkMbids: Set<string>;
+  catalogueByWork: Map<string, MbWorkCatalogueFact[]>;
+  artistById: Map<string, MbArtistFact>;
+  creditsByRecording: Map<string, MbRecordingCreditFact[]>;
+  releaseById: Map<string, MbReleaseFact>;
+  releaseTrackByPosition: Map<string, MbReleaseTrackFact>;
+};
+
+function indexFacts(facts: MusicBrainzLibraryFacts): LibraryIndex {
+  const trackById = oneByKey(facts.providerTracks, (track) => track.spotifyTrackId);
+  const acceptedAnchors = facts.anchors.filter(
+    (anchor): anchor is AcceptedAnchorFact => anchor.state === 'accepted',
+  );
+  const acceptedAnchorCountByAlbum = new Map<string, number>();
+  for (const anchor of acceptedAnchors) {
+    const track = trackById.get(anchor.spotifyTrackId);
+    if (!track) continue;
+    acceptedAnchorCountByAlbum.set(
+      track.spotifyAlbumId,
+      (acceptedAnchorCountByAlbum.get(track.spotifyAlbumId) ?? 0) + 1,
+    );
+  }
+  return {
+    classificationByTrack: oneByKey(
+      facts.classifications,
+      (classification) => classification.spotifyTrackId,
+    ),
+    albumById: oneByKey(facts.providerAlbums, (album) => album.spotifyAlbumId),
+    trackById,
+    anchorByTrack: oneByKey(facts.anchors, (anchor) => anchor.spotifyTrackId),
+    anchorsByRecording: manyByKey(acceptedAnchors, (anchor) => anchor.recordingMbid),
+    acceptedAnchorCountByAlbum,
+    recordingById: oneByKey(facts.mbRecordings, (recording) => recording.mbid),
+    worksByRecording: manyByKey(facts.mbRecordingWorks, (relation) => relation.recordingMbid),
+    workById: oneByKey(facts.mbWorks, (work) => work.mbid),
+    parentWorkMbids: new Set(
+      facts.mbWorks.map((work) => work.parentMbid).filter((mbid): mbid is string => mbid !== null),
+    ),
+    catalogueByWork: manyByKey(facts.mbWorkCatalogues, (catalogue) => catalogue.workMbid),
+    artistById: oneByKey(facts.mbArtists, (artist) => artist.mbid),
+    creditsByRecording: manyByKey(facts.mbRecordingCredits, (credit) => credit.recordingMbid),
+    releaseById: oneByKey(facts.mbReleases, (release) => release.mbid),
+    releaseTrackByPosition: oneByKey(
+      facts.mbReleaseTracks,
+      (track) => `${track.releaseMbid}:${track.medium}:${track.position}`,
+    ),
+  };
+}
+
+/**
  * Build the MusicBrainz-only reader projection. This function performs no IO
  * and accepts no legacy/parser facts, which makes the authority boundary
  * mechanically testable.
@@ -350,41 +298,8 @@ export function projectMusicBrainzLibrary(
   const requestedTrackIds = Array.from(new Set(facts.requestedTrackIds));
   const requestedOrder = new Map(requestedTrackIds.map((id, index) => [id, index]));
 
-  const classificationByTrack = oneByKey(
-    facts.classifications,
-    (classification) => classification.spotifyTrackId,
-  );
-  const albumById = oneByKey(facts.providerAlbums, (album) => album.spotifyAlbumId);
-  const trackById = oneByKey(facts.providerTracks, (track) => track.spotifyTrackId);
-  const anchorByTrack = oneByKey(facts.anchors, (anchor) => anchor.spotifyTrackId);
-  const recordingById = oneByKey(facts.mbRecordings, (recording) => recording.mbid);
-  const worksByRecording = manyByKey(facts.mbRecordingWorks, (relation) => relation.recordingMbid);
-  const workById = oneByKey(facts.mbWorks, (work) => work.mbid);
-  const catalogueByWork = manyByKey(facts.mbWorkCatalogues, (catalogue) => catalogue.workMbid);
-  const artistById = oneByKey(facts.mbArtists, (artist) => artist.mbid);
-  const creditsByRecording = manyByKey(facts.mbRecordingCredits, (credit) => credit.recordingMbid);
-  const parentWorkMbids = new Set(
-    facts.mbWorks.map((work) => work.parentMbid).filter((mbid): mbid is string => mbid !== null),
-  );
-  const releaseById = oneByKey(facts.mbReleases, (release) => release.mbid);
-  const releaseTrackByPosition = oneByKey(
-    facts.mbReleaseTracks,
-    (track) => `${track.releaseMbid}:${track.medium}:${track.position}`,
-  );
-
-  const acceptedAnchors = facts.anchors.filter(
-    (anchor): anchor is AcceptedAnchorFact => anchor.state === 'accepted',
-  );
-  const anchorsByRecording = manyByKey(acceptedAnchors, (anchor) => anchor.recordingMbid);
-  const acceptedAnchorCountByAlbum = new Map<string, number>();
-  for (const anchor of acceptedAnchors) {
-    const track = trackById.get(anchor.spotifyTrackId);
-    if (!track) continue;
-    acceptedAnchorCountByAlbum.set(
-      track.spotifyAlbumId,
-      (acceptedAnchorCountByAlbum.get(track.spotifyAlbumId) ?? 0) + 1,
-    );
-  }
+  const index = indexFacts(facts);
+  const { trackById, classificationByTrack, anchorByTrack } = index;
 
   const recordingIds = new Set<string>();
   // Requested tracks this projection actually accepted into a recording. A
@@ -449,7 +364,7 @@ export function projectMusicBrainzLibrary(
 
     const anchor = anchorByTrack.get(spotifyTrackId);
     if (!anchor) {
-      const gaps = releaseGaps(providerTrack, albumById, releaseById, releaseTrackByPosition, null);
+      const gaps = releaseGaps(providerTrack, index, null);
       pushGap(gaps, gap('recording-unanchored', 'track', spotifyTrackId));
       addUnresolved(spotifyTrackId, 'unmatched', classification, gaps);
       continue;
@@ -472,117 +387,20 @@ export function projectMusicBrainzLibrary(
     heldByRecording.set(anchor.recordingMbid, held);
   }
 
-  const recordings: ProjectedRecording[] = [];
-  for (const recordingMbid of recordingIds) {
-    const recording = recordingById.get(recordingMbid);
-    const recordingGaps: MusicBrainzGap[] = [];
-    if (!recording) {
-      pushGap(recordingGaps, gap('recording-cache-missing', 'recording', recordingMbid));
-    } else {
-      if (recording.detail === 'stub') {
-        pushGap(recordingGaps, gap('recording-stub', 'recording', recordingMbid));
-      }
-      if (!nonBlank(recording.title)) {
-        pushGap(recordingGaps, gap('recording-title-missing', 'recording', recordingMbid));
-      }
-    }
-
-    const directWorkRelations = worksByRecording.get(recordingMbid) ?? [];
-    if (directWorkRelations.length === 0) {
-      pushGap(recordingGaps, gap('recording-work-missing', 'recording', recordingMbid));
-    }
-    const works = directWorkRelations
-      .map((relation) =>
-        projectRecordingWork(
-          relation.workMbid,
-          workById,
-          parentWorkMbids,
-          catalogueByWork,
-          artistById,
-        ),
-      )
-      .sort((left, right) => left.relatedWorkMbid.localeCompare(right.relatedWorkMbid));
-
-    const rawCredits = creditsByRecording.get(recordingMbid) ?? [];
-    if (rawCredits.length === 0) {
-      pushGap(recordingGaps, gap('recording-credits-missing', 'recording', recordingMbid));
-    }
-    const credits = rawCredits
-      .map((credit): ProjectedCredit => {
-        const artist = artistById.get(credit.artistMbid);
-        if (!artist) {
-          pushGap(
-            recordingGaps,
-            gap('recording-credit-artist-missing', 'artist', credit.artistMbid, recordingMbid),
-          );
-        }
-        return {
-          artistMbid: credit.artistMbid,
-          name: artist ? nonBlank(artist.name) : null,
-          creditedName: artist ? nonBlank(artist.creditedName) : null,
-          role: credit.role,
-          instrument: nonBlank(credit.instrument),
-        };
-      })
-      .sort(
-        (left, right) =>
-          left.role.localeCompare(right.role) || left.artistMbid.localeCompare(right.artistMbid),
-      );
-
-    const occurrenceAnchors = anchorsByRecording.get(recordingMbid) ?? [];
-    const held = heldByRecording.get(recordingMbid) ?? new Set<string>();
-    const occurrences = occurrenceAnchors
-      .map((anchor) => {
-        const track = trackById.get(anchor.spotifyTrackId);
-        if (!track) return null;
-        return projectOccurrence(
-          track,
-          held,
-          albumById,
-          releaseById,
-          releaseTrackByPosition,
-          acceptedAnchorCountByAlbum,
-          recordingMbid,
-        );
-      })
-      .filter((occurrence): occurrence is ProjectedProviderOccurrence => occurrence !== null)
-      .sort(compareOccurrences);
-
-    const preferredOccurrence = occurrences[0] ?? null;
-    const heldTrackIds = occurrences
-      .filter((occurrence) => occurrence.held)
-      .map((occurrence) => occurrence.spotifyTrackId)
-      .sort();
-    const allGaps = [
-      ...recordingGaps,
-      ...works.flatMap((work) => work.gaps),
-      ...heldTrackIds.flatMap((trackId) => {
-        const occurrence = occurrences.find((candidate) => candidate.spotifyTrackId === trackId);
-        return occurrence?.gaps ?? [];
-      }),
-    ];
-
-    for (const spotifyTrackId of heldTrackIds) {
+  const projected = Array.from(recordingIds).map((recordingMbid) =>
+    projectRecording(recordingMbid, heldByRecording.get(recordingMbid) ?? new Set(), index),
+  );
+  const recordings = projected.map((entry) => entry.recording);
+  for (const { recording, allGaps } of projected) {
+    const gapCodes = Array.from(new Set(allGaps.map((item) => item.code)));
+    for (const spotifyTrackId of recording.heldTrackIds) {
       accountingByTrack.set(spotifyTrackId, {
         spotifyTrackId,
         status: allGaps.length === 0 ? 'ready' : 'incomplete',
-        recordingMbid,
-        gapCodes: Array.from(new Set(allGaps.map((item) => item.code))),
+        recordingMbid: recording.recordingMbid,
+        gapCodes,
       });
     }
-
-    recordings.push({
-      recordingMbid,
-      title: recording ? nonBlank(recording.title) : null,
-      lengthMs: recording?.lengthMs ?? null,
-      detail: recording?.detail ?? null,
-      heldTrackIds,
-      works,
-      credits,
-      occurrences,
-      preferredOccurrence,
-      gaps: recordingGaps,
-    });
   }
 
   recordings.sort((left, right) => left.recordingMbid.localeCompare(right.recordingMbid));
@@ -608,13 +426,109 @@ export function projectMusicBrainzLibrary(
   return { requestedTrackIds, recordings, unresolvedTracks, accounting };
 }
 
+/**
+ * One MusicBrainz recording with its provider occurrences. `heldTrackIds` are
+ * the requested tracks this projection accepted here; other occurrences are
+ * real alternatives we keep but do not claim the reader holds.
+ */
+function projectRecording(
+  recordingMbid: string,
+  heldTrackIds: Set<string>,
+  index: LibraryIndex,
+): { recording: ProjectedRecording; allGaps: MusicBrainzGap[] } {
+  const recording = index.recordingById.get(recordingMbid);
+  const recordingGaps: MusicBrainzGap[] = [];
+  if (!recording) {
+    pushGap(recordingGaps, gap('recording-cache-missing', 'recording', recordingMbid));
+  } else {
+    if (recording.detail === 'stub') {
+      pushGap(recordingGaps, gap('recording-stub', 'recording', recordingMbid));
+    }
+    if (!nonBlank(recording.title)) {
+      pushGap(recordingGaps, gap('recording-title-missing', 'recording', recordingMbid));
+    }
+  }
+
+  const directWorkRelations = index.worksByRecording.get(recordingMbid) ?? [];
+  if (directWorkRelations.length === 0) {
+    pushGap(recordingGaps, gap('recording-work-missing', 'recording', recordingMbid));
+  }
+  const works = directWorkRelations
+    .map((relation) => projectRecordingWork(relation.workMbid, index))
+    .sort((left, right) => left.relatedWorkMbid.localeCompare(right.relatedWorkMbid));
+
+  const rawCredits = index.creditsByRecording.get(recordingMbid) ?? [];
+  if (rawCredits.length === 0) {
+    pushGap(recordingGaps, gap('recording-credits-missing', 'recording', recordingMbid));
+  }
+  const credits = rawCredits
+    .map((credit): ProjectedCredit => {
+      const artist = index.artistById.get(credit.artistMbid);
+      if (!artist) {
+        pushGap(
+          recordingGaps,
+          gap('recording-credit-artist-missing', 'artist', credit.artistMbid, recordingMbid),
+        );
+      }
+      return {
+        artistMbid: credit.artistMbid,
+        name: artist ? nonBlank(artist.name) : null,
+        creditedName: artist ? nonBlank(artist.creditedName) : null,
+        role: credit.role,
+        instrument: nonBlank(credit.instrument),
+      };
+    })
+    .sort(
+      (left, right) =>
+        left.role.localeCompare(right.role) || left.artistMbid.localeCompare(right.artistMbid),
+    );
+
+  const occurrenceAnchors = index.anchorsByRecording.get(recordingMbid) ?? [];
+  const occurrences = occurrenceAnchors
+    .map((anchor) => {
+      const track = index.trackById.get(anchor.spotifyTrackId);
+      if (!track) return null;
+      return projectOccurrence(track, heldTrackIds, index, recordingMbid);
+    })
+    .filter((occurrence): occurrence is ProjectedProviderOccurrence => occurrence !== null)
+    .sort(compareOccurrences);
+
+  const preferredOccurrence = occurrences[0] ?? null;
+  const heldInOrder = occurrences
+    .filter((occurrence) => occurrence.held)
+    .map((occurrence) => occurrence.spotifyTrackId)
+    .sort();
+  const allGaps = [
+    ...recordingGaps,
+    ...works.flatMap((work) => work.gaps),
+    ...heldInOrder.flatMap((trackId) => {
+      const occurrence = occurrences.find((candidate) => candidate.spotifyTrackId === trackId);
+      return occurrence?.gaps ?? [];
+    }),
+  ];
+
+  return {
+    allGaps,
+    recording: {
+      recordingMbid,
+      title: recording ? nonBlank(recording.title) : null,
+      lengthMs: recording?.lengthMs ?? null,
+      detail: recording?.detail ?? null,
+      heldTrackIds: heldInOrder,
+      works,
+      credits,
+      occurrences,
+      preferredOccurrence,
+      gaps: recordingGaps,
+    },
+  };
+}
+
 function projectRecordingWork(
   relatedWorkMbid: string,
-  workById: Map<string, MbWorkFact>,
-  parentWorkMbids: Set<string>,
-  catalogueByWork: Map<string, MbWorkCatalogueFact[]>,
-  artistById: Map<string, MbArtistFact>,
+  index: LibraryIndex,
 ): ProjectedRecordingWork {
+  const { workById, parentWorkMbids, catalogueByWork, artistById } = index;
   const gaps: MusicBrainzGap[] = [];
   const relatedWork = workById.get(relatedWorkMbid);
   if (!relatedWork) {
@@ -745,11 +659,10 @@ function projectRecordingWork(
 
 function releaseGaps(
   track: ProviderTrackFact,
-  albumById: Map<string, ProviderAlbumFact>,
-  releaseById: Map<string, MbReleaseFact>,
-  releaseTrackByPosition: Map<string, MbReleaseTrackFact>,
+  index: LibraryIndex,
   expectedRecordingMbid: string | null,
 ): MusicBrainzGap[] {
+  const { albumById, releaseById, releaseTrackByPosition } = index;
   const gaps: MusicBrainzGap[] = [];
   const album = albumById.get(track.spotifyAlbumId);
   if (!album) {
@@ -818,14 +731,12 @@ function releaseGaps(
 function projectOccurrence(
   track: ProviderTrackFact,
   heldTrackIds: Set<string>,
-  albumById: Map<string, ProviderAlbumFact>,
-  releaseById: Map<string, MbReleaseFact>,
-  releaseTrackByPosition: Map<string, MbReleaseTrackFact>,
-  acceptedAnchorCountByAlbum: Map<string, number>,
+  index: LibraryIndex,
   recordingMbid: string,
 ): ProjectedProviderOccurrence {
+  const { albumById, releaseById, acceptedAnchorCountByAlbum } = index;
   const album = albumById.get(track.spotifyAlbumId);
-  const gaps = releaseGaps(track, albumById, releaseById, releaseTrackByPosition, recordingMbid);
+  const gaps = releaseGaps(track, index, recordingMbid);
   const releaseMbid =
     album?.releaseResolution.state === 'matched'
       ? album.releaseResolution.releaseMbid
@@ -834,7 +745,7 @@ function projectOccurrence(
         : null;
   const release = releaseMbid ? releaseById.get(releaseMbid) : undefined;
   const releaseTrack = releaseMbid
-    ? releaseTrackByPosition.get(`${releaseMbid}:${track.discNumber}:${track.trackNumber}`)
+    ? index.releaseTrackByPosition.get(`${releaseMbid}:${track.discNumber}:${track.trackNumber}`)
     : undefined;
 
   return {

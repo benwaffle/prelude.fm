@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  projectMusicBrainzLibrary,
-  type MusicBrainzLibraryFacts,
-  type MusicBrainzGapCode,
-  type TrackClassificationState,
-} from '../app/lib/musicbrainz-library';
+import { projectMusicBrainzLibrary, type MusicBrainzGapCode } from '../app/lib/musicbrainz-library';
+import type {
+  MusicBrainzLibraryFacts,
+  TrackClassificationState,
+} from '../app/lib/musicbrainz-library-facts';
 
 function baseFacts(): MusicBrainzLibraryFacts {
   return {
