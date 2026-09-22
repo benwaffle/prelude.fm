@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { composer, matchQueue, trackWorkPartV2 } from '@/lib/db/schema';
+import { composer, matchQueue, trackRecording, trackWorkPartV2 } from '@/lib/db/schema';
 import {
   getSpotifyAlbumMetadata,
   getSpotifyAlbumTrackIds,
@@ -13,6 +13,7 @@ import { saveTrackMetadataInternal, type TrackMetadataSaveInput } from '@/lib/tr
 import { saveParsedAlbumV2 } from '@/lib/work-parts-v2';
 import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Track } from '@spotify/web-api-ts-sdk';
+import { runMusicBrainzAlbumPass, type TrackPassOutcome } from '@/lib/musicbrainz-worker';
 
 export type MatchQueueStatus = 'pending' | 'processing' | 'matched' | 'failed' | 'not_classical';
 
@@ -438,7 +439,9 @@ export async function runMatchQueueWorker(
     ]);
 
     try {
-      for (const album of albums) {
+      // The MusicBrainz-first pass has already read the release and the work
+      // trees above it, so asking again would only spend requests.
+      for (const album of musicBrainzFirstPipeline() ? [] : albums) {
         const report = await ingestAlbum(musicBrainzApi('interactive'), album.albumId, {
           fetchWorks: false,
         });
@@ -565,6 +568,96 @@ async function getProcessingTrackIds(albumId: string, claimOwnerId?: string) {
     );
 
   return rows.map((row) => row.spotifyId);
+}
+
+/**
+ * Whether new intake goes through MusicBrainz rather than a language model.
+ *
+ * Read per call rather than at import, so the switch takes effect on the
+ * next invocation of a long-lived worker instead of at the next deploy.
+ */
+export function musicBrainzFirstPipeline(): boolean {
+  return process.env.PIPELINE === 'musicbrainz';
+}
+
+/** Tracks already anchored to a MusicBrainz recording. */
+async function getAnchoredTrackIds(trackIds: string[]) {
+  if (trackIds.length === 0) return new Set<string>();
+  const rows: string[] = [];
+  for (let start = 0; start < trackIds.length; start += 400) {
+    const batch = trackIds.slice(start, start + 400);
+    const found = await db
+      .select({ spotifyTrackId: trackRecording.spotifyTrackId })
+      .from(trackRecording)
+      .where(inArray(trackRecording.spotifyTrackId, batch));
+    rows.push(...found.map((row) => row.spotifyTrackId));
+  }
+  return new Set(rows);
+}
+
+/**
+ * An album pass with MusicBrainz as the authority.
+ *
+ * Nothing is asserted that MusicBrainz did not say. A track it cannot place
+ * is recorded as failed with the reason in the message — "no MusicBrainz
+ * release carries this album's barcode" — which is a state the contribution
+ * console can act on, unlike a composer somebody made up.
+ *
+ * `failed` is the wrong word for "MusicBrainz has not catalogued this yet",
+ * and the queue has no better one until the pipeline-completion columns
+ * land. The reason string carries the truth in the meantime, and this is
+ * the single place that maps an outcome to a status.
+ */
+async function processAlbumThroughMusicBrainz(
+  albumId: string,
+  trackIds: string[],
+  result: AlbumProcessResult,
+  claimOwnerId?: string,
+): Promise<AlbumProcessResult> {
+  const { musicBrainzApi } = await import('@/lib/musicbrainz');
+  const anchored = await getAnchoredTrackIds(trackIds);
+  const report = await runMusicBrainzAlbumPass(musicBrainzApi('interactive'), albumId, trackIds, {
+    alreadyAnchored: trackIds.length > 0 && trackIds.every((trackId) => anchored.has(trackId)),
+  });
+
+  const byState = new Map<TrackPassOutcome['state'], TrackPassOutcome[]>();
+  for (const outcome of report.tracks) {
+    byState.set(outcome.state, [...(byState.get(outcome.state) ?? []), outcome]);
+  }
+
+  const ready = byState.get('ready') ?? [];
+  if (ready.length > 0) {
+    await setQueueStatus(
+      ready.map((outcome) => outcome.spotifyTrackId),
+      'matched',
+      { claimOwnerId },
+    );
+    result.matched += ready.length;
+  }
+
+  const notClassical = byState.get('not_classical') ?? [];
+  if (notClassical.length > 0) {
+    await setQueueStatus(
+      notClassical.map((outcome) => outcome.spotifyTrackId),
+      'not_classical',
+      { claimOwnerId },
+    );
+    result.notClassical += notClassical.length;
+  }
+
+  for (const outcome of [
+    ...(byState.get('unanchored') ?? []),
+    ...(byState.get('unclassified') ?? []),
+  ]) {
+    await setQueueStatus([outcome.spotifyTrackId], 'failed', {
+      claimOwnerId,
+      errorMessage: outcome.reason,
+    });
+    result.failed++;
+    result.errors.push({ trackId: outcome.spotifyTrackId, message: outcome.reason });
+  }
+
+  return result;
 }
 
 async function getLinkedTrackIds(trackIds: string[]) {
@@ -746,6 +839,14 @@ export async function processQueuedAlbum(
     }
 
     const processableTrackIds = trackIds.filter((trackId) => albumTrackById.has(trackId));
+    if (musicBrainzFirstPipeline()) {
+      return await processAlbumThroughMusicBrainz(
+        albumId,
+        processableTrackIds,
+        result,
+        claimOwnerId,
+      );
+    }
     const linkedTrackIds = await getLinkedTrackIds(processableTrackIds);
     const alreadyLinkedTrackIds = processableTrackIds.filter((trackId) =>
       linkedTrackIds.has(trackId),
