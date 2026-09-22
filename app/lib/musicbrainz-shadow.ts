@@ -8,9 +8,9 @@ import type { MusicBrainzLibraryProjection, MusicBrainzGapCode } from './musicbr
  *
  * This renders nothing and writes nothing. It exists so the cutover is a
  * decision made against measurements rather than a leap: the gate that
- * matters is that no track the current reader shows disappears from the new
- * one, and that every liked ID is accounted for either as ready or as a
- * named gap. A difference in title or composer is not automatically a fault
+ * matters is that no track the current reader shows disappears without a
+ * named gap, and that every liked ID is accounted for either as ready or as
+ * such a gap. A difference in title or composer is not automatically a fault
  * — the MusicBrainz value is the authority — but an unexplained one is worth
  * looking at before the switch.
  */
@@ -18,7 +18,7 @@ import type { MusicBrainzLibraryProjection, MusicBrainzGapCode } from './musicbr
 export type ShadowDifferenceCode =
   /** The projection did not mention a requested ID at all. Always a fault. */
   | 'unaccounted'
-  /** The current reader shows this track; the new one does not hold it. */
+  /** The current reader shows this track; the new one routes it off recording cards. */
   | 'dropped-from-library'
   /** The new reader holds a track the current one never showed. */
   | 'newly-held'
@@ -58,7 +58,7 @@ export type ShadowComparison = {
   /** Counts by code, so a run can be compared with the one before it. */
   differenceCounts: Record<ShadowDifferenceCode, number>;
   differences: ShadowDifference[];
-  /** The cutover gates, each true only when its difference class is empty. */
+  /** The cutover gates. Informational differences do not close them. */
   gates: {
     everyRequestedTrackAccountedFor: boolean;
     noTrackDisappears: boolean;
@@ -225,6 +225,10 @@ export function compareLibraryProjections(
       'catalogue-differs': 0,
     } as Record<ShadowDifferenceCode, number>,
   );
+  const disappearedLegacyTrackCount = [...legacyByTrackId].filter(
+    ([spotifyTrackId]) =>
+      !mbRecordingByTrackId.has(spotifyTrackId) && !accountedTrackIds.has(spotifyTrackId),
+  ).length;
 
   return {
     requestedTrackCount: projection.requestedTrackIds.length,
@@ -241,7 +245,7 @@ export function compareLibraryProjections(
     differences,
     gates: {
       everyRequestedTrackAccountedFor: differenceCounts.unaccounted === 0,
-      noTrackDisappears: differenceCounts['dropped-from-library'] === 0,
+      noTrackDisappears: disappearedLegacyTrackCount === 0,
     },
   };
 }

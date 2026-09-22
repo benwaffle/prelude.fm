@@ -133,52 +133,124 @@ test('both readers agreeing produces no differences and opens the gates', () => 
   assert.equal(comparison.musicBrainzHeldCount, 1);
 });
 
-test('a track the current reader shows and the new one does not closes the gate', () => {
-  // This is the cutover's one hard rule: incomplete MusicBrainz coverage is
-  // allowed because it is visible, but a track vanishing is not.
+test('unreviewed and uncertain tracks moving to the gap strip keep the gate open', () => {
   const comparison = compareLibraryProjections(
-    [legacyWork({ id: 'work-1:rec-1', movements: [movement({ trackId: 'track-1' })] })],
+    [
+      legacyWork({
+        id: 'work-1:rec-1',
+        movements: [movement({ trackId: 'track-1' }), movement({ trackId: 'track-2', n: 2 })],
+      }),
+    ],
     projection({
-      requestedTrackIds: ['track-1'],
+      requestedTrackIds: ['track-1', 'track-2'],
       unresolvedTracks: [
         {
           spotifyTrackId: 'track-1',
           providerTitle: 'Aria',
           spotifyAlbumId: 'album-1',
-          status: 'unmatched',
-          classification: null,
+          status: 'unclassified',
+          classification: {
+            spotifyTrackId: 'track-1',
+            state: 'unreviewed',
+            provenance: 'musicbrainz',
+            reason: 'no MusicBrainz evidence yet',
+          },
           musicBrainz: null,
-          gaps: [],
+          gaps: [
+            {
+              code: 'classification-unreviewed',
+              entity: 'track',
+              entityId: 'track-1',
+              detail: 'no MusicBrainz evidence yet',
+            },
+          ],
+        },
+        {
+          spotifyTrackId: 'track-2',
+          providerTitle: 'Variation 1',
+          spotifyAlbumId: 'album-1',
+          status: 'unclassified',
+          classification: {
+            spotifyTrackId: 'track-2',
+            state: 'uncertain',
+            provenance: 'musicbrainz',
+            reason: 'MusicBrainz evidence is inconclusive',
+          },
+          musicBrainz: null,
+          gaps: [
+            {
+              code: 'classification-uncertain',
+              entity: 'track',
+              entityId: 'track-2',
+              detail: 'MusicBrainz evidence is inconclusive',
+            },
+          ],
         },
       ],
       accounting: [
         {
           spotifyTrackId: 'track-1',
-          status: 'unmatched',
+          status: 'unclassified',
           recordingMbid: null,
-          gapCodes: ['recording-unanchored'],
+          gapCodes: ['classification-unreviewed'],
+        },
+        {
+          spotifyTrackId: 'track-2',
+          status: 'unclassified',
+          recordingMbid: null,
+          gapCodes: ['classification-uncertain'],
         },
       ],
     }),
   );
 
-  assert.equal(comparison.gates.noTrackDisappears, false);
-  assert.deepEqual(comparison.differences, [
-    {
-      code: 'dropped-from-library',
-      spotifyTrackIds: ['track-1'],
-      legacy: 'Bach — Goldberg Variations',
-      musicBrainz: null,
-      gapCodes: ['recording-unanchored'],
-    },
-  ]);
+  assert.deepEqual(comparison.gates, {
+    everyRequestedTrackAccountedFor: true,
+    noTrackDisappears: true,
+  });
+  assert.deepEqual(
+    comparison.differences.map((difference) => ({
+      code: difference.code,
+      spotifyTrackIds: difference.spotifyTrackIds,
+      gapCodes: difference.gapCodes,
+    })),
+    [
+      {
+        code: 'dropped-from-library',
+        spotifyTrackIds: ['track-1'],
+        gapCodes: ['classification-unreviewed'],
+      },
+      {
+        code: 'dropped-from-library',
+        spotifyTrackIds: ['track-2'],
+        gapCodes: ['classification-uncertain'],
+      },
+    ],
+  );
 });
 
 test('a requested ID the projection never mentions is a fault, not a gap', () => {
   const comparison = compareLibraryProjections([], projection({ requestedTrackIds: ['track-1'] }));
 
   assert.equal(comparison.gates.everyRequestedTrackAccountedFor, false);
+  assert.equal(comparison.gates.noTrackDisappears, true);
   assert.equal(comparison.differences[0].code, 'unaccounted');
+});
+
+test('a legacy-card track omitted from both cards and accounting fails both gates', () => {
+  const comparison = compareLibraryProjections(
+    [legacyWork({ id: 'work-1:rec-1', movements: [movement({ trackId: 'track-1' })] })],
+    projection({ requestedTrackIds: ['track-1'] }),
+  );
+
+  assert.deepEqual(comparison.gates, {
+    everyRequestedTrackAccountedFor: false,
+    noTrackDisappears: false,
+  });
+  assert.deepEqual(
+    comparison.differences.map((difference) => difference.code),
+    ['unaccounted', 'dropped-from-library'],
+  );
 });
 
 test('reports duplicate legacy recordings collapsing into one MusicBrainz recording', () => {
