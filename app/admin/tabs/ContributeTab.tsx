@@ -51,6 +51,11 @@ export function ContributeTab() {
     {},
   );
   const [barcodeForms, setBarcodeForms] = useState<Record<string, { editId: string }>>({});
+  const [isrcForms, setIsrcForms] = useState<Record<string, { editId: string }>>({});
+  const [workRelationshipForms, setWorkRelationshipForms] = useState<
+    Record<string, { editId: string }>
+  >({});
+  const [errorForms, setErrorForms] = useState<Record<string, { editId: string }>>({});
 
   const refresh = useCallback(() => {
     getContributions()
@@ -96,9 +101,10 @@ export function ContributeTab() {
   if (!view) return <Spinner className="h-4 w-4" />;
 
   async function submitted(releaseMbid: string) {
+    const form = isrcForms[releaseMbid] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordIsrcSubmission(releaseMbid));
+      setView(await recordIsrcSubmission(releaseMbid, { editId: form.editId }));
     } finally {
       setBusy(false);
     }
@@ -174,18 +180,20 @@ export function ContributeTab() {
   }
 
   async function submittedContestedIsrc(isrc: string, disposition: 'reported' | 'fixed') {
+    const form = errorForms[isrc] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordContestedIsrcReport(isrc, disposition));
+      setView(await recordContestedIsrcReport(isrc, disposition, { editId: form.editId }));
     } finally {
       setBusy(false);
     }
   }
 
   async function submittedMisaligned(albumId: string, disposition: 'reported' | 'fixed') {
+    const form = errorForms[albumId] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordMisalignedTracklistReport(albumId, disposition));
+      setView(await recordMisalignedTracklistReport(albumId, disposition, { editId: form.editId }));
     } finally {
       setBusy(false);
     }
@@ -202,9 +210,12 @@ export function ContributeTab() {
   }
 
   async function submittedWorkRelationship(recordingMbid: string, workMbid: string) {
+    const form = workRelationshipForms[`${recordingMbid}:${workMbid}`] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordWorkRelationshipSubmission(recordingMbid, workMbid));
+      setView(
+        await recordWorkRelationshipSubmission(recordingMbid, workMbid, { editId: form.editId }),
+      );
     } finally {
       setBusy(false);
     }
@@ -360,6 +371,17 @@ export function ContributeTab() {
                 <a className="act" href={release.link} target="_blank" rel="noreferrer">
                   Open in MagicISRC
                 </a>
+                <input
+                  className="mono w-32 shrink-0"
+                  placeholder="edit ID (optional)"
+                  value={(isrcForms[release.releaseMbid] ?? { editId: '' }).editId}
+                  onChange={(event) =>
+                    setIsrcForms((current) => ({
+                      ...current,
+                      [release.releaseMbid]: { editId: event.target.value },
+                    }))
+                  }
+                />
                 <button
                   className="act"
                   disabled={busy}
@@ -732,6 +754,17 @@ export function ContributeTab() {
                     </>
                   ) : (
                     <>
+                      <input
+                        className="mono w-32"
+                        placeholder="edit ID (optional)"
+                        value={(errorForms[album.albumId] ?? { editId: '' }).editId}
+                        onChange={(event) =>
+                          setErrorForms((current) => ({
+                            ...current,
+                            [album.albumId]: { editId: event.target.value },
+                          }))
+                        }
+                      />
                       <button
                         className="act"
                         data-variant="primary"
@@ -824,16 +857,37 @@ export function ContributeTab() {
                               </button>
                             </>
                           ) : (
-                            <button
-                              className="act shrink-0"
-                              data-variant="primary"
-                              disabled={busy}
-                              onClick={() =>
-                                submittedWorkRelationship(gap.recordingMbid, candidate.workMbid)
-                              }
-                            >
-                              I submitted this link
-                            </button>
+                            <>
+                              <input
+                                className="mono w-32 shrink-0"
+                                placeholder="edit ID (optional)"
+                                value={
+                                  (
+                                    workRelationshipForms[
+                                      `${gap.recordingMbid}:${candidate.workMbid}`
+                                    ] ?? { editId: '' }
+                                  ).editId
+                                }
+                                onChange={(event) =>
+                                  setWorkRelationshipForms((current) => ({
+                                    ...current,
+                                    [`${gap.recordingMbid}:${candidate.workMbid}`]: {
+                                      editId: event.target.value,
+                                    },
+                                  }))
+                                }
+                              />
+                              <button
+                                className="act shrink-0"
+                                data-variant="primary"
+                                disabled={busy}
+                                onClick={() =>
+                                  submittedWorkRelationship(gap.recordingMbid, candidate.workMbid)
+                                }
+                              >
+                                I submitted this link
+                              </button>
+                            </>
                           )}
                         </div>
                       );
@@ -1027,6 +1081,17 @@ export function ContributeTab() {
                 </>
               ) : (
                 <>
+                  <input
+                    className="mono w-32 shrink-0"
+                    placeholder="edit ID (optional)"
+                    value={(errorForms[row.isrc] ?? { editId: '' }).editId}
+                    onChange={(event) =>
+                      setErrorForms((current) => ({
+                        ...current,
+                        [row.isrc]: { editId: event.target.value },
+                      }))
+                    }
+                  />
                   <button
                     className="act shrink-0"
                     data-variant="primary"

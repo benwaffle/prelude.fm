@@ -542,9 +542,13 @@ export async function getContributions(): Promise<ContributionView> {
  * MusicBrainz edit is a proposal that editors vote on, and marking it applied
  * here would be recording our intention rather than the result.
  */
-export async function recordIsrcSubmission(releaseMbid: string, note?: string) {
+export async function recordIsrcSubmission(
+  releaseMbid: string,
+  options: { note?: string; editId?: string } = {},
+) {
   const session = await checkAuth();
   const submitter = `human:${session.user.name}`;
+  const editId = normalizeEditId(options.editId);
 
   const releases = await isrcGapsByRelease(500);
   const release = releases.find((candidate) => candidate.releaseMbid === releaseMbid);
@@ -567,7 +571,8 @@ export async function recordIsrcSubmission(releaseMbid: string, note?: string) {
           matchedBy: gap.matchedBy,
         },
         submittedBy: submitter,
-        note: note ?? null,
+        note: options.note?.trim() || null,
+        editId,
       })
       .onConflictDoNothing();
   }
