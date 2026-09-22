@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db, type DatabaseExecutor } from '@/lib/db';
+import { forChunks } from '@/lib/db/chunked';
 import {
   mbArtist,
   mbRecording,
@@ -43,21 +44,6 @@ import type {
  * Nothing here decides anything. A field MusicBrainz does not have arrives
  * null and the projection names the gap.
  */
-
-/** SQLite binds each list element as a parameter, and the limit is ~999. */
-const PARAMETER_CHUNK = 400;
-
-async function forChunks<Input, Row>(
-  values: Iterable<Input>,
-  read: (chunk: Input[]) => Promise<Row[]>,
-): Promise<Row[]> {
-  const unique = Array.from(new Set(values));
-  const rows: Row[] = [];
-  for (let start = 0; start < unique.length; start += PARAMETER_CHUNK) {
-    rows.push(...(await read(unique.slice(start, start + PARAMETER_CHUNK))));
-  }
-  return rows;
-}
 
 /**
  * A MusicBrainz work tree is recursive and arbitrarily deep, so the ancestors

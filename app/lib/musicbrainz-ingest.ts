@@ -12,6 +12,7 @@
  */
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from './db';
+import { forChunks } from './db/chunked';
 import {
   mbRecording,
   mbRecordingIsrc,
@@ -145,12 +146,12 @@ export async function anchorAlbumTracks(
   );
 
   const isrcs = tracks.flatMap((track) => (track.isrc ? [track.isrc] : []));
-  const isrcRows = isrcs.length
-    ? await db
-        .select({ isrc: mbRecordingIsrc.isrc, recordingMbid: mbRecordingIsrc.recordingMbid })
-        .from(mbRecordingIsrc)
-        .where(inArray(mbRecordingIsrc.isrc, isrcs))
-    : [];
+  const isrcRows = await forChunks(isrcs, (chunk) =>
+    db
+      .select({ isrc: mbRecordingIsrc.isrc, recordingMbid: mbRecordingIsrc.recordingMbid })
+      .from(mbRecordingIsrc)
+      .where(inArray(mbRecordingIsrc.isrc, chunk)),
+  );
   const recordingsByIsrc = new Map<string, Set<string>>();
   for (const row of isrcRows) {
     const set = recordingsByIsrc.get(row.isrc) ?? new Set<string>();
@@ -258,19 +259,18 @@ async function writeAnchors(
   if (rows.length === 0) return 0;
   const existing = new Map(
     (
-      await db
-        .select({
-          spotifyTrackId: trackRecording.spotifyTrackId,
-          recordingMbid: trackRecording.recordingMbid,
-          matchedBy: trackRecording.matchedBy,
-        })
-        .from(trackRecording)
-        .where(
-          inArray(
-            trackRecording.spotifyTrackId,
-            rows.map((row) => row.spotifyTrackId),
-          ),
-        )
+      await forChunks(
+        rows.map((row) => row.spotifyTrackId),
+        (chunk) =>
+          db
+            .select({
+              spotifyTrackId: trackRecording.spotifyTrackId,
+              recordingMbid: trackRecording.recordingMbid,
+              matchedBy: trackRecording.matchedBy,
+            })
+            .from(trackRecording)
+            .where(inArray(trackRecording.spotifyTrackId, chunk)),
+      )
     ).map((row) => [row.spotifyTrackId, row]),
   );
 

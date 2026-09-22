@@ -2,6 +2,7 @@
 
 import { and, eq, inArray, like, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { forChunks } from '@/lib/db/chunked';
 import {
   mbArtist,
   mbRecordingWork,
@@ -33,25 +34,6 @@ import type { WorkSearchHit } from './catalogue-search';
  * The level rule is the library's, so a card's work and a catalogue row are
  * the same work and the same identity.
  */
-
-/**
- * SQLite binds each list element as a parameter and the limit is ~999, so a
- * long list has to be read in pieces. Slicing it instead would silently drop
- * the rest — Bach alone has more works than one statement can carry.
- */
-const PARAMETER_CHUNK = 400;
-
-async function forChunks<Input, Row>(
-  values: Iterable<Input>,
-  read: (chunk: Input[]) => Promise<Row[]>,
-): Promise<Row[]> {
-  const unique = [...new Set(values)];
-  const rows: Row[] = [];
-  for (let start = 0; start < unique.length; start += PARAMETER_CHUNK) {
-    rows.push(...(await read(unique.slice(start, start + PARAMETER_CHUNK))));
-  }
-  return rows;
-}
 
 /**
  * Everything anchored, shaped into the works a reader would name.
