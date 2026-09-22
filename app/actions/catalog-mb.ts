@@ -10,7 +10,12 @@ import {
   trackRecording,
 } from '@/lib/db/schema';
 import { parseCatalogueQuery } from '@/lib/catalogue-query';
-import { shapeHeldCatalogue, type ShapedCatalogueWork } from '@/lib/musicbrainz-catalogue-shape';
+import {
+  shapeHeldCatalogue,
+  type CatalogueReference,
+  type ShapedCatalogueWork,
+} from '@/lib/musicbrainz-catalogue-shape';
+import { ancestry } from '@/lib/musicbrainz-work-tree';
 import { eraFor, formatDuration, lifespan, shortName, surname } from '@/lib/prelude';
 import { findProviderTracksForWork, loadMusicBrainzLibraryFacts } from './library-musicbrainz';
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
@@ -175,12 +180,42 @@ async function partCounts(workMbids: string[]): Promise<Map<string, number>> {
   );
 }
 
-/** The work heading above column three. */
+/**
+ * The work heading above column three.
+ *
+ * Scoped to the one work rather than shaping the whole held catalogue: this
+ * runs on every click in the third column, and the global version made each
+ * of those a full scan of every anchor we hold.
+ */
 export async function getMusicBrainzCatalogWorkHeader(
   workMbid: string,
 ): Promise<CatalogWorkHeader | null> {
-  const shaped = (await heldCatalogue()).find((work) => work.mbid === workMbid);
-  if (!shaped) return null;
+  const [work] = await db
+    .select({
+      mbid: mbWork.mbid,
+      title: mbWork.title,
+      type: mbWork.type,
+      parentMbid: mbWork.parentMbid,
+      composerMbid: mbWork.composerMbid,
+    })
+    .from(mbWork)
+    .where(eq(mbWork.mbid, workMbid))
+    .limit(1);
+  if (!work) return null;
+
+  const neighbourhood = await readWorkNeighbourhood([workMbid]);
+  const byMbid = new Map(neighbourhood.map((node) => [node.mbid, node]));
+  const references = await forWorks(neighbourhood.map((node) => node.mbid));
+  const carrier = ancestry(workMbid, byMbid).find((node) => references.has(node.mbid));
+  const reference = carrier ? references.get(carrier.mbid)! : null;
+  const shaped = {
+    mbid: work.mbid,
+    title: work.title,
+    type: work.type,
+    composerMbid:
+      ancestry(workMbid, byMbid).find((node) => node.composerMbid)?.composerMbid ?? null,
+    reference,
+  };
   const [composerRow] = shaped.composerMbid
     ? await db.select().from(mbArtist).where(eq(mbArtist.mbid, shaped.composerMbid)).limit(1)
     : [];
@@ -278,6 +313,22 @@ export async function searchMusicBrainzWorks(
       recordingCount: work.recordingMbids.length,
     }),
   );
+}
+
+/** The catalogue references these works carry, nearest one per work. */
+async function forWorks(workMbids: string[]): Promise<Map<string, CatalogueReference>> {
+  if (workMbids.length === 0) return new Map();
+  const rows = await db
+    .select({
+      workMbid: mbWorkCatalogue.workMbid,
+      system: mbWorkCatalogue.system,
+      number: mbWorkCatalogue.number,
+    })
+    .from(mbWorkCatalogue)
+    .where(inArray(mbWorkCatalogue.workMbid, workMbids.slice(0, 400)));
+  const byWork = new Map<string, CatalogueReference>();
+  for (const row of rows) if (!byWork.has(row.workMbid)) byWork.set(row.workMbid, row);
+  return byWork;
 }
 
 async function composerNamesFor(works: ShapedCatalogueWork[]): Promise<Map<string, string>> {

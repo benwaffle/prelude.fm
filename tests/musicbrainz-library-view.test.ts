@@ -541,3 +541,29 @@ test('a medley appears under each work it performs, and is accounted for once', 
     ['track-i'],
   );
 });
+
+test('the work heading reads the same values as the catalogue row', async () => {
+  const { getMusicBrainzCatalogWorkHeader, getMusicBrainzCatalogWorks } =
+    await import('@/app/actions/catalog-mb');
+  const [row] = await getMusicBrainzCatalogWorks('mozart');
+  const header = await getMusicBrainzCatalogWorkHeader('sonata');
+
+  assert.ok(header);
+  // The heading is scoped to one work rather than shaping the whole held
+  // catalogue, so it has to be checked against the list it sits above.
+  assert.equal(header.id, row.id);
+  assert.equal(header.title, row.title);
+  assert.equal(header.catalog, row.catalog);
+  assert.equal(header.genre, row.genre);
+  assert.equal(header.movementCount, row.movementCount);
+  assert.equal(header.composerName, 'Wolfgang Amadeus Mozart');
+});
+
+test('the heading finds a catalogue number filed on the work above', async () => {
+  const { getMusicBrainzCatalogWorkHeader } = await import('@/app/actions/catalog-mb');
+  // part-i has no catalogue of its own; K. 545 is on the sonata.
+  const header = await getMusicBrainzCatalogWorkHeader('part-i');
+
+  assert.equal(header?.catalog, 'K. 545');
+  assert.equal(header?.composerName, 'Wolfgang Amadeus Mozart');
+});
