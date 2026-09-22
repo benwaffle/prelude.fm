@@ -311,16 +311,27 @@ async function resolveWorkPart(
   return { id: created.id, status };
 }
 
+/**
+ * Puts `trackIds` in one recording of `workId` on this album.
+ *
+ * `claimedRecordingIds` holds the recordings earlier groups in the same pass
+ * already took. An album can carry two performances of one work, and both
+ * groups otherwise match the same recording by overlap and the second would
+ * swallow the first.
+ */
 async function reconcileRecording(
   spotifyAlbumId: string,
   workId: number,
   trackIds: string[],
+  claimedRecordingIds: Set<number>,
   database: DatabaseExecutor,
 ) {
-  const candidates = await database
-    .select({ id: recordingV2.id })
-    .from(recordingV2)
-    .where(and(eq(recordingV2.spotifyAlbumId, spotifyAlbumId), eq(recordingV2.workId, workId)));
+  const candidates = (
+    await database
+      .select({ id: recordingV2.id })
+      .from(recordingV2)
+      .where(and(eq(recordingV2.spotifyAlbumId, spotifyAlbumId), eq(recordingV2.workId, workId)))
+  ).filter((candidate) => !claimedRecordingIds.has(candidate.id));
   const memberships: Array<{ id: number; trackIds: string[] }> = [];
   for (const candidate of candidates) {
     const members = await database
@@ -337,6 +348,7 @@ async function reconcileRecording(
       .returning({ id: recordingV2.id });
     recordingId = created.id;
   }
+  claimedRecordingIds.add(recordingId);
   const previousMemberships =
     trackIds.length > 0
       ? await database
@@ -344,7 +356,12 @@ async function reconcileRecording(
           .from(recordingTrackV2)
           .where(inArray(recordingTrackV2.spotifyTrackId, trackIds))
       : [];
-  await database.delete(recordingTrackV2).where(eq(recordingTrackV2.recordingId, recordingId));
+  // Only the tracks this pass actually carries are re-homed. Emptying the
+  // recording first would strand every member the pass says nothing about,
+  // and the queue processor passes just the tracks it has not linked yet —
+  // so a second pass over an album used to unlink everything saved by the
+  // first. A track that has genuinely moved is deleted by its own id below,
+  // either here or by the group that now claims it.
   if (trackIds.length > 0) {
     await database
       .delete(recordingTrackV2)
@@ -501,6 +518,7 @@ export async function saveParsedAlbumV2(
 
   let confirmed = 0;
   let needsReview = 0;
+  const claimedRecordingIds = new Set<number>();
   for (const items of groups.values()) {
     const workId = items[0].workId!;
     const ordered = [...items].sort(
@@ -517,6 +535,7 @@ export async function saveParsedAlbumV2(
       spotifyAlbumId,
       workId,
       ordered.map((item) => item.track.id),
+      claimedRecordingIds,
       database,
     );
     for (const item of ordered) {

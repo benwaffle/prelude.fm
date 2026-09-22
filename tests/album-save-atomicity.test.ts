@@ -228,3 +228,67 @@ test('leaves an earlier good save untouched when a later album pass fails', asyn
     .where(eq(schema.recordingTrackV2.spotifyTrackId, 'track-a'));
   assert.equal(held.length, 1);
 });
+
+test('a second pass over an album keeps the tracks the first pass linked', async () => {
+  // The queue processor only passes the tracks it has not linked yet, so a
+  // reconciliation that emptied the recording first unlinked everything the
+  // earlier pass saved.
+  await saveAlbum([
+    { trackId: 'track-a', trackNumber: 1, parsed: parsed({}) },
+    {
+      trackId: 'track-b',
+      trackNumber: 2,
+      parsed: parsed({ parts: [{ position: 2, label: 'II', title: 'Fuga' }] }),
+    },
+  ]);
+
+  await saveAlbum([
+    {
+      trackId: 'track-c',
+      trackNumber: 3,
+      parsed: parsed({ parts: [{ position: 3, label: 'III', title: 'Praeludium II' }] }),
+    },
+  ]);
+
+  const memberships = await db
+    .select({
+      trackId: schema.recordingTrackV2.spotifyTrackId,
+      recordingId: schema.recordingTrackV2.recordingId,
+    })
+    .from(schema.recordingTrackV2);
+  assert.deepEqual(memberships.map((row) => row.trackId).sort(), ['track-a', 'track-b', 'track-c']);
+  // All three are the same work on the same album, so they belong to one
+  // recording rather than to a new one per pass.
+  assert.equal(new Set(memberships.map((row) => row.recordingId)).size, 1);
+  assert.deepEqual(await orphanedPartLinks(), []);
+});
+
+test('keeps two performances of one work on an album apart', async () => {
+  const result = await saveAlbum([
+    {
+      trackId: 'track-gould-1955',
+      trackNumber: 1,
+      parsed: parsed({ recordingGroup: 'Gould 1955' }),
+    },
+    {
+      trackId: 'track-gould-1981',
+      trackNumber: 2,
+      parsed: parsed({ recordingGroup: 'Gould 1981' }),
+    },
+  ]);
+
+  assert.equal(result.groups, 2);
+  const memberships = await db
+    .select({
+      trackId: schema.recordingTrackV2.spotifyTrackId,
+      recordingId: schema.recordingTrackV2.recordingId,
+    })
+    .from(schema.recordingTrackV2);
+  // Neither performance may swallow the other: two tracks, two recordings.
+  assert.deepEqual(memberships.map((row) => row.trackId).sort(), [
+    'track-gould-1955',
+    'track-gould-1981',
+  ]);
+  assert.equal(new Set(memberships.map((row) => row.recordingId)).size, 2);
+  assert.deepEqual(await orphanedPartLinks(), []);
+});
