@@ -22,11 +22,11 @@ function movement(overrides: Partial<Movement> & { trackId: string }): Movement 
 
 function legacyWork(overrides: Partial<LibraryWork> & { id: string }): LibraryWork {
   return {
-    workId: 1,
-    recordingId: 1,
+    workId: '1',
+    recordingId: '1',
     composer: 'Bach',
     composerFull: 'Johann Sebastian Bach',
-    composerId: 1,
+    composerId: '1',
     composerImage: null,
     era: null,
     years: '1685–1750',
@@ -184,7 +184,7 @@ test('reports duplicate legacy recordings collapsing into one MusicBrainz record
       legacyWork({ id: 'work-1:rec-1', movements: [movement({ trackId: 'track-1' })] }),
       legacyWork({
         id: 'work-1:rec-2',
-        recordingId: 2,
+        recordingId: '2',
         movements: [movement({ trackId: 'track-2' })],
       }),
     ],

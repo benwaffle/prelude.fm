@@ -54,11 +54,11 @@ export function PlayerBar() {
     const { tint, ink } = tintFor(albumId);
     return {
       id: `track:${currentTrack.id}`,
-      workId: -1,
-      recordingId: -1,
+      workId: null,
+      recordingId: null,
       composer: currentTrack.artists?.[0]?.name ?? '',
       composerFull: currentTrack.artists?.[0]?.name ?? '',
-      composerId: -1,
+      composerId: null,
       composerImage: null,
       era: null,
       years: '',
@@ -170,8 +170,7 @@ export function PlayerBar() {
   );
 
   const tint = work?.tint ?? '#2a1f2e';
-  const detailHref =
-    work && work.workId > 0 ? `/work/${work.workId}?rec=${work.recordingId}` : null;
+  const detailHref = work?.workId ? `/work/${work.workId}?rec=${work.recordingId ?? ''}` : null;
 
   return (
     <div

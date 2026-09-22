@@ -55,6 +55,17 @@ function coverOf(images: { url: string }[] | null): string | null {
   return images?.[0]?.url ?? null;
 }
 
+/**
+ * Reader identities are opaque strings, not row numbers: the MusicBrainz
+ * reader mints them from MBIDs and this one from the legacy rows, and the
+ * screens only ever compare them or put them in a URL. The queries below
+ * parse them straight back, and a string that is not one of ours simply
+ * finds nothing.
+ */
+function rowId(identity: string): number {
+  return Number(identity);
+}
+
 /* =========================================================
    LIBRARY
    ========================================================= */
@@ -273,11 +284,11 @@ async function buildWorks(recordingIds: number[], liked: Set<string>): Promise<L
 
     works.push({
       id: `${head.workId}:${recordingId}`,
-      workId: head.workId,
-      recordingId,
+      workId: String(head.workId),
+      recordingId: String(recordingId),
       composer: shortName(head.composerName),
       composerFull: head.composerName,
-      composerId: head.composerId,
+      composerId: String(head.composerId),
       composerImage: pickImage(head.composerImages, 320),
       era: eraFor(head.birthYear),
       years: lifespan(head.birthYear, head.deathYear),
@@ -489,7 +500,7 @@ function creditsFor(
    ========================================================= */
 
 export interface OtherRecording {
-  recordingId: number;
+  recordingId: string;
   albumId: string;
   album: string;
   cover: string | null;
@@ -504,8 +515,8 @@ export interface OtherRecording {
 }
 
 export interface WorkSummary {
-  workId: number;
-  recordingId: number;
+  workId: string;
+  recordingId: string;
   title: string;
   nickname: string | null;
   catalog: string | null;
@@ -534,10 +545,12 @@ export interface WorkDetail {
  * it: other recordings of the same work, and other works by the composer.
  */
 export async function getWorkDetail(
-  workId: number,
-  recordingId: number | null,
+  identity: string,
+  recordingIdentity: string | null,
   likedTrackIds: string[] = [],
 ): Promise<WorkDetail | null> {
+  const workId = rowId(identity);
+  const recordingId = recordingIdentity === null ? null : rowId(recordingIdentity);
   const recordings = await db
     .select({
       id: recordingV2.id,
@@ -625,7 +638,7 @@ async function recordingSummaries(recordingIds: number[]): Promise<OtherRecordin
     }
     const credited = creditsFor(Array.from(seen), performers, head.composerArtistId, mbCredits);
     summaries.push({
-      recordingId,
+      recordingId: String(recordingId),
       albumId: head.albumId,
       album: head.album,
       cover: coverOf(head.images),
@@ -704,10 +717,10 @@ async function worksByComposer(composerId: number, excludeWorkId: number): Promi
   const byRecording = new Map(built.map((w) => [w.recordingId, w]));
 
   return top.map((row) => {
-    const full = byRecording.get(row.recordingId);
+    const full = byRecording.get(String(row.recordingId));
     return {
-      workId: row.workId,
-      recordingId: row.recordingId,
+      workId: String(row.workId),
+      recordingId: String(row.recordingId),
       title: row.title,
       nickname: row.nickname,
       catalog: catalogLabel(row.catalogSystem, row.catalogNumber),
@@ -737,7 +750,7 @@ async function worksByComposer(composerId: number, excludeWorkId: number): Promi
    ========================================================= */
 
 export interface CatalogComposer {
-  id: number;
+  id: string;
   name: string;
   short: string;
   sort: string;
@@ -752,7 +765,7 @@ export interface CatalogComposer {
 }
 
 export interface CatalogWork {
-  id: number;
+  id: string;
   title: string;
   nickname: string | null;
   catalog: string | null;
@@ -764,7 +777,7 @@ export interface CatalogWork {
 }
 
 export interface CatalogRecording {
-  id: number;
+  id: string;
   album: string;
   albumId: string;
   cover: string | null;
@@ -802,7 +815,7 @@ export async function getCatalogComposers(): Promise<CatalogComposer[]> {
     .orderBy(asc(composer.name));
 
   return rows.map((row) => ({
-    id: row.id,
+    id: String(row.id),
     name: row.name,
     short: shortName(row.name),
     // Still filed under the surname, so Pärt sorts under P.
@@ -819,7 +832,8 @@ export async function getCatalogComposers(): Promise<CatalogComposer[]> {
 }
 
 /** Column two: one composer's catalogue. */
-export async function getCatalogWorks(composerId: number): Promise<CatalogWork[]> {
+export async function getCatalogWorks(composerIdentity: string): Promise<CatalogWork[]> {
+  const composerId = rowId(composerIdentity);
   const rows = await db
     .select({
       id: work.id,
@@ -844,7 +858,7 @@ export async function getCatalogWorks(composerId: number): Promise<CatalogWork[]
     .orderBy(asc(work.yearComposed), asc(work.title));
 
   return rows.map((row) => ({
-    id: row.id,
+    id: String(row.id),
     title: row.title,
     nickname: row.nickname,
     catalog: catalogLabel(row.catalogSystem, row.catalogNumber),
@@ -862,9 +876,10 @@ function titleCase(value: string | null): string | null {
 
 /** Column three: every recording of one work, most popular first. */
 export async function getCatalogRecordings(
-  workId: number,
+  identity: string,
   likedTrackIds: string[] = [],
 ): Promise<CatalogRecording[]> {
+  const workId = rowId(identity);
   const rows = await db
     .select({
       recordingId: recordingV2.id,
@@ -922,7 +937,7 @@ export async function getCatalogRecordings(
     );
     const credited = creditsFor(orderedTrackIds, performers, head.composerArtistId, mbCredits);
     out.push({
-      id: recordingId,
+      id: String(recordingId),
       album: head.album,
       albumId: head.albumId,
       cover: coverOf(head.images),
@@ -944,7 +959,8 @@ export async function getCatalogRecordings(
 }
 
 /** The work heading above column three. */
-export async function getCatalogWorkHeader(workId: number) {
+export async function getCatalogWorkHeader(identity: string) {
+  const workId = rowId(identity);
   const [row] = await db
     .select({
       id: work.id,
@@ -968,7 +984,7 @@ export async function getCatalogWorkHeader(workId: number) {
 
   if (!row) return null;
   return {
-    id: row.id,
+    id: String(row.id),
     title: row.title,
     nickname: row.nickname,
     catalog: catalogLabel(row.catalogSystem, row.catalogNumber),

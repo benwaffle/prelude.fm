@@ -28,9 +28,9 @@ export function CatalogScreen() {
   const { query } = useNavSearch();
 
   const [composers, setComposers] = useState<CatalogComposer[]>([]);
-  const [composerId, setComposerId] = useState<number | null>(null);
+  const [composerId, setComposerId] = useState<string | null>(null);
   const [works, setWorks] = useState<CatalogWork[]>([]);
-  const [workId, setWorkId] = useState<number | null>(null);
+  const [workId, setWorkId] = useState<string | null>(null);
   const [header, setHeader] = useState<WorkHeader>(null);
   const [recordings, setRecordings] = useState<CatalogRecording[]>([]);
   // Mobile drill-down depth: 0 composers, 1 works, 2 recordings.
@@ -283,7 +283,7 @@ function ComposerPane({
   hidden,
 }: {
   list: CatalogComposer[];
-  selectedId: number | null;
+  selectedId: string | null;
   onSelect: (c: CatalogComposer) => void;
   hidden: boolean;
 }) {
@@ -380,7 +380,7 @@ function WorkPane({
 }: {
   composer: CatalogComposer | null;
   works: CatalogWork[];
-  selectedId: number | null;
+  selectedId: string | null;
   onSelect: (w: CatalogWork) => void;
   hidden: boolean;
 }) {

@@ -7,10 +7,10 @@ import { composer, recordingV2, work, workCatalogV2 } from '@/lib/db/schema';
 import { parseCatalogueQuery } from '@/lib/catalogue-query';
 
 export interface WorkSearchHit {
-  workId: number;
+  workId: string;
   title: string;
   nickname: string | null;
-  composerId: number;
+  composerId: string;
   composerName: string;
   /** The reference the search matched on, which may not be the primary one. */
   matchedOn: string | null;
@@ -93,5 +93,10 @@ export async function searchWorks(rawQuery: string, limit = 40): Promise<WorkSea
     ]);
   }
 
-  return rows.map((row) => ({ ...row, references: references.get(row.workId) ?? [] }));
+  return rows.map((row) => ({
+    ...row,
+    workId: String(row.workId),
+    composerId: String(row.composerId),
+    references: references.get(row.workId) ?? [],
+  }));
 }

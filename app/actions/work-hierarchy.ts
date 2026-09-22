@@ -7,7 +7,7 @@ import { mbWork, work } from '@/lib/db/schema';
 
 export interface WorkSibling {
   /** Our work, when we hold one for this part of the collection. */
-  workId: number | null;
+  workId: string | null;
   title: string;
   /** Its position among the parent's parts, as MusicBrainz orders them. */
   ordering: number | null;
@@ -34,7 +34,8 @@ export interface WorkParent {
  * should say so rather than looking like a complete list of twenty-three —
  * the gap is the point.
  */
-export async function getWorkParent(workId: number): Promise<WorkParent | null> {
+export async function getWorkParent(identity: string): Promise<WorkParent | null> {
+  const workId = Number(identity);
   const [self] = await db
     .select({ mbid: work.musicbrainzId })
     .from(work)
@@ -70,7 +71,7 @@ export async function getWorkParent(workId: number): Promise<WorkParent | null> 
     .orderBy(asc(children.orderingKey));
 
   const siblings: WorkSibling[] = rows.map((row) => ({
-    workId: row.workId ?? null,
+    workId: row.workId === null ? null : String(row.workId),
     title: stripCollectionPrefix(row.title, parent.title),
     ordering: row.ordering,
     isCurrent: row.mbid === self.mbid,

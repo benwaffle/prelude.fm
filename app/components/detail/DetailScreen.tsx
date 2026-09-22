@@ -29,8 +29,8 @@ export function DetailScreen({
   workId,
   recordingId,
 }: {
-  workId: number;
-  recordingId: number | null;
+  workId: string;
+  recordingId: string | null;
 }) {
   const { likedTrackIds, registerWorks, toggleLike } = useLibrary();
   const { currentTrack, play } = useSpotifyPlayer();
@@ -381,7 +381,7 @@ function Hero({
   );
 }
 
-function OtherRecordings({ workId, others }: { workId: number; others: OtherRecording[] }) {
+function OtherRecordings({ workId, others }: { workId: string; others: OtherRecording[] }) {
   return (
     <section className="pt-[30px] pb-[6px] max-[900px]:pt-[22px] max-[900px]:pb-1">
       <div className="mb-6 flex items-center gap-[14px]">

@@ -223,11 +223,20 @@ export function queueFrom(movements: Movement[], from: Movement): string[] {
 export interface LibraryWork {
   /** A work can be recorded more than once, so identity is work + recording. */
   id: string;
-  workId: number;
-  recordingId: number;
+  /**
+   * Opaque identifiers, not numbers to do arithmetic on. The reader in
+   * production mints them from the legacy row ids and the MusicBrainz reader
+   * from MBIDs, and everything downstream only ever compares them or puts
+   * them in a URL.
+   *
+   * Null where there is no work to navigate to — something playing that we
+   * cannot place. That used to be spelled -1, which reads like an id.
+   */
+  workId: string | null;
+  recordingId: string | null;
   composer: string;
   composerFull: string;
-  composerId: number;
+  composerId: string | null;
   /** The composer's Spotify artist portrait, when we have one. */
   composerImage: string | null;
   era: Era | null;
