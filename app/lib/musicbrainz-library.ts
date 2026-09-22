@@ -74,6 +74,13 @@ export type AccountedTrack = {
 };
 
 export type ProjectedCatalogueReference = {
+  /**
+   * The work in the hierarchy that actually carries this reference. A
+   * movement rarely has its own catalogue number — BWV 988 is filed against
+   * the Goldberg Variations, not against its Aria — so the reader has to be
+   * able to say which work the number describes.
+   */
+  fromWorkMbid: string;
   seriesMbid: string;
   system: string;
   number: string;
@@ -596,9 +603,18 @@ function projectRecordingWork(
   if (!title) pushGap(gaps, gap('work-title-missing', 'work', level.mbid));
   if (!type) pushGap(gaps, gap('work-type-missing', 'work', level.mbid));
 
-  const catalogues = (catalogueByWork.get(level.mbid) ?? [])
+  // Nearest first: the display work's own references, else the closest
+  // ancestor that has any. Climbing is reading MusicBrainz, not guessing —
+  // MusicBrainz says this work is a part of that one, and that one is BWV
+  // 988. Without it almost every movement would report a missing catalogue
+  // and the reader could not group by catalogue number at all.
+  const catalogueSource = catalogueAncestry(level.mbid, hierarchyLeafFirst).find(
+    (candidate) => (catalogueByWork.get(candidate) ?? []).length > 0,
+  );
+  const catalogues = (catalogueSource ? (catalogueByWork.get(catalogueSource) ?? []) : [])
     .map(
       (catalogue): ProjectedCatalogueReference => ({
+        fromWorkMbid: catalogue.workMbid,
         seriesMbid: catalogue.seriesMbid,
         system: catalogue.system,
         number: catalogue.number,
@@ -642,7 +658,7 @@ function projectRecordingWork(
     relatedWorkMbid,
     displayWorkMbid: displayWork?.mbid ?? null,
     workLevelReason: level.reason,
-    hierarchy: hierarchyLeafFirst.reverse().map((work) => ({
+    hierarchy: [...hierarchyLeafFirst].reverse().map((work) => ({
       mbid: work.mbid,
       title: nonBlank(work.title),
       type: nonBlank(work.type),
@@ -655,6 +671,13 @@ function projectRecordingWork(
     composer,
     gaps,
   };
+}
+
+/** The display work and then its ancestors, in the order to prefer them. */
+function catalogueAncestry(displayWorkMbid: string, hierarchyLeafFirst: MbWorkFact[]): string[] {
+  const chain = hierarchyLeafFirst.map((work) => work.mbid);
+  const start = chain.indexOf(displayWorkMbid);
+  return start === -1 ? [displayWorkMbid] : chain.slice(start);
 }
 
 function releaseGaps(

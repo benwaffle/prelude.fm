@@ -495,3 +495,65 @@ test('an unfetched provider album leaves the occurrence title blank, not empty-l
   assert.equal(occurrence.providerAlbumTitle, null);
   assert.ok(occurrence.gaps.some((item) => item.code === 'provider-album-not-fetched'));
 });
+
+test('a movement takes its catalogue number from the work that carries it', () => {
+  // MusicBrainz files BWV 988 against the Goldberg Variations, not against
+  // its Aria. A typed leaf stays the displayed work, so without climbing the
+  // hierarchy almost every movement would report a missing catalogue and the
+  // reader could not group by catalogue number at all.
+  const facts = baseFacts();
+  facts.mbWorks = [
+    {
+      mbid: 'work-etude',
+      title: 'Étude in C major',
+      type: 'Étude',
+      parentMbid: 'work-opus-10',
+      orderingKey: 1,
+      composerMbid: 'composer-1',
+      detail: 'full',
+    },
+    {
+      mbid: 'work-opus-10',
+      title: '12 Études, op. 10',
+      type: 'Étude',
+      parentMbid: null,
+      orderingKey: null,
+      composerMbid: 'composer-1',
+      detail: 'full',
+    },
+  ];
+  facts.mbRecordingWorks = [{ recordingMbid: 'recording-1', workMbid: 'work-etude' }];
+  facts.mbWorkCatalogues = [
+    {
+      workMbid: 'work-opus-10',
+      seriesMbid: 'series-op',
+      system: 'Op.',
+      number: '10',
+      normalizedSystem: 'op',
+      normalizedNumber: '10',
+    },
+  ];
+
+  const projected = projectMusicBrainzLibrary(facts).recordings[0].works[0];
+  assert.equal(projected.displayWorkMbid, 'work-etude', 'a typed work is shown as itself');
+  assert.deepEqual(projected.catalogues, [
+    {
+      fromWorkMbid: 'work-opus-10',
+      seriesMbid: 'series-op',
+      system: 'Op.',
+      number: '10',
+      normalizedSystem: 'op',
+      normalizedNumber: '10',
+    },
+  ]);
+  assert.ok(!projected.gaps.some((item) => item.code === 'work-catalogue-missing'));
+});
+
+test('a work with no catalogue anywhere above it still reports the gap', () => {
+  const facts = baseFacts();
+  facts.mbWorkCatalogues = [];
+
+  const projected = projectMusicBrainzLibrary(facts).recordings[0].works[0];
+  assert.deepEqual(projected.catalogues, []);
+  assert.ok(projected.gaps.some((item) => item.code === 'work-catalogue-missing'));
+});
