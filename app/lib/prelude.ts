@@ -252,6 +252,12 @@ export interface LibraryWork {
   performer: string | null;
   ensemble: string | null;
   album: string;
+  /**
+   * The Spotify album the chosen occurrence came from. A provider fact, and
+   * the thing the card's colour is derived from — kept rather than recomputed
+   * so a caller that needs to name the album has the id and not a title.
+   */
+  albumId: string | null;
   cover: string | null;
   tint: string;
   ink: string;

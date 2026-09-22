@@ -37,6 +37,7 @@ function legacyWork(overrides: Partial<LibraryWork> & { id: string }): LibraryWo
     performer: null,
     ensemble: null,
     album: 'Goldberg Variations',
+    albumId: 'album-1',
     cover: null,
     tint: '#000',
     ink: '#fff',

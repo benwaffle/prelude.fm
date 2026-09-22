@@ -73,7 +73,7 @@ export async function getMusicBrainzWorkDetail(
     .filter((card) => card.id !== chosen.id)
     .map((card) => ({
       recordingId: card.recordingId ?? card.id,
-      albumId: card.movements.find((movement) => movement.trackId)?.trackId ?? card.id,
+      albumId: card.albumId ?? card.id,
       album: card.album,
       cover: card.cover,
       year: card.year,

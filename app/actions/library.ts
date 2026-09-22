@@ -302,6 +302,7 @@ async function buildWorks(recordingIds: number[], liked: Set<string>): Promise<L
       performer: credited.performer,
       ensemble: credited.ensemble,
       album: head.albumTitle,
+      albumId: head.albumId,
       cover: coverOf(head.albumImages),
       tint,
       ink,

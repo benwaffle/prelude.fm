@@ -496,3 +496,48 @@ test('searching a composer finds their works, and one we cannot play does not ap
     ['sonata'],
   );
 });
+
+test('a medley appears under each work it performs, and is accounted for once', async () => {
+  // MusicBrainz relates one recording to two works. Filing it under one of
+  // them would be choosing arbitrarily; filing it under both is what
+  // MusicBrainz actually says. The per-track accounting is still one row.
+  await db.insert(schema.mbWork).values({
+    mbid: 'fantasia',
+    title: 'Fantasia in D minor, K. 397',
+    type: 'Fantasia',
+    parentMbid: null,
+    orderingKey: null,
+    composerMbid: 'mozart',
+    detail: 'full',
+  });
+  await db.insert(schema.mbWorkCatalogue).values({
+    workMbid: 'fantasia',
+    seriesMbid: 'series-k',
+    system: 'K.',
+    number: '397',
+    normalizedSystem: 'k',
+    normalizedNumber: '397',
+  });
+  await db.insert(schema.mbRecordingWork).values({
+    recordingMbid: 'rec-i',
+    workMbid: 'fantasia',
+  });
+
+  const { works, accounting } = await view(['track-i']);
+
+  assert.deepEqual(
+    works.map((card) => card.workId).sort(),
+    ['fantasia', 'sonata'],
+    'both works MusicBrainz names, neither chosen over the other',
+  );
+  for (const card of works) {
+    assert.deepEqual(
+      card.movements.filter((movement) => !movement.missing).map((movement) => movement.trackId),
+      ['track-i'],
+    );
+  }
+  assert.deepEqual(
+    accounting.map((track) => track.spotifyTrackId),
+    ['track-i'],
+  );
+});

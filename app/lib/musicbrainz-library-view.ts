@@ -98,6 +98,10 @@ export function musicBrainzLibraryView(
     // A recording with no work relation has no work to file it under. It is
     // already reported as a gap; putting it on an invented card would hide
     // that the relation is what is missing.
+    //
+    // A recording of several works — a medley — appears under each of them.
+    // Choosing one would be choosing arbitrarily, and the per-track
+    // accounting is unaffected: it counts tracks, not cards.
     for (const work of recording.works) {
       const key = work.displayWorkMbid ?? work.relatedWorkMbid;
       for (const trackId of recording.heldTrackIds) {
@@ -213,6 +217,7 @@ export function musicBrainzLibraryView(
       performer,
       ensemble,
       album: head.occurrence.releaseTitle ?? head.occurrence.providerAlbumTitle ?? '',
+      albumId: head.occurrence.spotifyAlbumId,
       cover: head.occurrence.imageUrl,
       tint,
       ink,

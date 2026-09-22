@@ -312,7 +312,7 @@ export async function getMusicBrainzCatalogRecordings(
       return {
         id: card.recordingId ?? card.id,
         album: card.album,
-        albumId: card.id,
+        albumId: card.albumId ?? card.id,
         cover: card.cover,
         year: card.year,
         performer: card.performer,
