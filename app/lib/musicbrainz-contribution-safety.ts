@@ -1,3 +1,5 @@
+import { titlesAreCompatible } from './metadata-matching';
+
 /**
  * Whole-release evidence required before offering an ISRC contribution.
  *
@@ -8,6 +10,7 @@
  */
 
 export const ISRC_SUBMISSION_TOLERANCE_MS = 3_000;
+export const BARCODE_SUBMISSION_TOLERANCE_MS = 5_000;
 
 export type SpotifyReleaseEvidence = {
   albumId: string;
@@ -27,6 +30,25 @@ export type MusicBrainzReleaseEvidence = {
   durationMs: number | null;
 };
 
+export type SpotifyBarcodeEvidence = {
+  albumTitle: string;
+  discNumber: number;
+  trackNumber: number;
+  durationMs: number;
+};
+
+export type MusicBrainzBarcodeEvidence = {
+  releaseTitle: string;
+  medium: number;
+  position: number;
+  durationMs: number | null;
+};
+
+export type BarcodeVerification = {
+  trackCount: number;
+  maxDurationDeltaMs: number;
+};
+
 export function releaseMediumKey(albumId: string, releaseMbid: string, medium: number): string {
   return `${albumId}\u0000${releaseMbid}\u0000${medium}`;
 }
@@ -34,6 +56,40 @@ export function releaseMediumKey(albumId: string, releaseMbid: string, medium: n
 function normaliseBarcode(value: string | null): string | null {
   const barcode = value?.trim().replace(/^0+/, '');
   return barcode ? barcode : null;
+}
+
+/**
+ * The evidence required to add a barcode to a release that currently has
+ * none: compatible titles, identical complete tracklists, and every duration
+ * within five seconds. Missing durations fail rather than being guessed.
+ */
+export function verifyBarcodeRelease(
+  spotifyRows: SpotifyBarcodeEvidence[],
+  musicbrainzRows: MusicBrainzBarcodeEvidence[],
+): BarcodeVerification | null {
+  if (
+    spotifyRows.length === 0 ||
+    spotifyRows.length !== musicbrainzRows.length ||
+    !titlesAreCompatible(spotifyRows[0].albumTitle, musicbrainzRows[0].releaseTitle)
+  ) {
+    return null;
+  }
+
+  const spotify = [...spotifyRows].sort(
+    (a, b) => a.discNumber - b.discNumber || a.trackNumber - b.trackNumber,
+  );
+  const musicbrainz = [...musicbrainzRows].sort(
+    (a, b) => a.medium - b.medium || a.position - b.position,
+  );
+  let maxDurationDeltaMs = 0;
+  for (let index = 0; index < spotify.length; index++) {
+    const duration = musicbrainz[index].durationMs;
+    if (duration === null) return null;
+    const delta = Math.abs(duration - spotify[index].durationMs);
+    if (delta > BARCODE_SUBMISSION_TOLERANCE_MS) return null;
+    maxDurationDeltaMs = Math.max(maxDurationDeltaMs, delta);
+  }
+  return { trackCount: spotify.length, maxDurationDeltaMs };
 }
 
 /**

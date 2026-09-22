@@ -5,6 +5,7 @@ import {
   getBotPayload,
   getBotStatus,
   getContributions,
+  recordBarcodeSubmission,
   recordIsrcSubmission,
   reconcileSubmissions,
   setSubmissionOutcome,
@@ -76,6 +77,15 @@ export function ContributeTab() {
     setBusy(true);
     try {
       setView(await recordIsrcSubmission(releaseMbid));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submittedBarcode(releaseMbid: string) {
+    setBusy(true);
+    try {
+      setView(await recordBarcodeSubmission(releaseMbid));
     } finally {
       setBusy(false);
     }
@@ -276,15 +286,37 @@ export function ContributeTab() {
           </div>
           <p className="px-4 pt-3 text-[var(--ink-2)]">
             Found by title and duration rather than by barcode, which is why they have none. Adding
-            it makes the release findable the way every other one is.
+            it makes the release findable the way every other one is. Copy the exact Spotify value,
+            add it on the release edit page, then confirm here only after submitting the edit.
           </p>
           {view.barcodes.map((gap) => (
             <div key={gap.releaseMbid} className="row">
-              <span className="min-w-0 flex-1 truncate">{gap.releaseTitle}</span>
-              <span className="mono shrink-0 text-[var(--ink-2)]">{gap.barcode}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{gap.releaseTitle}</span>
+                <span className="album-meta">
+                  title matched · {gap.trackCount} tracks · worst duration difference{' '}
+                  {gap.maxDurationDeltaMs}ms
+                </span>
+              </span>
+              <code className="mono shrink-0 select-all text-[var(--ink-2)]">{gap.barcode}</code>
+              <button
+                className="act shrink-0"
+                disabled={busy}
+                onClick={() => navigator.clipboard.writeText(gap.barcode)}
+              >
+                Copy barcode
+              </button>
               <a className="act shrink-0" href={gap.edit} target="_blank" rel="noreferrer">
-                Add it
+                Edit release
               </a>
+              <button
+                className="act shrink-0"
+                data-variant="primary"
+                disabled={busy}
+                onClick={() => submittedBarcode(gap.releaseMbid)}
+              >
+                I submitted it
+              </button>
             </div>
           ))}
         </section>

@@ -2,10 +2,48 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   releaseMediumKey,
+  verifyBarcodeRelease,
   verifiedIsrcReleaseMedia,
   type MusicBrainzReleaseEvidence,
   type SpotifyReleaseEvidence,
 } from '../app/lib/musicbrainz-contribution-safety';
+
+test('barcode evidence requires title, count, and every duration within five seconds', () => {
+  const spotifyRows = [
+    { albumTitle: 'A Release', discNumber: 1, trackNumber: 1, durationMs: 100_000 },
+    { albumTitle: 'A Release', discNumber: 1, trackNumber: 2, durationMs: 200_000 },
+  ];
+  const musicbrainzRows = [
+    { releaseTitle: 'A Release', medium: 1, position: 1, durationMs: 104_999 },
+    { releaseTitle: 'A Release', medium: 1, position: 2, durationMs: 198_000 },
+  ];
+  assert.deepEqual(verifyBarcodeRelease(spotifyRows, musicbrainzRows), {
+    trackCount: 2,
+    maxDurationDeltaMs: 4_999,
+  });
+  assert.equal(verifyBarcodeRelease(spotifyRows, musicbrainzRows.slice(0, 1)), null);
+  assert.equal(
+    verifyBarcodeRelease(spotifyRows, [
+      musicbrainzRows[0],
+      { ...musicbrainzRows[1], durationMs: 205_001 },
+    ]),
+    null,
+  );
+  assert.equal(
+    verifyBarcodeRelease(spotifyRows, [
+      musicbrainzRows[0],
+      { ...musicbrainzRows[1], durationMs: null },
+    ]),
+    null,
+  );
+  assert.equal(
+    verifyBarcodeRelease(
+      spotifyRows,
+      musicbrainzRows.map((row) => ({ ...row, releaseTitle: 'Other' })),
+    ),
+    null,
+  );
+});
 
 function spotify(
   partial: Partial<SpotifyReleaseEvidence> & Pick<SpotifyReleaseEvidence, 'spotifyTrackId'>,

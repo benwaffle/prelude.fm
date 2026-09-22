@@ -18,6 +18,10 @@ import {
 } from '@/lib/musicbrainz-contributions';
 import { editsSpentToday, MusicBrainzBotError, runIsrcBot } from '@/lib/musicbrainz-bot';
 import { botCredentials } from '@/lib/musicbrainz-oauth';
+import {
+  barcodeSubmissionDraft,
+  type ManualSubmissionDraft,
+} from '@/lib/musicbrainz-manual-submissions';
 import { checkAuth } from './auth';
 
 /**
@@ -222,6 +226,35 @@ export async function recordIsrcSubmission(releaseMbid: string, note?: string) {
       .onConflictDoNothing();
   }
 
+  return getContributions();
+}
+
+async function recordManualSubmission(
+  submittedBy: string,
+  draft: ManualSubmissionDraft,
+  options: { note?: string; editId?: string } = {},
+) {
+  await db
+    .insert(mbSubmission)
+    .values({
+      ...draft,
+      submittedBy,
+      note: options.note?.trim() || null,
+      editId: options.editId?.trim() || null,
+    })
+    .onConflictDoNothing();
+}
+
+/** Record a barcode only after the editor confirms making the external edit. */
+export async function recordBarcodeSubmission(
+  releaseMbid: string,
+  options: { note?: string; editId?: string } = {},
+) {
+  const session = await checkAuth();
+  const gap = (await barcodeGaps(5_000)).find((candidate) => candidate.releaseMbid === releaseMbid);
+  if (!gap) throw new Error('That release has no outstanding barcode contribution');
+
+  await recordManualSubmission(`human:${session.user.name}`, barcodeSubmissionDraft(gap), options);
   return getContributions();
 }
 

@@ -25,8 +25,11 @@ import type { IsrcGap } from './musicbrainz-edit-links';
 import {
   ISRC_SUBMISSION_TOLERANCE_MS,
   releaseMediumKey,
+  verifyBarcodeRelease,
   verifiedIsrcReleaseMedia,
+  type MusicBrainzBarcodeEvidence,
   type MusicBrainzReleaseEvidence,
+  type SpotifyBarcodeEvidence,
   type SpotifyReleaseEvidence,
 } from './musicbrainz-contribution-safety';
 import {
@@ -378,10 +381,12 @@ export type BarcodeGap = {
   releaseTitle: string;
   albumId: string;
   barcode: string;
+  trackCount: number;
+  maxDurationDeltaMs: number;
 };
 
 export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
-  return db
+  const candidates = await db
     .select({
       releaseMbid: mbRelease.mbid,
       releaseTitle: mbRelease.title,
@@ -400,8 +405,59 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
             and ${mbSubmission.targetMbid} = ${mbRelease.mbid}
         )`,
       ),
-    )
-    .limit(limit);
+    );
+  if (candidates.length === 0) return [];
+
+  const albumIds = [...new Set(candidates.map((candidate) => candidate.albumId))];
+  const releaseMbids = [...new Set(candidates.map((candidate) => candidate.releaseMbid))];
+  const [spotifyRows, musicbrainzRows] = await Promise.all([
+    db
+      .select({
+        albumId: spotifyAlbum.spotifyId,
+        albumTitle: spotifyAlbum.title,
+        discNumber: spotifyTrack.discNumber,
+        trackNumber: spotifyTrack.trackNumber,
+        durationMs: spotifyTrack.durationMs,
+      })
+      .from(spotifyAlbum)
+      .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyAlbumId, spotifyAlbum.spotifyId))
+      .where(inArray(spotifyAlbum.spotifyId, albumIds)),
+    db
+      .select({
+        releaseMbid: mbRelease.mbid,
+        releaseTitle: mbRelease.title,
+        medium: mbReleaseTrack.medium,
+        position: mbReleaseTrack.position,
+        durationMs: sql<number | null>`coalesce(${mbReleaseTrack.length}, ${mbRecording.length})`,
+      })
+      .from(mbRelease)
+      .innerJoin(mbReleaseTrack, eq(mbReleaseTrack.releaseMbid, mbRelease.mbid))
+      .innerJoin(mbRecording, eq(mbRecording.mbid, mbReleaseTrack.recordingMbid))
+      .where(inArray(mbRelease.mbid, releaseMbids)),
+  ]);
+
+  const spotifyByAlbum = new Map<string, SpotifyBarcodeEvidence[]>();
+  for (const row of spotifyRows) {
+    const rows = spotifyByAlbum.get(row.albumId) ?? [];
+    rows.push(row);
+    spotifyByAlbum.set(row.albumId, rows);
+  }
+  const musicbrainzByRelease = new Map<string, MusicBrainzBarcodeEvidence[]>();
+  for (const row of musicbrainzRows) {
+    const rows = musicbrainzByRelease.get(row.releaseMbid) ?? [];
+    rows.push(row);
+    musicbrainzByRelease.set(row.releaseMbid, rows);
+  }
+
+  return candidates
+    .flatMap((candidate) => {
+      const verification = verifyBarcodeRelease(
+        spotifyByAlbum.get(candidate.albumId) ?? [],
+        musicbrainzByRelease.get(candidate.releaseMbid) ?? [],
+      );
+      return verification ? [{ ...candidate, ...verification }] : [];
+    })
+    .slice(0, limit);
 }
 
 /**
