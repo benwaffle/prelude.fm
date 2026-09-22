@@ -13,6 +13,8 @@ import {
   misalignedAlbums,
   missingReleases,
   releaseEditLink,
+  recordingEditLink,
+  workCreateLink,
   workRelationshipGaps,
   type IsrcGap,
 } from '@/lib/musicbrainz-contributions';
@@ -112,7 +114,10 @@ export type ContributionView = {
       delta: number;
     }[];
   }[];
-  workGaps: Awaited<ReturnType<typeof workRelationshipGaps>>;
+  workGaps: (Awaited<ReturnType<typeof workRelationshipGaps>>[number] & {
+    recordingEdit: string;
+    workCreate: string;
+  })[];
   contested: Awaited<ReturnType<typeof contestedIsrcs>>;
   missing: (Awaited<ReturnType<typeof missingReleases>>[number] & { harmony: string })[];
   barcodes: (Awaited<ReturnType<typeof barcodeGaps>>[number] & { edit: string })[];
@@ -179,7 +184,11 @@ export async function getContributions(): Promise<ContributionView> {
         delta: gap.durationDeltaMs,
       })),
     })),
-    workGaps,
+    workGaps: workGaps.map((gap) => ({
+      ...gap,
+      recordingEdit: recordingEditLink(gap.recordingMbid),
+      workCreate: workCreateLink(),
+    })),
     contested,
     missing: missing.map((album) => ({ ...album, harmony: harmonyImportLink(album.albumId) })),
     barcodes: barcodes.map((gap) => ({ ...gap, edit: releaseEditLink(gap.releaseMbid) })),

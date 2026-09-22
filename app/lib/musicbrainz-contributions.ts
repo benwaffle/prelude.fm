@@ -35,12 +35,20 @@ import {
 import {
   mbRecording,
   mbRecordingIsrc,
+  mbArtist,
   mbRelease,
   mbReleaseTrack,
+  mbWork,
+  mbWorkCatalogue,
   mbSubmission,
+  composer,
   spotifyAlbum,
   spotifyTrack,
+  trackWorkPartV2,
   trackRecording,
+  work,
+  workCatalogV2,
+  workPartV2,
 } from './db/schema';
 
 /**
@@ -58,6 +66,7 @@ export {
   magicIsrcLink,
   recordingEditLink,
   releaseEditLink,
+  workCreateLink,
 } from './musicbrainz-edit-links';
 
 /**
@@ -264,17 +273,42 @@ export async function isrcGapsByRelease(limit = 100): Promise<IsrcGapRelease[]> 
 export type WorkRelationshipGap = {
   recordingMbid: string;
   recordingTitle: string;
+  albumId: string;
   /** Null when the album's release is not cached; the recording is still actionable. */
   releaseMbid: string | null;
   albumTitle: string;
   tracks: number;
+  candidates: WorkCandidate[];
+  proposals: WorkCreationProposal[];
+};
+
+export type WorkCandidate = {
+  workMbid: string;
+  title: string;
+  type: string | null;
+  composerMbid: string | null;
+  composerName: string | null;
+  catalogues: { system: string; number: string }[];
+  evidence: ('existing_mb_part_link' | 'existing_mb_work_link' | 'catalogue_match')[];
+};
+
+export type WorkCreationProposal = {
+  localWorkId: number;
+  title: string;
+  type: string | null;
+  composerName: string;
+  composerMbid: string | null;
+  catalogues: { system: string; number: string }[];
+  /** Always proposal: these fields came from the legacy parser/manual model. */
+  provenance: 'legacy_proposal';
 };
 
 export async function workRelationshipGaps(limit = 100): Promise<WorkRelationshipGap[]> {
-  return db
+  const gaps = await db
     .select({
       recordingMbid: trackRecording.recordingMbid,
       recordingTitle: mbRecording.title,
+      albumId: spotifyAlbum.spotifyId,
       releaseMbid: mbRelease.mbid,
       albumTitle: spotifyAlbum.title,
       tracks: sql<number>`count(*)`,
@@ -292,6 +326,173 @@ export async function workRelationshipGaps(limit = 100): Promise<WorkRelationshi
     )
     .groupBy(trackRecording.recordingMbid)
     .limit(limit);
+  if (gaps.length === 0) return [];
+
+  const recordingMbids = gaps.map((gap) => gap.recordingMbid);
+  const localRows = await db
+    .select({
+      recordingMbid: trackRecording.recordingMbid,
+      localWorkId: work.id,
+      workTitle: work.title,
+      parserType: work.parserForm,
+      workMbid: work.musicbrainzId,
+      partMbid: workPartV2.musicbrainzId,
+      composerName: composer.name,
+      composerMbid: composer.musicbrainzId,
+    })
+    .from(trackRecording)
+    .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
+    .innerJoin(trackWorkPartV2, eq(trackWorkPartV2.spotifyTrackId, spotifyTrack.spotifyId))
+    .innerJoin(workPartV2, eq(workPartV2.id, trackWorkPartV2.workPartId))
+    .innerJoin(work, eq(work.id, workPartV2.workId))
+    .innerJoin(composer, eq(composer.id, work.composerId))
+    .where(inArray(trackRecording.recordingMbid, recordingMbids));
+
+  const localWorkIds = [...new Set(localRows.map((row) => row.localWorkId))];
+  const localCatalogues =
+    localWorkIds.length === 0
+      ? []
+      : await db
+          .select({
+            localWorkId: workCatalogV2.workId,
+            system: workCatalogV2.system,
+            number: workCatalogV2.number,
+            normalizedSystem: workCatalogV2.normalizedSystem,
+            normalizedNumber: workCatalogV2.normalizedNumber,
+            source: workCatalogV2.source,
+          })
+          .from(workCatalogV2)
+          .where(inArray(workCatalogV2.workId, localWorkIds));
+
+  const cataloguesByLocalWork = new Map<
+    number,
+    {
+      system: string;
+      number: string;
+      normalizedSystem: string;
+      normalizedNumber: string;
+      source: 'parser' | 'musicbrainz';
+    }[]
+  >();
+  for (const catalogue of localCatalogues) {
+    const rows = cataloguesByLocalWork.get(catalogue.localWorkId) ?? [];
+    rows.push(catalogue);
+    cataloguesByLocalWork.set(catalogue.localWorkId, rows);
+  }
+
+  const allMbCatalogues = await db.select().from(mbWorkCatalogue);
+  const mbidsByCatalogue = new Map<string, string[]>();
+  for (const catalogue of allMbCatalogues) {
+    const key = `${catalogue.normalizedSystem}\u0000${catalogue.normalizedNumber}`;
+    const mbids = mbidsByCatalogue.get(key) ?? [];
+    mbids.push(catalogue.workMbid);
+    mbidsByCatalogue.set(key, mbids);
+  }
+
+  const candidateEvidence = new Map<string, Map<string, Set<WorkCandidate['evidence'][number]>>>();
+  const addCandidate = (
+    recordingMbid: string,
+    workMbid: string | null,
+    source: WorkCandidate['evidence'][number],
+  ) => {
+    if (!workMbid) return;
+    const byWork = candidateEvidence.get(recordingMbid) ?? new Map();
+    const sources = byWork.get(workMbid) ?? new Set();
+    sources.add(source);
+    byWork.set(workMbid, sources);
+    candidateEvidence.set(recordingMbid, byWork);
+  };
+
+  for (const row of localRows) {
+    addCandidate(row.recordingMbid, row.partMbid, 'existing_mb_part_link');
+    addCandidate(row.recordingMbid, row.workMbid, 'existing_mb_work_link');
+    for (const catalogue of cataloguesByLocalWork.get(row.localWorkId) ?? []) {
+      const key = `${catalogue.normalizedSystem}\u0000${catalogue.normalizedNumber}`;
+      for (const workMbid of mbidsByCatalogue.get(key) ?? []) {
+        addCandidate(row.recordingMbid, workMbid, 'catalogue_match');
+      }
+    }
+  }
+
+  const candidateMbids = [
+    ...new Set([...candidateEvidence.values()].flatMap((byWork) => [...byWork.keys()])),
+  ];
+  const [candidateRows, candidateCatalogues] = await Promise.all([
+    candidateMbids.length === 0
+      ? []
+      : db
+          .select({
+            workMbid: mbWork.mbid,
+            title: mbWork.title,
+            type: mbWork.type,
+            composerMbid: mbWork.composerMbid,
+            composerName: mbArtist.name,
+          })
+          .from(mbWork)
+          .leftJoin(mbArtist, eq(mbArtist.mbid, mbWork.composerMbid))
+          .where(inArray(mbWork.mbid, candidateMbids)),
+    candidateMbids.length === 0
+      ? []
+      : db
+          .select({
+            workMbid: mbWorkCatalogue.workMbid,
+            system: mbWorkCatalogue.system,
+            number: mbWorkCatalogue.number,
+          })
+          .from(mbWorkCatalogue)
+          .where(inArray(mbWorkCatalogue.workMbid, candidateMbids)),
+  ]);
+  const candidateByMbid = new Map(candidateRows.map((row) => [row.workMbid, row]));
+  const candidateCataloguesByMbid = new Map<string, { system: string; number: string }[]>();
+  for (const catalogue of candidateCatalogues) {
+    const rows = candidateCataloguesByMbid.get(catalogue.workMbid) ?? [];
+    rows.push({ system: catalogue.system, number: catalogue.number });
+    candidateCataloguesByMbid.set(catalogue.workMbid, rows);
+  }
+
+  return gaps.map((gap) => {
+    const proposals = new Map<number, WorkCreationProposal>();
+    for (const row of localRows.filter(
+      (candidate) => candidate.recordingMbid === gap.recordingMbid,
+    )) {
+      proposals.set(row.localWorkId, {
+        localWorkId: row.localWorkId,
+        title: row.workTitle,
+        type: row.parserType,
+        composerName: row.composerName,
+        composerMbid: row.composerMbid,
+        catalogues: (cataloguesByLocalWork.get(row.localWorkId) ?? [])
+          .filter((catalogue) => catalogue.source === 'parser')
+          .map((catalogue) => ({
+            system: catalogue.system,
+            number: catalogue.number,
+          })),
+        provenance: 'legacy_proposal',
+      });
+    }
+
+    const candidates: WorkCandidate[] = [];
+    for (const [workMbid, evidence] of candidateEvidence.get(gap.recordingMbid) ?? []) {
+      const row = candidateByMbid.get(workMbid);
+      if (!row) continue;
+      candidates.push({
+        ...row,
+        catalogues: candidateCataloguesByMbid.get(workMbid) ?? [],
+        evidence: [...evidence],
+      });
+    }
+    candidates.sort((a, b) => {
+      const rank = (candidate: WorkCandidate) =>
+        candidate.evidence.includes('existing_mb_part_link')
+          ? 0
+          : candidate.evidence.includes('existing_mb_work_link')
+            ? 1
+            : 2;
+      return rank(a) - rank(b) || a.title.localeCompare(b.title);
+    });
+
+    return { ...gap, candidates, proposals: [...proposals.values()] };
+  });
 }
 
 /**

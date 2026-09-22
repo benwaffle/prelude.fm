@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { magicIsrcLink } from '../app/lib/musicbrainz-edit-links';
+import { magicIsrcLink, workCreateLink } from '../app/lib/musicbrainz-edit-links';
 import type { IsrcGap } from '../app/lib/musicbrainz-edit-links';
 
 function gap(partial: Partial<IsrcGap>): IsrcGap {
@@ -62,4 +62,9 @@ test('an out-of-order album still seeds the canonical MusicBrainz positions', ()
   );
   assert.equal(link.searchParams.get('isrc1-1'), 'GBAAA0000002');
   assert.equal(link.searchParams.get('isrc1-2'), 'GBAAA0000001');
+});
+
+test('work creation opens the canonical form without presenting proposal fields as facts', () => {
+  assert.equal(workCreateLink(), 'https://musicbrainz.org/work/create');
+  assert.equal(new URL(workCreateLink()).search, '');
 });

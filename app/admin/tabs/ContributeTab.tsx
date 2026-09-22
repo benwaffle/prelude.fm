@@ -415,20 +415,110 @@ export function ContributeTab() {
           the gap that stops a track reaching a work even when everything else lines up.
         </p>
         {view.workGaps.map((gap) => (
-          <div key={gap.recordingMbid} className="row">
-            <div>
-              <div>{gap.recordingTitle}</div>
-              <div className="album-meta">{gap.albumTitle}</div>
+          <details key={gap.recordingMbid} className="fold">
+            <summary>
+              <span className="album-title">{gap.recordingTitle}</span>
+              <span className="album-meta">
+                {gap.albumTitle} · {gap.candidates.length} MB candidate
+                {gap.candidates.length === 1 ? '' : 's'}
+              </span>
+            </summary>
+            <div className="fold-body">
+              {gap.candidates.length > 0 ? (
+                <div className="mb-3">
+                  <div className="mb-2 text-[11px] text-[var(--ink-2)]">
+                    Existing MusicBrainz candidates. Catalogue matches identify a possible work;
+                    they do not prove the recording relationship.
+                  </div>
+                  {gap.candidates.map((candidate) => (
+                    <div key={candidate.workMbid} className="row px-0">
+                      <span className="min-w-0 flex-1">
+                        <a
+                          href={`https://musicbrainz.org/work/${candidate.workMbid}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {candidate.title}
+                        </a>
+                        <span className="album-meta">
+                          {[candidate.type, candidate.composerName].filter(Boolean).join(' · ')}
+                          {candidate.catalogues.length > 0 &&
+                            ` · ${candidate.catalogues.map((catalogue) => `${catalogue.system} ${catalogue.number}`).join(', ')}`}
+                          {' · '}
+                          {candidate.evidence.join(', ')}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mb-3 text-[var(--ink-2)]">
+                  No existing MusicBrainz work is identified by cached MBIDs or an exact catalogue
+                  match.
+                </p>
+              )}
+
+              {gap.proposals.map((proposal) => (
+                <div key={proposal.localWorkId} className="mb-3 border-l border-[var(--gall)] pl-3">
+                  <div className="text-[11px] text-[var(--gall)]">
+                    Proposal only — legacy parser/manual evidence, not MusicBrainz fact
+                  </div>
+                  <div>
+                    <span className="text-[var(--faint)]">Title: </span>
+                    <code className="select-all">{proposal.title}</code>
+                  </div>
+                  <div>
+                    <span className="text-[var(--faint)]">Type: </span>
+                    {proposal.type ? (
+                      <code className="select-all">{proposal.type}</code>
+                    ) : (
+                      <span className="absent">missing</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-[var(--faint)]">Composer: </span>
+                    <code className="select-all">{proposal.composerName}</code>
+                    {proposal.composerMbid ? (
+                      <a
+                        className="mono ml-2 text-[11px]"
+                        href={`https://musicbrainz.org/artist/${proposal.composerMbid}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        MB
+                      </a>
+                    ) : (
+                      <span className="absent ml-2">MB identity missing</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-[var(--faint)]">Catalogue: </span>
+                    {proposal.catalogues.length > 0 ? (
+                      <code className="select-all">
+                        {proposal.catalogues
+                          .map((catalogue) => `${catalogue.system} ${catalogue.number}`)
+                          .join(', ')}
+                      </code>
+                    ) : (
+                      <span className="absent">missing</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {gap.proposals.length === 0 && (
+                <p className="mb-3 absent">No local proposal evidence exists for this recording.</p>
+              )}
+
+              <div className="toolbar">
+                <a className="act" href={gap.recordingEdit} target="_blank" rel="noreferrer">
+                  Edit recording relationships
+                </a>
+                <a className="act" href={gap.workCreate} target="_blank" rel="noreferrer">
+                  Create work
+                </a>
+              </div>
             </div>
-            <a
-              className="act ml-auto"
-              href={`https://musicbrainz.org/recording/${gap.recordingMbid}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Recording
-            </a>
-          </div>
+          </details>
         ))}
       </section>
 

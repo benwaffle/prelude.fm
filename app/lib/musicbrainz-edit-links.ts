@@ -68,6 +68,11 @@ export function releaseEditLink(releaseMbid: string): string {
   return `https://musicbrainz.org/release/${releaseMbid}/edit`;
 }
 
+/** Work creation stays unseeded: the proposal is copy-ready evidence, not fact. */
+export function workCreateLink(): string {
+  return 'https://musicbrainz.org/work/create';
+}
+
 /**
  * Harmony, seeded from the Spotify album, for a release MusicBrainz lacks.
  *
