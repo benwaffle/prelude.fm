@@ -164,12 +164,31 @@ export type ProjectedRecording = {
   gaps: MusicBrainzGap[];
 };
 
+/**
+ * What MusicBrainz already says about a track that is not in the library.
+ *
+ * Reading metadata and deciding whether a track is classical are separate
+ * questions, and a track held back on the second still deserves the first: a
+ * reviewer looking at a track we filed as uncertain needs to see the
+ * recording, the work and the composer MusicBrainz already gave us, not an
+ * empty row with a label on it.
+ */
+export type UnresolvedTrackMetadata = {
+  recordingMbid: string;
+  recordingTitle: string | null;
+  detail: 'stub' | 'full' | null;
+  works: ProjectedRecordingWork[];
+  credits: ProjectedCredit[];
+};
+
 export type UnresolvedLibraryTrack = {
   spotifyTrackId: string;
   providerTitle: string | null;
   spotifyAlbumId: string | null;
   status: 'unmatched' | 'unclassified';
   classification: TrackClassification | null;
+  /** Null only when nothing anchored the track to a MusicBrainz recording. */
+  musicBrainz: UnresolvedTrackMetadata | null;
   gaps: MusicBrainzGap[];
 };
 
@@ -322,6 +341,7 @@ export function projectMusicBrainzLibrary(
     status: 'unmatched' | 'unclassified',
     classification: TrackClassification | null,
     gaps: MusicBrainzGap[],
+    musicBrainz: UnresolvedTrackMetadata | null = null,
   ): void => {
     const providerTrack = trackById.get(spotifyTrackId);
     unresolvedTracks.push({
@@ -330,6 +350,7 @@ export function projectMusicBrainzLibrary(
       spotifyAlbumId: providerTrack?.spotifyAlbumId ?? null,
       status,
       classification,
+      musicBrainz,
       gaps,
     });
     accountingByTrack.set(spotifyTrackId, {
@@ -343,6 +364,24 @@ export function projectMusicBrainzLibrary(
   for (const spotifyTrackId of requestedTrackIds) {
     const providerTrack = trackById.get(spotifyTrackId);
     const classification = classificationByTrack.get(spotifyTrackId) ?? null;
+    const anchor = anchorByTrack.get(spotifyTrackId);
+    // Read first, route second. What MusicBrainz knows about the track does
+    // not depend on whether we have decided the track is classical.
+    const known =
+      anchor?.state === 'accepted' ? describeAnchoredTrack(anchor.recordingMbid, index) : null;
+    // A contested ISRC is a contradiction in MusicBrainz, and it is worth
+    // reporting whatever the track's classification turns out to be.
+    const contested =
+      anchor?.state === 'conflicting'
+        ? [
+            gap(
+              'recording-anchor-conflict',
+              'track',
+              spotifyTrackId,
+              `${anchor.reason}; candidates: ${anchor.candidateRecordingMbids.join(', ')}`,
+            ),
+          ]
+        : [];
     if (!providerTrack) {
       addUnresolved(spotifyTrackId, 'unmatched', classification, [
         gap('provider-track-not-fetched', 'track', spotifyTrackId),
@@ -351,25 +390,45 @@ export function projectMusicBrainzLibrary(
     }
 
     if (!classification || classification.state === 'unreviewed') {
-      addUnresolved(spotifyTrackId, 'unclassified', classification, [
-        gap('classification-unreviewed', 'track', spotifyTrackId, classification?.reason ?? null),
-      ]);
+      addUnresolved(
+        spotifyTrackId,
+        'unclassified',
+        classification,
+        [
+          gap('classification-unreviewed', 'track', spotifyTrackId, classification?.reason ?? null),
+          ...contested,
+        ],
+        known,
+      );
       continue;
     }
     if (classification.state === 'uncertain') {
-      addUnresolved(spotifyTrackId, 'unclassified', classification, [
-        gap('classification-uncertain', 'track', spotifyTrackId, classification.reason),
-      ]);
+      addUnresolved(
+        spotifyTrackId,
+        'unclassified',
+        classification,
+        [
+          gap('classification-uncertain', 'track', spotifyTrackId, classification.reason),
+          ...contested,
+        ],
+        known,
+      );
       continue;
     }
     if (classification.state === 'not_classical') {
-      addUnresolved(spotifyTrackId, 'unclassified', classification, [
-        gap('classification-not-classical', 'track', spotifyTrackId, classification.reason),
-      ]);
+      addUnresolved(
+        spotifyTrackId,
+        'unclassified',
+        classification,
+        [
+          gap('classification-not-classical', 'track', spotifyTrackId, classification.reason),
+          ...contested,
+        ],
+        known,
+      );
       continue;
     }
 
-    const anchor = anchorByTrack.get(spotifyTrackId);
     if (!anchor) {
       const gaps = releaseGaps(providerTrack, index, null);
       pushGap(gaps, gap('recording-unanchored', 'track', spotifyTrackId));
@@ -377,14 +436,7 @@ export function projectMusicBrainzLibrary(
       continue;
     }
     if (anchor.state === 'conflicting') {
-      addUnresolved(spotifyTrackId, 'unmatched', classification, [
-        gap(
-          'recording-anchor-conflict',
-          'track',
-          spotifyTrackId,
-          `${anchor.reason}; candidates: ${anchor.candidateRecordingMbids.join(', ')}`,
-        ),
-      ]);
+      addUnresolved(spotifyTrackId, 'unmatched', classification, contested);
       continue;
     }
 
@@ -670,6 +722,33 @@ function projectRecordingWork(
     catalogues,
     composer,
     gaps,
+  };
+}
+
+/** The MusicBrainz reading of a track, with no view on whether it belongs in
+ *  the classical library. */
+function describeAnchoredTrack(
+  recordingMbid: string,
+  index: LibraryIndex,
+): UnresolvedTrackMetadata {
+  const recording = index.recordingById.get(recordingMbid);
+  return {
+    recordingMbid,
+    recordingTitle: recording ? nonBlank(recording.title) : null,
+    detail: recording?.detail ?? null,
+    works: (index.worksByRecording.get(recordingMbid) ?? []).map((relation) =>
+      projectRecordingWork(relation.workMbid, index),
+    ),
+    credits: (index.creditsByRecording.get(recordingMbid) ?? []).map((credit) => {
+      const artist = index.artistById.get(credit.artistMbid);
+      return {
+        artistMbid: credit.artistMbid,
+        name: artist ? nonBlank(artist.name) : null,
+        creditedName: artist ? nonBlank(artist.creditedName) : null,
+        role: credit.role,
+        instrument: nonBlank(credit.instrument),
+      };
+    }),
   };
 }
 

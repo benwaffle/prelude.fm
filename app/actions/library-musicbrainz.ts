@@ -15,6 +15,7 @@ import {
   spotifyTrack,
   trackRecording,
 } from '@/lib/db/schema';
+import { classicalEvidenceFor } from '@/lib/musicbrainz-classical-evidence';
 import type {
   MbArtistFact,
   MbRecordingCreditFact,
@@ -153,8 +154,30 @@ export async function loadMusicBrainzLibraryFacts(
       database.select().from(mbReleaseTrack).where(inArray(mbReleaseTrack.releaseMbid, chunk)),
   );
 
+  const queueStatusByTrack = new Map(queueRows.map((row) => [row.spotifyId, row.status]));
+  const isrcRecordings = new Map<string, string[]>();
+  for (const row of isrcRows) {
+    isrcRecordings.set(row.isrc, [...(isrcRecordings.get(row.isrc) ?? []), row.recordingMbid]);
+  }
+
+  // A track whose ISRC names two recordings has no anchor, but MusicBrainz
+  // still says something about it. Without asking whether those candidates
+  // are of works, the track would be filed as unclassified and the
+  // contradiction — the thing worth contributing a fix for — would never be
+  // reported.
+  const candidateWorkRows = await forChunks([...isrcRecordings.values()].flat(), (chunk) =>
+    database.select().from(mbRecordingWork).where(inArray(mbRecordingWork.recordingMbid, chunk)),
+  );
+  const worksByRecording = new Map<string, string[]>();
+  for (const relation of [...recordingWorkRows, ...candidateWorkRows]) {
+    worksByRecording.set(relation.recordingMbid, [
+      ...(worksByRecording.get(relation.recordingMbid) ?? []),
+      relation.workMbid,
+    ]);
+  }
+
   const workRows = await readWorkTree(
-    recordingWorkRows.map((relation) => relation.workMbid),
+    [...recordingWorkRows, ...candidateWorkRows].map((relation) => relation.workMbid),
     database,
   );
   const workMbids = workRows.map((work) => work.mbid);
@@ -171,25 +194,9 @@ export async function loadMusicBrainzLibraryFacts(
     ),
   ]);
 
-  const queueStatusByTrack = new Map(queueRows.map((row) => [row.spotifyId, row.status]));
-  const isrcRecordings = new Map<string, string[]>();
-  for (const row of isrcRows) {
-    isrcRecordings.set(row.isrc, [...(isrcRecordings.get(row.isrc) ?? []), row.recordingMbid]);
-  }
-
-  // A track whose ISRC names two recordings has no anchor, but MusicBrainz
-  // still says something about it. Without asking whether those candidates
-  // are of works, the track would be filed as unclassified and the
-  // contradiction — the thing worth contributing a fix for — would never be
-  // reported.
-  const candidateWorkRows = await forChunks([...isrcRecordings.values()].flat(), (chunk) =>
-    database.select().from(mbRecordingWork).where(inArray(mbRecordingWork.recordingMbid, chunk)),
-  );
-  const recordingHasWork = new Set(
-    [...recordingWorkRows, ...candidateWorkRows].map((relation) => relation.recordingMbid),
-  );
-
   const providerTrackById = new Map(providerTrackRows.map((track) => [track.spotifyId, track]));
+  const workByMbid = new Map(workRows.map((work) => [work.mbid, work]));
+  const catalogedWorkMbids = new Set(catalogueRows.map((catalogue) => catalogue.workMbid));
   const anchors: TrackAnchorFact[] = [];
   for (const track of providerTrackRows) {
     const anchor = anchorByTrackId.get(track.spotifyId);
@@ -223,11 +230,12 @@ export async function loadMusicBrainzLibraryFacts(
         : (track?.isrc && isrcRecordings.get(track.isrc)) || [];
       const classification = classify(
         spotifyTrackId,
-        evidenceMbids,
-        recordingHasWork,
+        evidenceMbids.flatMap((mbid) => worksByRecording.get(mbid) ?? []),
+        workByMbid,
+        catalogedWorkMbids,
         queueStatusByTrack.get(spotifyTrackId) ?? null,
       );
-      return classification ? [classification] : [];
+      return [classification];
     }),
     providerAlbums: providerAlbumRows.map(
       (album): ProviderAlbumFact => ({
@@ -319,32 +327,33 @@ export async function loadMusicBrainzLibraryFacts(
 
 /**
  * There is no classification store yet, so this states what the existing rows
- * actually support and nothing more. MusicBrainz relating the anchored
- * recording to a work is deterministic evidence and outranks the parser;
- * `match_queue`'s `not_classical` is an LLM verdict and is labelled as the
- * proposal it is; anything else is unreviewed, with the reason saying so
- * rather than a guess standing in for a decision nobody has made.
+ * actually support and nothing more.
+ *
+ * Specific MusicBrainz evidence — a catalogue-series reference or an
+ * art-music work type — is deterministic and outranks the parser, and where
+ * they disagree the reason says so. A work relation on its own is not
+ * evidence: MusicBrainz files works for popular songs too. `match_queue`'s
+ * `not_classical` is an LLM verdict and is labelled the proposal it is.
+ * Everything else stays visible as uncertain or unreviewed, which is the
+ * honest reading of "nobody has established this".
  */
 function classify(
   spotifyTrackId: string,
-  evidenceMbids: string[],
-  recordingHasWork: Set<string>,
+  workMbids: string[],
+  workByMbid: Map<string, { mbid: string; type: string | null; parentMbid: string | null }>,
+  catalogedWorkMbids: Set<string>,
   queueStatus: string | null,
-): TrackClassification | null {
-  // Every recording this track could be — one when it is anchored, several
-  // when its ISRC is contested. All of them being of a work is what makes
-  // "classical" a MusicBrainz statement rather than a coin toss; which
-  // recording it is stays an open question the anchor reports.
-  const named = evidenceMbids.filter((mbid) => recordingHasWork.has(mbid));
-  if (evidenceMbids.length > 0 && named.length === evidenceMbids.length) {
+): TrackClassification {
+  const evidence = classicalEvidenceFor(workMbids, workByMbid, catalogedWorkMbids);
+  if (evidence.state === 'classical') {
     return {
       spotifyTrackId,
       state: 'classical',
       provenance: 'musicbrainz',
       reason:
         queueStatus === 'not_classical'
-          ? `MusicBrainz relates ${named.join(', ')} to a work, but the parser ruled this not classical`
-          : `MusicBrainz relates ${named.join(', ')} to a work`,
+          ? `${evidence.reason}, but the parser ruled this not classical`
+          : evidence.reason,
     };
   }
   if (queueStatus === 'not_classical') {
@@ -352,17 +361,24 @@ function classify(
       spotifyTrackId,
       state: 'not_classical',
       provenance: 'llm_proposal',
-      reason: 'the album parser ruled this not classical; not reviewed by hand',
+      reason: `the album parser ruled this not classical; not reviewed by hand (${evidence.reason})`,
+    };
+  }
+  // We looked and MusicBrainz did not settle it. That is a different state
+  // from never having looked, and the reader shows both.
+  if (workMbids.length > 0) {
+    return {
+      spotifyTrackId,
+      state: 'uncertain',
+      provenance: 'musicbrainz',
+      reason: evidence.reason,
     };
   }
   return {
     spotifyTrackId,
     state: 'unreviewed',
     provenance: 'musicbrainz',
-    reason:
-      evidenceMbids.length > 0
-        ? `${evidenceMbids.join(', ')} has no work relationship in the cache`
-        : 'no MusicBrainz evidence yet',
+    reason: evidence.reason,
   };
 }
 

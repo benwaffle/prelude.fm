@@ -86,6 +86,16 @@ async function seedLibrary() {
       isrc: null,
     },
     {
+      spotifyId: 'held-4',
+      title: 'A Pop Single',
+      trackNumber: 5,
+      discNumber: 1,
+      durationMs: 190_000,
+      popularity: 90,
+      spotifyAlbumId: 'album-3',
+      isrc: 'GBAAA0000004',
+    },
+    {
       spotifyId: 'held-3',
       title: 'Symphony No. 87',
       trackNumber: 2,
@@ -109,7 +119,34 @@ async function seedLibrary() {
       isrc: null,
       matchedBy: 'release_position',
     },
+    {
+      spotifyTrackId: 'held-4',
+      recordingMbid: 'recording-pop',
+      isrc: 'GBAAA0000004',
+      matchedBy: 'isrc',
+    },
   ]);
+  // A popular song is a recording of a work in MusicBrainz too. Nothing
+  // about that relation makes it classical.
+  await db.insert(schema.mbRecording).values({
+    mbid: 'recording-pop',
+    title: 'A Pop Single',
+    length: 190_000,
+    detail: 'full',
+  });
+  await db.insert(schema.mbRecordingWork).values({
+    recordingMbid: 'recording-pop',
+    workMbid: 'work-pop',
+  });
+  await db.insert(schema.mbWork).values({
+    mbid: 'work-pop',
+    title: 'A Pop Single',
+    type: 'Song',
+    parentMbid: null,
+    orderingKey: null,
+    composerMbid: null,
+    detail: 'full',
+  });
   await db.insert(schema.mbRecording).values({
     mbid: 'recording-1',
     title: 'Aria',
@@ -205,6 +242,15 @@ async function seedLibrary() {
     { recordingMbid: 'recording-87a', workMbid: 'work-87' },
     { recordingMbid: 'recording-87b', workMbid: 'work-87' },
   ]);
+  await db.insert(schema.mbWork).values({
+    mbid: 'work-87',
+    title: 'Symphony no. 87 in A major, Hob. I:87',
+    type: 'Symphony',
+    parentMbid: null,
+    orderingKey: null,
+    composerMbid: null,
+    detail: 'full',
+  });
 }
 
 beforeEach(async () => {
@@ -344,4 +390,43 @@ test('reads a library larger than SQLite will bind in one statement', async () =
 
   assert.equal(facts.requestedTrackIds.length, 1_201);
   assert.equal(projectMusicBrainzLibrary(facts).accounting.length, 1_201);
+});
+
+test('a popular song with a MusicBrainz work relation is not called classical', async () => {
+  const facts = await loadMusicBrainzLibraryFacts(['held-4']);
+  const classification = facts.classifications[0];
+
+  assert.equal(classification.state, 'uncertain');
+  assert.equal(classification.provenance, 'musicbrainz');
+  assert.match(classification.reason ?? '', /does not distinguish art music/);
+
+  const projection = projectMusicBrainzLibrary(facts);
+  assert.deepEqual(projection.recordings, []);
+  assert.equal(projection.accounting[0].status, 'unclassified');
+});
+
+test('the parser ruling a track not classical stands when MusicBrainz cannot settle it', async () => {
+  await db.insert(schema.matchQueue).values({
+    spotifyId: 'held-4',
+    spotifyAlbumId: 'album-3',
+    submittedBy: 'test',
+    status: 'not_classical',
+  });
+  const facts = await loadMusicBrainzLibraryFacts(['held-4']);
+
+  assert.equal(facts.classifications[0].state, 'not_classical');
+  assert.equal(facts.classifications[0].provenance, 'llm_proposal');
+});
+
+test('a track held back for review still shows what MusicBrainz says about it', async () => {
+  const projection = projectMusicBrainzLibrary(await loadMusicBrainzLibraryFacts(['held-4']));
+  const [unresolved] = projection.unresolvedTracks;
+
+  assert.equal(unresolved.status, 'unclassified');
+  assert.equal(unresolved.musicBrainz?.recordingMbid, 'recording-pop');
+  assert.equal(unresolved.musicBrainz?.recordingTitle, 'A Pop Single');
+  assert.deepEqual(
+    unresolved.musicBrainz?.works.map((work) => work.relatedWorkMbid),
+    ['work-pop'],
+  );
 });
