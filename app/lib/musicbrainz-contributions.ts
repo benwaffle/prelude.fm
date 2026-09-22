@@ -700,6 +700,32 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
     .slice(0, limit);
 }
 
+/**
+ * Barcode gaps nobody has submitted yet.
+ *
+ * The displayed list is `barcodeGaps`, which keeps pending ledger rows visible.
+ * The bot only receives rows from this set.
+ */
+export async function barcodeEligibleGaps(limit = 200): Promise<BarcodeGap[]> {
+  const gaps = await barcodeGaps(5_000);
+  if (gaps.length === 0) return [];
+
+  const releaseMbids = [...new Set(gaps.map((gap) => gap.releaseMbid))];
+  const ledgerRows = await db
+    .select({
+      targetMbid: mbSubmission.targetMbid,
+      value: mbSubmission.value,
+    })
+    .from(mbSubmission)
+    .where(and(eq(mbSubmission.kind, 'barcode'), inArray(mbSubmission.targetMbid, releaseMbids)));
+
+  const ledgered = new Set(ledgerRows.map((row) => `${row.targetMbid}\u0000${row.value ?? ''}`));
+
+  return gaps
+    .filter((gap) => !ledgered.has(`${gap.releaseMbid}\u0000${gap.barcode}`))
+    .slice(0, limit);
+}
+
 /** What the cache currently holds as this release's barcode, if anything. */
 export async function observeCachedBarcode(releaseMbid: string): Promise<string | null> {
   const [row] = await db

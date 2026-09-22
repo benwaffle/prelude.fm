@@ -1,11 +1,14 @@
 /**
- * Run prelude_fm_bot's ISRC submissions.
+ * Run prelude_fm_bot's ISRC and barcode submissions.
  *
- *   pnpm mb:bot                    show what would be submitted
- *   pnpm mb:bot --apply            submit it
+ *   pnpm mb:bot                    show what would be submitted (ISRCs)
+ *   pnpm mb:bot --apply            submit ISRCs
  *   pnpm mb:bot --release <mbid>   a particular release rather than the first
+ *   pnpm mb:bot --barcode            show barcode batch (dry run)
+ *   pnpm mb:bot --barcode --apply    submit barcodes
+ *   pnpm mb:bot --barcode --release <mbid>
  *
- * One album at a time: an album is the unit somebody can actually check,
+ * One album at a time for ISRCs: an album is the unit somebody can actually check,
  * since every row shares a release, a barcode and one tracklist.
  *
  * Dry run by default, and the dry run needs no credentials, so the payload
@@ -16,6 +19,7 @@ import { loadEnvConfig } from '@next/env';
 
 async function main() {
   const apply = process.argv.includes('--apply');
+  const barcode = process.argv.includes('--barcode');
   const maxIndex = process.argv.indexOf('--max-edits');
   const maxEdits = maxIndex === -1 ? undefined : Number(process.argv[maxIndex + 1]);
   const releaseIndex = process.argv.indexOf('--release');
@@ -24,6 +28,32 @@ async function main() {
 
   loadEnvConfig(process.cwd());
   if (!process.env.TURSO_DATABASE_URL) throw new Error('TURSO_DATABASE_URL is required');
+
+  if (barcode) {
+    const { runBarcodeBot } = await import('@/lib/musicbrainz-bot');
+    const run = await runBarcodeBot({ apply, maxEdits, releaseMbid });
+
+    console.log(apply && run.submitted ? 'Submitted.' : 'Dry run. Pass --apply to submit.');
+    console.log(`
+  releases in batch       ${run.evidence.length}
+  edits in this batch     ${run.edits}
+  edits already today     ${run.spentToday} of 1000`);
+
+    console.log(`\n  edit note:\n    ${run.editNote}`);
+
+    if (run.evidence.length > 0) {
+      console.log('\n  what would be submitted:');
+      for (const gap of run.evidence.slice(0, 8)) {
+        console.log(
+          `    ${gap.releaseTitle}  ${gap.barcode}  ${gap.trackCount} tracks  worst ${gap.maxDurationDeltaMs}ms`,
+        );
+        console.log(`         https://open.spotify.com/album/${gap.albumId}`);
+      }
+    }
+
+    if (showPayload) console.log(`\n${run.payload}`);
+    return;
+  }
 
   const { runIsrcBot } = await import('@/lib/musicbrainz-bot');
   const run = await runIsrcBot({ apply, maxEdits, releaseMbid });

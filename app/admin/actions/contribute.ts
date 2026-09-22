@@ -24,7 +24,12 @@ import {
   workRelationshipGaps,
   type IsrcGap,
 } from '@/lib/musicbrainz-contributions';
-import { editsSpentToday, MusicBrainzBotError, runIsrcBot } from '@/lib/musicbrainz-bot';
+import {
+  editsSpentToday,
+  MusicBrainzBotError,
+  runBarcodeBot,
+  runIsrcBot,
+} from '@/lib/musicbrainz-bot';
 import { botCredentials } from '@/lib/musicbrainz-oauth';
 import { musicBrainzApi } from '@/lib/musicbrainz';
 import { ingestWorkTree } from '@/lib/musicbrainz-cache';
@@ -113,6 +118,39 @@ export async function submitBotBatch(releaseMbid: string): Promise<{
           ? error.message
           : String(error);
     return { submitted: 0, album: null, error: message, view: await getContributions() };
+  }
+}
+
+/** The exact barcode document that would be sent for one release. */
+export async function getBarcodeBotPayload(releaseMbid: string): Promise<string> {
+  await checkAuth();
+  const run = await runBarcodeBot({ apply: false, releaseMbid });
+  return run.payload;
+}
+
+export async function submitBarcodeBotBatch(releaseMbid: string): Promise<{
+  submitted: number;
+  release: string | null;
+  error: string | null;
+  view: ContributionView;
+}> {
+  await checkAuth();
+  try {
+    const run = await runBarcodeBot({ apply: true, releaseMbid });
+    return {
+      submitted: run.edits,
+      release: run.evidence[0]?.releaseTitle ?? null,
+      error: null,
+      view: await getContributions(),
+    };
+  } catch (error) {
+    const message =
+      error instanceof MusicBrainzBotError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    return { submitted: 0, release: null, error: message, view: await getContributions() };
   }
 }
 

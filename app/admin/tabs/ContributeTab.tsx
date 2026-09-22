@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   getBotPayload,
+  getBarcodeBotPayload,
   getBotStatus,
   getContributions,
   recordBarcodeSubmission,
@@ -23,6 +24,7 @@ import {
   reconcileSubmissions,
   setSubmissionOutcome,
   submitBotBatch,
+  submitBarcodeBotBatch,
   type BotStatus,
   type ContributionView,
 } from '../actions/contribute';
@@ -49,6 +51,9 @@ export function ContributeTab({
   const [bot, setBot] = useState<BotStatus | null>(null);
   const [botResult, setBotResult] = useState<string | null>(null);
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
+  const [barcodePayload, setBarcodePayload] = useState<{ releaseMbid: string; xml: string } | null>(
+    null,
+  );
   const [workCreateForms, setWorkCreateForms] = useState<
     Record<string, { workMbid: string; editId: string }>
   >({});
@@ -115,6 +120,33 @@ export function ContributeTab({
     setBusy(true);
     try {
       setPayload({ releaseMbid, xml: await getBotPayload(releaseMbid) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revealBarcodePayload(releaseMbid: string) {
+    if (barcodePayload?.releaseMbid === releaseMbid) return setBarcodePayload(null);
+    setBusy(true);
+    try {
+      setBarcodePayload({ releaseMbid, xml: await getBarcodeBotPayload(releaseMbid) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitBarcode(releaseMbid: string, releaseTitle: string) {
+    setBusy(true);
+    setBotResult(null);
+    try {
+      const result = await submitBarcodeBotBatch(releaseMbid);
+      setView(result.view);
+      setBot(await getBotStatus());
+      setBotResult(
+        result.error
+          ? `${releaseTitle}: not submitted — ${result.error}`
+          : `${releaseTitle}: submitted barcode. It stays pending until MusicBrainz shows it.`,
+      );
     } finally {
       setBusy(false);
     }
@@ -325,7 +357,7 @@ export function ContributeTab({
         </div>
         <p className="px-4 py-3 text-[var(--ink-2)]">
           {bot?.configured
-            ? 'Submits one album at a time, when you press the button on it below, and at no other time — not on a schedule, and never from the worker. Only ISRCs.'
+            ? 'Submits ISRCs and barcodes when you press the button on a row below — not on a schedule, and never from the worker. Releases, works and merges stay manual.'
             : 'Not configured. Run `pnpm mb:authorise` to obtain a refresh token for prelude_fm_bot. Everything below still works; the submitting is done by hand.'}
         </p>
         {botResult && <p className="px-4 pb-3">{botResult}</p>}
@@ -570,9 +602,9 @@ export function ContributeTab({
           <p className="px-4 pt-3 text-[var(--ink-2)]">
             Found by title and duration rather than by barcode, which is why they have none. Adding
             it makes the release findable the way every other one is. Copy the exact Spotify value,
-            add it on the release edit page, then confirm here only after submitting the edit.
-            Opening the edit page does not write the ledger. A confirmed barcode stays listed until
-            the cache holds one.
+            submit via prelude_fm_bot, or add it on the release edit page and confirm here after
+            submitting the edit. Opening the edit page does not write the ledger. A confirmed
+            barcode stays listed until the cache holds one.
           </p>
           {view.barcodes.map((gap) => {
             const form = barcodeForms[gap.releaseMbid] ?? { editId: '' };
@@ -609,6 +641,26 @@ export function ContributeTab({
                   </>
                 ) : (
                   <>
+                    {bot?.configured && (
+                      <>
+                        <button
+                          className="act shrink-0"
+                          data-variant="primary"
+                          disabled={busy}
+                          onClick={() => submitBarcode(gap.releaseMbid, gap.releaseTitle)}
+                        >
+                          Submit as prelude_fm_bot
+                        </button>
+                        <button
+                          className="act shrink-0"
+                          disabled={busy}
+                          onClick={() => revealBarcodePayload(gap.releaseMbid)}
+                        >
+                          {barcodePayload?.releaseMbid === gap.releaseMbid ? 'Hide' : 'Show'} the
+                          payload
+                        </button>
+                      </>
+                    )}
                     <input
                       className="mono w-32 shrink-0"
                       placeholder="edit ID (optional)"
@@ -622,7 +674,6 @@ export function ContributeTab({
                     />
                     <button
                       className="act shrink-0"
-                      data-variant="primary"
                       disabled={busy}
                       onClick={() => submittedBarcode(gap.releaseMbid)}
                     >
@@ -633,6 +684,11 @@ export function ContributeTab({
               </div>
             );
           })}
+          {barcodePayload && (
+            <pre className="mono overflow-x-auto px-4 pb-4 text-[11px] text-[var(--ink-2)]">
+              {barcodePayload.xml}
+            </pre>
+          )}
         </section>
       )}
 
