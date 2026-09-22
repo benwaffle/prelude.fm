@@ -822,11 +822,13 @@ export async function processQueuedAlbum(
       }
       const eligibleTracks = prepared.map((item) => item.track);
       const eligibleTrackIds = eligibleTracks.map((track) => track.id);
-      const savedV2 = await db.transaction(async (transaction) => {
+      // One transaction for the base save and the v2 reconciliation: an album
+      // whose work assignments do not all resolve must leave no rows behind.
+      await db.transaction(async (transaction) => {
         for (const item of prepared) {
           await saveTrackMetadataInternal(item.input, transaction);
         }
-        const saved = await saveParsedAlbumV2(
+        await saveParsedAlbumV2(
           album.id,
           eligibleTracks.map((track) => ({
             id: track.id,
@@ -853,15 +855,11 @@ export async function processQueuedAlbum(
             .set({ matchStatus: 'needs_review' })
             .where(inArray(trackWorkPartV2.spotifyTrackId, [...synthesizedPartTrackIds]));
         }
-        return saved;
       });
       const completedTrackIds = await getLinkedTrackIds(eligibleTrackIds);
       if (completedTrackIds.size > 0) {
         await setQueueStatus([...completedTrackIds], 'matched', { claimOwnerId });
         result.matched += completedTrackIds.size;
-      }
-      if (savedV2.unresolved > 0) {
-        result.errors.push({ message: `${savedV2.unresolved} v2 work assignments need review` });
       }
       return result;
     }

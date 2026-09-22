@@ -30,8 +30,27 @@ export type SaveParsedAlbumResult = {
   groups: number;
   confirmed: number;
   needsReview: number;
-  unresolved: number;
 };
+
+/**
+ * Raised before the first write when a classical track on the album has no
+ * work we can resolve. The caller is expected to let it abort the surrounding
+ * transaction, so the album is saved whole or not at all.
+ */
+export class UnresolvedAlbumWorkError extends Error {
+  readonly spotifyTrackIds: string[];
+
+  constructor(spotifyAlbumId: string, unresolved: Array<{ trackId: string; describes: string }>) {
+    super(
+      `Album ${spotifyAlbumId} was not saved: ${unresolved.length} classical ` +
+        `${unresolved.length === 1 ? 'track has' : 'tracks have'} no resolvable work (` +
+        unresolved.map((item) => `${item.trackId}: ${item.describes}`).join('; ') +
+        ')',
+    );
+    this.name = 'UnresolvedAlbumWorkError';
+    this.spotifyTrackIds = unresolved.map((item) => item.trackId);
+  }
+}
 
 let composerRowsPromise: Promise<Array<{ id: number; name: string }>> | null = null;
 
@@ -424,6 +443,27 @@ export async function saveParsedAlbumV2(
         : null,
     });
   }
+  // Publishing only the tracks whose work resolved strands the rest. The base
+  // save has already written a provisional work, part and recording membership
+  // for every track in the batch, and reconcileRecording replaces a
+  // recording's whole membership with the resolved subgroup — so the tracks
+  // left out come back with a part link and no recording, invisible to a
+  // reader that joins through one. Fail the album before the first
+  // reconciliation and let the shared transaction roll the batch back: the
+  // tracks stay queued with a stated reason instead of becoming orphans.
+  const unresolved = resolved.filter((item) => item.metadata?.isClassical && !item.workId);
+  if (unresolved.length > 0) {
+    throw new UnresolvedAlbumWorkError(
+      spotifyAlbumId,
+      unresolved.map((item) => ({
+        trackId: item.track.id,
+        describes: [item.metadata.composerName, item.metadata.formalName]
+          .filter(Boolean)
+          .join(' — '),
+      })),
+    );
+  }
+
   const groups = new Map<string, typeof resolved>();
   const groupRepresentatives: Array<{
     key: string;
@@ -517,10 +557,5 @@ export async function saveParsedAlbumV2(
       await database.insert(trackWorkPartV2).values([...links.values()]);
     }
   }
-  return {
-    groups: groups.size,
-    confirmed,
-    needsReview,
-    unresolved: resolved.filter((item) => item.metadata?.isClassical && !item.workId).length,
-  };
+  return { groups: groups.size, confirmed, needsReview };
 }
