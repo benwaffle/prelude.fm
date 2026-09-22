@@ -20,6 +20,7 @@ import { saveParsedAlbumV2 } from '@/lib/work-parts-v2';
 import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Track } from '@spotify/web-api-ts-sdk';
 import { runMusicBrainzAlbumPass, type TrackPassOutcome } from '@/lib/musicbrainz-worker';
+import { persistMusicBrainzTrackOutcomes } from '@/lib/musicbrainz-pipeline-state';
 
 export type MatchQueueStatus = 'pending' | 'processing' | 'matched' | 'failed' | 'not_classical';
 
@@ -666,6 +667,7 @@ async function processAlbumThroughMusicBrainz(
   const report = await runMusicBrainzAlbumPass(musicBrainzApi('interactive'), albumId, trackIds, {
     alreadyAnchored: trackIds.length > 0 && trackIds.every((trackId) => anchored.has(trackId)),
   });
+  await persistMusicBrainzTrackOutcomes(report.tracks, claimOwnerId);
 
   const byState = new Map<TrackPassOutcome['state'], TrackPassOutcome[]>();
   for (const outcome of report.tracks) {

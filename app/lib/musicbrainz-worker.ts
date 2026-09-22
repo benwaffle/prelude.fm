@@ -4,6 +4,7 @@ import { hydrateProviderAlbum } from './provider-hydration';
 import { getSpotifyAlbumTracks } from './spotify-app-client';
 import type { MusicBrainzSource } from './musicbrainz-source';
 import type { TrackClassificationState } from './musicbrainz-library-facts';
+import type { PipelineOutcome, TrackClassificationProvenance } from './track-classification';
 
 /**
  * An album pass that asks MusicBrainz, not a language model.
@@ -25,8 +26,9 @@ import type { TrackClassificationState } from './musicbrainz-library-facts';
 export type TrackPassOutcome = {
   spotifyTrackId: string;
   /** What the reader will be able to do with this track. */
-  state: 'ready' | 'unanchored' | 'unclassified' | 'not_classical';
+  state: PipelineOutcome;
   classification: TrackClassificationState;
+  classificationProvenance: TrackClassificationProvenance;
   /** Why, in words an editor can act on. */
   reason: string;
 };
@@ -101,13 +103,20 @@ export async function runMusicBrainzAlbumPass(
       const anchor = anchorByTrack.get(spotifyTrackId);
       const reason = classification?.reason ?? 'no MusicBrainz evidence yet';
       if (classification?.state === 'not_classical') {
-        return { spotifyTrackId, state: 'not_classical', classification: 'not_classical', reason };
+        return {
+          spotifyTrackId,
+          state: 'not_classical',
+          classification: 'not_classical',
+          classificationProvenance: classification.provenance,
+          reason,
+        };
       }
       if (!anchor || anchor.state !== 'accepted') {
         return {
           spotifyTrackId,
           state: 'unanchored',
           classification: classification?.state ?? 'unreviewed',
+          classificationProvenance: classification?.provenance ?? 'musicbrainz',
           reason:
             anchor?.state === 'conflicting'
               ? anchor.reason
@@ -120,10 +129,17 @@ export async function runMusicBrainzAlbumPass(
           spotifyTrackId,
           state: 'unclassified',
           classification: classification?.state ?? 'unreviewed',
+          classificationProvenance: classification?.provenance ?? 'musicbrainz',
           reason,
         };
       }
-      return { spotifyTrackId, state: 'ready', classification: 'classical', reason };
+      return {
+        spotifyTrackId,
+        state: 'ready',
+        classification: 'classical',
+        classificationProvenance: classification.provenance,
+        reason,
+      };
     }),
   };
 }
@@ -144,17 +160,30 @@ async function classifyOnly(albumId: string, trackIds: string[]): Promise<AlbumP
       const classification = classificationByTrack.get(spotifyTrackId);
       const reason = classification?.reason ?? 'no MusicBrainz evidence yet';
       if (classification?.state === 'not_classical') {
-        return { spotifyTrackId, state: 'not_classical', classification: 'not_classical', reason };
+        return {
+          spotifyTrackId,
+          state: 'not_classical',
+          classification: 'not_classical',
+          classificationProvenance: classification.provenance,
+          reason,
+        };
       }
       if (classification?.state !== 'classical') {
         return {
           spotifyTrackId,
           state: 'unclassified',
           classification: classification?.state ?? 'unreviewed',
+          classificationProvenance: classification?.provenance ?? 'musicbrainz',
           reason,
         };
       }
-      return { spotifyTrackId, state: 'ready', classification: 'classical', reason };
+      return {
+        spotifyTrackId,
+        state: 'ready',
+        classification: 'classical',
+        classificationProvenance: classification.provenance,
+        reason,
+      };
     }),
   };
 }
