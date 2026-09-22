@@ -13,6 +13,7 @@
     "prepare": "husky",
     "queue:drain": "tsx scripts/drain-match-queue.ts",
     "metadata:validate": "tsx scripts/validate-metadata.ts",
+    "metadata:accounting": "tsx scripts/mb-accounting.ts",
     "metadata:reparse-album": "tsx scripts/reparse-album.ts",
     "metadata:dedupe-works": "tsx scripts/dedupe-works.ts",
     "typecheck": "tsc --noEmit",

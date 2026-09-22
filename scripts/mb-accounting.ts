@@ -6,10 +6,10 @@
  * named gap. This measures both against the real database, in bounded
  * batches, and writes nothing.
  *
- *   pnpm mb:accounting                 every Spotify track we hold
- *   pnpm mb:accounting --limit 2000    the first n, for a quick read
- *   pnpm mb:accounting --details       every affected track ID, not a sample
- *   pnpm mb:accounting --json          machine-readable, for a deploy log
+ *   pnpm metadata:accounting                 every Spotify track we hold
+ *   pnpm metadata:accounting --limit 2000    the first n, for a quick read
+ *   pnpm metadata:accounting --details       every affected track ID, not a sample
+ *   pnpm metadata:accounting --json          machine-readable, for a deploy log
  *
  * Exits non-zero when a requested ID comes back unaccounted for, because
  * that is a fault in the reader rather than a gap in MusicBrainz.
