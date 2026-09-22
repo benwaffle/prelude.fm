@@ -2,6 +2,9 @@
 
 # dependencies
 /node_modules
+# pnpm falls back to a store inside the project when the global one is on
+# another filesystem, which a git worktree often is.
+/.pnpm-store
 /.pnp
 .pnp.*
 .yarn/*

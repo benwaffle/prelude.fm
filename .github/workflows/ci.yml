@@ -1,0 +1,31 @@
+# Tests, types, lint and formatting on every push.
+#
+# The suite builds its own SQLite database from schema.ts, so nothing here
+# needs credentials and nothing here can touch production. That is what makes
+# it safe to run on every branch.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          # package.json has no packageManager field to read it from.
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      # Runs last because it is the slowest, and because a type error makes
+      # its failures harder to read.
+      - run: pnpm test

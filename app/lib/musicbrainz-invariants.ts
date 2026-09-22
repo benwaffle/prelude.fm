@@ -159,13 +159,26 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
   },
 ];
 
+import { invariantHealth, type InvariantHealth } from './musicbrainz-invariant-health';
+export { INVARIANT_STALE_AFTER_HOURS, type InvariantHealth } from './musicbrainz-invariant-health';
+
 export type InvariantResult = {
   name: string;
   severity: InvariantSeverity;
   describes: string;
   violations: number;
   samples: { id: string; detail: string | null }[];
+  /** When this result was recorded. Null for a check nobody has ever run. */
+  checkedAt?: Date | null;
 };
+
+/** Grades the stored results against the checks that were supposed to run. */
+export function musicBrainzInvariantHealth(
+  results: InvariantResult[],
+  now: Date = new Date(),
+): InvariantHealth {
+  return invariantHealth(MUSICBRAINZ_INVARIANTS, results, now);
+}
 
 export async function runMusicBrainzInvariants(
   options: { cheapOnly?: boolean; sampleSize?: number } = {},
@@ -221,5 +234,6 @@ export async function latestInvariantResults(): Promise<InvariantResult[]> {
     describes: described.get(row.name) ?? '',
     violations: row.violations,
     samples: row.samples ?? [],
+    checkedAt: row.checkedAt,
   }));
 }
