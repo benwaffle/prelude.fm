@@ -64,7 +64,34 @@ export type AnchorReport = {
    * quite the edition we think it is, and both are worth knowing about.
    */
   isrcPositionDisagreements: number;
+  /** Anchors this pass replaced, because the new evidence is stronger. */
+  replaced: number;
+  /**
+   * Anchors this pass did not make, because one already existed naming a
+   * different recording on evidence at least as good.
+   *
+   * Kept rather than overwritten. A stored anchor is what the reader has
+   * been showing and what a contribution may have been filed against;
+   * silently repointing it loses both, and the disagreement is the thing
+   * worth looking at.
+   */
+  conflicts: Array<{
+    spotifyTrackId: string;
+    held: string;
+    heldBy: AnchorEvidence;
+    proposed: string;
+    proposedBy: AnchorEvidence;
+  }>;
 };
+
+/** How a track was tied to a recording, weakest last. */
+export type AnchorEvidence = 'isrc' | 'release_position';
+
+/** An ISRC is the label's own identifier; a position is only as good as the
+ *  tracklist it sits in. */
+function evidenceStrength(evidence: AnchorEvidence): number {
+  return evidence === 'isrc' ? 2 : 1;
+}
 
 /**
  * Attach each Spotify track on an album to a MusicBrainz recording.
@@ -139,6 +166,8 @@ export async function anchorAlbumTracks(
     tracklistAligned: aligned,
     contestedIsrcs: [],
     isrcPositionDisagreements: 0,
+    replaced: 0,
+    conflicts: [],
   };
 
   const rows: {
@@ -202,7 +231,65 @@ export async function anchorAlbumTracks(
     report.unanchored++;
   }
 
+  report.anchored = await writeAnchors(rows, report);
+  return report;
+}
+
+/**
+ * Store the anchors this pass worked out, without losing the ones already
+ * there.
+ *
+ * The rule is that evidence has to improve. Re-anchoring the same recording
+ * is harmless and keeps the ISRC fresh; pointing a track at a *different*
+ * recording is only allowed when the new evidence is strictly stronger than
+ * what is stored, and otherwise the existing anchor stands and the
+ * disagreement is reported. Anything else means a backfill over the whole
+ * library can quietly repoint anchors that were right.
+ */
+async function writeAnchors(
+  rows: Array<{
+    spotifyTrackId: string;
+    recordingMbid: string;
+    isrc: string | null;
+    matchedBy: AnchorEvidence;
+  }>,
+  report: AnchorReport,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const existing = new Map(
+    (
+      await db
+        .select({
+          spotifyTrackId: trackRecording.spotifyTrackId,
+          recordingMbid: trackRecording.recordingMbid,
+          matchedBy: trackRecording.matchedBy,
+        })
+        .from(trackRecording)
+        .where(
+          inArray(
+            trackRecording.spotifyTrackId,
+            rows.map((row) => row.spotifyTrackId),
+          ),
+        )
+    ).map((row) => [row.spotifyTrackId, row]),
+  );
+
+  let written = 0;
   for (const row of rows) {
+    const held = existing.get(row.spotifyTrackId);
+    if (held && held.recordingMbid !== row.recordingMbid) {
+      if (evidenceStrength(row.matchedBy) <= evidenceStrength(held.matchedBy)) {
+        report.conflicts.push({
+          spotifyTrackId: row.spotifyTrackId,
+          held: held.recordingMbid,
+          heldBy: held.matchedBy,
+          proposed: row.recordingMbid,
+          proposedBy: row.matchedBy,
+        });
+        continue;
+      }
+      report.replaced++;
+    }
     await db
       .insert(trackRecording)
       .values({ ...row, matchedAt: new Date() })
@@ -210,10 +297,9 @@ export async function anchorAlbumTracks(
         target: trackRecording.spotifyTrackId,
         set: { ...row, matchedAt: new Date() },
       });
+    written++;
   }
-
-  report.anchored = rows.length;
-  return report;
+  return written;
 }
 
 /* -------------------------------------------------------------- album --- */
