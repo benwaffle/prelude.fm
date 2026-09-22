@@ -411,12 +411,46 @@ export const matchQueue = sqliteTable(
     processedAt: integer('processed_at', { mode: 'timestamp_ms' }),
     errorMessage: text('error_message'),
     claimOwnerId: text('workflow_run_id'), // Legacy physical column name; now used as a claim lease.
+    /** MusicBrainz pipeline outcome; null until the MB pass reports one. */
+    pipelineOutcome: text('pipeline_outcome', {
+      enum: ['ready', 'unanchored', 'unclassified', 'not_classical'],
+    }),
+    pipelineReason: text('pipeline_reason'),
+    pipelineCompletedAt: integer('pipeline_completed_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
     index('match_queue_status_idx').on(table.status),
     index('match_queue_album_idx').on(table.spotifyAlbumId),
     index('match_queue_status_album_idx').on(table.status, table.spotifyAlbumId),
+    index('match_queue_pipeline_outcome_idx').on(table.pipelineOutcome),
   ],
+);
+
+/**
+ * Durable routing/classification for a Spotify track.
+ *
+ * Separate from `match_queue`, which remains lease/workflow state. No user
+ * relation — classification is global. Precedence is enforced in code:
+ * manual > musicbrainz > llm_proposal.
+ */
+export const trackClassification = sqliteTable(
+  'track_classification',
+  {
+    spotifyTrackId: text('spotify_track_id')
+      .primaryKey()
+      .references(() => spotifyTrack.spotifyId),
+    state: text('state', {
+      enum: ['unreviewed', 'classical', 'not_classical', 'uncertain'],
+    }).notNull(),
+    provenance: text('provenance', {
+      enum: ['musicbrainz', 'manual', 'llm_proposal'],
+    }).notNull(),
+    reason: text('reason'),
+    /** Work or recording MBID the decision rests on, when known. */
+    evidenceMbid: text('evidence_mbid'),
+    decidedAt: integer('decided_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [index('track_classification_state_idx').on(table.state)],
 );
 
 /*

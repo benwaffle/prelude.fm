@@ -134,6 +134,13 @@
       "when": 1790042492794,
       "tag": "0018_orange_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1790047456394,
+      "tag": "0019_track_classification_pipeline_completion",
+      "breakpoints": true
     }
   ]
 }
