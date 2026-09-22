@@ -245,6 +245,29 @@ export function describeLedgerState(entry: { outcome: string; editId: string | n
     : `${entry.outcome} · edit ID missing`;
 }
 
+/** The cache now holds a barcode for the release we submitted one to. */
+export function cachedBarcodeLanded(barcode: string | null | undefined): boolean {
+  return typeof barcode === 'string' && barcode.trim() !== '';
+}
+
+/** The album we submitted via Harmony now has a matched MusicBrainz release. */
+export function cachedReleaseMatchLanded(mbReleaseId: string | null | undefined): boolean {
+  return typeof mbReleaseId === 'string' && mbReleaseId.length > 0;
+}
+
+/** The recording–work link we confirmed is now in the cache. */
+export function cachedWorkRelationshipLanded(
+  linkedWorkMbids: readonly string[],
+  submittedWorkMbid: string,
+): boolean {
+  return linkedWorkMbids.includes(submittedWorkMbid);
+}
+
+/** A Spotify free-streaming URL is present in the cache, not merely submitted. */
+export function cachedStreamingUrlLanded(state: SpotifyFreeStreamingUrlState): boolean {
+  return state === 'present';
+}
+
 export type WorkCreationSubmission = {
   /** The recording the missing work was blocking, so the re-ingest has a start. */
   recordingMbid: string;

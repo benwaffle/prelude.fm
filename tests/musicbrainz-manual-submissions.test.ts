@@ -21,6 +21,10 @@ import {
   workRelationshipDraftFromGap,
   createdWorkCacheState,
   createdWorkLanded,
+  cachedBarcodeLanded,
+  cachedReleaseMatchLanded,
+  cachedStreamingUrlLanded,
+  cachedWorkRelationshipLanded,
   isSpotifyFreeStreamingRelation,
   isStreamingUrlContributionGap,
   RELEASE_SPOTIFY_STREAMING_URL_MISSING,
@@ -167,6 +171,25 @@ test('ledger state names a missing edit ID rather than inventing one', () => {
     describeLedgerState({ outcome: 'pending', editId: '114857392' }),
     'pending · edit 114857392',
   );
+});
+
+test('a confirmation is applied only when the cache holds the fact', () => {
+  assert.equal(cachedBarcodeLanded(null), false);
+  assert.equal(cachedBarcodeLanded(''), false);
+  assert.equal(cachedBarcodeLanded('   '), false);
+  assert.equal(cachedBarcodeLanded('00028946813423'), true);
+
+  assert.equal(cachedReleaseMatchLanded(null), false);
+  assert.equal(cachedReleaseMatchLanded(''), false);
+  assert.equal(cachedReleaseMatchLanded(RELEASE_MBID), true);
+
+  assert.equal(cachedWorkRelationshipLanded([], WORK_MBID), false);
+  assert.equal(cachedWorkRelationshipLanded([OTHER_WORK_MBID], WORK_MBID), false);
+  assert.equal(cachedWorkRelationshipLanded([OTHER_WORK_MBID, WORK_MBID], WORK_MBID), true);
+
+  assert.equal(cachedStreamingUrlLanded('unknown'), false);
+  assert.equal(cachedStreamingUrlLanded('missing'), false);
+  assert.equal(cachedStreamingUrlLanded('present'), true);
 });
 
 test('a work relationship records what we offered, not that it was proved', () => {

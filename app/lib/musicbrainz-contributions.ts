@@ -41,6 +41,7 @@ import {
 import {
   mbRecording,
   mbRecordingIsrc,
+  mbRecordingWork,
   mbArtist,
   mbRelease,
   mbReleaseTrack,
@@ -592,6 +593,10 @@ export async function missingReleases(limit = 60): Promise<MissingRelease[]> {
  *
  * Small, because a release is usually found *by* its barcode in the first
  * place — these are the ones matched on title and duration instead.
+ *
+ * A submitted barcode stays listed until the cache holds one. Hiding it on
+ * confirm would look like MusicBrainz had accepted an edit that is still a
+ * proposal.
  */
 export type BarcodeGap = {
   releaseMbid: string;
@@ -616,11 +621,6 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
       and(
         sql`${mbRelease.barcode} is null or ${mbRelease.barcode} = ''`,
         sql`${spotifyAlbum.upc} is not null and ${spotifyAlbum.upc} <> ''`,
-        sql`not exists (
-          select 1 from ${mbSubmission}
-          where ${mbSubmission.kind} = 'barcode'
-            and ${mbSubmission.targetMbid} = ${mbRelease.mbid}
-        )`,
       ),
     );
   if (candidates.length === 0) return [];
@@ -675,6 +675,33 @@ export async function barcodeGaps(limit = 50): Promise<BarcodeGap[]> {
       return verification ? [{ ...candidate, ...verification }] : [];
     })
     .slice(0, limit);
+}
+
+/** What the cache currently holds as this release's barcode, if anything. */
+export async function observeCachedBarcode(releaseMbid: string): Promise<string | null> {
+  const [row] = await db
+    .select({ barcode: mbRelease.barcode })
+    .from(mbRelease)
+    .where(eq(mbRelease.mbid, releaseMbid));
+  return row?.barcode ?? null;
+}
+
+/** The MusicBrainz release this album is matched to, if the cache has one. */
+export async function observeAlbumReleaseMatch(albumId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ mbReleaseId: spotifyAlbum.mbReleaseId })
+    .from(spotifyAlbum)
+    .where(eq(spotifyAlbum.spotifyId, albumId));
+  return row?.mbReleaseId ?? null;
+}
+
+/** Work MBIDs the cache currently links this recording to. */
+export async function observeRecordingWorkLinks(recordingMbid: string): Promise<string[]> {
+  const rows = await db
+    .select({ workMbid: mbRecordingWork.workMbid })
+    .from(mbRecordingWork)
+    .where(eq(mbRecordingWork.recordingMbid, recordingMbid));
+  return rows.map((row) => row.workMbid);
 }
 
 /**

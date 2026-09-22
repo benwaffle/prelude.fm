@@ -13,9 +13,12 @@ import {
   recordStreamingUrlSubmission,
   recordWorkCreationSubmission,
   recordWorkRelationshipSubmission,
+  recheckBarcode,
   recheckCreatedWork,
   recheckErrorReport,
+  recheckReleaseSubmission,
   recheckStreamingUrl,
+  recheckWorkRelationship,
   reconcileSubmissions,
   setSubmissionOutcome,
   submitBotBatch,
@@ -47,6 +50,7 @@ export function ContributeTab() {
   const [streamingUrlForms, setStreamingUrlForms] = useState<Record<string, { editId: string }>>(
     {},
   );
+  const [barcodeForms, setBarcodeForms] = useState<Record<string, { editId: string }>>({});
 
   const refresh = useCallback(() => {
     getContributions()
@@ -101,9 +105,20 @@ export function ContributeTab() {
   }
 
   async function submittedBarcode(releaseMbid: string) {
+    const form = barcodeForms[releaseMbid] ?? { editId: '' };
     setBusy(true);
     try {
-      setView(await recordBarcodeSubmission(releaseMbid));
+      setView(await recordBarcodeSubmission(releaseMbid, { editId: form.editId }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recheckBarcodeRow(releaseMbid: string) {
+    setBusy(true);
+    try {
+      const result = await recheckBarcode(releaseMbid);
+      setView(result.view);
     } finally {
       setBusy(false);
     }
@@ -148,6 +163,16 @@ export function ContributeTab() {
     }
   }
 
+  async function recheckRelease(albumId: string) {
+    setBusy(true);
+    try {
+      const result = await recheckReleaseSubmission(albumId);
+      setView(result.view);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submittedContestedIsrc(isrc: string, disposition: 'reported' | 'fixed') {
     setBusy(true);
     try {
@@ -180,6 +205,16 @@ export function ContributeTab() {
     setBusy(true);
     try {
       setView(await recordWorkRelationshipSubmission(recordingMbid, workMbid));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recheckRelationship(recordingMbid: string, workMbid: string) {
+    setBusy(true);
+    try {
+      const result = await recheckWorkRelationship(recordingMbid, workMbid);
+      setView(result.view);
     } finally {
       setBusy(false);
     }
@@ -398,7 +433,16 @@ export function ContributeTab() {
                 Spotify
               </a>
               {album.ledger ? (
-                <span className="album-meta shrink-0">{album.ledger.label}</span>
+                <>
+                  <span className="album-meta shrink-0">{album.ledger.label}</span>
+                  <button
+                    className="act shrink-0"
+                    disabled={busy}
+                    onClick={() => recheckRelease(album.albumId)}
+                  >
+                    Recheck
+                  </button>
+                </>
               ) : (
                 <>
                   <input
@@ -448,37 +492,68 @@ export function ContributeTab() {
             Found by title and duration rather than by barcode, which is why they have none. Adding
             it makes the release findable the way every other one is. Copy the exact Spotify value,
             add it on the release edit page, then confirm here only after submitting the edit.
+            Opening the edit page does not write the ledger. A confirmed barcode stays listed until
+            the cache holds one.
           </p>
-          {view.barcodes.map((gap) => (
-            <div key={gap.releaseMbid} className="row">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate">{gap.releaseTitle}</span>
-                <span className="album-meta">
-                  title matched · {gap.trackCount} tracks · worst duration difference{' '}
-                  {gap.maxDurationDeltaMs}ms
+          {view.barcodes.map((gap) => {
+            const form = barcodeForms[gap.releaseMbid] ?? { editId: '' };
+            return (
+              <div key={gap.releaseMbid} className="row">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{gap.releaseTitle}</span>
+                  <span className="album-meta">
+                    title matched · {gap.trackCount} tracks · worst duration difference{' '}
+                    {gap.maxDurationDeltaMs}ms
+                  </span>
                 </span>
-              </span>
-              <code className="mono shrink-0 select-all text-[var(--ink-2)]">{gap.barcode}</code>
-              <button
-                className="act shrink-0"
-                disabled={busy}
-                onClick={() => navigator.clipboard.writeText(gap.barcode)}
-              >
-                Copy barcode
-              </button>
-              <a className="act shrink-0" href={gap.edit} target="_blank" rel="noreferrer">
-                Edit release
-              </a>
-              <button
-                className="act shrink-0"
-                data-variant="primary"
-                disabled={busy}
-                onClick={() => submittedBarcode(gap.releaseMbid)}
-              >
-                I submitted it
-              </button>
-            </div>
-          ))}
+                <code className="mono shrink-0 select-all text-[var(--ink-2)]">{gap.barcode}</code>
+                <button
+                  className="act shrink-0"
+                  disabled={busy}
+                  onClick={() => navigator.clipboard.writeText(gap.barcode)}
+                >
+                  Copy barcode
+                </button>
+                <a className="act shrink-0" href={gap.edit} target="_blank" rel="noreferrer">
+                  Edit release
+                </a>
+                {gap.ledger ? (
+                  <>
+                    <span className="album-meta shrink-0">{gap.ledger.label}</span>
+                    <button
+                      className="act shrink-0"
+                      disabled={busy}
+                      onClick={() => recheckBarcodeRow(gap.releaseMbid)}
+                    >
+                      Recheck
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      className="mono w-32 shrink-0"
+                      placeholder="edit ID (optional)"
+                      value={form.editId}
+                      onChange={(event) =>
+                        setBarcodeForms((current) => ({
+                          ...current,
+                          [gap.releaseMbid]: { editId: event.target.value },
+                        }))
+                      }
+                    />
+                    <button
+                      className="act shrink-0"
+                      data-variant="primary"
+                      disabled={busy}
+                      onClick={() => submittedBarcode(gap.releaseMbid)}
+                    >
+                      I submitted it
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </section>
       )}
 
@@ -736,7 +811,18 @@ export function ContributeTab() {
                             </span>
                           </span>
                           {recorded ? (
-                            <span className="album-meta shrink-0">{recorded.label}</span>
+                            <>
+                              <span className="album-meta shrink-0">{recorded.label}</span>
+                              <button
+                                className="act shrink-0"
+                                disabled={busy}
+                                onClick={() =>
+                                  recheckRelationship(gap.recordingMbid, candidate.workMbid)
+                                }
+                              >
+                                Recheck
+                              </button>
+                            </>
                           ) : (
                             <button
                               className="act shrink-0"
@@ -974,7 +1060,8 @@ export function ContributeTab() {
           </button>
           <span className="text-[var(--ink-2)]">
             A submitted edit is a proposal; editors vote. Nothing is marked applied until
-            MusicBrainz shows it.
+            MusicBrainz shows it in the cache — ISRCs, barcodes, streaming URLs, releases, works,
+            relationships, and reported contradictions. Unfetched streaming URLs stay pending.
           </span>
         </div>
         {view.recent.length === 0 && (

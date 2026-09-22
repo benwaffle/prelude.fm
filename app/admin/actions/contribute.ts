@@ -12,6 +12,9 @@ import {
   magicIsrcLink,
   misalignedAlbums,
   missingReleases,
+  observeAlbumReleaseMatch,
+  observeCachedBarcode,
+  observeRecordingWorkLinks,
   observeSpotifyFreeStreamingUrlState,
   releaseEditLink,
   recordingEditLink,
@@ -26,6 +29,10 @@ import { musicBrainzApi } from '@/lib/musicbrainz';
 import { ingestWorkTree } from '@/lib/musicbrainz-cache';
 import {
   barcodeSubmissionDraft,
+  cachedBarcodeLanded,
+  cachedReleaseMatchLanded,
+  cachedStreamingUrlLanded,
+  cachedWorkRelationshipLanded,
   createdWorkCacheState,
   createdWorkLanded,
   describeLedgerState,
@@ -165,7 +172,15 @@ export type ContributionView = {
       label: string;
     } | null;
   })[];
-  barcodes: (Awaited<ReturnType<typeof barcodeGaps>>[number] & { edit: string })[];
+  barcodes: (Awaited<ReturnType<typeof barcodeGaps>>[number] & {
+    edit: string;
+    ledger: {
+      id: number;
+      outcome: string;
+      editId: string | null;
+      label: string;
+    } | null;
+  })[];
   streamingUrls: (Awaited<ReturnType<typeof streamingUrlGaps>>[number] & {
     edit: string;
     spotifyUrl: string;
@@ -423,6 +438,36 @@ export async function getContributions(): Promise<ContributionView> {
     ]),
   );
 
+  const barcodeReleaseMbids = barcodes.map((gap) => gap.releaseMbid);
+  const barcodeLedgerRows =
+    barcodeReleaseMbids.length === 0
+      ? []
+      : await db
+          .select({
+            id: mbSubmission.id,
+            releaseMbid: mbSubmission.targetMbid,
+            outcome: mbSubmission.outcome,
+            editId: mbSubmission.editId,
+          })
+          .from(mbSubmission)
+          .where(
+            and(
+              eq(mbSubmission.kind, 'barcode'),
+              inArray(mbSubmission.targetMbid, barcodeReleaseMbids),
+            ),
+          );
+  const barcodeLedgerByRelease = new Map(
+    barcodeLedgerRows.map((row) => [
+      row.releaseMbid,
+      {
+        id: row.id,
+        outcome: row.outcome,
+        editId: row.editId,
+        label: describeLedgerState(row),
+      },
+    ]),
+  );
+
   return {
     counts,
     isrcReleases: releases.map((release) => ({
@@ -470,7 +515,11 @@ export async function getContributions(): Promise<ContributionView> {
       harmony: harmonyImportLink(album.albumId),
       ledger: releaseLedgerByAlbum.get(album.albumId) ?? null,
     })),
-    barcodes: barcodes.map((gap) => ({ ...gap, edit: releaseEditLink(gap.releaseMbid) })),
+    barcodes: barcodes.map((gap) => ({
+      ...gap,
+      edit: releaseEditLink(gap.releaseMbid),
+      ledger: barcodeLedgerByRelease.get(gap.releaseMbid) ?? null,
+    })),
     streamingUrls: streamingUrls.map((gap) => ({
       ...gap,
       edit: releaseEditLink(gap.releaseMbid),
@@ -549,10 +598,48 @@ export async function recordBarcodeSubmission(
 ) {
   const session = await checkAuth();
   const gap = (await barcodeGaps(5_000)).find((candidate) => candidate.releaseMbid === releaseMbid);
-  if (!gap) throw new Error('That release has no outstanding barcode contribution');
+  if (!gap) {
+    throw new ManualSubmissionError('That release has no outstanding barcode contribution');
+  }
 
   await recordManualSubmission(`human:${session.user.name}`, barcodeSubmissionDraft(gap), options);
   return getContributions();
+}
+
+/**
+ * Observe whether the cache now holds a barcode for a confirmed submission.
+ *
+ * Reads only. Applied only when MusicBrainz's cached release has a barcode;
+ * a still-empty field stays pending. A missing edit ID stays missing.
+ */
+export async function recheckBarcode(releaseMbid: string) {
+  await checkAuth();
+  const release = requireMbid(releaseMbid, 'The release');
+  const [confirmed] = await db
+    .select({ id: mbSubmission.id })
+    .from(mbSubmission)
+    .where(and(eq(mbSubmission.kind, 'barcode'), eq(mbSubmission.targetMbid, release)))
+    .limit(1);
+  if (!confirmed) {
+    throw new ManualSubmissionError('That release has no barcode confirmation');
+  }
+
+  const barcode = await observeCachedBarcode(release);
+  const landed = cachedBarcodeLanded(barcode);
+  if (landed) {
+    await db
+      .update(mbSubmission)
+      .set({ outcome: 'applied', outcomeAt: new Date() })
+      .where(
+        and(
+          eq(mbSubmission.kind, 'barcode'),
+          eq(mbSubmission.targetMbid, release),
+          eq(mbSubmission.outcome, 'pending'),
+        ),
+      );
+  }
+
+  return { landed, view: await getContributions() };
 }
 
 /** Record a recording–work link only after the editor confirms the external edit. */
@@ -576,6 +663,49 @@ export async function recordWorkRelationshipSubmission(
     options,
   );
   return getContributions();
+}
+
+/**
+ * Observe whether the cache now holds the recording–work link we confirmed.
+ *
+ * Reads only. Applied only when that pair is in `mb_recording_work`.
+ */
+export async function recheckWorkRelationship(recordingMbid: string, workMbid: string) {
+  await checkAuth();
+  const recording = requireMbid(recordingMbid, 'The recording');
+  const work = requireMbid(workMbid, 'The work');
+  const [confirmed] = await db
+    .select({ id: mbSubmission.id })
+    .from(mbSubmission)
+    .where(
+      and(
+        eq(mbSubmission.kind, 'work_relationship'),
+        eq(mbSubmission.targetMbid, recording),
+        eq(mbSubmission.value, work),
+      ),
+    )
+    .limit(1);
+  if (!confirmed) {
+    throw new ManualSubmissionError('That recording has no work-relationship confirmation');
+  }
+
+  const linked = await observeRecordingWorkLinks(recording);
+  const landed = cachedWorkRelationshipLanded(linked, work);
+  if (landed) {
+    await db
+      .update(mbSubmission)
+      .set({ outcome: 'applied', outcomeAt: new Date() })
+      .where(
+        and(
+          eq(mbSubmission.kind, 'work_relationship'),
+          eq(mbSubmission.targetMbid, recording),
+          eq(mbSubmission.value, work),
+          eq(mbSubmission.outcome, 'pending'),
+        ),
+      );
+  }
+
+  return { landed, view: await getContributions() };
 }
 
 /** Record a newly created work only after the editor pastes its MBID. */
@@ -618,6 +748,41 @@ export async function recordReleaseSubmission(
     options,
   );
   return getContributions();
+}
+
+/**
+ * Observe whether the album we submitted via Harmony is now matched.
+ *
+ * Reads only. Applied only when the cache holds a release MBID for it. A
+ * Harmony edit still in the queue, with no MBID yet, stays pending.
+ */
+export async function recheckReleaseSubmission(albumId: string) {
+  await checkAuth();
+  const [confirmed] = await db
+    .select({ id: mbSubmission.id })
+    .from(mbSubmission)
+    .where(and(eq(mbSubmission.kind, 'release'), eq(mbSubmission.subject, albumId)))
+    .limit(1);
+  if (!confirmed) {
+    throw new ManualSubmissionError('That album has no release confirmation');
+  }
+
+  const mbReleaseId = await observeAlbumReleaseMatch(albumId);
+  const landed = cachedReleaseMatchLanded(mbReleaseId);
+  if (landed) {
+    await db
+      .update(mbSubmission)
+      .set({ outcome: 'applied', outcomeAt: new Date() })
+      .where(
+        and(
+          eq(mbSubmission.kind, 'release'),
+          eq(mbSubmission.subject, albumId),
+          eq(mbSubmission.outcome, 'pending'),
+        ),
+      );
+  }
+
+  return { landed, view: await getContributions() };
 }
 
 /**
@@ -668,7 +833,7 @@ export async function recheckStreamingUrl(releaseMbid: string) {
   }
 
   const state = await observeSpotifyFreeStreamingUrlState(release);
-  if (state === 'present') {
+  if (cachedStreamingUrlLanded(state)) {
     await db
       .update(mbSubmission)
       .set({ outcome: 'applied', outcomeAt: new Date() })
@@ -817,28 +982,156 @@ export async function setSubmissionOutcome(
 }
 
 /**
- * Re-check what MusicBrainz now holds for the recordings we submitted ISRCs
- * for, and close the ones that landed.
+ * Observe every pending ledger row against the cache, and close the ones
+ * MusicBrainz now shows.
  *
- * Cheap, because the cache already knows: if a later release read brought the
- * ISRC back, the edit was accepted. Nothing is marked applied on our say-so.
+ * Cheap and read-only: a later ingest is what brings the fact back, and
+ * nothing is marked applied on our say-so. Missing edit IDs stay missing.
+ * Unfetched streaming URL relations stay pending rather than counting as
+ * landed.
  */
 export async function reconcileSubmissions() {
   await checkAuth();
-  const applied = await db
-    .update(mbSubmission)
-    .set({ outcome: 'applied', outcomeAt: new Date() })
-    .where(
-      and(
-        eq(mbSubmission.kind, 'isrc'),
-        eq(mbSubmission.outcome, 'pending'),
-        sql`exists (
-          select 1 from mb_recording_isrc
-          where mb_recording_isrc.recording_mbid = ${mbSubmission.targetMbid}
-            and mb_recording_isrc.isrc = ${mbSubmission.value}
-        )`,
-      ),
-    )
-    .returning({ id: mbSubmission.id });
-  return { applied: applied.length, view: await getContributions() };
+
+  async function applyWhere(
+    kind: 'isrc' | 'barcode' | 'work_relationship' | 'work' | 'release',
+    landed: ReturnType<typeof sql>,
+  ) {
+    return db
+      .update(mbSubmission)
+      .set({ outcome: 'applied', outcomeAt: new Date() })
+      .where(and(eq(mbSubmission.kind, kind), eq(mbSubmission.outcome, 'pending'), landed))
+      .returning({ id: mbSubmission.id });
+  }
+
+  const [isrc, barcodes, workRelationships, works, releases] = await Promise.all([
+    applyWhere(
+      'isrc',
+      sql`exists (
+        select 1 from mb_recording_isrc
+        where mb_recording_isrc.recording_mbid = ${mbSubmission.targetMbid}
+          and mb_recording_isrc.isrc = ${mbSubmission.value}
+      )`,
+    ),
+    applyWhere(
+      'barcode',
+      sql`exists (
+        select 1 from mb_release
+        where mb_release.mbid = ${mbSubmission.targetMbid}
+          and mb_release.barcode is not null
+          and mb_release.barcode <> ''
+      )`,
+    ),
+    applyWhere(
+      'work_relationship',
+      sql`exists (
+        select 1 from mb_recording_work
+        where mb_recording_work.recording_mbid = ${mbSubmission.targetMbid}
+          and mb_recording_work.work_mbid = ${mbSubmission.value}
+      )`,
+    ),
+    applyWhere(
+      'work',
+      sql`exists (
+        select 1 from mb_work
+        where mb_work.mbid = ${mbSubmission.targetMbid}
+          and mb_work.detail = 'full'
+      )`,
+    ),
+    applyWhere(
+      'release',
+      sql`exists (
+        select 1 from spotify_album
+        where spotify_album.spotify_id = ${mbSubmission.subject}
+          and spotify_album.mb_release_id is not null
+      )`,
+    ),
+  ]);
+
+  const pendingStreaming = await db
+    .select({ targetMbid: mbSubmission.targetMbid })
+    .from(mbSubmission)
+    .where(and(eq(mbSubmission.kind, 'streaming_url'), eq(mbSubmission.outcome, 'pending')));
+  const streamingMbids = [
+    ...new Set(
+      pendingStreaming
+        .map((row) => row.targetMbid)
+        .filter((mbid): mbid is string => typeof mbid === 'string'),
+    ),
+  ];
+  const streamingLanded: string[] = [];
+  for (const mbid of streamingMbids) {
+    if (cachedStreamingUrlLanded(await observeSpotifyFreeStreamingUrlState(mbid))) {
+      streamingLanded.push(mbid);
+    }
+  }
+  const streaming =
+    streamingLanded.length === 0
+      ? []
+      : await db
+          .update(mbSubmission)
+          .set({ outcome: 'applied', outcomeAt: new Date() })
+          .where(
+            and(
+              eq(mbSubmission.kind, 'streaming_url'),
+              eq(mbSubmission.outcome, 'pending'),
+              inArray(mbSubmission.targetMbid, streamingLanded),
+            ),
+          )
+          .returning({ id: mbSubmission.id });
+
+  const pendingErrors = await db
+    .select({
+      id: mbSubmission.id,
+      subject: mbSubmission.subject,
+      value: mbSubmission.value,
+      evidence: mbSubmission.evidence,
+    })
+    .from(mbSubmission)
+    .where(and(eq(mbSubmission.kind, 'error'), eq(mbSubmission.outcome, 'pending')));
+  const [stillContested, stillMisaligned] = await Promise.all([
+    contestedIsrcs(5_000),
+    misalignedAlbums(5_000),
+  ]);
+  const contestedIsrcsStill = new Set(stillContested.map((row) => row.isrc));
+  const misalignedStill = new Set(stillMisaligned.map((album) => album.albumId));
+  const errorLanded = pendingErrors.filter((row) => {
+    const problem = (row.evidence as { problem?: unknown } | null)?.problem;
+    if (problem === 'contested_isrc') {
+      return typeof row.value === 'string' && !contestedIsrcsStill.has(row.value);
+    }
+    if (problem === 'misaligned_tracklist') {
+      return !misalignedStill.has(row.subject);
+    }
+    return false;
+  });
+  const errors =
+    errorLanded.length === 0
+      ? []
+      : await db
+          .update(mbSubmission)
+          .set({ outcome: 'applied', outcomeAt: new Date() })
+          .where(
+            and(
+              eq(mbSubmission.kind, 'error'),
+              eq(mbSubmission.outcome, 'pending'),
+              inArray(
+                mbSubmission.id,
+                errorLanded.map((row) => row.id),
+              ),
+            ),
+          )
+          .returning({ id: mbSubmission.id });
+
+  return {
+    applied:
+      isrc.length +
+      barcodes.length +
+      workRelationships.length +
+      works.length +
+      releases.length +
+      streaming.length +
+      errors.length,
+    view: await getContributions(),
+  };
 }
