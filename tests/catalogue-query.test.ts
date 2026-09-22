@@ -59,3 +59,31 @@ test('a name or title is text', () => {
 test('an empty query is empty text rather than a match on everything', () => {
   assert.deepEqual(parseCatalogueQuery('   '), { kind: 'text', text: '' });
 });
+
+test('an ordinary title is not read as a catalogue reference', () => {
+  // "piano sonata" used to parse as the reference "P. ianosonata", which
+  // matches nothing, so the search came back empty with no explanation.
+  assert.deepEqual(parseCatalogueQuery('piano sonata'), {
+    kind: 'text',
+    text: 'piano sonata',
+  });
+  assert.deepEqual(parseCatalogueQuery('Clavier'), { kind: 'text', text: 'clavier' });
+  assert.deepEqual(parseCatalogueQuery('Mass in C'), { kind: 'text', text: 'mass in c' });
+  assert.deepEqual(parseCatalogueQuery('Ich will den Kreuzstab'), {
+    kind: 'text',
+    text: 'ich will den kreuzstab',
+  });
+});
+
+test('a roman-numeral catalogue number is still a reference', () => {
+  assert.deepEqual(parseCatalogueQuery('Hob. I:82'), {
+    kind: 'reference',
+    system: 'hob',
+    number: 'i:82',
+  });
+  assert.deepEqual(parseCatalogueQuery('Op. IX'), {
+    kind: 'reference',
+    system: 'op',
+    number: 'ix',
+  });
+});

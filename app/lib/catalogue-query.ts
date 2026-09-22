@@ -23,8 +23,16 @@ export type CatalogueQuery =
   /** Anything else: a name, a title, a nickname. */
   | { kind: 'text'; text: string };
 
-/** A sigil then a number: `BWV 1067`, `K. 551`, `Hob. I:82`, `op. 27 no. 2`. */
-const REFERENCE = /^([A-Za-z]{1,6})\.?\s*([0-9IVXivx].*)$/;
+/**
+ * A sigil then a number: `BWV 1067`, `K. 551`, `Hob. I:82`, `op. 27 no. 2`.
+ *
+ * The number must start with a digit, or with a roman numeral that ends
+ * where the number ends — `Hob. I:82`, `op. IX`. Accepting any word that
+ * merely begins with a roman letter read "piano sonata" as the reference
+ * "P. ianosonata", which matches nothing, so a perfectly ordinary title
+ * search came back empty with no explanation.
+ */
+const REFERENCE = /^([A-Za-z]{1,6})\.?\s*([0-9].*|[IVXLCivxlc]+(?![A-Za-z]).*)$/;
 
 /** A bare number, possibly with a suffix: `1067`, `1006a`, `I:82`. */
 const BARE_NUMBER = /^[0-9][0-9A-Za-z/:.-]*$/;

@@ -12,6 +12,13 @@ import {
   type CatalogWork,
 } from '@/app/actions/library';
 import { searchWorks, type WorkSearchHit } from '@/app/actions/catalogue-search';
+import {
+  getMusicBrainzCatalogComposers,
+  getMusicBrainzCatalogRecordings,
+  getMusicBrainzCatalogWorkHeader,
+  getMusicBrainzCatalogWorks,
+  searchMusicBrainzWorks,
+} from '@/app/actions/catalog-mb';
 import { useLibrary } from '@/lib/library-context';
 import { useNavSearch } from '../AppShell';
 import { initialsOf } from '@/lib/prelude';
@@ -24,7 +31,7 @@ type WorkHeader = Awaited<ReturnType<typeof getCatalogWorkHeader>>;
  * one pane at a time on a phone with a back trail above it.
  */
 export function CatalogScreen() {
-  const { likedTrackIds } = useLibrary();
+  const { likedTrackIds, reader } = useLibrary();
   const { query } = useNavSearch();
 
   const [composers, setComposers] = useState<CatalogComposer[]>([]);
@@ -45,19 +52,21 @@ export function CatalogScreen() {
     return () => mq.removeEventListener('change', sync);
   }, []);
 
+  const fromMusicBrainz = reader === 'musicbrainz';
+
   useEffect(() => {
-    getCatalogComposers()
+    (fromMusicBrainz ? getMusicBrainzCatalogComposers() : getCatalogComposers())
       .then((list) => {
         setComposers(list);
         setComposerId((current) => current ?? list[0]?.id ?? null);
       })
       .catch((err) => console.error('Failed to load the catalogue:', err));
-  }, []);
+  }, [fromMusicBrainz]);
 
   useEffect(() => {
     if (composerId === null) return;
     let cancelled = false;
-    getCatalogWorks(composerId)
+    (fromMusicBrainz ? getMusicBrainzCatalogWorks(composerId) : getCatalogWorks(composerId))
       .then((list) => {
         if (cancelled) return;
         setWorks(list);
@@ -67,7 +76,7 @@ export function CatalogScreen() {
     return () => {
       cancelled = true;
     };
-  }, [composerId]);
+  }, [composerId, fromMusicBrainz]);
 
   useEffect(() => {
     if (workId === null) {
@@ -77,7 +86,11 @@ export function CatalogScreen() {
     }
     let cancelled = false;
     const liked = Array.from(likedTrackIds);
-    Promise.all([getCatalogWorkHeader(workId), getCatalogRecordings(workId, liked)])
+    Promise.all(
+      fromMusicBrainz
+        ? [getMusicBrainzCatalogWorkHeader(workId), getMusicBrainzCatalogRecordings(workId, liked)]
+        : [getCatalogWorkHeader(workId), getCatalogRecordings(workId, liked)],
+    )
       .then(([head, recs]) => {
         if (cancelled) return;
         setHeader(head);
@@ -90,7 +103,7 @@ export function CatalogScreen() {
     // The liked set only changes the badges; refetching on every heart would
     // be wasteful, so it's read when the work changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workId]);
+  }, [workId, fromMusicBrainz]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -116,7 +129,7 @@ export function CatalogScreen() {
     }
     let live = true;
     const timer = setTimeout(() => {
-      searchWorks(trimmed)
+      (fromMusicBrainz ? searchMusicBrainzWorks(trimmed) : searchWorks(trimmed))
         .then((found) => {
           if (live) setHits(found);
         })
@@ -128,7 +141,7 @@ export function CatalogScreen() {
       live = false;
       clearTimeout(timer);
     };
-  }, [trimmed]);
+  }, [trimmed, fromMusicBrainz]);
 
   const composer = composers.find((c) => c.id === composerId) ?? null;
   const work = works.find((w) => w.id === workId) ?? null;

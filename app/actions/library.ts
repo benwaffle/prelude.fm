@@ -962,8 +962,20 @@ export async function getCatalogRecordings(
   );
 }
 
+export interface CatalogWorkHeader {
+  id: string;
+  title: string;
+  nickname: string | null;
+  catalog: string | null;
+  year: number | null;
+  genre: string | null;
+  /** Null where the reader does not know who wrote it. */
+  composerName: string | null;
+  movementCount: number;
+}
+
 /** The work heading above column three. */
-export async function getCatalogWorkHeader(identity: string) {
+export async function getCatalogWorkHeader(identity: string): Promise<CatalogWorkHeader | null> {
   const workId = rowId(identity);
   const [row] = await db
     .select({

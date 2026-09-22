@@ -30,6 +30,8 @@
  * Song, Other, Musical, Play, Prose, Audio drama and Soundtrack, which say
  * nothing either way.
  */
+import { ancestry } from './musicbrainz-work-tree';
+
 const CLASSICAL_WORK_TYPES = new Set([
   'aria',
   'ballet',
@@ -65,22 +67,6 @@ export type ClassicalEvidenceWork = {
 export type ClassicalEvidence =
   | { state: 'classical'; reason: string }
   | { state: 'inconclusive'; reason: string };
-
-/** The work and its ancestors, nearest first, stopping at a cycle. */
-function ancestry(
-  workMbid: string,
-  workByMbid: Map<string, ClassicalEvidenceWork>,
-): ClassicalEvidenceWork[] {
-  const chain: ClassicalEvidenceWork[] = [];
-  const seen = new Set<string>();
-  let cursor = workByMbid.get(workMbid);
-  while (cursor && !seen.has(cursor.mbid)) {
-    seen.add(cursor.mbid);
-    chain.push(cursor);
-    cursor = cursor.parentMbid ? workByMbid.get(cursor.parentMbid) : undefined;
-  }
-  return chain;
-}
 
 export function classicalEvidenceFor(
   workMbids: string[],

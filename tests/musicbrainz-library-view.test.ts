@@ -437,3 +437,62 @@ test('a collection counts a part we hold only through its own parts', async () =
   );
   assert.equal(collection.held, 1);
 });
+
+test('the catalogue lists only works we can play, under the same identity as a card', async () => {
+  const { getMusicBrainzCatalogComposers, getMusicBrainzCatalogWorks } =
+    await import('@/app/actions/catalog-mb');
+  const composers = await getMusicBrainzCatalogComposers();
+  assert.deepEqual(
+    composers.map((entry) => [entry.id, entry.name, entry.workCount, entry.recordingCount]),
+    [['mozart', 'Wolfgang Amadeus Mozart', 1, 2]],
+  );
+  assert.equal(composers[0].era, 'Classical');
+  assert.equal(composers[0].image, null, 'MusicBrainz has no portrait to show');
+
+  const works = await getMusicBrainzCatalogWorks('mozart');
+  assert.deepEqual(
+    works.map((work) => [work.id, work.catalog, work.movementCount, work.recordingCount]),
+    [['sonata', 'K. 545', 3, 2]],
+  );
+  // The same identity the library card carries, so a card's catalogue number
+  // leads to a work the catalogue actually lists.
+  const { works: cards } = await view(['track-i']);
+  assert.equal(cards[0].workId, works[0].id);
+});
+
+test('searching a catalogue reference finds the work it is filed against', async () => {
+  const { searchMusicBrainzWorks } = await import('@/app/actions/catalog-mb');
+  const hits = await searchMusicBrainzWorks('K. 545');
+
+  assert.deepEqual(
+    hits.map((hit) => [hit.workId, hit.composerName, hit.matchedOn, hit.recordingCount]),
+    [['sonata', 'Wolfgang Amadeus Mozart', 'K. 545', 2]],
+  );
+});
+
+test('searching a composer finds their works, and one we cannot play does not appear', async () => {
+  await db.insert(schema.mbWork).values({
+    mbid: 'unplayable',
+    title: 'Piano Sonata no. 17',
+    type: 'Sonata',
+    parentMbid: null,
+    orderingKey: null,
+    composerMbid: 'mozart',
+    detail: 'full',
+  });
+
+  const { searchMusicBrainzWorks } = await import('@/app/actions/catalog-mb');
+  const byComposer = await searchMusicBrainzWorks('mozart');
+  const byTitle = await searchMusicBrainzWorks('sonata no');
+
+  assert.deepEqual(
+    byTitle.map((hit) => hit.workId),
+    ['sonata'],
+  );
+  const hits = byComposer;
+
+  assert.deepEqual(
+    hits.map((hit) => hit.workId),
+    ['sonata'],
+  );
+});
