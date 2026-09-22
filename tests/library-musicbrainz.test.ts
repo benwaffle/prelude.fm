@@ -397,6 +397,34 @@ test('labels the parser verdict as a proposal and lets MusicBrainz outrank it', 
   assert.match(reread.classifications[0].reason ?? '', /parser ruled this not classical/);
 });
 
+test('uses durable classification when present and derives it only when absent', async () => {
+  await db.insert(schema.trackClassification).values({
+    spotifyTrackId: 'held-1',
+    state: 'not_classical',
+    provenance: 'manual',
+    reason: 'reviewed by hand',
+    evidenceMbid: null,
+    decidedAt: new Date('2026-09-21T00:00:00Z'),
+  });
+
+  const facts = await loadMusicBrainzLibraryFacts(['held-1', 'held-2']);
+  assert.deepEqual(facts.classifications, [
+    {
+      spotifyTrackId: 'held-1',
+      state: 'not_classical',
+      provenance: 'manual',
+      reason: 'reviewed by hand',
+    },
+    {
+      spotifyTrackId: 'held-2',
+      state: 'not_classical',
+      provenance: 'llm_proposal',
+      reason:
+        'the album parser ruled this not classical; not reviewed by hand (MusicBrainz relates this recording to no work)',
+    },
+  ]);
+});
+
 test('an ISRC naming two recordings is reported as a conflict, not anchored', async () => {
   const facts = await loadMusicBrainzLibraryFacts(['held-3']);
 

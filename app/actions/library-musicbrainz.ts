@@ -15,6 +15,7 @@ import {
   matchQueue,
   spotifyAlbum,
   spotifyTrack,
+  trackClassification,
   trackRecording,
 } from '@/lib/db/schema';
 import { classicalEvidenceFor } from '@/lib/musicbrainz-classical-evidence';
@@ -114,42 +115,61 @@ export async function loadMusicBrainzLibraryFacts(
     (chunk) => database.select().from(spotifyAlbum).where(inArray(spotifyAlbum.spotifyId, chunk)),
   );
 
-  const [recordingRows, recordingWorkRows, creditRows, queueRows, isrcRows, releaseRows] =
-    await Promise.all([
-      forChunks(recordingMbids, (chunk) =>
-        database.select().from(mbRecording).where(inArray(mbRecording.mbid, chunk)),
-      ),
-      forChunks(recordingMbids, (chunk) =>
-        database
-          .select()
-          .from(mbRecordingWork)
-          .where(inArray(mbRecordingWork.recordingMbid, chunk)),
-      ),
-      forChunks(recordingMbids, (chunk) =>
-        database
-          .select()
-          .from(mbRecordingCredit)
-          .where(inArray(mbRecordingCredit.recordingMbid, chunk)),
-      ),
-      forChunks(requestedTrackIds, (chunk) =>
-        database.select().from(matchQueue).where(inArray(matchQueue.spotifyId, chunk)),
-      ),
-      // Only for tracks we could not anchor: an ISRC naming two recordings is
-      // the contradiction, and it is worth showing rather than dropping.
-      forChunks(
-        providerTrackRows
-          .filter((track) => !anchorByTrackId.has(track.spotifyId) && track.isrc)
-          .map((track) => track.isrc!),
-        (chunk) =>
-          database.select().from(mbRecordingIsrc).where(inArray(mbRecordingIsrc.isrc, chunk)),
-      ),
-      forChunks(
-        providerAlbumRows
-          .map((album) => album.mbReleaseId)
-          .filter((mbid): mbid is string => mbid !== null),
-        (chunk) => database.select().from(mbRelease).where(inArray(mbRelease.mbid, chunk)),
-      ),
-    ]);
+  const [
+    recordingRows,
+    recordingWorkRows,
+    creditRows,
+    queueRows,
+    storedClassificationRows,
+    isrcRows,
+    releaseRows,
+  ] = await Promise.all([
+    forChunks(recordingMbids, (chunk) =>
+      database.select().from(mbRecording).where(inArray(mbRecording.mbid, chunk)),
+    ),
+    forChunks(recordingMbids, (chunk) =>
+      database.select().from(mbRecordingWork).where(inArray(mbRecordingWork.recordingMbid, chunk)),
+    ),
+    forChunks(recordingMbids, (chunk) =>
+      database
+        .select()
+        .from(mbRecordingCredit)
+        .where(inArray(mbRecordingCredit.recordingMbid, chunk)),
+    ),
+    forChunks(requestedTrackIds, (chunk) =>
+      database.select().from(matchQueue).where(inArray(matchQueue.spotifyId, chunk)),
+    ),
+    forChunks(requestedTrackIds, (chunk) =>
+      database
+        .select({
+          spotifyTrackId: spotifyTrack.spotifyId,
+          state: trackClassification.state,
+          provenance: trackClassification.provenance,
+          reason: trackClassification.reason,
+        })
+        .from(spotifyTrack)
+        .leftJoin(
+          trackClassification,
+          eq(trackClassification.spotifyTrackId, spotifyTrack.spotifyId),
+        )
+        .where(inArray(spotifyTrack.spotifyId, chunk)),
+    ),
+    // Only for tracks we could not anchor: an ISRC naming two recordings is
+    // the contradiction, and it is worth showing rather than dropping.
+    forChunks(
+      providerTrackRows
+        .filter((track) => !anchorByTrackId.has(track.spotifyId) && track.isrc)
+        .map((track) => track.isrc!),
+      (chunk) =>
+        database.select().from(mbRecordingIsrc).where(inArray(mbRecordingIsrc.isrc, chunk)),
+    ),
+    forChunks(
+      providerAlbumRows
+        .map((album) => album.mbReleaseId)
+        .filter((mbid): mbid is string => mbid !== null),
+      (chunk) => database.select().from(mbRelease).where(inArray(mbRelease.mbid, chunk)),
+    ),
+  ]);
 
   const [releaseTrackRows, releaseUrlRows] = await Promise.all([
     forChunks(
@@ -168,6 +188,16 @@ export async function loadMusicBrainzLibraryFacts(
   );
 
   const queueStatusByTrack = new Map(queueRows.map((row) => [row.spotifyId, row.status]));
+  const storedClassificationByTrack = new Map<string, TrackClassification>();
+  for (const row of storedClassificationRows) {
+    if (row.state === null || row.provenance === null) continue;
+    storedClassificationByTrack.set(row.spotifyTrackId, {
+      spotifyTrackId: row.spotifyTrackId,
+      state: row.state,
+      provenance: row.provenance,
+      reason: row.reason,
+    });
+  }
   const isrcRecordings = new Map<string, string[]>();
   for (const row of isrcRows) {
     isrcRecordings.set(row.isrc, [...(isrcRecordings.get(row.isrc) ?? []), row.recordingMbid]);
@@ -237,6 +267,9 @@ export async function loadMusicBrainzLibraryFacts(
   return {
     requestedTrackIds,
     classifications: requestedTrackIds.flatMap((spotifyTrackId) => {
+      const stored = storedClassificationByTrack.get(spotifyTrackId);
+      if (stored) return [stored];
+
       const track = providerTrackById.get(spotifyTrackId);
       const evidenceMbids = anchorByTrackId.has(spotifyTrackId)
         ? [anchorByTrackId.get(spotifyTrackId)!.recordingMbid]
