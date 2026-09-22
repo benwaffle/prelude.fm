@@ -15,15 +15,31 @@
 
 export type MbRelation = {
   type: string;
+  'type-id'?: string;
   direction: 'forward' | 'backward';
   'target-type'?: string;
   /** A part's position within its parent, on the backward `parts` relation. */
   'ordering-key'?: number;
   'attribute-values'?: Record<string, string>;
   attributes?: string[];
+  begin?: string | null;
+  end?: string | null;
+  ended?: boolean;
   work?: { id: string; title: string };
   artist?: { id: string; name: string };
   series?: { id: string; name: string; type?: string };
+  url?: { id?: string; resource: string };
+};
+
+/** A release-to-URL relationship returned by the `url-rels` include. */
+export type MbReleaseUrlRelation = {
+  url: string;
+  relationshipType: string;
+  relationshipTypeId: string;
+  ended: boolean;
+  begin: string | null;
+  end: string | null;
+  attributes: string[];
 };
 
 export type MbWork = {
@@ -104,6 +120,8 @@ export type MbRelease = {
   barcode: string | null;
   date: string | null;
   country: string | null;
+  /** Always present from the API source; optional for test/mirror adapters written before URL caching. */
+  urlRelations?: MbReleaseUrlRelation[];
   tracks: MbReleaseTrack[];
 };
 
@@ -125,8 +143,8 @@ export interface MusicBrainzSource {
   searchReleases(title: string, trackCount: number): Promise<string[]>;
 
   /**
-   * A release with its tracklist, recordings, ISRCs, work relationships and
-   * credits.
+   * A release with its tracklist, recordings, ISRCs, work relationships,
+   * credits and release-level URL relationships.
    *
    * This is deliberately one coarse read rather than several fine ones: over
    * the web service it is a single request where the per-recording equivalent

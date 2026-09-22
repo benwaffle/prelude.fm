@@ -747,11 +747,40 @@ export const mbRelease = sqliteTable(
     /** MusicBrainz release date, as given: 'YYYY', 'YYYY-MM' or 'YYYY-MM-DD'. */
     date: text('date'),
     country: text('country'),
+    /**
+     * When release-level URL relationships were last read authoritatively.
+     *
+     * Null means the cached release predates `url-rels` ingestion, so an
+     * empty `mb_release_url` result is unknown rather than evidence that
+     * MusicBrainz has no external links for the release.
+     */
+    urlRelationsFetchedAt: integer('url_relations_fetched_at', { mode: 'timestamp_ms' }),
     fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
   },
   (table) => [index('mb_release_barcode_idx').on(table.barcode)],
+);
+
+/** Release-level external links exactly as MusicBrainz states them. */
+export const mbReleaseUrl = sqliteTable(
+  'mb_release_url',
+  {
+    releaseMbid: text('release_mbid')
+      .notNull()
+      .references(() => mbRelease.mbid, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    relationshipType: text('relationship_type').notNull(),
+    relationshipTypeId: text('relationship_type_id').notNull(),
+    ended: integer('ended', { mode: 'boolean' }).default(false).notNull(),
+    begin: text('begin'),
+    end: text('end'),
+    attributes: text('attributes', { mode: 'json' }).$type<string[]>().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.releaseMbid, table.url, table.relationshipTypeId] }),
+    index('mb_release_url_type_idx').on(table.relationshipTypeId),
+  ],
 );
 
 /**

@@ -23,6 +23,7 @@ import {
   mbRecordingWork,
   mbRelease,
   mbReleaseTrack,
+  mbReleaseUrl,
   mbWork,
   mbWorkCatalogue,
 } from './db/schema';
@@ -204,18 +205,41 @@ async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
    * invariant like a release with no tracks.
    */
   await db.transaction(async (tx) => {
+    const fetchedAt = new Date();
     const releaseRow = {
       mbid: release.id,
       title: release.title,
       barcode: release.barcode,
       date: release.date,
       country: release.country,
-      fetchedAt: new Date(),
+      // An older mirror/test source may not implement URL relationships yet.
+      // Omitting the marker preserves unknown; an explicit empty array from a
+      // source that requested `url-rels` is authoritative absence.
+      ...(release.urlRelations === undefined ? {} : { urlRelationsFetchedAt: fetchedAt }),
+      fetchedAt,
     };
     await tx
       .insert(mbRelease)
       .values(releaseRow)
       .onConflictDoUpdate({ target: mbRelease.mbid, set: releaseRow });
+
+    if (release.urlRelations !== undefined) {
+      await tx.delete(mbReleaseUrl).where(eq(mbReleaseUrl.releaseMbid, release.id));
+      for (const batch of chunk(release.urlRelations)) {
+        await tx.insert(mbReleaseUrl).values(
+          batch.map((relation) => ({
+            releaseMbid: release.id,
+            url: relation.url,
+            relationshipType: relation.relationshipType,
+            relationshipTypeId: relation.relationshipTypeId,
+            ended: relation.ended,
+            begin: relation.begin,
+            end: relation.end,
+            attributes: relation.attributes,
+          })),
+        );
+      }
+    }
 
     await tx.delete(mbReleaseTrack).where(eq(mbReleaseTrack.releaseMbid, release.id));
     for (const batch of chunk(release.tracks)) {

@@ -73,6 +73,7 @@ test('one release request yields recordings, ISRCs, works and credits', async ()
     assert.equal(release.barcode, '0709869024256');
     assert.equal(release.date, '2013-11-18');
     assert.equal(release.tracks.length, 2);
+    assert.deepEqual(release.urlRelations, []);
 
     const [first] = release.tracks;
     assert.equal(first.medium, 1);
@@ -107,6 +108,65 @@ test('an instrument credit keeps its instrument, and other roles invent none', a
   }
 });
 
+test('release URL relationships retain their type identity and ended state', async () => {
+  const linkedFixture = structuredClone(fixture);
+  linkedFixture.relations.unshift({
+    type: 'free streaming',
+    'type-id': '08445ccf-7b99-4438-9f9a-fb9ac18099ee',
+    direction: 'forward',
+    'target-type': 'url',
+    ended: false,
+    begin: null,
+    end: null,
+    attributes: [],
+    url: {
+      id: 'url-id',
+      resource: 'https://open.spotify.com/album/example',
+    },
+  });
+  linkedFixture.relations.unshift({
+    type: 'purchase for download',
+    'type-id': '74fc2ea1-3c7c-4b9e-9b7c-21c73669ec68',
+    direction: 'forward',
+    'target-type': 'url',
+    ended: true,
+    begin: '2013',
+    end: '2020',
+    attributes: ['some attribute'],
+    url: {
+      id: 'other-url-id',
+      resource: 'https://example.com/download',
+    },
+  });
+
+  const fetchStub = withFetch(linkedFixture);
+  try {
+    const release = await getReleaseWithRecordings('any');
+    assert.deepEqual(release?.urlRelations, [
+      {
+        url: 'https://example.com/download',
+        relationshipType: 'purchase for download',
+        relationshipTypeId: '74fc2ea1-3c7c-4b9e-9b7c-21c73669ec68',
+        ended: true,
+        begin: '2013',
+        end: '2020',
+        attributes: ['some attribute'],
+      },
+      {
+        url: 'https://open.spotify.com/album/example',
+        relationshipType: 'free streaming',
+        relationshipTypeId: '08445ccf-7b99-4438-9f9a-fb9ac18099ee',
+        ended: false,
+        begin: null,
+        end: null,
+        attributes: [],
+      },
+    ]);
+  } finally {
+    fetchStub.restore();
+  }
+});
+
 test('a release MusicBrainz does not hold is absent, not an error', async () => {
   const fetchStub = withFetch(null, 404);
   try {
@@ -125,7 +185,7 @@ test('the API source asks for the release on the channel it was built with', asy
     assert.equal(release?.tracks.length, 2);
     assert.match(
       fetchStub.calls[0],
-      /inc=recordings\+recording-level-rels\+work-rels\+artist-rels\+artist-credits\+isrcs/,
+      /inc=recordings\+recording-level-rels\+work-rels\+artist-rels\+artist-credits\+isrcs\+url-rels/,
     );
   } finally {
     fetchStub.restore();

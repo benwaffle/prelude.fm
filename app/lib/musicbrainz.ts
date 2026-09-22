@@ -17,6 +17,7 @@ import type {
   MbRelease,
   MbReleaseRecording,
   MbReleaseTrack,
+  MbReleaseUrlRelation,
   MbRecordingSearchHit,
   MbWork,
   MbWorkRef,
@@ -30,6 +31,7 @@ export type {
   MbRelease,
   MbReleaseRecording,
   MbReleaseTrack,
+  MbReleaseUrlRelation,
   MbRecordingSearchHit,
   MbWork,
   MbWorkRef,
@@ -249,7 +251,8 @@ export async function getArtist(
  * — dozens for an album — and the difference between those two shapes is what
  * decides whether the rate-limited web service is usable at all.
  */
-const RELEASE_INC = 'recordings+recording-level-rels+work-rels+artist-rels+artist-credits+isrcs';
+const RELEASE_INC =
+  'recordings+recording-level-rels+work-rels+artist-rels+artist-credits+isrcs+url-rels';
 
 type RawRelease = {
   id: string;
@@ -257,6 +260,7 @@ type RawRelease = {
   barcode?: string | null;
   date?: string | null;
   country?: string | null;
+  relations?: MbRelation[];
   media?: {
     position?: number;
     tracks?: {
@@ -275,6 +279,24 @@ type RawRelease = {
     }[];
   }[];
 };
+
+function releaseUrlRelations(relations: MbRelation[] | undefined): MbReleaseUrlRelation[] {
+  return (relations ?? []).flatMap((relation) =>
+    relation['target-type'] === 'url' && relation.url?.resource && relation['type-id']
+      ? [
+          {
+            url: relation.url.resource,
+            relationshipType: relation.type,
+            relationshipTypeId: relation['type-id'],
+            ended: relation.ended ?? false,
+            begin: relation.begin ?? null,
+            end: relation.end ?? null,
+            attributes: relation.attributes ?? [],
+          },
+        ]
+      : [],
+  );
+}
 
 /**
  * Artist credits on a recording.
@@ -342,6 +364,7 @@ export async function getReleaseWithRecordings(
     barcode: raw.barcode ?? null,
     date: raw.date ?? null,
     country: raw.country ?? null,
+    urlRelations: releaseUrlRelations(raw.relations),
     tracks,
   };
 }
