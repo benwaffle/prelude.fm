@@ -24,6 +24,8 @@ const REASONS: Record<MusicBrainzGapCode, string> = {
   'release-cache-missing': 'The matched release has not been fetched',
   'release-title-missing': 'The MusicBrainz release has no title',
   'release-date-missing': 'The MusicBrainz release has no date',
+  'release-spotify-streaming-url-missing':
+    'The MusicBrainz release has no Spotify free-streaming URL',
   'release-track-position-mismatch': 'The release position contradicts the anchor',
   'recording-unanchored': 'No MusicBrainz recording matched this track',
   'recording-anchor-conflict': 'One ISRC names more than one MusicBrainz recording',

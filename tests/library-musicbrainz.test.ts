@@ -287,7 +287,59 @@ test('reads the anchored recording with its work tree, catalogue and credits', a
     },
   ]);
   assert.equal(facts.mbReleases[0].date, '1981-09-01');
+  assert.equal(facts.mbReleases[0].spotifyFreeStreamingUrlState, 'unknown');
   assert.equal(facts.mbReleaseTracks[0].position, 1);
+});
+
+test('distinguishes unfetched release URLs from a known missing Spotify relation', async () => {
+  const unknown = await loadMusicBrainzLibraryFacts(['held-1']);
+  assert.equal(unknown.mbReleases[0].spotifyFreeStreamingUrlState, 'unknown');
+  assert.ok(
+    !projectMusicBrainzLibrary(unknown).accounting[0].gapCodes.includes(
+      'release-spotify-streaming-url-missing',
+    ),
+  );
+
+  await db
+    .update(schema.mbRelease)
+    .set({ urlRelationsFetchedAt: new Date('2026-09-21T00:00:00Z') });
+  await db.insert(schema.mbReleaseUrl).values({
+    releaseMbid: 'release-1',
+    url: 'https://www.youtube.com/watch?v=example',
+    relationshipType: 'free streaming',
+    relationshipTypeId: '08445ccf-7b99-4438-9f9a-fb9ac18099ee',
+    ended: false,
+    begin: null,
+    end: null,
+    attributes: [],
+  });
+
+  const missing = await loadMusicBrainzLibraryFacts(['held-1']);
+  assert.equal(missing.mbReleases[0].spotifyFreeStreamingUrlState, 'missing');
+  assert.ok(
+    projectMusicBrainzLibrary(missing).accounting[0].gapCodes.includes(
+      'release-spotify-streaming-url-missing',
+    ),
+  );
+
+  await db.insert(schema.mbReleaseUrl).values({
+    releaseMbid: 'release-1',
+    url: 'https://open.spotify.com/album/spotify-album-1',
+    relationshipType: 'free streaming',
+    relationshipTypeId: '08445ccf-7b99-4438-9f9a-fb9ac18099ee',
+    ended: false,
+    begin: null,
+    end: null,
+    attributes: [],
+  });
+
+  const present = await loadMusicBrainzLibraryFacts(['held-1']);
+  assert.equal(present.mbReleases[0].spotifyFreeStreamingUrlState, 'present');
+  assert.ok(
+    !projectMusicBrainzLibrary(present).accounting[0].gapCodes.includes(
+      'release-spotify-streaming-url-missing',
+    ),
+  );
 });
 
 test('brings in the other Spotify issue of the same performance', async () => {

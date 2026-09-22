@@ -36,6 +36,7 @@ export type MusicBrainzGapCode =
   | 'release-cache-missing'
   | 'release-title-missing'
   | 'release-date-missing'
+  | 'release-spotify-streaming-url-missing'
   | 'release-track-position-mismatch'
   | 'recording-unanchored'
   | 'recording-anchor-conflict'
@@ -829,6 +830,9 @@ function releaseGaps(
   }
   if (!nonBlank(release.date)) {
     pushGap(gaps, gap('release-date-missing', 'release', release.mbid));
+  }
+  if (release.spotifyFreeStreamingUrlState === 'missing') {
+    pushGap(gaps, gap('release-spotify-streaming-url-missing', 'release', release.mbid));
   }
 
   if (expectedRecordingMbid) {

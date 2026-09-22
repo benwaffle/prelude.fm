@@ -113,6 +113,11 @@ export type MbReleaseFact = {
   title: string | null;
   date: string | null;
   country: string | null;
+  /**
+   * Unknown means this cached release predates authoritative `url-rels`
+   * ingestion. Missing is only valid after that fetch completed.
+   */
+  spotifyFreeStreamingUrlState: 'unknown' | 'present' | 'missing';
 };
 
 export type MbReleaseTrackFact = {

@@ -105,6 +105,7 @@ function baseFacts(): MusicBrainzLibraryFacts {
         title: 'MB release title',
         date: '2020-01-01',
         country: 'US',
+        spotifyFreeStreamingUrlState: 'unknown',
       },
     ],
     mbReleaseTracks: [
@@ -140,6 +141,18 @@ test('projects a complete MB recording without using provider titles as classica
   assert.equal(recording.works[0].title, 'Sonata in C major');
   assert.equal(recording.occurrences[0].providerTitle, 'Provider track title');
   assert.notEqual(recording.works[0].title, recording.occurrences[0].providerTitle);
+});
+
+test('reports a missing Spotify URL only after release URL relations were fetched', () => {
+  const facts = baseFacts();
+
+  assert.doesNotMatch(gapCodes(facts).join(','), /streaming-url/);
+
+  facts.mbReleases[0].spotifyFreeStreamingUrlState = 'missing';
+  assert.ok(gapCodes(facts).includes('release-spotify-streaming-url-missing'));
+
+  facts.mbReleases[0].spotifyFreeStreamingUrlState = 'present';
+  assert.doesNotMatch(gapCodes(facts).join(','), /streaming-url/);
 });
 
 test('Well-Tempered Clavier resolves a leaf to its prelude-and-fugue parent, not the book', () => {
@@ -306,6 +319,7 @@ test('duplicate Spotify releases coalesce under one MB recording and prefer a he
     title: 'Another MB release',
     date: '2022',
     country: 'GB',
+    spotifyFreeStreamingUrlState: 'unknown',
   });
   facts.mbReleaseTracks.push({
     releaseMbid: 'release-2',

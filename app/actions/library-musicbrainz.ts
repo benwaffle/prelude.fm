@@ -9,6 +9,7 @@ import {
   mbRecordingWork,
   mbRelease,
   mbReleaseTrack,
+  mbReleaseUrl,
   mbWork,
   mbWorkCatalogue,
   matchQueue,
@@ -51,6 +52,22 @@ import type {
  * a guard against a cycle in the cache, which the projection also reports.
  */
 const MAX_WORK_GENERATIONS = 16;
+const FREE_STREAMING_RELATIONSHIP_TYPE_ID = '08445ccf-7b99-4438-9f9a-fb9ac18099ee';
+
+function isSpotifyFreeStreamingRelation(relation: {
+  url: string;
+  relationshipTypeId: string;
+  ended: boolean;
+}): boolean {
+  if (relation.ended || relation.relationshipTypeId !== FREE_STREAMING_RELATIONSHIP_TYPE_ID) {
+    return false;
+  }
+  try {
+    return new URL(relation.url).hostname.toLowerCase() === 'open.spotify.com';
+  } catch {
+    return false;
+  }
+}
 
 function releaseResolutionOf(album: {
   mbReleaseId: string | null;
@@ -134,10 +151,20 @@ export async function loadMusicBrainzLibraryFacts(
       ),
     ]);
 
-  const releaseTrackRows = await forChunks(
-    releaseRows.map((release) => release.mbid),
-    (chunk) =>
-      database.select().from(mbReleaseTrack).where(inArray(mbReleaseTrack.releaseMbid, chunk)),
+  const [releaseTrackRows, releaseUrlRows] = await Promise.all([
+    forChunks(
+      releaseRows.map((release) => release.mbid),
+      (chunk) =>
+        database.select().from(mbReleaseTrack).where(inArray(mbReleaseTrack.releaseMbid, chunk)),
+    ),
+    forChunks(
+      releaseRows.map((release) => release.mbid),
+      (chunk) =>
+        database.select().from(mbReleaseUrl).where(inArray(mbReleaseUrl.releaseMbid, chunk)),
+    ),
+  ]);
+  const releasesWithSpotifyFreeStreaming = new Set(
+    releaseUrlRows.filter(isSpotifyFreeStreamingRelation).map((relation) => relation.releaseMbid),
   );
 
   const queueStatusByTrack = new Map(queueRows.map((row) => [row.spotifyId, row.status]));
@@ -296,6 +323,12 @@ export async function loadMusicBrainzLibraryFacts(
         title: release.title,
         date: release.date,
         country: release.country,
+        spotifyFreeStreamingUrlState:
+          release.urlRelationsFetchedAt === null
+            ? 'unknown'
+            : releasesWithSpotifyFreeStreaming.has(release.mbid)
+              ? 'present'
+              : 'missing',
       }),
     ),
     mbReleaseTracks: releaseTrackRows.map(
