@@ -6,11 +6,13 @@ import { projectMusicBrainzLibrary } from '../app/lib/musicbrainz-library';
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
 let loadMusicBrainzLibraryFacts: typeof import('@/app/actions/library-musicbrainz').loadMusicBrainzLibraryFacts;
+let loadDerivedMusicBrainzLibraryFacts: typeof import('@/app/actions/library-musicbrainz').loadDerivedMusicBrainzLibraryFacts;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ loadMusicBrainzLibraryFacts } = await import('@/app/actions/library-musicbrainz'));
+  ({ loadMusicBrainzLibraryFacts, loadDerivedMusicBrainzLibraryFacts } =
+    await import('@/app/actions/library-musicbrainz'));
 });
 
 /**
@@ -397,12 +399,12 @@ test('labels the parser verdict as a proposal and lets MusicBrainz outrank it', 
   assert.match(reread.classifications[0].reason ?? '', /parser ruled this not classical/);
 });
 
-test('uses durable classification when present and derives it only when absent', async () => {
+test('the reader uses durable classification while the pipeline can derive stronger evidence', async () => {
   await db.insert(schema.trackClassification).values({
     spotifyTrackId: 'held-1',
     state: 'not_classical',
-    provenance: 'manual',
-    reason: 'reviewed by hand',
+    provenance: 'llm_proposal',
+    reason: 'parser proposal',
     evidenceMbid: null,
     decidedAt: new Date('2026-09-21T00:00:00Z'),
   });
@@ -412,8 +414,8 @@ test('uses durable classification when present and derives it only when absent',
     {
       spotifyTrackId: 'held-1',
       state: 'not_classical',
-      provenance: 'manual',
-      reason: 'reviewed by hand',
+      provenance: 'llm_proposal',
+      reason: 'parser proposal',
     },
     {
       spotifyTrackId: 'held-2',
@@ -423,6 +425,10 @@ test('uses durable classification when present and derives it only when absent',
         'the album parser ruled this not classical; not reviewed by hand (MusicBrainz relates this recording to no work)',
     },
   ]);
+
+  const derived = await loadDerivedMusicBrainzLibraryFacts(['held-1']);
+  assert.equal(derived.classifications[0].state, 'classical');
+  assert.equal(derived.classifications[0].provenance, 'musicbrainz');
 });
 
 test('an ISRC naming two recordings is reported as a conflict, not anchored', async () => {

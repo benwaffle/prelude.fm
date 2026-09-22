@@ -1,4 +1,4 @@
-import { loadMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
+import { loadDerivedMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
 import { anchorTracksByIsrc, ingestAlbum } from './musicbrainz-ingest';
 import { hydrateProviderAlbum } from './provider-hydration';
 import { getSpotifyAlbumTracks } from './spotify-app-client';
@@ -85,7 +85,7 @@ export async function runMusicBrainzAlbumPass(
   }
 
   const wanted = trackIds ?? tracks.map((track) => track.id);
-  const facts = await loadMusicBrainzLibraryFacts(wanted);
+  const facts = await loadDerivedMusicBrainzLibraryFacts(wanted);
   const anchorByTrack = new Map(facts.anchors.map((anchor) => [anchor.spotifyTrackId, anchor]));
   const classificationByTrack = new Map(
     facts.classifications.map((classification) => [classification.spotifyTrackId, classification]),
@@ -145,7 +145,7 @@ export async function runMusicBrainzAlbumPass(
 }
 
 async function classifyOnly(albumId: string, trackIds: string[]): Promise<AlbumPassReport> {
-  const facts = await loadMusicBrainzLibraryFacts(trackIds);
+  const facts = await loadDerivedMusicBrainzLibraryFacts(trackIds);
   const classificationByTrack = new Map(
     facts.classifications.map((classification) => [classification.spotifyTrackId, classification]),
   );

@@ -87,6 +87,26 @@ export async function loadMusicBrainzLibraryFacts(
   spotifyTrackIds: string[],
   database: DatabaseExecutor = db,
 ): Promise<MusicBrainzLibraryFacts> {
+  return loadMusicBrainzFacts(spotifyTrackIds, database, true);
+}
+
+/**
+ * The pipeline must evaluate current MusicBrainz evidence before provenance
+ * precedence is applied. Otherwise an old parser proposal would hide stronger
+ * new evidence and could never be upgraded.
+ */
+export async function loadDerivedMusicBrainzLibraryFacts(
+  spotifyTrackIds: string[],
+  database: DatabaseExecutor = db,
+): Promise<MusicBrainzLibraryFacts> {
+  return loadMusicBrainzFacts(spotifyTrackIds, database, false);
+}
+
+async function loadMusicBrainzFacts(
+  spotifyTrackIds: string[],
+  database: DatabaseExecutor,
+  preferStoredClassifications: boolean,
+): Promise<MusicBrainzLibraryFacts> {
   const requestedTrackIds = Array.from(new Set(spotifyTrackIds));
   if (requestedTrackIds.length === 0) return emptyFacts([]);
 
@@ -268,7 +288,7 @@ export async function loadMusicBrainzLibraryFacts(
     requestedTrackIds,
     classifications: requestedTrackIds.flatMap((spotifyTrackId) => {
       const stored = storedClassificationByTrack.get(spotifyTrackId);
-      if (stored) return [stored];
+      if (preferStoredClassifications && stored) return [stored];
 
       const track = providerTrackById.get(spotifyTrackId);
       const evidenceMbids = anchorByTrackId.has(spotifyTrackId)

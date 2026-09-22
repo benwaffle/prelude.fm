@@ -233,6 +233,26 @@ test('an album MusicBrainz does not have says why, rather than inventing one', a
 
 test('classifies from MusicBrainz evidence, and only calls it classical with some', async () => {
   await seedAlbumBarcode();
+  await db.insert(schema.spotifyTrack).values(
+    SPOTIFY_ALBUM.tracks.map((track) => ({
+      spotifyId: track.id,
+      title: track.name,
+      trackNumber: track.track_number,
+      discNumber: track.disc_number,
+      durationMs: track.duration_ms,
+      popularity: track.popularity,
+      spotifyAlbumId: ALBUM.id,
+      isrc: track.external_ids?.isrc ?? null,
+    })),
+  );
+  await db.insert(schema.trackClassification).values({
+    spotifyTrackId: 'track-1',
+    state: 'not_classical',
+    provenance: 'llm_proposal',
+    reason: 'old parser proposal',
+    evidenceMbid: null,
+    decidedAt: new Date('2026-09-20T00:00:00Z'),
+  });
   const report = await runMusicBrainzAlbumPass(
     source({
       releasesByBarcode: async () => ['release-1'],
