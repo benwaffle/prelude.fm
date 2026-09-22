@@ -7,7 +7,9 @@ import {
   ManualSubmissionError,
   normalizeEditId,
   normalizeMbid,
+  optionalMbid,
   releaseSubmissionDraft,
+  releaseSubmissionDraftFromGap,
   requireMbid,
   submissionIdentity,
   workCreationDraft,
@@ -285,9 +287,11 @@ test('a release submitted before its MBID exists is identified by the Spotify al
     reason: 'no release carries this barcode',
     releaseMbid: null,
   });
-  assert.equal(pending.targetMbid, null);
-  assert.equal(pending.value, 'https://open.spotify.com/album/spotify-1');
+  const spotifyUrl = 'https://open.spotify.com/album/spotify-1';
+  assert.equal(pending.targetMbid, spotifyUrl);
+  assert.equal(pending.value, spotifyUrl);
   assert.equal(pending.evidence.releaseUrl, null);
+  assert.equal(pending.evidence.releaseMbid, null);
 
   const created = releaseSubmissionDraft({
     albumId: 'spotify-1',
@@ -298,8 +302,34 @@ test('a release submitted before its MBID exists is identified by the Spotify al
     reason: 'no release carries this barcode',
     releaseMbid: '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46',
   });
-  assert.equal(created.targetMbid, '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46');
-  assert.equal(created.value, '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46');
+  assert.equal(created.targetMbid, spotifyUrl);
+  assert.equal(created.value, spotifyUrl);
+  assert.equal(created.evidence.releaseMbid, '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46');
+  assert.equal(submissionIdentity(pending), submissionIdentity(created));
+});
+
+test('a Harmony confirmation keeps the album URL as identity and treats a missing MBID as missing', () => {
+  const gap = {
+    albumId: 'spotify-1',
+    albumTitle: 'A Recital',
+    year: 1994,
+    upc: '00028946813423',
+    tracks: 12,
+    reason: 'no release carries this barcode',
+  };
+  const pending = releaseSubmissionDraftFromGap(gap, '  ');
+  assert.equal(pending.value, 'https://open.spotify.com/album/spotify-1');
+  assert.equal(pending.evidence.releaseMbid, null);
+
+  const created = releaseSubmissionDraftFromGap(
+    gap,
+    'https://musicbrainz.org/release/7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46',
+  );
+  assert.equal(created.evidence.releaseMbid, '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46');
+  assert.equal(created.value, pending.value);
+  assert.throws(() => releaseSubmissionDraftFromGap(gap, 'not-an-id'), ManualSubmissionError);
+  assert.equal(optionalMbid('', 'The new release'), null);
+  assert.equal(optionalMbid(null, 'The new release'), null);
 });
 
 test('a contested ISRC report keeps every recording and still dedupes', () => {

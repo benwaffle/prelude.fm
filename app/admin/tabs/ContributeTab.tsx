@@ -7,6 +7,7 @@ import {
   getContributions,
   recordBarcodeSubmission,
   recordIsrcSubmission,
+  recordReleaseSubmission,
   recordWorkCreationSubmission,
   recordWorkRelationshipSubmission,
   recheckCreatedWork,
@@ -34,6 +35,9 @@ export function ContributeTab() {
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
   const [workCreateForms, setWorkCreateForms] = useState<
     Record<string, { workMbid: string; editId: string }>
+  >({});
+  const [releaseForms, setReleaseForms] = useState<
+    Record<string, { releaseMbid: string; editId: string }>
   >({});
 
   const refresh = useCallback(() => {
@@ -92,6 +96,21 @@ export function ContributeTab() {
     setBusy(true);
     try {
       setView(await recordBarcodeSubmission(releaseMbid));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submittedRelease(albumId: string) {
+    const form = releaseForms[albumId] ?? { releaseMbid: '', editId: '' };
+    setBusy(true);
+    try {
+      setView(
+        await recordReleaseSubmission(albumId, {
+          releaseMbid: form.releaseMbid,
+          editId: form.editId,
+        }),
+      );
     } finally {
       setBusy(false);
     }
@@ -288,33 +307,75 @@ export function ContributeTab() {
           The largest gap left, and the one class that stays manual for good: a duplicate release is
           expensive for other people to merge away. Harmony fills the form from the Spotify album,
           so the work is checking rather than typing. Biggest first, since adding a box set unlocks
-          more than adding a single.
+          more than adding a single. Opening Harmony or Spotify does not write the ledger. A
+          resulting release MBID is optional — Harmony often queues the edit before one exists — and
+          an edit ID stays missing if you do not have it.
         </p>
-        {view.missing.map((album) => (
-          <div key={album.albumId} className="row">
-            <span className="mono w-10 shrink-0 text-[var(--gall)]">{album.tracks}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate">{album.albumTitle}</span>
-              <span className="block text-[11px] text-[var(--ink-2)]">
-                {album.year ? `${album.year} · ` : ''}
-                {album.reason}
-                {album.unanchored < album.tracks &&
-                  ` · ${album.tracks - album.unanchored} track(s) already reach a recording elsewhere`}
+        {view.missing.map((album) => {
+          const form = releaseForms[album.albumId] ?? { releaseMbid: '', editId: '' };
+          return (
+            <div key={album.albumId} className="row">
+              <span className="mono w-10 shrink-0 text-[var(--gall)]">{album.tracks}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{album.albumTitle}</span>
+                <span className="block text-[11px] text-[var(--ink-2)]">
+                  {album.year ? `${album.year} · ` : ''}
+                  {album.reason}
+                  {album.unanchored < album.tracks &&
+                    ` · ${album.tracks - album.unanchored} track(s) already reach a recording elsewhere`}
+                  {album.ledger?.releaseMbid && ` · ${album.ledger.releaseMbid}`}
+                </span>
               </span>
-            </span>
-            <a className="act shrink-0" href={album.harmony} target="_blank" rel="noreferrer">
-              Harmony
-            </a>
-            <a
-              className="act shrink-0"
-              href={`https://open.spotify.com/album/${album.albumId}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Spotify
-            </a>
-          </div>
-        ))}
+              <a className="act shrink-0" href={album.harmony} target="_blank" rel="noreferrer">
+                Harmony
+              </a>
+              <a
+                className="act shrink-0"
+                href={`https://open.spotify.com/album/${album.albumId}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Spotify
+              </a>
+              {album.ledger ? (
+                <span className="album-meta shrink-0">{album.ledger.label}</span>
+              ) : (
+                <>
+                  <input
+                    className="mono w-40 shrink-0"
+                    placeholder="release MBID (optional)"
+                    value={form.releaseMbid}
+                    onChange={(event) =>
+                      setReleaseForms((current) => ({
+                        ...current,
+                        [album.albumId]: { ...form, releaseMbid: event.target.value },
+                      }))
+                    }
+                  />
+                  <input
+                    className="mono w-32 shrink-0"
+                    placeholder="edit ID (optional)"
+                    value={form.editId}
+                    onChange={(event) =>
+                      setReleaseForms((current) => ({
+                        ...current,
+                        [album.albumId]: { ...form, editId: event.target.value },
+                      }))
+                    }
+                  />
+                  <button
+                    className="act shrink-0"
+                    data-variant="primary"
+                    disabled={busy}
+                    onClick={() => submittedRelease(album.albumId)}
+                  >
+                    I submitted it
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </section>
 
       {view.barcodes.length > 0 && (

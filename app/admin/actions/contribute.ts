@@ -32,6 +32,7 @@ import {
   requireMbid,
   workCreationDraftFromGap,
   workRelationshipDraftFromGap,
+  releaseSubmissionDraftFromGap,
   type ManualSubmissionDraft,
 } from '@/lib/musicbrainz-manual-submissions';
 import { checkAuth } from './auth';
@@ -139,7 +140,16 @@ export type ContributionView = {
     }[];
   })[];
   contested: Awaited<ReturnType<typeof contestedIsrcs>>;
-  missing: (Awaited<ReturnType<typeof missingReleases>>[number] & { harmony: string })[];
+  missing: (Awaited<ReturnType<typeof missingReleases>>[number] & {
+    harmony: string;
+    ledger: {
+      id: number;
+      outcome: string;
+      editId: string | null;
+      releaseMbid: string | null;
+      label: string;
+    } | null;
+  })[];
   barcodes: (Awaited<ReturnType<typeof barcodeGaps>>[number] & { edit: string })[];
   misaligned: Awaited<ReturnType<typeof misalignedAlbums>>;
   recent: {
@@ -259,6 +269,38 @@ export async function getContributions(): Promise<ContributionView> {
     pushLedger(typeof recordingMbid === 'string' ? recordingMbid : null, row);
   }
 
+  const missingAlbumIds = missing.map((album) => album.albumId);
+  const releaseLedgerRows =
+    missingAlbumIds.length === 0
+      ? []
+      : await db
+          .select({
+            id: mbSubmission.id,
+            albumId: mbSubmission.subject,
+            outcome: mbSubmission.outcome,
+            editId: mbSubmission.editId,
+            evidence: mbSubmission.evidence,
+          })
+          .from(mbSubmission)
+          .where(
+            and(eq(mbSubmission.kind, 'release'), inArray(mbSubmission.subject, missingAlbumIds)),
+          );
+  const releaseLedgerByAlbum = new Map(
+    releaseLedgerRows.map((row) => {
+      const releaseMbid = (row.evidence as { releaseMbid?: unknown } | null)?.releaseMbid;
+      return [
+        row.albumId,
+        {
+          id: row.id,
+          outcome: row.outcome,
+          editId: row.editId,
+          releaseMbid: typeof releaseMbid === 'string' ? releaseMbid : null,
+          label: describeLedgerState(row),
+        },
+      ] as const;
+    }),
+  );
+
   return {
     counts,
     isrcReleases: releases.map((release) => ({
@@ -297,7 +339,11 @@ export async function getContributions(): Promise<ContributionView> {
       })),
     })),
     contested,
-    missing: missing.map((album) => ({ ...album, harmony: harmonyImportLink(album.albumId) })),
+    missing: missing.map((album) => ({
+      ...album,
+      harmony: harmonyImportLink(album.albumId),
+      ledger: releaseLedgerByAlbum.get(album.albumId) ?? null,
+    })),
     barcodes: barcodes.map((gap) => ({ ...gap, edit: releaseEditLink(gap.releaseMbid) })),
     misaligned,
     recent,
@@ -415,6 +461,25 @@ export async function recordWorkCreationSubmission(
   await recordManualSubmission(
     `human:${session.user.name}`,
     workCreationDraftFromGap(gap, workMbid, options.localWorkId),
+    options,
+  );
+  return getContributions();
+}
+
+/** Record a Harmony submission only after the editor confirms the external edit. */
+export async function recordReleaseSubmission(
+  albumId: string,
+  options: { note?: string; editId?: string; releaseMbid?: string } = {},
+) {
+  const session = await checkAuth();
+  const gap = (await missingReleases(5_000)).find((album) => album.albumId === albumId);
+  if (!gap) {
+    throw new ManualSubmissionError('That album is not a missing-release contribution');
+  }
+
+  await recordManualSubmission(
+    `human:${session.user.name}`,
+    releaseSubmissionDraftFromGap(gap, options.releaseMbid),
     options,
   );
   return getContributions();

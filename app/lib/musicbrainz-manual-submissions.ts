@@ -61,6 +61,17 @@ export function requireMbid(input: string, label: string): string {
 }
 
 /**
+ * An MBID the person may not have yet.
+ *
+ * Empty input is absence. Present input must still be a real identifier: a
+ * malformed one would write a ledger row pointing at nothing.
+ */
+export function optionalMbid(input: string | null | undefined, label: string): string | null {
+  if (input == null || input.trim() === '') return null;
+  return requireMbid(input, label);
+}
+
+/**
  * The edit number, when the person has it.
  *
  * Optional on purpose, and missing stays missing: an edit ID is how an
@@ -372,9 +383,17 @@ export function releaseSubmissionDraft(submission: ReleaseSubmission): ManualSub
   const spotifyUrl = `https://open.spotify.com/album/${submission.albumId}`;
   return {
     kind: 'release',
-    targetMbid: submission.releaseMbid,
+    /**
+     * The unique index is (kind, target_mbid, value). A null target would
+     * make SQLite treat every confirmation as distinct, so the Spotify URL
+     * stands in for the release that does not exist yet. The resulting MBID,
+     * when the person has it, stays in evidence rather than changing the
+     * identity and opening a second row.
+     */
+    targetMbid: spotifyUrl,
     subject: submission.albumId,
-    value: submission.releaseMbid ?? spotifyUrl,
+    /** Always the album URL: stable whether or not the MBID exists yet. */
+    value: spotifyUrl,
     evidence: {
       spotifyAlbumId: submission.albumId,
       spotifyAlbumTitle: submission.albumTitle,
@@ -390,6 +409,36 @@ export function releaseSubmissionDraft(submission: ReleaseSubmission): ManualSub
       confirmedBy: 'human',
     },
   };
+}
+
+export type MissingReleaseGapInput = {
+  albumId: string;
+  albumTitle: string;
+  year: number | null;
+  upc: string | null;
+  tracks: number;
+  reason: string;
+};
+
+/**
+ * Confirm a Harmony submission against the album we still cannot place.
+ *
+ * The Spotify album URL is the ledger identity. A resulting release MBID is
+ * optional: Harmony often queues the edit before MusicBrainz has assigned one.
+ */
+export function releaseSubmissionDraftFromGap(
+  gap: MissingReleaseGapInput,
+  releaseMbidInput?: string | null,
+): ManualSubmissionDraft {
+  return releaseSubmissionDraft({
+    albumId: gap.albumId,
+    albumTitle: gap.albumTitle,
+    year: gap.year,
+    upc: gap.upc,
+    trackCount: gap.tracks,
+    reason: gap.reason,
+    releaseMbid: optionalMbid(releaseMbidInput, 'The new release'),
+  });
 }
 
 /**
