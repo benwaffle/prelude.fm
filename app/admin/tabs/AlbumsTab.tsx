@@ -183,6 +183,34 @@ export function AlbumsTab({
             <div className="bg-[var(--viridian)]" style={{ width: `${share ?? 0}%` }} />
           </div>
           <p className="mt-3 max-w-[70ch] text-[var(--ink-2)]">{COVERAGE_LISTENER_NOTE}</p>
+          <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 border-t border-[var(--rule)] pt-3 sm:grid-cols-3">
+            <div>
+              <dt className="text-[11px] text-[var(--ink-2)]">Durably classified</dt>
+              <dd className="mono text-[15px]">
+                {coverage.classifiedTracks.toLocaleString()}
+                <span className="text-[11px] text-[var(--faint)]">
+                  {' '}
+                  / {coverage.tracks.toLocaleString()}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[11px] text-[var(--ink-2)]">Classical</dt>
+              <dd className="mono text-[15px]">{coverage.classicalTracks.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] text-[var(--ink-2)]">
+                Tracks with a cached MB work relation
+              </dt>
+              <dd className="mono text-[15px]">
+                {coverage.tracksReachingWork.toLocaleString()}
+                <span className="text-[11px] text-[var(--faint)]">
+                  {' '}
+                  / {coverage.tracks.toLocaleString()}
+                </span>
+              </dd>
+            </div>
+          </dl>
           <div className="mt-4 border-t border-[var(--rule)] pt-3">
             <p className="eyebrow mb-2">By state</p>
             <div className="slip">
@@ -267,6 +295,14 @@ export function AlbumsTab({
                         {album.anchored}/{album.tracks}
                       </span>
                       <span className="text-[var(--faint)]">anchored</span>
+                      <span className="mono">
+                        {album.classified}/{album.tracks}
+                      </span>
+                      <span className="text-[var(--faint)]">classified</span>
+                      <span className="mono">
+                        {album.tracksReachingWork}/{album.tracks}
+                      </span>
+                      <span className="text-[var(--faint)]">have a cached work relation</span>
                       <span className="tag">{STATE_LABEL[album.state]}</span>
                     </span>
                   </button>
@@ -321,8 +357,9 @@ export function AlbumsTab({
                             <th>#</th>
                             <th>Track</th>
                             <th>ISRC</th>
-                            <th>MusicBrainz</th>
-                            <th>Work</th>
+                            <th>MB recording</th>
+                            <th>Classification</th>
+                            <th>MB work relationship</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -343,23 +380,49 @@ export function AlbumsTab({
                                     target="_blank"
                                     rel="noreferrer"
                                   >
-                                    anchored
+                                    {track.recordingTitle ?? 'cache missing'}
                                   </a>
                                 ) : (
                                   <span className="absent">not matched</span>
                                 )}
                               </td>
                               <td className="text-[var(--ink-2)]">
-                                {track.parts.length === 0 ? (
-                                  <span className="absent">unmatched</span>
+                                {track.classification ? (
+                                  <span title={track.classification.reason ?? undefined}>
+                                    {track.classification.state.replace('_', ' ')}
+                                    <span className="block text-[11px] text-[var(--faint)]">
+                                      {track.classification.provenance.replace('_', ' ')}
+                                    </span>
+                                  </span>
                                 ) : (
-                                  track.parts.map((part) => (
-                                    <span key={part.partId} className="block">
-                                      {part.workTitle}
-                                      {(part.label || part.title) && (
-                                        <span className="text-[var(--faint)]">
-                                          {' · '}
-                                          {[part.label, part.title].filter(Boolean).join('. ')}
+                                  <span className="absent">missing</span>
+                                )}
+                              </td>
+                              <td className="text-[var(--ink-2)]">
+                                {track.works.length === 0 ? (
+                                  <span className="absent">
+                                    {!track.recordingMbid
+                                      ? 'missing — not anchored'
+                                      : track.recordingDetail === null
+                                        ? 'missing — recording cache'
+                                        : track.recordingDetail === 'stub'
+                                          ? 'missing — recording not fully read'
+                                          : 'none in MusicBrainz'}
+                                  </span>
+                                ) : (
+                                  track.works.map((work) => (
+                                    <span key={work.mbid} className="block">
+                                      <a
+                                        className="text-[var(--viridian)]"
+                                        href={`https://musicbrainz.org/work/${work.mbid}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        {work.title ?? 'cache missing'}
+                                      </a>
+                                      {work.parentTitle && (
+                                        <span className="block text-[11px] text-[var(--faint)]">
+                                          part of {work.parentTitle}
                                         </span>
                                       )}
                                     </span>

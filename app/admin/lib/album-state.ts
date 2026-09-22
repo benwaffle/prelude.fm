@@ -60,8 +60,13 @@ export type AlbumRow = {
   year: number | null;
   tracks: number;
   anchored: number;
-  worksLinked: number;
+  classified: number;
+  classical: number;
+  tracksReachingWork: number;
+  /** Distinct work MBIDs stated by MusicBrainz recording-work relationships. */
   works: number;
+  /** Those related works whose MusicBrainz cache row is present. */
+  worksCached: number;
   upc: string | null;
   mbReleaseId: string | null;
   candidates: number | null;
@@ -72,16 +77,19 @@ export type Coverage = {
   albums: number;
   tracks: number;
   anchoredTracks: number;
+  classifiedTracks: number;
+  classicalTracks: number;
+  tracksReachingWork: number;
   byState: { state: AlbumState; albums: number; tracks: number }[];
 };
 
-export type AlbumTrackPart = {
-  /** The work_part_v2 row, so a key never depends on the text being distinct. */
-  partId: number;
-  workId: number;
-  workTitle: string;
-  label: string | null;
+export type AlbumTrackWork = {
+  /** The work MBID from MusicBrainz's recording-work relationship. */
+  mbid: string;
   title: string | null;
+  detail: 'stub' | 'full' | null;
+  parentMbid: string | null;
+  parentTitle: string | null;
 };
 
 export type AlbumTrackRow = {
@@ -91,10 +99,16 @@ export type AlbumTrackRow = {
   trackNumber: number;
   isrc: string | null;
   recordingMbid: string | null;
+  recordingTitle: string | null;
+  recordingDetail: 'stub' | 'full' | null;
+  classification: {
+    state: 'unreviewed' | 'classical' | 'not_classical' | 'uncertain';
+    provenance: 'musicbrainz' | 'manual' | 'llm_proposal';
+    reason: string | null;
+  } | null;
   /**
-   * The movements this track covers. Usually one, but a single Spotify track
-   * can hold several — a whole prelude and fugue, or a set of variations — and
-   * the catalogue models that deliberately.
+   * Cached direct MusicBrainz recording-work relationships. An empty list is
+   * authoritative only when the recording itself has full detail.
    */
-  parts: AlbumTrackPart[];
+  works: AlbumTrackWork[];
 };
