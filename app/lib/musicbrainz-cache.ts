@@ -17,6 +17,8 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from './db';
 import {
   mbArtist,
+  mbCacheLookupMetric,
+  mbImportRun,
   mbRecording,
   mbRecordingCredit,
   mbRecordingIsrc,
@@ -24,11 +26,14 @@ import {
   mbRelease,
   mbReleaseTrack,
   mbReleaseUrl,
+  mbRequestOperationMetric,
   mbWork,
   mbWorkCatalogue,
 } from './db/schema';
+import type { MusicBrainzChannel } from './musicbrainz-budget';
 import { cataloguesOf, composerOf, parentPartOf, yearOf } from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
+import type { AnonymousImportRunInput } from './track-classification';
 import type {
   MbArtist,
   MbRelease,
@@ -54,6 +59,126 @@ function chunk<T>(items: T[], size = INSERT_CHUNK): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+/* ----------------------------------------------------------- metrics --- */
+
+export type { AnonymousImportRunInput };
+
+export type MarginalRequestPercentiles = {
+  runs: number;
+  mean: number | null;
+  p50: number | null;
+  p90: number | null;
+  p99: number | null;
+};
+
+function metricDay(now = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+function channelFromSource(source: MusicBrainzSource): MusicBrainzChannel {
+  const match = /^musicbrainz-api:(\w+)$/.exec(source.name);
+  if (
+    match &&
+    (['interactive', 'backfill', 'bot'] as const).includes(match[1] as MusicBrainzChannel)
+  ) {
+    return match[1] as MusicBrainzChannel;
+  }
+  return 'backfill';
+}
+
+async function bumpCacheLookup(operation: string, hits: number, misses: number) {
+  if (hits === 0 && misses === 0) return;
+  const day = metricDay();
+  const lookups = hits + misses;
+  await db
+    .insert(mbCacheLookupMetric)
+    .values({ day, operation, lookups, hits, misses })
+    .onConflictDoUpdate({
+      target: [mbCacheLookupMetric.day, mbCacheLookupMetric.operation],
+      set: {
+        lookups: sql`${mbCacheLookupMetric.lookups} + ${lookups}`,
+        hits: sql`${mbCacheLookupMetric.hits} + ${hits}`,
+        misses: sql`${mbCacheLookupMetric.misses} + ${misses}`,
+      },
+    });
+}
+
+async function recordMusicBrainzRequest(source: MusicBrainzSource, operation: string, count = 1) {
+  if (count <= 0) return;
+  const day = metricDay();
+  const channel = channelFromSource(source);
+  await db
+    .insert(mbRequestOperationMetric)
+    .values({ day, channel, operation, requests: count })
+    .onConflictDoUpdate({
+      target: [
+        mbRequestOperationMetric.day,
+        mbRequestOperationMetric.channel,
+        mbRequestOperationMetric.operation,
+      ],
+      set: {
+        requests: sql`${mbRequestOperationMetric.requests} + ${count}`,
+      },
+    });
+}
+
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  const index = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
+  return sorted[index] ?? null;
+}
+
+/** Whether a release MBID is already present in the local cache. */
+export async function releaseIsCached(releaseMbid: string): Promise<boolean> {
+  const [row] = await db
+    .select({ mbid: mbRelease.mbid })
+    .from(mbRelease)
+    .where(eq(mbRelease.mbid, releaseMbid))
+    .limit(1);
+  return Boolean(row);
+}
+
+/** Persist one anonymous import/worker pass for marginal-request analysis. */
+export async function recordAnonymousImportRun(input: AnonymousImportRunInput): Promise<number> {
+  const [row] = await db
+    .insert(mbImportRun)
+    .values({
+      startedAt: input.startedAt,
+      completedAt: input.completedAt,
+      inputTrackCount: input.inputTrackCount,
+      classicalCount: input.classicalCount,
+      uncertainCount: input.uncertainCount,
+      notClassicalCount: input.notClassicalCount,
+      unreviewedCount: input.unreviewedCount,
+      albumsAlreadyCached: input.albumsAlreadyCached,
+      albumsNew: input.albumsNew,
+      requestsCaused: input.requestsCaused,
+    })
+    .returning({ id: mbImportRun.id });
+  return row.id;
+}
+
+/** Rolling marginal MusicBrainz requests per import run. */
+export async function marginalRequestPercentiles(
+  sinceDays = 30,
+): Promise<MarginalRequestPercentiles> {
+  const since = new Date(Date.now() - sinceDays * 86_400_000);
+  const rows = await db
+    .select({ requestsCaused: mbImportRun.requestsCaused })
+    .from(mbImportRun)
+    .where(sql`${mbImportRun.completedAt} >= ${since.getTime()}`)
+    .orderBy(mbImportRun.requestsCaused);
+  const values = rows.map((row) => row.requestsCaused);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return {
+    runs: values.length,
+    mean: values.length > 0 ? total / values.length : null,
+    p50: percentile(values, 50),
+    p90: percentile(values, 90),
+    p99: percentile(values, 99),
+  };
 }
 
 /* ------------------------------------------------------------ entities --- */
@@ -348,6 +473,8 @@ async function cacheArtistNames(tx: Transaction, recordings: MbReleaseRecording[
 export async function worksNeedingDetail(mbids: string[]): Promise<string[]> {
   if (mbids.length === 0) return [];
   const known = new Set<string>();
+  let hits = 0;
+  let misses = 0;
   for (const batch of chunk(mbids)) {
     const rows = await db
       .select({ mbid: mbWork.mbid })
@@ -355,7 +482,11 @@ export async function worksNeedingDetail(mbids: string[]): Promise<string[]> {
       .where(and(inArray(mbWork.mbid, batch), eq(mbWork.detail, 'full')));
     for (const row of rows) known.add(row.mbid);
   }
-  return mbids.filter((mbid) => !known.has(mbid));
+  const pending = mbids.filter((mbid) => !known.has(mbid));
+  hits = known.size;
+  misses = pending.length;
+  await bumpCacheLookup('work', hits, misses);
+  return pending;
 }
 
 /**
@@ -392,6 +523,7 @@ export async function ingestWorkTree(
     }
 
     const work = await source.work(next);
+    await recordMusicBrainzRequest(source, 'work');
     requests++;
     if (!work) break;
 
@@ -427,6 +559,7 @@ export async function ingestRelease(
   options: { fetchWorks?: boolean } = {},
 ): Promise<ReleaseIngestReport> {
   const release = await source.releaseWithRecordings(releaseMbid);
+  await recordMusicBrainzRequest(source, 'release');
   let requests = 1;
 
   if (!release) {
@@ -490,7 +623,9 @@ export async function drainRecordingStubs(
   let reachedWork = 0;
 
   for (const stub of stubs) {
+    await bumpCacheLookup('recording', 0, 1);
     const detail = await source.recordingDetail(stub.mbid);
+    await recordMusicBrainzRequest(source, 'recording');
     requests++;
     if (!detail) continue;
 
@@ -639,7 +774,9 @@ export async function drainArtistStubs(
   let artists = 0;
 
   for (const mbid of pending) {
+    await bumpCacheLookup('artist', 0, 1);
     const artist = await source.artist(mbid);
+    await recordMusicBrainzRequest(source, 'artist');
     requests++;
     if (!artist) continue;
     await cacheArtist(artist);

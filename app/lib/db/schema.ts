@@ -532,6 +532,62 @@ export const mbRequestBudget = sqliteTable(
 );
 
 /**
+ * MusicBrainz requests by UTC day, channel, and cache operation.
+ *
+ * Complements `mb_request_budget` with the operation that caused each request
+ * so we can see whether marginal imports spend budget on releases, works, or
+ * stub backfill.
+ */
+export const mbRequestOperationMetric = sqliteTable(
+  'mb_request_operation_metric',
+  {
+    day: text('day').notNull(),
+    channel: text('channel').notNull(),
+    operation: text('operation').notNull(),
+    requests: integer('requests').default(0).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.channel, table.operation] })],
+);
+
+/**
+ * Daily cache lookup efficiency by operation.
+ *
+ * A hit means the local `mb_*` row was already sufficient and no MusicBrainz
+ * request was needed for that lookup; a miss means a fetch followed or will.
+ */
+export const mbCacheLookupMetric = sqliteTable(
+  'mb_cache_lookup_metric',
+  {
+    day: text('day').notNull(),
+    operation: text('operation').notNull(),
+    lookups: integer('lookups').default(0).notNull(),
+    hits: integer('hits').default(0).notNull(),
+    misses: integer('misses').default(0).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.operation] })],
+);
+
+/**
+ * Anonymous aggregate for one import/worker pass.
+ *
+ * No user id and no track ids — only counts and timing so we can compute
+ * marginal MusicBrainz requests per import and rolling percentiles.
+ */
+export const mbImportRun = sqliteTable('mb_import_run', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp_ms' }).notNull(),
+  inputTrackCount: integer('input_track_count').notNull(),
+  classicalCount: integer('classical_count').notNull(),
+  uncertainCount: integer('uncertain_count').notNull(),
+  notClassicalCount: integer('not_classical_count').notNull(),
+  unreviewedCount: integer('unreviewed_count').notNull(),
+  albumsAlreadyCached: integer('albums_already_cached').notNull(),
+  albumsNew: integer('albums_new').notNull(),
+  requestsCaused: integer('requests_caused').notNull(),
+});
+
+/**
  * The next moment a MusicBrainz request may be sent.
  *
  * One row, shared by every process. The in-process scheduler can only space
