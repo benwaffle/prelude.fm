@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { db } from '@/lib/db';
-import { latestInvariantResults, musicBrainzInvariantHealth } from '@/lib/musicbrainz-invariants';
+import type { InvariantHealth } from '@/lib/musicbrainz-invariant-health';
+
+type Database = (typeof import('@/lib/db'))['db'];
 
 export const HEALTH_CACHE_TTL_MS = 30_000;
 
@@ -20,21 +21,23 @@ export type HealthSnapshot = {
     submissions: number | null;
     queued: number | null;
   };
-  invariants: ReturnType<typeof musicBrainzInvariantHealth>;
+  invariants: InvariantHealth;
 };
 
-async function count(table: string): Promise<number | null> {
+async function count(database: Database, table: string): Promise<number | null> {
   try {
-    const [row] = await db.all<{ n: number }>(sql.raw(`select count(*) as n from "${table}"`));
+    const [row] = await database.all<{ n: number }>(
+      sql.raw(`select count(*) as n from "${table}"`),
+    );
     return Number(row?.n ?? 0);
   } catch {
     return null;
   }
 }
 
-async function appliedMigrations() {
+async function appliedMigrations(database: Database) {
   try {
-    const rows = await db.all<{ created_at: number }>(
+    const rows = await database.all<{ created_at: number }>(
       sql.raw('select created_at from __drizzle_migrations order by created_at'),
     );
     return { count: rows.length, latest: rows.at(-1)?.created_at ?? null };
@@ -44,16 +47,21 @@ async function appliedMigrations() {
 }
 
 export async function buildHealthSnapshot(): Promise<HealthSnapshot> {
+  const [{ db }, { latestInvariantResults, musicBrainzInvariantHealth }] = await Promise.all([
+    import('@/lib/db'),
+    import('@/lib/musicbrainz-invariants'),
+  ]);
+
   const [migrations, invariants, ...counts] = await Promise.all([
-    appliedMigrations(),
+    appliedMigrations(db),
     latestInvariantResults(),
-    count('spotify_track'),
-    count('track_recording'),
-    count('mb_release'),
-    count('mb_recording'),
-    count('mb_work'),
-    count('mb_submission'),
-    count('match_queue'),
+    count(db, 'spotify_track'),
+    count(db, 'track_recording'),
+    count(db, 'mb_release'),
+    count(db, 'mb_recording'),
+    count(db, 'mb_work'),
+    count(db, 'mb_submission'),
+    count(db, 'match_queue'),
   ]);
   const [spotifyTracks, anchors, releases, recordings, works, submissions, queued] = counts;
 
