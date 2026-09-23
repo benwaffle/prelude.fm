@@ -16,6 +16,7 @@ import {
   type Movement,
 } from '@/lib/prelude';
 import { Icon, Waveform } from '../Icon';
+import { programmeMovementName } from './programme-title';
 
 /**
  * One recording in full: the art plate and its programme of movements, then
@@ -308,7 +309,7 @@ function Hero({
                         {numeralPrefix(m.roman)}
                       </span>
                       <span className="font-display text-[20px] font-medium text-muted line-through decoration-rule">
-                        {m.name}
+                        {m.unnamed ? m.name : programmeMovementName(m.name, work.title, m.roman)}
                       </span>
                       <span className="font-meta text-[12px] text-muted tabular-nums">—</span>
                       <span
@@ -344,7 +345,7 @@ function Hero({
                         playing ? 'text-accent' : ''
                       }`}
                     >
-                      {m.name}
+                      {m.unnamed ? m.name : programmeMovementName(m.name, work.title, m.roman)}
                       {m.unnamed && (
                         <span
                           title="No movement metadata — showing the Spotify track title"
