@@ -36,27 +36,28 @@ export function IsrcSection({
   onBotChange: (bot: BotStatus, result: string) => void;
   onLoadMore: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const busy = pending !== null;
   const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
 
   async function confirmHand(releaseMbid: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Confirming hand submission…');
     try {
       await recordIsrcSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function submitBot(releaseMbid: string, albumTitle: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Submitting with prelude_fm_bot…');
     try {
       const result = await submitBotBatch(releaseMbid);
       await onReload();
@@ -69,7 +70,7 @@ export function IsrcSection({
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -79,26 +80,26 @@ export function IsrcSection({
       return;
     }
     clearFailure();
-    setBusy(true);
+    setPending('Loading bot payload…');
     try {
       setPayload({ releaseMbid, xml: await getBotPayload(releaseMbid) });
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function recheck(releaseMbid: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Rechecking MusicBrainz…');
     try {
       await recheckIsrcRelease(releaseMbid);
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -110,6 +111,7 @@ export function IsrcSection({
       channel="BOT"
       total={releaseTotal}
       shown={rows.length}
+      pending={pending}
       countLabel={`${trackTotal} tracks · ${releaseTotal} releases`}
       description="Each track is on the barcode-matched release, the complete tracklists align, and durations agree within three seconds."
     >

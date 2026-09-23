@@ -26,33 +26,34 @@ export function MisalignedSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const busy = pending !== null;
   const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(albumId: string, disposition: 'reported' | 'fixed') {
     clearFailure();
-    setBusy(true);
+    setPending('Confirming submission…');
     try {
       await recordMisalignedTracklistReport(albumId, disposition, forms[albumId] ?? { editId: '' });
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function recheck(albumId: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Rechecking MusicBrainz…');
     try {
       await recheckErrorReport('misaligned_tracklist', albumId);
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -64,6 +65,7 @@ export function MisalignedSection({
       channel="REPORT"
       total={total}
       shown={rows.length}
+      pending={pending}
       description="Both tracklists stay visible because the error may be in either source. Reporting records the decision; it does not alter the cached tracklist."
     >
       {rows.map((album) => {

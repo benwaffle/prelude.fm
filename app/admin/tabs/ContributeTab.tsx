@@ -40,6 +40,7 @@ export function ContributeTab({
   const [view, setView] = useState<ContributionView | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [bot, setBot] = useState<BotStatus | null>(null);
+  const [botLoadFailed, setBotLoadFailed] = useState(false);
   const [botResult, setBotResult] = useState<string | null>(null);
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
   const handledTarget = useRef<string | null>(null);
@@ -71,7 +72,15 @@ export function ContributeTab({
   }, [limits, showFailure]);
 
   useEffect(() => {
-    getBotStatus().then(setBot).catch(showFailure);
+    getBotStatus()
+      .then((next) => {
+        setBot(next);
+        setBotLoadFailed(false);
+      })
+      .catch((error: unknown) => {
+        setBotLoadFailed(true);
+        showFailure(error);
+      });
   }, [showFailure]);
 
   useEffect(() => {
@@ -135,10 +144,15 @@ export function ContributeTab({
         <span className="tag">BOT</span>
         <span className="panel-title">prelude_fm_bot</span>
         <span className="mono">
-          {bot ? `${bot.spentToday} / ${bot.dailyCap} edits today` : 'status not loaded'}
+          {bot
+            ? `${bot.spentToday} / ${bot.dailyCap} edits today`
+            : botLoadFailed
+              ? 'bot status unavailable'
+              : 'Loading bot status…'}
         </span>
         <span className="text-[var(--ink-2)]">
-          {bot?.configured ? 'configured' : 'not configured'} · ISRCs and barcodes share this cap
+          {bot ? (bot.configured ? 'configured' : 'not configured') : '—'} · ISRCs and barcodes
+          share this cap
         </span>
       </div>
       {botResult && <p className="-mt-4 text-[var(--ink-2)]">{botResult}</p>}

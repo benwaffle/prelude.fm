@@ -26,33 +26,34 @@ export function ContestedIsrcsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const busy = pending !== null;
   const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(isrc: string, disposition: 'reported' | 'fixed') {
     clearFailure();
-    setBusy(true);
+    setPending('Confirming submission…');
     try {
       await recordContestedIsrcReport(isrc, disposition, forms[isrc] ?? { editId: '' });
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function recheck(isrc: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Rechecking MusicBrainz…');
     try {
       await recheckErrorReport('contested_isrc', isrc);
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -64,6 +65,7 @@ export function ContestedIsrcsSection({
       channel="REPORT"
       total={total}
       shown={rows.length}
+      pending={pending}
       description="An ISRC identifies one recording. Every conflicting MusicBrainz recording remains visible until the cache shows the correction."
     >
       {rows.map((row) => {

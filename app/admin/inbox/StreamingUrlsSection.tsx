@@ -26,33 +26,34 @@ export function StreamingUrlsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const busy = pending !== null;
   const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(releaseMbid: string, albumId: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Confirming submission…');
     try {
       await recordStreamingUrlSubmission(releaseMbid, albumId, forms[albumId] ?? { editId: '' });
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function recheck(releaseMbid: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Rechecking MusicBrainz…');
     try {
       await recheckStreamingUrl(releaseMbid);
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -64,6 +65,7 @@ export function StreamingUrlsSection({
       channel="TOOL"
       total={total}
       shown={rows.length}
+      pending={pending}
       description="Only releases whose URL relations were fetched are listed. Unfetched remains unknown, not missing."
     >
       {rows.map((gap) => {
