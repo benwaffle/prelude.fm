@@ -113,7 +113,6 @@ export async function submitBotBatch(releaseMbid: string): Promise<{
   submitted: number;
   album: string | null;
   error: string | null;
-  view: ContributionView;
 }> {
   await checkAuth();
   try {
@@ -122,7 +121,6 @@ export async function submitBotBatch(releaseMbid: string): Promise<{
       submitted: run.edits,
       album: run.albumTitle,
       error: null,
-      view: await getContributions(),
     };
   } catch (error) {
     const message =
@@ -131,7 +129,7 @@ export async function submitBotBatch(releaseMbid: string): Promise<{
         : error instanceof Error
           ? error.message
           : String(error);
-    return { submitted: 0, album: null, error: message, view: await getContributions() };
+    return { submitted: 0, album: null, error: message };
   }
 }
 
@@ -146,7 +144,6 @@ export async function submitBarcodeBotBatch(releaseMbid: string): Promise<{
   submitted: number;
   release: string | null;
   error: string | null;
-  view: ContributionView;
 }> {
   await checkAuth();
   try {
@@ -155,7 +152,6 @@ export async function submitBarcodeBotBatch(releaseMbid: string): Promise<{
       submitted: run.edits,
       release: run.evidence[0]?.releaseTitle ?? null,
       error: null,
-      view: await getContributions(),
     };
   } catch (error) {
     const message =
@@ -164,7 +160,7 @@ export async function submitBarcodeBotBatch(releaseMbid: string): Promise<{
         : error instanceof Error
           ? error.message
           : String(error);
-    return { submitted: 0, release: null, error: message, view: await getContributions() };
+    return { submitted: 0, release: null, error: message };
   }
 }
 

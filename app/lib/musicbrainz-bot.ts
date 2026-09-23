@@ -15,7 +15,7 @@
  * environment and is exchanged for a short-lived access token on demand;
  * without one the bot refuses rather than falling back to anything.
  */
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, gte, inArray, sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbSubmission } from './db/schema';
 import { scheduleMusicBrainzRequest } from './musicbrainz-gateway';
@@ -191,9 +191,7 @@ export async function runIsrcBot(
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new MusicBrainzBotError(
-      `MusicBrainz refused the submission: ${response.status} ${body.slice(0, 300)}`,
-    );
+    throw new MusicBrainzBotError(`MusicBrainz refused the submission: ${response.status} ${body}`);
   }
 
   for (const gap of gaps) {
@@ -293,9 +291,7 @@ export async function runBarcodeBot(
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new MusicBrainzBotError(
-      `MusicBrainz refused the submission: ${response.status} ${body.slice(0, 300)}`,
-    );
+    throw new MusicBrainzBotError(`MusicBrainz refused the submission: ${response.status} ${body}`);
   }
 
   for (const gap of gaps) {

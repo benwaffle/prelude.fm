@@ -16,6 +16,7 @@ import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
+import { BotSubmissionNotice, type BotSubmissionFeedback } from './BotSubmissionNotice';
 
 export function BarcodesSection({
   rows,
@@ -31,7 +32,7 @@ export function BarcodesSection({
   bot: BotStatus | null;
   activeClass?: InboxClass;
   onReload: () => Promise<void>;
-  onBotChange: (bot: BotStatus, result: string) => void;
+  onBotChange: (bot: BotStatus) => void;
   onLoadMore: () => void;
 }) {
   const [pending, setPending] = useState<string | null>(null);
@@ -39,6 +40,9 @@ export function BarcodesSection({
   const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
+  const [submissionFeedback, setSubmissionFeedback] = useState<
+    Record<string, BotSubmissionFeedback>
+  >({});
 
   async function confirmHand(releaseMbid: string) {
     clearFailure();
@@ -55,18 +59,45 @@ export function BarcodesSection({
 
   async function submitBot(releaseMbid: string, releaseTitle: string) {
     clearFailure();
+    setSubmissionFeedback((current) => {
+      const next = { ...current };
+      delete next[releaseMbid];
+      return next;
+    });
     setPending('Submitting with prelude_fm_bot…');
     try {
       const result = await submitBarcodeBotBatch(releaseMbid);
-      await onReload();
-      onBotChange(
-        await getBotStatus(),
-        result.error
-          ? `${releaseTitle}: not submitted — ${result.error}`
-          : `${releaseTitle}: submitted barcode. It stays pending until MusicBrainz shows it.`,
-      );
+      if (result.error || result.submitted === 0) {
+        setSubmissionFeedback((current) => ({
+          ...current,
+          [releaseMbid]: {
+            kind: 'error',
+            message: result.error ?? 'No eligible barcode was found for this release.',
+          },
+        }));
+        return;
+      }
+      setSubmissionFeedback((current) => ({
+        ...current,
+        [releaseMbid]: {
+          kind: 'success',
+          message: `${releaseTitle}: submitted barcode. It stays pending until MusicBrainz shows it.`,
+        },
+      }));
+      try {
+        onBotChange(await getBotStatus());
+        await onReload();
+      } catch (error) {
+        showFailure(error);
+      }
     } catch (error) {
-      showFailure(error);
+      setSubmissionFeedback((current) => ({
+        ...current,
+        [releaseMbid]: {
+          kind: 'error',
+          message: `Submission status could not be confirmed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      }));
     } finally {
       setPending(null);
     }
@@ -140,6 +171,9 @@ export function BarcodesSection({
                 <>
                   {evidence}
                   <span className="album-meta">{gap.ledger.label}</span>
+                  {submissionFeedback[gap.releaseMbid] && (
+                    <BotSubmissionNotice feedback={submissionFeedback[gap.releaseMbid]} />
+                  )}
                 </>
               }
               links={links}
@@ -207,6 +241,9 @@ export function BarcodesSection({
               <pre className="mono overflow-x-auto text-[11px] text-[var(--ink-2)]">
                 {payload.xml}
               </pre>
+            )}
+            {submissionFeedback[gap.releaseMbid] && (
+              <BotSubmissionNotice feedback={submissionFeedback[gap.releaseMbid]} />
             )}
           </ConfirmDisclosure>
         );
