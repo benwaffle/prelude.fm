@@ -90,7 +90,19 @@ export function MissingReleasesSection({
     setBusy(true);
     try {
       const result = await attachPickedReleaseToAlbum({ albumId, releaseMbid });
-      if (result.attached) await onReload();
+      if (result.attached) {
+        await onReload();
+        return;
+      }
+      setLookup((current) => ({
+        ...current,
+        [albumId]:
+          result.reason === 'release_not_found'
+            ? 'MusicBrainz has no release with that MBID'
+            : result.reason === 'album_already_matched'
+              ? 'This album is already matched to a release'
+              : 'Could not attach that release',
+      }));
     } finally {
       setBusy(false);
     }

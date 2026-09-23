@@ -268,9 +268,10 @@ that when a class of edit earns automation nothing downstream changes with
 it. It is also the cross-user deduplicator: two people owning the same album
 must not both submit its ISRCs.
 
-`outcome` stays `pending` until MusicBrainz shows the edit landed. An edit is
-a proposal that editors vote on, and recording it as applied on submission
-would record our intention rather than the result.
+`outcome` stays `pending` until MusicBrainz shows the edit landed. Recheck
+fetches the submitted entities into `mb_*` and then marks applied when those
+tables hold the fact. Confirming without a fetch would record our intention
+rather than the result.
 
 ### `mb_invariant_result`
 

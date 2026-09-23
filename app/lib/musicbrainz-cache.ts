@@ -600,6 +600,78 @@ export async function ingestRelease(
 }
 
 /**
+ * Re-read one recording: ISRCs, work links, credits.
+ *
+ * A Recheck of a work-relationship or contested-ISRC row has to ask MusicBrainz
+ * again; the worker will not, once the track is already anchored.
+ */
+export async function ingestRecording(
+  source: MusicBrainzSource,
+  recordingMbid: string,
+): Promise<{ found: boolean; requests: number }> {
+  const detail = await source.recordingDetail(recordingMbid);
+  await recordMusicBrainzRequest(source, 'recording');
+  if (!detail) return { found: false, requests: 1 };
+
+  const workLinks = dedupe(
+    detail.works.map((work) => ({ recordingMbid: detail.id, workMbid: work.id })),
+    (row) => `${row.recordingMbid}:${row.workMbid}`,
+  );
+  const isrcs = dedupe(
+    detail.isrcs.map((isrc) => ({ isrc, recordingMbid: detail.id })),
+    (row) => `${row.isrc}:${row.recordingMbid}`,
+  );
+  const credits = dedupe(
+    detail.credits.map((credit) => ({
+      recordingMbid: detail.id,
+      artistMbid: credit.artistId,
+      role: credit.role,
+      instrument: credit.instrument ?? '',
+    })),
+    (row) => `${row.recordingMbid}:${row.artistMbid}:${row.role}:${row.instrument}`,
+  );
+  const fetchedAt = new Date();
+  await db.transaction(async (tx) => {
+    const row = {
+      mbid: detail.id,
+      title: detail.title,
+      length: detail.length,
+      detail: 'full' as const,
+      fetchedAt,
+    };
+    await tx.insert(mbRecording).values(row).onConflictDoUpdate({
+      target: mbRecording.mbid,
+      set: row,
+    });
+
+    await tx.delete(mbRecordingWork).where(eq(mbRecordingWork.recordingMbid, detail.id));
+    if (workLinks.length > 0) {
+      await tx.insert(mbRecordingWork).values(workLinks);
+    }
+
+    await tx.delete(mbRecordingIsrc).where(eq(mbRecordingIsrc.recordingMbid, detail.id));
+    if (isrcs.length > 0) {
+      await tx.insert(mbRecordingIsrc).values(isrcs);
+    }
+
+    await tx.delete(mbRecordingCredit).where(eq(mbRecordingCredit.recordingMbid, detail.id));
+    if (credits.length > 0) {
+      await tx.insert(mbRecordingCredit).values(credits);
+    }
+  });
+
+  if (detail.works.length > 0) await cacheWorkStubs(detail.works);
+  if (detail.credits.length > 0) {
+    await db
+      .insert(mbArtist)
+      .values(detail.credits.map((credit) => ({ mbid: credit.artistId, name: credit.name })))
+      .onConflictDoNothing();
+  }
+
+  return { found: true, requests: 1 };
+}
+
+/**
  * Read recordings that an ISRC named but nobody has looked at.
  *
  * These come from the ISRC sweep, which resolves a track without knowing its

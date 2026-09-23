@@ -31,8 +31,8 @@ export type MbPickHit = {
 /**
  * What attaching a picked release to the Spotify album would take.
  *
- * Confirmation in the Inbox only ledgers. Writing `spotify_album.mbReleaseId`
- * and ingesting the chosen release are cache/schema work the integrator owns.
+ * Confirmation in the Inbox only ledgers. Recheck and a live pick ingest the
+ * chosen release, then write `spotify_album.mbReleaseId`.
  */
 export type PickedReleaseAttachRequest = {
   albumId: string;
@@ -43,7 +43,11 @@ export type PickedReleaseAttachOutcome =
   | { attached: true; releaseMbid: string }
   | {
       attached: false;
-      reason: 'album_not_found' | 'album_already_matched' | 'release_not_in_cache';
+      reason:
+        | 'album_not_found'
+        | 'album_already_matched'
+        | 'release_not_in_cache'
+        | 'release_not_found';
     };
 
 export function normalisePickBarcode(value: string | null | undefined): string | null {

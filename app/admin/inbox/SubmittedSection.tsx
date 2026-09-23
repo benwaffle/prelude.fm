@@ -40,14 +40,15 @@ export function SubmittedSection({
       total={total}
       shown={rows.length}
       countLabel={`${total} ledgered · ${pending} pending`}
-      description="A submitted edit remains a proposal until MusicBrainz shows its outcome in the cache."
+      description="A submitted edit remains a proposal until Recheck fetches it into the cache."
     >
       <div className="toolbar">
         <button className="act" disabled={busy} onClick={recheck}>
           Recheck all
         </button>
         <span className="text-[var(--ink-2)]">
-          Recheck observes MusicBrainz and updates ledger status; it submits nothing.
+          Recheck fetches MusicBrainz into the cache, then updates ledger status; it submits
+          nothing.
         </span>
       </div>
       {rows.map((row) => (

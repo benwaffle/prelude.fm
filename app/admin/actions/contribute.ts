@@ -5,7 +5,6 @@ import { db } from '@/lib/db';
 import { mbSubmission, mbWork } from '@/lib/db/schema';
 import { resolveContributionLimits, type ContributionListLimits } from '@/lib/contribution-list';
 import {
-  attachPickedRelease,
   barcodeGaps,
   contestedIsrcs,
   contributionCounts,
@@ -35,7 +34,12 @@ import {
 } from '@/lib/musicbrainz-bot';
 import { botCredentials } from '@/lib/musicbrainz-oauth';
 import { musicBrainzApi } from '@/lib/musicbrainz';
-import { ingestWorkTree } from '@/lib/musicbrainz-cache';
+import { ingestRecording, ingestRelease, ingestWorkTree } from '@/lib/musicbrainz-cache';
+import {
+  adoptReleaseForAlbum,
+  pullAlbumFromMusicBrainz,
+  pullPendingSubmissionsFromMusicBrainz,
+} from '@/lib/musicbrainz-submission-pull';
 import {
   AMBIGUOUS_BARCODE_REASON,
   mbApiReleaseToPickHit,
@@ -698,11 +702,8 @@ export async function recordIsrcSubmission(
 }
 
 /**
- * Observe whether the cache now holds ISRCs confirmed for this release.
- *
- * Reads only. Each pending row is applied only when `mb_recording_isrc`
- * shows that pair. A still-missing ISRC stays pending, and a missing edit
- * ID stays missing.
+ * Fetch the release from MusicBrainz, then apply pending ISRC rows the cache
+ * now holds. Submits nothing. A still-missing ISRC stays pending.
  */
 export async function recheckIsrcRelease(releaseMbid: string) {
   await checkAuth();
@@ -722,6 +723,7 @@ export async function recheckIsrcRelease(releaseMbid: string) {
     throw new ManualSubmissionError('That release has no ISRC confirmation');
   }
 
+  await ingestRelease(musicBrainzApi('interactive'), release, { fetchWorks: false });
   const applied = await db
     .update(mbSubmission)
     .set({ outcome: 'applied', outcomeAt: new Date() })
@@ -774,10 +776,8 @@ export async function recordBarcodeSubmission(
 }
 
 /**
- * Observe whether the cache now holds a barcode for a confirmed submission.
- *
- * Reads only. Applied only when MusicBrainz's cached release has a barcode;
- * a still-empty field stays pending. A missing edit ID stays missing.
+ * Fetch the release from MusicBrainz, then apply the barcode row if the cache
+ * now holds one. Submits nothing.
  */
 export async function recheckBarcode(releaseMbid: string) {
   await checkAuth();
@@ -791,6 +791,7 @@ export async function recheckBarcode(releaseMbid: string) {
     throw new ManualSubmissionError('That release has no barcode confirmation');
   }
 
+  await ingestRelease(musicBrainzApi('interactive'), release, { fetchWorks: false });
   const barcode = await observeCachedBarcode(release);
   const landed = cachedBarcodeLanded(barcode);
   if (landed) {
@@ -833,9 +834,8 @@ export async function recordWorkRelationshipSubmission(
 }
 
 /**
- * Observe whether the cache now holds the recording–work link we confirmed.
- *
- * Reads only. Applied only when that pair is in `mb_recording_work`.
+ * Fetch the recording from MusicBrainz, then apply the work-relationship row
+ * if the cache now holds that pair. Submits nothing.
  */
 export async function recheckWorkRelationship(recordingMbid: string, workMbid: string) {
   await checkAuth();
@@ -856,6 +856,7 @@ export async function recheckWorkRelationship(recordingMbid: string, workMbid: s
     throw new ManualSubmissionError('That recording has no work-relationship confirmation');
   }
 
+  await ingestRecording(musicBrainzApi('interactive'), recording);
   const linked = await observeRecordingWorkLinks(recording);
   const landed = cachedWorkRelationshipLanded(linked, work);
   if (landed) {
@@ -929,10 +930,14 @@ export async function lookupBarcodeReleaseHits(upc: string): Promise<{
   }
 }
 
-/** Attach a cached release pick to the Spotify album. Does not ledger or ingest. */
+/** Fetch a live-picked release into the cache, attach it, and ingest the album. */
 export async function attachPickedReleaseToAlbum(request: PickedReleaseAttachRequest) {
   await checkAuth();
-  return attachPickedRelease(request);
+  return adoptReleaseForAlbum(
+    musicBrainzApi('interactive'),
+    request.albumId,
+    requireMbid(request.releaseMbid, 'The release'),
+  );
 }
 
 /** Record a Harmony submission only after the editor confirms the external edit. */
@@ -955,15 +960,13 @@ export async function recordReleaseSubmission(
 }
 
 /**
- * Observe whether the album we submitted via Harmony is now matched.
- *
- * Reads only. Applied only when the cache holds a release MBID for it. A
- * Harmony edit still in the queue, with no MBID yet, stays pending.
+ * Fetch the submitted release from MusicBrainz (by MBID when we have one),
+ * then apply the ledger row if the album is now matched. Submits nothing.
  */
 export async function recheckReleaseSubmission(albumId: string) {
   await checkAuth();
   const [confirmed] = await db
-    .select({ id: mbSubmission.id })
+    .select({ id: mbSubmission.id, evidence: mbSubmission.evidence })
     .from(mbSubmission)
     .where(and(eq(mbSubmission.kind, 'release'), eq(mbSubmission.subject, albumId)))
     .limit(1);
@@ -971,6 +974,9 @@ export async function recheckReleaseSubmission(albumId: string) {
     throw new ManualSubmissionError('That album has no release confirmation');
   }
 
+  const knownReleaseMbid =
+    typeof confirmed.evidence?.releaseMbid === 'string' ? confirmed.evidence.releaseMbid : null;
+  await pullAlbumFromMusicBrainz(musicBrainzApi('interactive'), albumId, knownReleaseMbid);
   const mbReleaseId = await observeAlbumReleaseMatch(albumId);
   const landed = cachedReleaseMatchLanded(mbReleaseId);
   if (landed) {
@@ -1018,11 +1024,8 @@ export async function recordStreamingUrlSubmission(
 }
 
 /**
- * Observe whether the cache now holds an active Spotify free-streaming URL.
- *
- * Reads only. Applied only when that relation is present. Missing stays
- * pending. Unknown — URL relations not fetched — also stays pending: absence
- * of a fetch is not evidence the edit landed.
+ * Fetch the release (including URL relationships) from MusicBrainz, then apply
+ * the streaming-URL row if the cache now holds it. Submits nothing.
  */
 export async function recheckStreamingUrl(releaseMbid: string) {
   await checkAuth();
@@ -1036,6 +1039,7 @@ export async function recheckStreamingUrl(releaseMbid: string) {
     throw new ManualSubmissionError('That release has no streaming-URL confirmation');
   }
 
+  await ingestRelease(musicBrainzApi('interactive'), release, { fetchWorks: false });
   const state = await observeSpotifyFreeStreamingUrlState(release);
   if (cachedStreamingUrlLanded(state)) {
     await db
@@ -1101,17 +1105,36 @@ export async function recordMisalignedTracklistReport(
 }
 
 /**
- * Observe whether a recorded contradiction is still in the cache.
- *
- * Reads only. If MusicBrainz still maps the ISRC to several recordings, or
- * the tracklists still disagree, the row stays pending. Applied only when the
- * cache no longer shows the contradiction — never by deleting our copy of it.
+ * Re-read the contested recordings or misaligned release, then close the row
+ * only if the cache no longer shows the contradiction. Submits nothing.
  */
 export async function recheckErrorReport(
   kind: 'contested_isrc' | 'misaligned_tracklist',
   key: string,
 ) {
   await checkAuth();
+  const [pending] = await db
+    .select({ evidence: mbSubmission.evidence })
+    .from(mbSubmission)
+    .where(
+      and(
+        eq(mbSubmission.kind, 'error'),
+        eq(mbSubmission.outcome, 'pending'),
+        kind === 'contested_isrc' ? eq(mbSubmission.value, key) : eq(mbSubmission.subject, key),
+      ),
+    )
+    .limit(1);
+  if (pending) {
+    await pullPendingSubmissionsFromMusicBrainz(musicBrainzApi('interactive'), [
+      {
+        kind: 'error',
+        targetMbid: null,
+        subject: key,
+        value: kind === 'contested_isrc' ? key : null,
+        evidence: pending.evidence,
+      },
+    ]);
+  }
   const stillPresent =
     kind === 'contested_isrc'
       ? Boolean((await contestedIsrcs(5_000)).find((row) => row.isrc === key))
@@ -1186,16 +1209,23 @@ export async function setSubmissionOutcome(
 }
 
 /**
- * Observe every pending ledger row against the cache, and close the ones
- * MusicBrainz now shows.
- *
- * Cheap and read-only: a later ingest is what brings the fact back, and
- * nothing is marked applied on our say-so. Missing edit IDs stay missing.
- * Unfetched streaming URL relations stay pending rather than counting as
- * landed.
+ * Fetch every pending ledger target from MusicBrainz, then close the rows the
+ * cache now shows. Submits nothing. Missing edit IDs stay missing. Unfetched
+ * streaming URL relations stay pending rather than counting as landed.
  */
 export async function reconcileSubmissions() {
   await checkAuth();
+  const pending = await db
+    .select({
+      kind: mbSubmission.kind,
+      targetMbid: mbSubmission.targetMbid,
+      subject: mbSubmission.subject,
+      value: mbSubmission.value,
+      evidence: mbSubmission.evidence,
+    })
+    .from(mbSubmission)
+    .where(eq(mbSubmission.outcome, 'pending'));
+  await pullPendingSubmissionsFromMusicBrainz(musicBrainzApi('interactive'), pending);
 
   async function applyWhere(
     kind: 'isrc' | 'barcode' | 'work_relationship' | 'work' | 'release',
