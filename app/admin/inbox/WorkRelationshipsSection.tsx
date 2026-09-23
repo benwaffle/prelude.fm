@@ -93,7 +93,7 @@ export function WorkRelationshipsSection({
       channel="HAND"
       total={total}
       shown={rows.length}
-      description="Candidates come from cached MusicBrainz identities or exact catalogue evidence. They are possibilities, not inferred relationships."
+      description="Candidates come from sibling recordings on the same cached MusicBrainz release. They are possibilities, not inferred relationships."
     >
       {rows.map((gap) => {
         const created = gap.ledger.find((row) => row.kind === 'work');
@@ -102,14 +102,7 @@ export function WorkRelationshipsSection({
         const candidatesByMbid = new Map(
           gap.candidates.map((candidate) => [candidate.workMbid, candidate]),
         );
-        const seed =
-          gap.proposals
-            .flatMap((proposal) => [
-              proposal.title,
-              ...proposal.catalogues.map((catalogue) => `${catalogue.system} ${catalogue.number}`),
-            ])
-            .filter(Boolean)
-            .join(' · ') || gap.recordingTitle;
+        const seed = gap.recordingTitle;
 
         return (
           <ConfirmDisclosure
@@ -196,55 +189,10 @@ export function WorkRelationshipsSection({
             />
 
             <div className="mt-4 border-t border-[var(--rule)] pt-3">
-              {gap.proposals.map((proposal) => (
-                <div key={proposal.localWorkId} className="mb-3 border-l border-[var(--gall)] pl-3">
-                  <div className="text-[11px] text-[var(--gall)]">
-                    Proposal only — legacy parser/manual evidence, not MusicBrainz fact
-                  </div>
-                  <div>
-                    <span className="text-[var(--faint)]">Title: </span>
-                    <code className="select-all">{proposal.title}</code>
-                  </div>
-                  <div>
-                    <span className="text-[var(--faint)]">Type: </span>
-                    {proposal.type ? (
-                      <code className="select-all">{proposal.type}</code>
-                    ) : (
-                      <span className="absent">missing</span>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-[var(--faint)]">Composer: </span>
-                    <code className="select-all">{proposal.composerName}</code>
-                    {proposal.composerMbid ? (
-                      <a
-                        className="mono ml-2 text-[11px]"
-                        href={`https://musicbrainz.org/artist/${proposal.composerMbid}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        MusicBrainz
-                      </a>
-                    ) : (
-                      <span className="absent ml-2">MusicBrainz identity missing</span>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-[var(--faint)]">Catalogue: </span>
-                    {proposal.catalogues.length > 0 ? (
-                      <code className="select-all">
-                        {proposal.catalogues
-                          .map((catalogue) => `${catalogue.system} ${catalogue.number}`)
-                          .join(', ')}
-                      </code>
-                    ) : (
-                      <span className="absent">missing</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {gap.proposals.length === 0 && (
-                <p className="mb-3 absent">No local proposal evidence exists for this recording.</p>
+              {gap.candidates.length === 0 && (
+                <p className="mb-3 absent">
+                  No MusicBrainz work candidate is available for this recording.
+                </p>
               )}
 
               {created ? (

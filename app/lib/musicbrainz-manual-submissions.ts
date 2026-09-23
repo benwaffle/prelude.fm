@@ -131,7 +131,8 @@ export function barcodeSubmissionDraft(gap: BarcodeSubmissionGap): ManualSubmiss
 export type WorkCandidateEvidence =
   | 'existing_mb_part_link'
   | 'existing_mb_work_link'
-  | 'catalogue_match';
+  | 'catalogue_match'
+  | 'same_release_recording';
 
 export type WorkRelationshipSubmission = {
   recordingMbid: string;
@@ -329,7 +330,7 @@ export type WorkCreationGapInput = {
   recordingTitle: string;
   albumId: string;
   albumTitle: string;
-  proposals: NonNullable<WorkCreationSubmission['proposal']>[];
+  proposals?: NonNullable<WorkCreationSubmission['proposal']>[];
 };
 
 /**
@@ -348,12 +349,12 @@ export function workCreationDraftFromGap(
   const workMbid = requireMbid(workMbidInput, 'The new work');
   let proposal: WorkCreationSubmission['proposal'] = null;
   if (localWorkId != null) {
-    proposal = gap.proposals.find((row) => row.localWorkId === localWorkId) ?? null;
+    proposal = (gap.proposals ?? []).find((row) => row.localWorkId === localWorkId) ?? null;
     if (!proposal) {
       throw new ManualSubmissionError('That proposal is not on this recording');
     }
-  } else if (gap.proposals.length === 1) {
-    proposal = gap.proposals[0];
+  } else if ((gap.proposals ?? []).length === 1) {
+    proposal = gap.proposals![0];
   }
   const draft = workCreationDraft({
     recordingMbid: gap.recordingMbid,
@@ -367,7 +368,7 @@ export function workCreationDraftFromGap(
     ...draft,
     evidence: {
       ...draft.evidence,
-      shownProposals: gap.proposals,
+      shownProposals: gap.proposals ?? [],
     },
   };
 }

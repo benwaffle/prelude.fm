@@ -4,14 +4,9 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
-import {
-  getWorkDetail,
-  type OtherRecording,
-  type WorkDetail,
-  type WorkSummary,
-} from '@/app/actions/library';
+import type { OtherRecording, WorkDetail, WorkSummary } from '@/lib/library-types';
 import { getMusicBrainzWorkDetail, getMusicBrainzWorkParent } from '@/app/actions/library-mb';
-import { getWorkParent, type WorkParent } from '@/app/actions/work-hierarchy';
+import type { WorkParent } from '@/app/actions/work-hierarchy';
 import {
   hexToRgba,
   initialsOf,
@@ -33,7 +28,7 @@ export function DetailScreen({
   workId: string;
   recordingId: string | null;
 }) {
-  const { likedTrackIds, reader, registerWorks, toggleLike } = useLibrary();
+  const { likedTrackIds, registerWorks, toggleLike } = useLibrary();
   const { currentTrack, play } = useSpotifyPlayer();
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading');
@@ -41,8 +36,7 @@ export function DetailScreen({
 
   useEffect(() => {
     let cancelled = false;
-    const asking =
-      reader === 'musicbrainz' ? getMusicBrainzWorkParent(workId) : getWorkParent(workId);
+    const asking = getMusicBrainzWorkParent(workId);
     asking
       .then((found) => {
         if (!cancelled) setParent(found);
@@ -53,15 +47,12 @@ export function DetailScreen({
     return () => {
       cancelled = true;
     };
-  }, [workId, reader]);
+  }, [workId]);
 
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    const loading =
-      reader === 'musicbrainz'
-        ? getMusicBrainzWorkDetail(workId, recordingId, Array.from(likedTrackIds))
-        : getWorkDetail(workId, recordingId, Array.from(likedTrackIds));
+    const loading = getMusicBrainzWorkDetail(workId, recordingId, Array.from(likedTrackIds));
     loading
       .then((result) => {
         if (cancelled) return;
@@ -83,7 +74,7 @@ export function DetailScreen({
     };
     // Liked state is read once for the initial paint; hearts update locally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workId, recordingId, reader]);
+  }, [workId, recordingId]);
 
   // The tinted wash behind the page takes its colour from this recording.
   useEffect(() => {
@@ -400,7 +391,7 @@ function OtherRecordings({ workId, others }: { workId: string; others: OtherReco
           {others.length} alternative{others.length !== 1 ? 's' : ''}
           {others.every((r) => r.popularity === null) && (
             <span
-              title="recording_v2.popularity is unpopulated, so these are in no meaningful order"
+              title="MusicBrainz recordings have no comparable popularity score"
               className="ml-2 text-accent"
             >
               · unranked

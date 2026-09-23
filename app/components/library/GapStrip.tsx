@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
+import { getQueuedTrackIds, submitToMatchQueue } from '@/app/actions/spotify';
 import { adminGapHref, gapRoute } from '@/app/admin/lib/gap-route';
 import type { MusicBrainzGapCode, UnresolvedLibraryTrack } from '@/lib/musicbrainz-library';
 
@@ -53,6 +54,36 @@ const REASONS: Record<MusicBrainzGapCode, string> = {
 
 export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
   const [open, setOpen] = useState(false);
+  const [queued, setQueued] = useState<Set<string>>(new Set());
+  const [sending, setSending] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!open || tracks.length === 0) return;
+    let cancelled = false;
+    getQueuedTrackIds(tracks.map((track) => track.spotifyTrackId))
+      .then((ids) => {
+        if (!cancelled) setQueued(new Set(ids));
+      })
+      .catch((error) => console.error('Failed to read match queue:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tracks]);
+
+  async function send(trackId: string) {
+    setSending((current) => new Set(current).add(trackId));
+    try {
+      await submitToMatchQueue([trackId]);
+      setQueued((current) => new Set(current).add(trackId));
+    } catch (error) {
+      console.error('Failed to submit track for matching:', error);
+    } finally {
+      setSending((current) => {
+        const next = new Set(current);
+        next.delete(trackId);
+        return next;
+      });
+    }
+  }
   const { data: session } = authClient.useSession();
   const isAdmin = session?.user?.name === 'benwaffle';
   if (tracks.length === 0) return null;
@@ -109,6 +140,20 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
                           </span>
                         )}
                       </span>
+                      <button
+                        type="button"
+                        className="shrink-0 font-meta text-[9px] tracking-[0.12em] text-muted uppercase hover:text-ink disabled:opacity-50"
+                        disabled={
+                          queued.has(track.spotifyTrackId) || sending.has(track.spotifyTrackId)
+                        }
+                        onClick={() => send(track.spotifyTrackId)}
+                      >
+                        {queued.has(track.spotifyTrackId)
+                          ? 'Queued'
+                          : sending.has(track.spotifyTrackId)
+                            ? 'Sending…'
+                            : 'Send for matching'}
+                      </button>
                       {isAdmin && destination && (
                         <Link
                           href={adminGapHref(destination)}

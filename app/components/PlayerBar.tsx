@@ -56,19 +56,19 @@ export function PlayerBar() {
       id: `track:${currentTrack.id}`,
       workId: null,
       recordingId: null,
-      composer: currentTrack.artists?.[0]?.name ?? '',
-      composerFull: currentTrack.artists?.[0]?.name ?? '',
+      composer: null,
+      composerFull: null,
       composerId: null,
       gaps: [],
       albumId: currentTrack.album?.id ?? null,
       composerImage: null,
       era: null,
       years: '',
-      title: currentTrack.album?.name ?? currentTrack.name,
+      title: null,
       nickname: null,
       catalog: null,
       year: null,
-      performer: currentTrack.artists?.map((a) => a.name).join(', ') ?? '',
+      performer: null,
       ensemble: null,
       album: currentTrack.album?.name ?? '',
       cover: currentTrack.album?.images?.[0]?.url ?? null,
@@ -227,9 +227,10 @@ export function PlayerBar() {
               </div>
               <div className="truncate font-display text-[11.5px] italic opacity-75">
                 {work.composerFull}
+                {!work.composerFull && !work.title && 'Work unmatched'}
                 {work.title && (
                   <>
-                    {' · '}
+                    {work.composerFull && ' · '}
                     {detailHref ? (
                       <Link
                         href={detailHref}

@@ -53,25 +53,12 @@ visible. Preferring the better of two _real_ values (the fullest recording of a
 work, the credited artist when the composer is the only artist) is fine — that's
 a choice between things we actually know.
 
-Run `pnpm metadata:validate` to measure data quality instead of keeping changing
-counts in this file. Its `hardInvariants` and `musicbrainzInvariants` sections
-must both be clean: the first describes the legacy tables, the second the
-MusicBrainz cache the new reader actually reads, and a cutover judged on one of
-them is judged on the wrong one. Its non-failing
-`reviewBacklog` section tracks empty recordings, unnamed parts, missing composer
-birth years, missing work forms, and conservative duplicate-part/work candidates.
-Review backlog is not an instruction to guess values or merge identities
-automatically. The default output includes representative affected IDs; use
-`pnpm metadata:validate --details` for complete lists or
-`pnpm --silent metadata:validate --json` for machine-readable output.
-
-A backlog item leaves the count only when a decision is written to
-`metadata_migration_audit` — including "reviewed, this value genuinely does not
-exist". The validator prints what those decisions closed, so the backlog reaching
-zero never hides a gap. See `docs/metadata-quality.md`.
-
-`pnpm metadata:dedupe-works` collapses works that share a composer and a
-canonical catalog identity. Dry run by default; `--apply` writes.
+Run `pnpm metadata:validate` to check MusicBrainz cache invariants. Hard
+violations must be clean. Its non-failing findings are visible gaps, not an
+instruction to invent values or merge identities automatically. Use
+`pnpm metadata:validate --details` for samples or
+`pnpm --silent metadata:validate --json` for machine-readable output. See
+`docs/metadata-quality.md`.
 
 ## Tools
 

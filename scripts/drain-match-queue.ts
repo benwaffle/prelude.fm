@@ -17,7 +17,7 @@ function usage() {
 Options:
   --dry-run                 Show queue state without changing it
   --album <spotify-id>       Process only this album
-  --concurrency <n>          Parallel album parsers; writes stay serial (default: 1)
+  --concurrency <n>          Parallel album passes; writes stay serial (default: 1)
   --max-albums <n>          Stop after n albums (default: all)
   --max-attempts <n>        Maximum claims per track (default: 5)
   --delay-ms <n>            Delay between albums (default: 2000)

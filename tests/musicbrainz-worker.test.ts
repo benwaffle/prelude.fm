@@ -179,35 +179,6 @@ test('writes down what Spotify said before asking MusicBrainz anything', async (
   assert.equal(report.anchored, 2);
 });
 
-test('nothing is written to the legacy classical tables', async () => {
-  await seedAlbumBarcode();
-  await runMusicBrainzAlbumPass(
-    source({
-      releasesByBarcode: async () => ['release-1'],
-      releaseWithRecordings: async () => release(),
-      work: async (id) => workTree(id),
-      artist: async (id) => ({ id, name: 'Somebody', 'sort-name': 'Somebody', type: 'Person' }),
-    }),
-    'album-1',
-    ['track-1', 'track-2'],
-    { readAlbum: async () => SPOTIFY_ALBUM },
-  );
-
-  // The pass calls no language model, so there is nothing to assert a
-  // composer or a work from, and nothing lands in the tables that used to
-  // hold those assertions.
-  for (const table of [
-    schema.composer,
-    schema.work,
-    schema.workPartV2,
-    schema.recordingV2,
-    schema.trackWorkPartV2,
-    schema.recordingTrackV2,
-  ]) {
-    assert.deepEqual(await db.select().from(table), [], 'a legacy table was written to');
-  }
-});
-
 test('an album MusicBrainz does not have says why, rather than inventing one', async () => {
   await seedAlbumBarcode();
   const report = await runMusicBrainzAlbumPass(

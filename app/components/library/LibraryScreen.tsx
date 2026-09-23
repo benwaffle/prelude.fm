@@ -8,7 +8,6 @@ import { ERAS, playable, queueFrom, type LibraryWork, type Movement } from '@/li
 import { Icon } from '../Icon';
 import { WorkCard } from './WorkCard';
 import { ComposerStrip } from './ComposerStrip';
-import { UnmatchedStrip } from './UnmatchedStrip';
 import { GapStrip } from './GapStrip';
 
 type Sort = 'added' | 'composer' | 'era';
@@ -21,8 +20,7 @@ const SORTS: [Sort, string][] = [
 
 /** The library: every work you hold at least one liked movement of. */
 export function LibraryScreen() {
-  const { works, unmatched, gapTracks, reader, loading, refreshing, matching, error, toggleLike } =
-    useLibrary();
+  const { works, gapTracks, loading, refreshing, matching, error, toggleLike } = useLibrary();
   const { currentTrack, play } = useSpotifyPlayer();
   const { query, setQuery } = useNavSearch();
   const [sort, setSort] = useState<Sort>('added');
@@ -173,13 +171,7 @@ export function LibraryScreen() {
       <ComposerStrip works={likedWorks} onPick={setQuery} />
       {/* Until the works resolve, every track looks unmatched — don't claim
           the whole library is unidentifiable while we're still working. */}
-      {!loading &&
-        !matching &&
-        (reader === 'musicbrainz' ? (
-          <GapStrip tracks={gapTracks} />
-        ) : (
-          <UnmatchedStrip tracks={unmatched} />
-        ))}
+      {!loading && !matching && <GapStrip tracks={gapTracks} />}
     </main>
   );
 }
