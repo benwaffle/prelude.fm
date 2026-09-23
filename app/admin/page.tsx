@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { GatewayBar } from './components/GatewayBar';
+import { AdminFailureNotice, AdminFailureProvider } from './components/AdminFailure';
 import { Spinner } from './components/Spinner';
 import { AlbumsTab } from './tabs/AlbumsTab';
 import { ContributeTab } from './tabs/ContributeTab';
@@ -31,7 +32,9 @@ export default function AdminPage() {
         </div>
       }
     >
-      <AdminPageContent />
+      <AdminFailureProvider>
+        <AdminPageContent />
+      </AdminFailureProvider>
     </Suspense>
   );
 }
@@ -142,6 +145,7 @@ function AdminPageContent() {
       </div>
 
       <main className="mx-auto max-w-[1400px] px-5 pt-6">
+        <AdminFailureNotice />
         {tab === 'inbox' && (
           <ContributeTab
             focus={focus}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAdminFailure } from '../components/AdminFailure';
 import {
   attachPickedReleaseToAlbum,
   lookupBarcodeReleaseHits,
@@ -35,32 +36,40 @@ export function MissingReleasesSection({
   onLoadMore: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { releaseMbid: string; editId: string }>>({});
   const [liveHits, setLiveHits] = useState<Record<string, MbPickHit[]>>({});
   const [lookup, setLookup] = useState<Record<string, string | 'loading'>>({});
 
   async function confirm(albumId: string) {
     const form = forms[albumId] ?? { releaseMbid: '', editId: '' };
+    clearFailure();
     setBusy(true);
     try {
       await recordReleaseSubmission(albumId, form);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function recheck(albumId: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recheckReleaseSubmission(albumId);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function lookUp(albumId: string, upc: string) {
+    clearFailure();
     setLookup((current) => ({ ...current, [albumId]: 'loading' }));
     try {
       const result = await lookupBarcodeReleaseHits(upc);
@@ -87,6 +96,7 @@ export function MissingReleasesSection({
         releaseMbid,
       },
     }));
+    clearFailure();
     setBusy(true);
     try {
       const result = await attachPickedReleaseToAlbum({ albumId, releaseMbid });
@@ -103,6 +113,8 @@ export function MissingReleasesSection({
               ? 'This album is already matched to a release'
               : 'Could not attach that release',
       }));
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }

@@ -19,6 +19,7 @@ import {
 } from '../lib/album-state';
 import { inboxFocusForAlbum, type InboxFocus } from '../lib/inbox-focus';
 import { Spinner } from '../components/Spinner';
+import { useAdminFailure } from '../components/AdminFailure';
 
 /**
  * The one thing to do about this album, and where to do it in the Inbox.
@@ -86,6 +87,7 @@ export function AlbumsTab({
   onStateChange: (state?: AlbumState) => void;
   onOpenInbox: (focus: InboxFocus) => void;
 }) {
+  const { clearFailure, showFailure } = useAdminFailure();
   const [search, setSearch] = useState('');
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [albums, setAlbums] = useState<AlbumRow[] | null>(null);
@@ -98,32 +100,37 @@ export function AlbumsTab({
   const [recheckResult, setRecheckResult] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    void getCoverage().then(setCoverage);
-  }, []);
+    void getCoverage().then(setCoverage).catch(showFailure);
+  }, [showFailure]);
 
   useEffect(() => {
     let cancelled = false;
-    void getAlbums(state, search).then(async (rows) => {
-      if (cancelled) return;
-      setAlbums(rows);
-      const needSeeds = rows
-        .filter(
-          (row) => row.mbReleaseId && (row.state === 'partial' || row.state === 'needs_isrcs'),
-        )
-        .map((row) => row.id);
-      if (needSeeds.length === 0) {
-        setSubmissionLinks({});
-        return;
-      }
-      const fetched = await getIsrcSubmissionLinks(needSeeds);
-      if (!cancelled) setSubmissionLinks(fetched);
-    });
+    void getAlbums(state, search)
+      .then(async (rows) => {
+        if (cancelled) return;
+        setAlbums(rows);
+        const needSeeds = rows
+          .filter(
+            (row) => row.mbReleaseId && (row.state === 'partial' || row.state === 'needs_isrcs'),
+          )
+          .map((row) => row.id);
+        if (needSeeds.length === 0) {
+          setSubmissionLinks({});
+          return;
+        }
+        const fetched = await getIsrcSubmissionLinks(needSeeds);
+        if (!cancelled) setSubmissionLinks(fetched);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) showFailure(error);
+      });
     return () => {
       cancelled = true;
     };
-  }, [state, search]);
+  }, [state, search, showFailure]);
 
   async function recheck(albumId: string) {
+    clearFailure();
     setRechecking(albumId);
     try {
       const result = await recheckAlbum(albumId);
@@ -136,6 +143,8 @@ export function AlbumsTab({
       }));
       setAlbums(await getAlbums(state, search));
       setCoverage(await getCoverage());
+    } catch (error) {
+      showFailure(error);
     } finally {
       setRechecking(null);
     }
@@ -146,10 +155,15 @@ export function AlbumsTab({
       setOpen(null);
       return;
     }
+    clearFailure();
     setOpen(albumId);
     if (!tracks[albumId]) {
-      const rows = await getAlbumTracks(albumId);
-      setTracks((current) => ({ ...current, [albumId]: rows }));
+      try {
+        const rows = await getAlbumTracks(albumId);
+        setTracks((current) => ({ ...current, [albumId]: rows }));
+      } catch (error) {
+        showFailure(error);
+      }
     }
   }
 

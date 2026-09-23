@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAdminFailure } from '../components/AdminFailure';
 import {
   getBarcodeBotPayload,
   getBotStatus,
@@ -34,20 +35,25 @@ export function BarcodesSection({
   onLoadMore: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
 
   async function confirmHand(releaseMbid: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recordBarcodeSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function submitBot(releaseMbid: string, releaseTitle: string) {
+    clearFailure();
     setBusy(true);
     try {
       const result = await submitBarcodeBotBatch(releaseMbid);
@@ -58,6 +64,8 @@ export function BarcodesSection({
           ? `${releaseTitle}: not submitted — ${result.error}`
           : `${releaseTitle}: submitted barcode. It stays pending until MusicBrainz shows it.`,
       );
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
@@ -68,19 +76,25 @@ export function BarcodesSection({
       setPayload(null);
       return;
     }
+    clearFailure();
     setBusy(true);
     try {
       setPayload({ releaseMbid, xml: await getBarcodeBotPayload(releaseMbid) });
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function recheck(releaseMbid: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recheckBarcode(releaseMbid);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }

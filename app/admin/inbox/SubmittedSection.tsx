@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAdminFailure } from '../components/AdminFailure';
 import { reconcileSubmissions, type ContributionView } from '../actions/contribute';
 import type { InboxClass } from '../lib/admin-url';
 import { InboxRow } from './InboxRow';
@@ -18,14 +19,18 @@ export function SubmittedSection({
   onReload: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clearFailure, showFailure } = useAdminFailure();
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const pending = counts.pending ?? 0;
 
   async function recheck() {
+    clearFailure();
     setBusy(true);
     try {
       await reconcileSubmissions();
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }

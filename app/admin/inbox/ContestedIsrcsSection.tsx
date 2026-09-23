@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAdminFailure } from '../components/AdminFailure';
 import {
   recordContestedIsrcReport,
   recheckErrorReport,
@@ -26,23 +27,30 @@ export function ContestedIsrcsSection({
   onLoadMore: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(isrc: string, disposition: 'reported' | 'fixed') {
+    clearFailure();
     setBusy(true);
     try {
       await recordContestedIsrcReport(isrc, disposition, forms[isrc] ?? { editId: '' });
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function recheck(isrc: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recheckErrorReport('contested_isrc', isrc);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }

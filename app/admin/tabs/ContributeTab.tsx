@@ -13,6 +13,7 @@ import {
   type ContributionView,
 } from '../actions/contribute';
 import { Spinner } from '../components/Spinner';
+import { useAdminFailure } from '../components/AdminFailure';
 import type { InboxClass } from '../lib/admin-url';
 import type { InboxFocus } from '../lib/inbox-focus';
 import { BarcodesSection } from '../inbox/BarcodesSection';
@@ -35,36 +36,43 @@ export function ContributeTab({
   inboxClass?: InboxClass;
   onClassChange?: (inboxClass: InboxClass) => void;
 }) {
+  const { clearFailure, showFailure } = useAdminFailure();
   const [view, setView] = useState<ContributionView | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [bot, setBot] = useState<BotStatus | null>(null);
   const [botResult, setBotResult] = useState<string | null>(null);
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
   const handledTarget = useRef<string | null>(null);
 
   const reload = useCallback(async () => {
-    const next = await getContributions(limits).catch(() => null);
+    const next = await getContributions(limits);
     setView(next);
+    setLoadFailed(false);
   }, [limits]);
 
   useEffect(() => {
     let cancelled = false;
     void getContributions(limits)
       .then((next) => {
-        if (!cancelled) setView(next);
+        if (!cancelled) {
+          setView(next);
+          setLoadFailed(false);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setView(null);
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setLoadFailed(true);
+          showFailure(error);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [limits]);
+  }, [limits, showFailure]);
 
   useEffect(() => {
-    getBotStatus()
-      .then(setBot)
-      .catch(() => setBot(null));
-  }, []);
+    getBotStatus().then(setBot).catch(showFailure);
+  }, [showFailure]);
 
   useEffect(() => {
     if (!view) return;
@@ -83,13 +91,31 @@ export function ContributeTab({
   }, [focus, inboxClass, view]);
 
   function loadMore(key: keyof ContributionListLimits, total: number) {
+    clearFailure();
     setLimits((current) => ({
       ...current,
       [key]: nextListLimit(current[key], total),
     }));
   }
 
-  if (!view) return <Spinner className="h-4 w-4" />;
+  if (!view)
+    return loadFailed ? (
+      <button
+        className="act"
+        onClick={() => {
+          clearFailure();
+          setLoadFailed(false);
+          void reload().catch((error: unknown) => {
+            setLoadFailed(true);
+            showFailure(error);
+          });
+        }}
+      >
+        Retry Inbox load
+      </button>
+    ) : (
+      <Spinner className="h-4 w-4" />
+    );
 
   const botChanged = (nextBot: BotStatus, result: string) => {
     setBot(nextBot);

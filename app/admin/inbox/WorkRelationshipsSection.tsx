@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAdminFailure } from '../components/AdminFailure';
 import {
   recordWorkCreationSubmission,
   recordWorkRelationshipSubmission,
@@ -30,6 +31,7 @@ export function WorkRelationshipsSection({
   onLoadMore: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clearFailure, showFailure } = useAdminFailure();
   const [relationshipForms, setRelationshipForms] = useState<Record<string, { editId: string }>>(
     {},
   );
@@ -39,6 +41,7 @@ export function WorkRelationshipsSection({
 
   async function confirmRelationship(recordingMbid: string, workMbid: string) {
     const key = `${recordingMbid}:${workMbid}`;
+    clearFailure();
     setBusy(true);
     try {
       await recordWorkRelationshipSubmission(
@@ -47,16 +50,21 @@ export function WorkRelationshipsSection({
         relationshipForms[key] ?? { editId: '' },
       );
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function recheckRelationship(recordingMbid: string, workMbid: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recheckWorkRelationship(recordingMbid, workMbid);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
@@ -64,22 +72,28 @@ export function WorkRelationshipsSection({
 
   async function confirmCreation(recordingMbid: string) {
     const form = createForms[recordingMbid] ?? { workMbid: '', editId: '' };
+    clearFailure();
     setBusy(true);
     try {
       await recordWorkCreationSubmission(recordingMbid, form.workMbid, {
         editId: form.editId,
       });
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function recheckWork(workMbid: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recheckCreatedWork(workMbid);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
