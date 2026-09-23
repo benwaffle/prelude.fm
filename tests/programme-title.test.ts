@@ -25,3 +25,11 @@ test('programme leaves unrelated and missing MusicBrainz titles visible as given
   assert.equal(programmeMovementName(`${work}: I.`, work, 'I'), '');
   assert.equal(programmeMovementName('I. Allegro', null, 'I'), 'Allegro');
 });
+
+test('an unmatched Spotify track title reaches the programme untouched', () => {
+  // The player's stand-in for an unmatched track has no work title and no numeral.
+  assert.equal(
+    programmeMovementName('Piano Concerto No. 2: I. Allegro non troppo', null, ''),
+    'Piano Concerto No. 2: I. Allegro non troppo',
+  );
+});

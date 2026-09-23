@@ -12,6 +12,7 @@ import {
   initialsOf,
   numeralPrefix,
   queueFrom,
+  unnamedMovementNote,
   type LibraryWork,
   type Movement,
 } from '@/lib/prelude';
@@ -309,7 +310,7 @@ function Hero({
                         {numeralPrefix(m.roman)}
                       </span>
                       <span className="font-display text-[20px] font-medium text-muted line-through decoration-rule">
-                        {m.unnamed ? m.name : programmeMovementName(m.name, work.title, m.roman)}
+                        {programmeMovementName(m.name, work.title, m.roman)}
                       </span>
                       <span className="font-meta text-[12px] text-muted tabular-nums">—</span>
                       <span
@@ -345,10 +346,10 @@ function Hero({
                         playing ? 'text-accent' : ''
                       }`}
                     >
-                      {m.unnamed ? m.name : programmeMovementName(m.name, work.title, m.roman)}
+                      {programmeMovementName(m.name, work.title, m.roman)}
                       {m.unnamed && (
                         <span
-                          title="No movement metadata — showing the Spotify track title"
+                          title={unnamedMovementNote(m)}
                           className="ml-[10px] align-middle font-meta text-[8px] tracking-[0.18em] text-muted uppercase"
                         >
                           unparsed
