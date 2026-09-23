@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAdminFailure } from '../components/AdminFailure';
+import { useAdminAction } from '../components/useAdminAction';
 import {
   recordContestedIsrcReport,
   recheckErrorReport,
@@ -26,35 +26,21 @@ export function ContestedIsrcsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const [pending, setPending] = useState<string | null>(null);
-  const busy = pending !== null;
-  const { clearFailure, showFailure } = useAdminFailure();
+  const { pending, busy, run } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(isrc: string, disposition: 'reported' | 'fixed') {
-    clearFailure();
-    setPending('Confirming submission…');
-    try {
+    await run('Confirming submission…', async () => {
       await recordContestedIsrcReport(isrc, disposition, forms[isrc] ?? { editId: '' });
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   async function recheck(isrc: string) {
-    clearFailure();
-    setPending('Rechecking MusicBrainz…');
-    try {
+    await run('Rechecking MusicBrainz…', async () => {
       await recheckErrorReport('contested_isrc', isrc);
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   return (

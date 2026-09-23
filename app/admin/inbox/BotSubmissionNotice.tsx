@@ -1,35 +1,23 @@
 import { Notice } from '../components/Notice';
-
-export type BotSubmissionFeedback = {
-  kind: 'success' | 'error' | 'empty';
-  message: string;
-  httpStatus?: number | null;
-};
+import type { BotSubmissionFeedback } from './bot-submission';
 
 export function BotSubmissionNotice({ feedback }: { feedback: BotSubmissionFeedback }) {
-  if (feedback.kind === 'success') {
+  if (feedback.kind !== 'error') {
     return (
       <div role="status">
-        <Notice intent="success">{feedback.message}</Notice>
+        <Notice intent={feedback.kind === 'success' ? 'success' : 'info'}>
+          {feedback.message}
+        </Notice>
       </div>
     );
   }
 
-  if (feedback.kind === 'empty') {
-    return (
-      <div role="status">
-        <Notice intent="info">{feedback.message}</Notice>
-      </div>
-    );
-  }
-
-  const status = feedback.httpStatus;
   return (
     <div role="alert">
       <Notice intent="error">
         <p>
-          {status
-            ? `Submission rejected — MusicBrainz returned ${status}.`
+          {feedback.httpStatus
+            ? `Submission rejected — MusicBrainz returned ${feedback.httpStatus}.`
             : 'Submission not confirmed.'}
         </p>
         <details className="mt-1">

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useAdminFailure } from '../components/AdminFailure';
+import { adminFailureMessage } from '../components/AdminFailure';
+import { useAdminAction } from '../components/useAdminAction';
 import {
   attachPickedReleaseToAlbum,
   lookupBarcodeReleaseHits,
@@ -35,42 +36,27 @@ export function MissingReleasesSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const [pending, setPending] = useState<string | null>(null);
-  const busy = pending !== null;
-  const { clearFailure, showFailure } = useAdminFailure();
+  const { pending, busy, run } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { releaseMbid: string; editId: string }>>({});
   const [liveHits, setLiveHits] = useState<Record<string, MbPickHit[]>>({});
   const [lookup, setLookup] = useState<Record<string, string | 'loading'>>({});
 
   async function confirm(albumId: string) {
     const form = forms[albumId] ?? { releaseMbid: '', editId: '' };
-    clearFailure();
-    setPending('Confirming submission…');
-    try {
+    await run('Confirming submission…', async () => {
       await recordReleaseSubmission(albumId, form);
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   async function recheck(albumId: string) {
-    clearFailure();
-    setPending('Rechecking MusicBrainz…');
-    try {
+    await run('Rechecking MusicBrainz…', async () => {
       await recheckReleaseSubmission(albumId);
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   async function lookUp(albumId: string, upc: string) {
-    clearFailure();
     setLookup((current) => ({ ...current, [albumId]: 'loading' }));
     try {
       const result = await lookupBarcodeReleaseHits(upc);
@@ -84,7 +70,7 @@ export function MissingReleasesSection({
     } catch (error) {
       setLookup((current) => ({
         ...current,
-        [albumId]: error instanceof Error ? error.message : String(error),
+        [albumId]: adminFailureMessage(error),
       }));
     }
   }
@@ -97,9 +83,7 @@ export function MissingReleasesSection({
         releaseMbid,
       },
     }));
-    clearFailure();
-    setPending('Attaching release…');
-    try {
+    await run('Attaching release…', async () => {
       const result = await attachPickedReleaseToAlbum({ albumId, releaseMbid });
       if (result.attached) {
         await onReload();
@@ -114,11 +98,7 @@ export function MissingReleasesSection({
               ? 'This album is already matched to a release'
               : 'Could not attach that release',
       }));
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   return (

@@ -19,7 +19,8 @@ import {
 } from '../lib/album-state';
 import { inboxFocusForAlbum, type InboxFocus } from '../lib/inbox-focus';
 import { Spinner } from '../components/Spinner';
-import { useAdminFailure } from '../components/AdminFailure';
+import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
+import { useAdminAction } from '../components/useAdminAction';
 
 /**
  * The one thing to do about this album, and where to do it in the Inbox.
@@ -87,12 +88,15 @@ export function AlbumsTab({
   onStateChange: (state?: AlbumState) => void;
   onOpenInbox: (focus: InboxFocus) => void;
 }) {
-  const { clearFailure, showFailure } = useAdminFailure();
+  const { run } = useAdminAction();
   const [search, setSearch] = useState('');
   const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
   const [albums, setAlbums] = useState<AlbumRow[] | null>(null);
+  const [albumsError, setAlbumsError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [tracks, setTracks] = useState<Record<string, AlbumTrackRow[]>>({});
+  const [trackErrors, setTrackErrors] = useState<Record<string, string>>({});
   const [submissionLinks, setSubmissionLinks] = useState<
     Record<string, { href: string; missing: number }>
   >({});
@@ -100,8 +104,10 @@ export function AlbumsTab({
   const [recheckResult, setRecheckResult] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    void getCoverage().then(setCoverage).catch(showFailure);
-  }, [showFailure]);
+    void getCoverage()
+      .then(setCoverage)
+      .catch((error: unknown) => setCoverageError(adminFailureMessage(error)));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +115,7 @@ export function AlbumsTab({
       .then(async (rows) => {
         if (cancelled) return;
         setAlbums(rows);
+        setAlbumsError(null);
         const needSeeds = rows
           .filter(
             (row) => row.mbReleaseId && (row.state === 'partial' || row.state === 'needs_isrcs'),
@@ -122,17 +129,16 @@ export function AlbumsTab({
         if (!cancelled) setSubmissionLinks(fetched);
       })
       .catch((error: unknown) => {
-        if (!cancelled) showFailure(error);
+        if (!cancelled) setAlbumsError(adminFailureMessage(error));
       });
     return () => {
       cancelled = true;
     };
-  }, [state, search, showFailure]);
+  }, [state, search]);
 
   async function recheck(albumId: string) {
-    clearFailure();
     setRechecking(albumId);
-    try {
+    await run('Rechecking album…', async () => {
       const result = await recheckAlbum(albumId);
       setRecheckResult((current) => ({
         ...current,
@@ -141,13 +147,11 @@ export function AlbumsTab({
             ? `matched ${result.resolved} more — ${result.anchored}/${result.tracks} anchored`
             : `no change — ${result.anchored}/${result.tracks} anchored`,
       }));
-      setAlbums(await getAlbums(state, search));
-      setCoverage(await getCoverage());
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setRechecking(null);
-    }
+      const [rows, nextCoverage] = await Promise.all([getAlbums(state, search), getCoverage()]);
+      setAlbums(rows);
+      setCoverage(nextCoverage);
+    });
+    setRechecking(null);
   }
 
   async function toggle(albumId: string) {
@@ -155,14 +159,18 @@ export function AlbumsTab({
       setOpen(null);
       return;
     }
-    clearFailure();
     setOpen(albumId);
     if (!tracks[albumId]) {
+      setTrackErrors((current) => {
+        const next = { ...current };
+        delete next[albumId];
+        return next;
+      });
       try {
         const rows = await getAlbumTracks(albumId);
         setTracks((current) => ({ ...current, [albumId]: rows }));
       } catch (error) {
-        showFailure(error);
+        setTrackErrors((current) => ({ ...current, [albumId]: adminFailureMessage(error) }));
       }
     }
   }
@@ -183,6 +191,7 @@ export function AlbumsTab({
 
   return (
     <div className="flex flex-col gap-5 pb-16">
+      {coverageError !== null && <LoadFailure what="album coverage" error={coverageError} />}
       {coverage && (
         <section className="panel px-4 py-4">
           <p className="eyebrow mb-2">Album pipeline</p>
@@ -281,11 +290,14 @@ export function AlbumsTab({
         </div>
       </div>
 
+      {albumsError !== null && <LoadFailure what="albums" error={albumsError} />}
       {!albums ? (
-        <div className="flex items-center gap-2 py-10 text-[var(--faint)]">
-          <Spinner className="h-3 w-3" />
-          <span className="text-xs">Loading…</span>
-        </div>
+        albumsError === null && (
+          <div className="flex items-center gap-2 py-10 text-[var(--faint)]">
+            <Spinner className="h-3 w-3" />
+            <span className="text-xs">Loading…</span>
+          </div>
+        )
       ) : albums.length === 0 ? (
         <div className="slip px-4 py-5 text-[var(--ink-2)]">No albums here.</div>
       ) : (
@@ -362,7 +374,9 @@ export function AlbumsTab({
 
                 {isOpen && (
                   <div className="px-4 pb-3">
-                    {!tracks[album.id] ? (
+                    {trackErrors[album.id] !== undefined ? (
+                      <LoadFailure what="this album's tracks" error={trackErrors[album.id]} />
+                    ) : !tracks[album.id] ? (
                       <Spinner className="h-3 w-3" />
                     ) : (
                       <table>

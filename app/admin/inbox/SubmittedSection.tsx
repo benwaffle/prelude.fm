@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { useAdminFailure } from '../components/AdminFailure';
+import { useAdminAction } from '../components/useAdminAction';
 import { reconcileSubmissions, type ContributionView } from '../actions/contribute';
 import type { InboxClass } from '../lib/admin-url';
 import { InboxRow } from './InboxRow';
@@ -18,23 +17,15 @@ export function SubmittedSection({
   activeClass?: InboxClass;
   onReload: () => Promise<void>;
 }) {
-  const [pending, setPending] = useState<string | null>(null);
-  const busy = pending !== null;
-  const { clearFailure, showFailure } = useAdminFailure();
+  const { pending, busy, run } = useAdminAction();
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const pendingCount = counts.pending ?? 0;
 
   async function recheck() {
-    clearFailure();
-    setPending('Rechecking MusicBrainz…');
-    try {
+    await run('Rechecking MusicBrainz…', async () => {
       await reconcileSubmissions();
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   return (

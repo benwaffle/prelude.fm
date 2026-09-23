@@ -7,7 +7,8 @@ import {
   setChannelPaused,
   type GatewayView,
 } from '../actions/gateway';
-import { useAdminFailure } from './AdminFailure';
+import { adminFailureMessage } from './AdminFailure';
+import { useAdminAction } from './useAdminAction';
 
 /**
  * The MusicBrainz request budget, and the switch that stops it.
@@ -18,24 +19,20 @@ import { useAdminFailure } from './AdminFailure';
  * worse stop button.
  */
 export function GatewayBar() {
-  const { clearFailure, showFailure } = useAdminFailure();
+  const { pending, busy, run } = useAdminAction();
   const [status, setStatus] = useState<GatewayView | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
-  const busy = pending !== null;
-  const [loadFailed, setLoadFailed] = useState(false);
+  // The poll's failure stays here, beside the figures it failed to refresh.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
   const refresh = useCallback(() => {
     getGatewayStatus()
       .then((next) => {
         setStatus(next);
-        setLoadFailed(false);
+        setLoadError(null);
       })
-      .catch((error: unknown) => {
-        setLoadFailed(true);
-        showFailure(error);
-      });
-  }, [showFailure]);
+      .catch((error: unknown) => setLoadError(adminFailureMessage(error)));
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -46,50 +43,47 @@ export function GatewayBar() {
   if (!status)
     return (
       <span className="ml-auto text-[11px] text-[var(--ink-2)]">
-        {loadFailed ? 'Gateway status unavailable' : 'Loading gateway status…'}
+        {loadError === null ? (
+          'Loading gateway status…'
+        ) : (
+          <span role="alert" className="text-[var(--gall)]" title={loadError}>
+            Gateway status unavailable
+          </span>
+        )}
       </span>
     );
 
   const stopped = status.channels.every((channel) => channel.paused);
   const queued = status.channels.reduce((sum, channel) => sum + channel.queued, 0);
 
-  async function toggleAll() {
-    clearFailure();
-    setPending(stopped ? 'Resuming gateway…' : 'Stopping gateway…');
-    try {
+  const toggleAll = () =>
+    run(stopped ? 'Resuming gateway…' : 'Stopping gateway…', async () => {
       setStatus(
         stopped
           ? await clearChannelControl('all')
           : await setChannelPaused('all', true, 'Stopped from admin'),
       );
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
-  }
+    });
 
-  async function toggleChannel(channel: string, paused: boolean) {
-    clearFailure();
-    setPending(paused ? 'Stopping channel…' : 'Resuming channel…');
-    try {
+  const toggleChannel = (channel: string, paused: boolean) =>
+    run(paused ? 'Stopping channel…' : 'Resuming channel…', async () => {
       setStatus(
         paused
           ? await setChannelPaused(channel, true, 'Stopped from admin')
           : await clearChannelControl(channel),
       );
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
-  }
+    });
 
   return (
     <div className="ml-auto flex items-center gap-3 text-[11px]">
       {pending && (
         <span role="status" className="text-[var(--ink-2)]">
           {pending}
+        </span>
+      )}
+      {loadError !== null && (
+        <span role="alert" className="text-[var(--gall)]" title={loadError}>
+          Refresh failed — figures may be stale
         </span>
       )}
       <button

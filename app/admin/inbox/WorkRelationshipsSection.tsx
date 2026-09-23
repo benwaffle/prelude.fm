@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAdminFailure } from '../components/AdminFailure';
+import { useAdminAction } from '../components/useAdminAction';
 import {
   recordWorkCreationSubmission,
   recordWorkRelationshipSubmission,
@@ -30,9 +30,7 @@ export function WorkRelationshipsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const [pending, setPending] = useState<string | null>(null);
-  const busy = pending !== null;
-  const { clearFailure, showFailure } = useAdminFailure();
+  const { pending, busy, run } = useAdminAction();
   const [relationshipForms, setRelationshipForms] = useState<Record<string, { editId: string }>>(
     {},
   );
@@ -42,62 +40,38 @@ export function WorkRelationshipsSection({
 
   async function confirmRelationship(recordingMbid: string, workMbid: string) {
     const key = `${recordingMbid}:${workMbid}`;
-    clearFailure();
-    setPending('Confirming work relationship…');
-    try {
+    await run('Confirming work relationship…', async () => {
       await recordWorkRelationshipSubmission(
         recordingMbid,
         workMbid,
         relationshipForms[key] ?? { editId: '' },
       );
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   async function recheckRelationship(recordingMbid: string, workMbid: string) {
-    clearFailure();
-    setPending('Rechecking work relationship…');
-    try {
+    await run('Rechecking work relationship…', async () => {
       await recheckWorkRelationship(recordingMbid, workMbid);
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   async function confirmCreation(recordingMbid: string) {
     const form = createForms[recordingMbid] ?? { workMbid: '', editId: '' };
-    clearFailure();
-    setPending('Confirming created work…');
-    try {
+    await run('Confirming created work…', async () => {
       await recordWorkCreationSubmission(recordingMbid, form.workMbid, {
         editId: form.editId,
       });
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   async function recheckWork(workMbid: string) {
-    clearFailure();
-    setPending('Rechecking created work…');
-    try {
+    await run('Rechecking created work…', async () => {
       await recheckCreatedWork(workMbid);
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   return (
