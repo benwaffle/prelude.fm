@@ -12,7 +12,22 @@
  * mode for printing one is somebody else editing the database as us.
  */
 
-const TOKEN_ENDPOINT = 'https://musicbrainz.org/oauth2/token';
+export const TOKEN_ENDPOINT = 'https://musicbrainz.org/oauth2/token';
+export const BOT_REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob';
+export const BOT_SCOPES = 'submit_isrc submit_barcode';
+
+export function botAuthorizationUrl(clientId: string): string {
+  const query = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: BOT_REDIRECT_URI,
+    scope: BOT_SCOPES,
+    // Without this MusicBrainz returns no refresh token, so the bot stops
+    // working when its short-lived access token expires.
+    access_type: 'offline',
+  });
+  return `https://musicbrainz.org/oauth2/authorize?${query}`;
+}
 
 /** Refresh a little early, so a token cannot expire mid-request. */
 const EXPIRY_MARGIN_MS = 60_000;

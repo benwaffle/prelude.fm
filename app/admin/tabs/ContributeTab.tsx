@@ -41,7 +41,6 @@ export function ContributeTab({
   const [loadFailed, setLoadFailed] = useState(false);
   const [bot, setBot] = useState<BotStatus | null>(null);
   const [botLoadFailed, setBotLoadFailed] = useState(false);
-  const [botResult, setBotResult] = useState<string | null>(null);
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
   const handledTarget = useRef<string | null>(null);
 
@@ -126,11 +125,6 @@ export function ContributeTab({
       <Spinner className="h-4 w-4" />
     );
 
-  const botChanged = (nextBot: BotStatus, result: string) => {
-    setBot(nextBot);
-    setBotResult(result);
-  };
-
   return (
     <div className="flex flex-col gap-6 pb-16">
       <p className="max-w-[90ch] text-[var(--ink-2)]">
@@ -155,7 +149,6 @@ export function ContributeTab({
           share this cap
         </span>
       </div>
-      {botResult && <p className="-mt-4 text-[var(--ink-2)]">{botResult}</p>}
 
       <InboxStage label="Get the release">
         <MissingReleasesSection
@@ -182,7 +175,7 @@ export function ContributeTab({
           bot={bot}
           activeClass={inboxClass}
           onReload={reload}
-          onBotChange={botChanged}
+          onBotChange={setBot}
           onLoadMore={() => loadMore('isrcReleases', view.counts.isrcReleases)}
         />
         <BarcodesSection
@@ -191,7 +184,7 @@ export function ContributeTab({
           bot={bot}
           activeClass={inboxClass}
           onReload={reload}
-          onBotChange={botChanged}
+          onBotChange={setBot}
           onLoadMore={() => loadMore('barcodes', view.counts.barcodes)}
         />
       </InboxStage>

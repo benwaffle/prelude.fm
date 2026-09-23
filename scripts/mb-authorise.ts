@@ -21,10 +21,11 @@
  * are attributed to the wrong account.
  */
 import { loadEnvConfig } from '@next/env';
-
-const AUTHORIZE = 'https://musicbrainz.org/oauth2/authorize';
-const TOKEN = 'https://musicbrainz.org/oauth2/token';
-const REDIRECT = 'urn:ietf:wg:oauth:2.0:oob';
+import {
+  botAuthorizationUrl,
+  BOT_REDIRECT_URI,
+  TOKEN_ENDPOINT,
+} from '../app/lib/musicbrainz-oauth';
 
 async function main() {
   loadEnvConfig(process.cwd());
@@ -44,16 +45,7 @@ async function main() {
   const code = process.argv[2];
 
   if (!code) {
-    const url = `${AUTHORIZE}?${new URLSearchParams({
-      response_type: 'code',
-      client_id: clientId,
-      redirect_uri: REDIRECT,
-      // Only the one scope: this token may add ISRCs and nothing else.
-      scope: 'submit_isrc',
-      // Without this MusicBrainz returns no refresh token, and the bot would
-      // stop working an hour later.
-      access_type: 'offline',
-    })}`;
+    const url = botAuthorizationUrl(clientId);
 
     console.log(`
 1. Sign in to MusicBrainz as prelude_fm_bot (not as yourself).
@@ -68,7 +60,7 @@ ${url}
     return;
   }
 
-  const response = await fetch(TOKEN, {
+  const response = await fetch(TOKEN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -76,7 +68,7 @@ ${url}
       code,
       client_id: clientId,
       client_secret: clientSecret,
-      redirect_uri: REDIRECT,
+      redirect_uri: BOT_REDIRECT_URI,
     }),
   });
 
@@ -104,8 +96,10 @@ Add this to .envrc, then \`direnv allow\`:
 
 export MUSICBRAINZ_BOT_REFRESH_TOKEN=${body.refresh_token}
 
-It does not expire. Treat it as a password — anyone holding it can edit
-MusicBrainz as prelude_fm_bot. Check with:
+It does not expire. Replace MUSICBRAINZ_BOT_REFRESH_TOKEN in the Vercel
+Production environment too, then redeploy. The previous token only has
+submit_isrc and cannot submit barcodes. Treat it as a password — anyone
+holding it can edit MusicBrainz as prelude_fm_bot. Check with:
 
   pnpm mb:bot --max-edits 5
 `);

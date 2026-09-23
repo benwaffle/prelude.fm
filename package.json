@@ -15,7 +15,7 @@
     "metadata:validate": "tsx scripts/validate-metadata.ts",
     "metadata:accounting": "tsx scripts/mb-accounting.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test 'tests/**/*.test.{ts,tsx}'",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate-db.ts",
     "db:push": "drizzle-kit push",
