@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAdminFailure } from '../components/AdminFailure';
 import {
   recordStreamingUrlSubmission,
   recheckStreamingUrl,
@@ -26,23 +27,30 @@ export function StreamingUrlsSection({
   onLoadMore: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(releaseMbid: string, albumId: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recordStreamingUrlSubmission(releaseMbid, albumId, forms[albumId] ?? { editId: '' });
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function recheck(releaseMbid: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recheckStreamingUrl(releaseMbid);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getCacheHealth, type CacheHealth } from '../actions/cache-health';
 import { Spinner } from '../components/Spinner';
+import { adminFailureMessage, useAdminFailure } from '../components/AdminFailure';
 
 type DeployHealth = {
   commit: string | null;
@@ -17,14 +18,19 @@ type DeployHealth = {
 
 /** Cache fill, unsettled-tree samples, and deployment facts for the MusicBrainz reader. */
 export function HealthTab() {
+  const { showFailure } = useAdminFailure();
   const [health, setHealth] = useState<CacheHealth | null>(null);
+  const [healthFailed, setHealthFailed] = useState(false);
   const [deploy, setDeploy] = useState<DeployHealth | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
 
   useEffect(() => {
     getCacheHealth()
       .then(setHealth)
-      .catch(() => setHealth(null));
+      .catch((error: unknown) => {
+        setHealthFailed(true);
+        showFailure(error);
+      });
     fetch('/api/health')
       .then(async (response) => {
         if (!response.ok) throw new Error(`${response.status}`);
@@ -36,11 +42,13 @@ export function HealthTab() {
       })
       .catch((error: unknown) => {
         setDeploy(null);
-        setDeployError(error instanceof Error ? error.message : 'unavailable');
+        setDeployError(adminFailureMessage(error));
+        showFailure(error);
       });
-  }, []);
+  }, [showFailure]);
 
   if (!health) {
+    if (healthFailed) return <p role="alert">Could not load cache health.</p>;
     return (
       <div className="flex items-center gap-2 py-16 text-[var(--faint)]">
         <Spinner className="h-3 w-3" />

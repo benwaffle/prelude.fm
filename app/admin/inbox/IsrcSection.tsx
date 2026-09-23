@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAdminFailure } from '../components/AdminFailure';
 import {
   getBotPayload,
   getBotStatus,
@@ -36,20 +37,25 @@ export function IsrcSection({
   onLoadMore: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
 
   async function confirmHand(releaseMbid: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recordIsrcSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function submitBot(releaseMbid: string, albumTitle: string) {
+    clearFailure();
     setBusy(true);
     try {
       const result = await submitBotBatch(releaseMbid);
@@ -60,6 +66,8 @@ export function IsrcSection({
           ? `${albumTitle}: not submitted — ${result.error}`
           : `${albumTitle}: submitted ${result.submitted} ISRCs. They stay pending until MusicBrainz shows them.`,
       );
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
@@ -70,19 +78,25 @@ export function IsrcSection({
       setPayload(null);
       return;
     }
+    clearFailure();
     setBusy(true);
     try {
       setPayload({ releaseMbid, xml: await getBotPayload(releaseMbid) });
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function recheck(releaseMbid: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recheckIsrcRelease(releaseMbid);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }

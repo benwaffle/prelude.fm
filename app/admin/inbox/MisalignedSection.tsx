@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAdminFailure } from '../components/AdminFailure';
 import {
   recordMisalignedTracklistReport,
   recheckErrorReport,
@@ -26,23 +27,30 @@ export function MisalignedSection({
   onLoadMore: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(albumId: string, disposition: 'reported' | 'fixed') {
+    clearFailure();
     setBusy(true);
     try {
       await recordMisalignedTracklistReport(albumId, disposition, forms[albumId] ?? { editId: '' });
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function recheck(albumId: string) {
+    clearFailure();
     setBusy(true);
     try {
       await recheckErrorReport('misaligned_tracklist', albumId);
       await onReload();
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }

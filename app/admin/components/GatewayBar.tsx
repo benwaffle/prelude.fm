@@ -7,6 +7,7 @@ import {
   setChannelPaused,
   type GatewayView,
 } from '../actions/gateway';
+import { useAdminFailure } from './AdminFailure';
 
 /**
  * The MusicBrainz request budget, and the switch that stops it.
@@ -17,15 +18,14 @@ import {
  * worse stop button.
  */
 export function GatewayBar() {
+  const { clearFailure, showFailure } = useAdminFailure();
   const [status, setStatus] = useState<GatewayView | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
   const refresh = useCallback(() => {
-    getGatewayStatus()
-      .then(setStatus)
-      .catch(() => setStatus(null));
-  }, []);
+    getGatewayStatus().then(setStatus).catch(showFailure);
+  }, [showFailure]);
 
   useEffect(() => {
     refresh();
@@ -39,6 +39,7 @@ export function GatewayBar() {
   const queued = status.channels.reduce((sum, channel) => sum + channel.queued, 0);
 
   async function toggleAll() {
+    clearFailure();
     setBusy(true);
     try {
       setStatus(
@@ -46,12 +47,15 @@ export function GatewayBar() {
           ? await clearChannelControl('all')
           : await setChannelPaused('all', true, 'Stopped from admin'),
       );
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
   }
 
   async function toggleChannel(channel: string, paused: boolean) {
+    clearFailure();
     setBusy(true);
     try {
       setStatus(
@@ -59,6 +63,8 @@ export function GatewayBar() {
           ? await setChannelPaused(channel, true, 'Stopped from admin')
           : await clearChannelControl(channel),
       );
+    } catch (error) {
+      showFailure(error);
     } finally {
       setBusy(false);
     }
