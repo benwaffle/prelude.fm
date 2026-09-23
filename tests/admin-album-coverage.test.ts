@@ -99,27 +99,6 @@ beforeEach(async () => {
       decidedAt: new Date('2026-09-22T00:00:00Z'),
     },
   ]);
-
-  // A parser-only work on track-3 must not leak into Albums as catalogue fact.
-  await db.insert(schema.composer).values({ id: 1, name: 'Parser Composer' });
-  await db.insert(schema.work).values({
-    id: 1,
-    composerId: 1,
-    title: 'Parser Work',
-    parserForm: 'sonata',
-  });
-  await db.insert(schema.workPartV2).values({
-    id: 1,
-    workId: 1,
-    position: 1,
-    parserTitle: 'Parser Movement',
-  });
-  await db.insert(schema.trackWorkPartV2).values({
-    spotifyTrackId: 'track-3',
-    workPartId: 1,
-    matchSource: 'parser',
-    matchStatus: 'needs_review',
-  });
 });
 
 test('Albums counts only provider, classification, anchor, and MusicBrainz facts', async () => {

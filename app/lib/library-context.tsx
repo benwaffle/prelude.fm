@@ -10,33 +10,17 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { SavedTrack } from '@spotify/web-api-ts-sdk';
 import { createSpotifySdk } from '@/lib/spotify-sdk';
 import { useLikedSongs } from '@/lib/use-liked-songs';
-import { getLibraryWorks } from '@/app/actions/library';
 import { getMusicBrainzLibrary } from '@/app/actions/library-mb';
-import { getKnownComposerArtists, submitToMatchQueue } from '@/app/actions/spotify';
-import { useReaderChoice, type ReaderChoice } from '@/lib/reader-choice';
 import type { UnresolvedLibraryTrack } from '@/lib/musicbrainz-library';
 import type { LibraryWork, Movement } from '@/lib/prelude';
 
 const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? '';
 
-export interface UnmatchedTrack {
-  id: string;
-  title: string;
-  artist: string;
-  album: string;
-  duration: string;
-  uri: string;
-}
-
 interface LibraryContextValue {
   /** Works with at least one saved movement, plus any registered by a page. */
   works: LibraryWork[];
-  unmatched: UnmatchedTrack[];
-  /** Which reader drew `works`, so a screen can say so and offer the other. */
-  reader: ReaderChoice;
   /**
    * Held tracks the MusicBrainz reader cannot put on a card, each with what
    * is missing. Empty under the reader in production, which reports a track
@@ -60,11 +44,6 @@ interface LibraryContextValue {
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
 
-function formatMs(ms: number): string {
-  const total = Math.round(ms / 1000);
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
-
 export function LibraryProvider({
   accessToken,
   userId,
@@ -74,7 +53,6 @@ export function LibraryProvider({
   userId: string;
   children: ReactNode;
 }) {
-  const reader = useReaderChoice();
   const { tracks, loading, refreshing, error, total } = useLikedSongs(accessToken, userId);
   const [works, setWorks] = useState<LibraryWork[]>([]);
   const [gapTracks, setGapTracks] = useState<UnresolvedLibraryTrack[]>([]);
@@ -108,19 +86,16 @@ export function LibraryProvider({
      Spotify is re-read. Gated on `loading` only to avoid firing once per page
      of a first, progressive load. */
   useEffect(() => {
-    const key = `${reader}:${signature}`;
+    const key = signature;
     if (loading || signature === '' || requestedFor.current === key) return;
     requestedFor.current = key;
 
     let cancelled = false;
     const ids = tracks.map((t) => t.track.id);
-    const resolving =
-      reader === 'musicbrainz'
-        ? getMusicBrainzLibrary(
-            ids,
-            tracks.map((t) => [t.track.id, t.added_at] as [string, string]),
-          )
-        : getLibraryWorks(ids).then((resolved) => ({ works: resolved, unresolvedTracks: [] }));
+    const resolving = getMusicBrainzLibrary(
+      ids,
+      tracks.map((t) => [t.track.id, t.added_at] as [string, string]),
+    );
 
     resolving
       .then((resolved) => {
@@ -136,7 +111,7 @@ export function LibraryProvider({
     return () => {
       cancelled = true;
     };
-  }, [tracks, loading, signature, reader]);
+  }, [tracks, loading, signature]);
 
   const addedAtByTrack = useMemo(
     () => new Map(tracks.map((t) => [t.track.id, t.added_at])),
@@ -164,59 +139,6 @@ export function LibraryProvider({
       return { ...w, movements, addedAt };
     });
   }, [works, extra, likedTrackIds, addedAtByTrack]);
-
-  // Saved tracks we could not place in a work — the escape hatch at the
-  // bottom of the library.
-  const unmatched = useMemo(() => {
-    const placed = new Set<string>();
-    for (const w of works) for (const m of w.movements) if (m.trackId) placed.add(m.trackId);
-    return tracks
-      .filter(({ track }) => !placed.has(track.id))
-      .map(({ track }: SavedTrack) => ({
-        id: track.id,
-        title: track.name,
-        artist: track.artists.map((a) => a.name).join(', '),
-        album: track.album.name,
-        duration: formatMs(track.duration_ms),
-        uri: track.uri,
-      }));
-  }, [tracks, works]);
-
-  /*
-   * Anything we couldn't place but whose artists include a composer we know
-   * is almost certainly classical, so hand it to the matcher unprompted. The
-   * rest waits for the user to submit it from the unmatched strip.
-   */
-  const submittedFor = useRef('');
-  useEffect(() => {
-    if (matching || works.length === 0 || unmatched.length === 0) return;
-    const key = unmatched.map((t) => t.id).join(',');
-    if (submittedFor.current === key) return;
-    submittedFor.current = key;
-
-    let cancelled = false;
-    const byId = new Map(tracks.map((t) => [t.track.id, t.track]));
-    const artistIds = new Set<string>();
-    for (const t of unmatched) {
-      for (const artist of byId.get(t.id)?.artists ?? []) artistIds.add(artist.id);
-    }
-    if (artistIds.size === 0) return;
-
-    getKnownComposerArtists(Array.from(artistIds))
-      .then((known) => {
-        if (cancelled || known.length === 0) return;
-        const composerArtists = new Set(known.map((c) => c.artistId));
-        const eligible = unmatched
-          .filter((t) => byId.get(t.id)?.artists.some((a) => composerArtists.has(a.id)))
-          .map((t) => t.id);
-        if (eligible.length > 0) return submitToMatchQueue(eligible);
-      })
-      .catch((err) => console.error('Failed to queue unmatched tracks:', err));
-
-    return () => {
-      cancelled = true;
-    };
-  }, [matching, works, unmatched, tracks]);
 
   const toggleLike = useCallback(
     (trackId: string) => {
@@ -263,8 +185,6 @@ export function LibraryProvider({
 
   const value: LibraryContextValue = {
     works: decorated,
-    unmatched,
-    reader,
     gapTracks,
     likedTrackIds,
     loading,

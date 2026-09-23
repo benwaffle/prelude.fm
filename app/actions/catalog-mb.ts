@@ -21,8 +21,13 @@ import { eraFor, formatDuration, lifespan, shortName, surname } from '@/lib/prel
 import { findProviderTracksForWork, loadMusicBrainzLibraryFacts } from './library-musicbrainz';
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
 import { musicBrainzLibraryView } from '@/lib/musicbrainz-library-view';
-import type { CatalogComposer, CatalogRecording, CatalogWork, CatalogWorkHeader } from './library';
-import type { WorkSearchHit } from './catalogue-search';
+import type {
+  CatalogComposer,
+  CatalogRecording,
+  CatalogWork,
+  CatalogWorkHeader,
+} from '@/lib/library-types';
+import type { WorkSearchHit } from '@/lib/work-search-hit';
 
 /**
  * The catalogue, read from MusicBrainz: composers → works → recordings.

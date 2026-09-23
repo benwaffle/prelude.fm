@@ -1,22 +1,11 @@
 import { db } from '@/lib/db';
-import {
-  composer,
-  matchQueue,
-  spotifyAlbum,
-  trackRecording,
-  trackWorkPartV2,
-} from '@/lib/db/schema';
+import { matchQueue, spotifyAlbum, trackRecording } from '@/lib/db/schema';
 import {
   getSpotifyAlbumMetadata,
   getSpotifyAlbumTrackIds,
   getSpotifyAlbumTracks,
   getSpotifyTracksByIds,
-  findSpotifyArtistByName,
-  type SpotifyArtistMetadata,
 } from '@/lib/spotify-app-client';
-import { parseAlbumTracksV2, type ClassicalMetadata } from '@/lib/classical-parser';
-import { saveTrackMetadataInternal, type TrackMetadataSaveInput } from '@/lib/track-metadata-save';
-import { saveParsedAlbumV2 } from '@/lib/work-parts-v2';
 import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Track } from '@spotify/web-api-ts-sdk';
 import { runMusicBrainzAlbumPass, type TrackPassOutcome } from '@/lib/musicbrainz-worker';
@@ -60,6 +49,12 @@ export interface AlbumProcessResult {
   /** Tracks the pass finished with but could not place. Not errors. */
   unresolved: number;
   errors: Array<{ trackId?: string; message: string; retryable?: boolean }>;
+  musicbrainz?: {
+    releaseCached: boolean;
+    alreadyCached: boolean;
+    anchored: number;
+    requests: number;
+  };
 }
 
 export interface ClaimedAlbum {
@@ -121,15 +116,6 @@ function isRetryableProcessingError(message: string) {
 
 function compareTrackOrder(a: Track, b: Track) {
   return a.disc_number - b.disc_number || a.track_number - b.track_number;
-}
-
-function normalizeArtistName(name: string) {
-  return name
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .replace(/\p{Pd}/gu, '-')
-    .trim()
-    .toLowerCase();
 }
 
 async function setQueueStatus(
@@ -450,60 +436,33 @@ export async function runMatchQueueWorker(
   }
 
   const musicbrainz = {
-    albumsCached: 0,
-    tracksAnchored: 0,
+    albumsCached: albums.filter((album) => album.musicbrainz?.releaseCached).length,
+    tracksAnchored: albums.reduce((sum, album) => sum + (album.musicbrainz?.anchored ?? 0), 0),
     worksRead: 0,
     recordingsRead: 0,
     artistsRead: 0,
-    requests: 0,
+    requests: albums.reduce((sum, album) => sum + (album.musicbrainz?.requests ?? 0), 0),
     stopped: null as string | null,
   };
 
   if (options.musicbrainz !== false) {
     const [
-      { ingestAlbum },
-      {
-        drainArtistStubs,
-        drainRecordingStubs,
-        drainWorkStubs,
-        recordAnonymousImportRun,
-        releaseIsCached,
-      },
+      { drainArtistStubs, drainRecordingStubs, drainWorkStubs, recordAnonymousImportRun },
       { musicBrainzApi },
       { MusicBrainzBudgetError },
     ] = await Promise.all([
-      import('@/lib/musicbrainz-ingest'),
       import('@/lib/musicbrainz-cache'),
       import('@/lib/musicbrainz'),
       import('@/lib/musicbrainz-gateway'),
     ]);
-    let albumsAlreadyCached = 0;
-    let albumsNew = 0;
+    const albumsAlreadyCached = albums.filter(
+      (album) => album.musicbrainz?.releaseCached && album.musicbrainz.alreadyCached,
+    ).length;
+    const albumsNew = albums.filter(
+      (album) => album.musicbrainz?.releaseCached && !album.musicbrainz.alreadyCached,
+    ).length;
 
     try {
-      // The MusicBrainz-first pass has already read the release and the work
-      // trees above it, so asking again would only spend requests.
-      for (const album of musicBrainzFirstPipeline() ? [] : albums) {
-        const [spotifyRow] = await db
-          .select({ mbReleaseId: spotifyAlbum.mbReleaseId })
-          .from(spotifyAlbum)
-          .where(eq(spotifyAlbum.spotifyId, album.albumId));
-        const wasCached =
-          spotifyRow?.mbReleaseId !== null &&
-          spotifyRow?.mbReleaseId !== undefined &&
-          (await releaseIsCached(spotifyRow.mbReleaseId));
-        const report = await ingestAlbum(musicBrainzApi('interactive'), album.albumId, {
-          fetchWorks: false,
-        });
-        musicbrainz.requests += report.requests;
-        if (report.releaseMbid) {
-          musicbrainz.albumsCached++;
-          if (wasCached) albumsAlreadyCached++;
-          else albumsNew++;
-        }
-        musicbrainz.tracksAnchored += report.anchors?.anchored ?? 0;
-      }
-
       if (albums.length === 0) {
         // Recordings first: a recording stub is a track somebody has liked
         // that currently reaches no work at all, where a work stub only
@@ -644,16 +603,6 @@ async function getProcessingTrackIds(albumId: string, claimOwnerId?: string) {
   return rows.map((row) => row.spotifyId);
 }
 
-/**
- * Whether new intake goes through MusicBrainz rather than a language model.
- *
- * Read per call rather than at import, so the switch takes effect on the
- * next invocation of a long-lived worker instead of at the next deploy.
- */
-export function musicBrainzFirstPipeline(): boolean {
-  return process.env.PIPELINE === 'musicbrainz';
-}
-
 /** Tracks already anchored to a MusicBrainz recording. */
 async function getAnchoredTrackIds(trackIds: string[]) {
   if (trackIds.length === 0) return new Set<string>();
@@ -696,10 +645,24 @@ async function processAlbumThroughMusicBrainz(
     dependencies.musicBrainzSource ??
     (await import('@/lib/musicbrainz')).musicBrainzApi('interactive');
   const anchored = await getAnchoredTrackIds(trackIds);
+  const [before] = await db
+    .select({ releaseMbid: spotifyAlbum.mbReleaseId })
+    .from(spotifyAlbum)
+    .where(eq(spotifyAlbum.spotifyId, albumId))
+    .limit(1);
+  const alreadyCached = before?.releaseMbid
+    ? await (await import('@/lib/musicbrainz-cache')).releaseIsCached(before.releaseMbid)
+    : false;
   const report = await runMusicBrainzAlbumPass(source, albumId, trackIds, {
     alreadyAnchored: trackIds.length > 0 && trackIds.every((trackId) => anchored.has(trackId)),
     readAlbum: dependencies.readAlbum,
   });
+  result.musicbrainz = {
+    releaseCached: report.releaseMbid !== null,
+    alreadyCached,
+    anchored: report.anchored,
+    requests: report.requests,
+  };
   await persistMusicBrainzTrackOutcomes(report.tracks, claimOwnerId);
 
   const byState = new Map<TrackPassOutcome['state'], TrackPassOutcome[]>();
@@ -745,135 +708,13 @@ async function processAlbumThroughMusicBrainz(
   return result;
 }
 
-async function getLinkedTrackIds(trackIds: string[]) {
-  if (trackIds.length === 0) return new Set<string>();
-
-  const linkedRows = await db
-    .select({ spotifyTrackId: trackWorkPartV2.spotifyTrackId })
-    .from(trackWorkPartV2)
-    .where(inArray(trackWorkPartV2.spotifyTrackId, trackIds));
-
-  return new Set(linkedRows.map((row) => row.spotifyTrackId));
-}
-
-async function prepareParsedTrackSave(
-  album: Awaited<ReturnType<typeof getSpotifyAlbumTracks>>['album'],
-  track: Track,
-  metadata: ClassicalMetadata,
-  movementNumber: number,
-): Promise<TrackMetadataSaveInput> {
-  let composerName = metadata.composerName?.trim();
-  const formalName = metadata.formalName.trim();
-
-  if (!metadata.isClassical) throw new Error('Cannot save non-classical metadata');
-  if (!composerName || !formalName) {
-    throw new Error('Parsed metadata is missing composer or work title');
-  }
-
-  const parsedComposerNames = composerName
-    .split(/\s+(?:&|and)\s+/iu)
-    .map((name) => normalizeArtistName(name));
-  const creditedComposerArtist = track.artists.find((artist) =>
-    parsedComposerNames.includes(normalizeArtistName(artist.name)),
-  );
-  if (creditedComposerArtist) composerName = creditedComposerArtist.name;
-  let composerArtist: SpotifyArtistMetadata | undefined = creditedComposerArtist
-    ? { id: creditedComposerArtist.id, name: creditedComposerArtist.name }
-    : undefined;
-
-  if (!composerArtist) {
-    const [existingComposer] = await db
-      .select({ spotifyArtistId: composer.spotifyArtistId })
-      .from(composer)
-      .where(sql`lower(trim(${composer.name})) = ${composerName.toLowerCase()}`)
-      .limit(1);
-
-    if (existingComposer?.spotifyArtistId) {
-      composerArtist = { id: existingComposer.spotifyArtistId, name: composerName };
-    } else {
-      const surname = composerName
-        .trim()
-        .split(/\s+/)
-        .at(-1)
-        ?.replace(/[^\p{L}\p{N}-]/gu, '')
-        .toLowerCase();
-      const surnameMatches = surname
-        ? await db
-            .select({ name: composer.name, spotifyArtistId: composer.spotifyArtistId })
-            .from(composer)
-            .where(sql`lower(${composer.name}) like ${`%${surname}%`}`)
-            .limit(2)
-        : [];
-      const uniqueSurnameMatch =
-        surnameMatches.length === 1 && surnameMatches[0].spotifyArtistId
-          ? surnameMatches[0]
-          : undefined;
-
-      composerArtist = uniqueSurnameMatch
-        ? { id: uniqueSurnameMatch.spotifyArtistId!, name: uniqueSurnameMatch.name }
-        : ((await findSpotifyArtistByName(composerName)) ?? undefined);
-    }
-  }
-
-  if (!composerArtist) {
-    throw new Error(`Could not resolve Spotify artist for composer "${composerName}"`);
-  }
-
-  return {
-    preserveExistingWork: true,
-    album: {
-      id: album.id,
-      name: album.name,
-      release_date: album.release_date,
-      popularity: album.popularity,
-      images: album.images,
-      inSpotifyAlbumsTable: false,
-    },
-    track: {
-      id: track.id,
-      name: track.name,
-      uri: track.uri,
-      duration_ms: track.duration_ms,
-      disc_number: track.disc_number,
-      track_number: track.track_number,
-      popularity: track.popularity,
-      inSpotifyTracksTable: false,
-      isrc: track.external_ids?.isrc ?? null,
-    },
-    artists: track.artists.map((artist) => ({
-      id: artist.id,
-      name: artist.name,
-      inSpotifyArtistsTable: false,
-    })),
-    composerArtist: {
-      id: composerArtist.id,
-      name: composerArtist.name,
-    },
-    metadata: {
-      composerArtistId: composerArtist.id,
-      composerName,
-      formalName,
-      nickname: metadata.nickname || null,
-      catalogSystem: metadata.catalogSystem || null,
-      catalogNumber: metadata.catalogNumber || null,
-      form: metadata.form || null,
-      movementNumber,
-      movementName: metadata.movementName || null,
-      yearComposed: metadata.yearComposed || null,
-    },
-  };
-}
-
 /**
  * The outside world an album pass touches, injectable so a test can run the
- * real mapping without a network: Spotify, MusicBrainz, and — on the legacy
- * path only — the language model. A test that hands all three in can prove
- * which of them the pass actually asked.
+ * real mapping without a network: Spotify and MusicBrainz.
  */
 export type AlbumPassDependencies = {
   readAlbum?: typeof getSpotifyAlbumTracks;
   musicBrainzSource?: MusicBrainzSource;
-  parseAlbum?: typeof parseAlbumTracksV2;
 };
 
 export async function processQueuedAlbum(
@@ -918,7 +759,7 @@ export async function processQueuedAlbum(
   if (trackIds.length === 0) return result;
 
   try {
-    const { album, tracks } = await (dependencies.readAlbum ?? getSpotifyAlbumTracks)(albumId);
+    const { tracks } = await (dependencies.readAlbum ?? getSpotifyAlbumTracks)(albumId);
     const albumTracks = tracks.sort(compareTrackOrder);
     const albumTrackById = new Map(albumTracks.map((track) => [track.id, track]));
     const missingTrackIds = trackIds.filter((trackId) => !albumTrackById.has(trackId));
@@ -938,132 +779,13 @@ export async function processQueuedAlbum(
     }
 
     const processableTrackIds = trackIds.filter((trackId) => albumTrackById.has(trackId));
-    if (musicBrainzFirstPipeline()) {
-      return await processAlbumThroughMusicBrainz(
-        albumId,
-        processableTrackIds,
-        result,
-        claimOwnerId,
-        dependencies,
-      );
-    }
-    const linkedTrackIds = await getLinkedTrackIds(processableTrackIds);
-    const alreadyLinkedTrackIds = processableTrackIds.filter((trackId) =>
-      linkedTrackIds.has(trackId),
+    return await processAlbumThroughMusicBrainz(
+      albumId,
+      processableTrackIds,
+      result,
+      claimOwnerId,
+      dependencies,
     );
-
-    if (alreadyLinkedTrackIds.length > 0) {
-      await setQueueStatus(alreadyLinkedTrackIds, 'matched', { claimOwnerId });
-      result.matched += alreadyLinkedTrackIds.length;
-    }
-
-    const unknownTracks = processableTrackIds
-      .filter((trackId) => !linkedTrackIds.has(trackId))
-      .map((trackId) => albumTrackById.get(trackId)!)
-      .sort(compareTrackOrder);
-
-    if (unknownTracks.length === 0) return result;
-
-    {
-      const parsedV2 = await (dependencies.parseAlbum ?? parseAlbumTracksV2)(
-        album.name,
-        unknownTracks.map((track) => ({
-          trackName: track.name,
-          artistNames: track.artists.map((artist) => artist.name),
-          discNumber: track.disc_number,
-          trackNumber: track.track_number,
-        })),
-      );
-      const synthesizedPartTrackIds = new Set<string>();
-      const prepared: Array<{
-        track: Track;
-        metadata: (typeof parsedV2)[number];
-        input: TrackMetadataSaveInput;
-      }> = [];
-      for (let index = 0; index < unknownTracks.length; index++) {
-        const track = unknownTracks[index];
-        const metadata = parsedV2[index];
-        if (!metadata?.isClassical) {
-          await setQueueStatus([track.id], 'not_classical', { claimOwnerId });
-          result.notClassical++;
-          continue;
-        }
-        if (metadata.parts.length === 0) {
-          metadata.parts = [{ position: 1, label: null, title: metadata.formalName }];
-          synthesizedPartTrackIds.add(track.id);
-        }
-        const firstPart = metadata.parts[0];
-        const legacyMetadata: ClassicalMetadata = {
-          isClassical: true,
-          composerName: metadata.composerName,
-          formalName: metadata.formalName,
-          nickname: metadata.nickname,
-          catalogSystem: metadata.catalogSystem,
-          catalogNumber: metadata.catalogNumber,
-          form: metadata.form,
-          movement: firstPart.position,
-          movementName: firstPart.title,
-          yearComposed: metadata.yearComposed,
-        };
-        try {
-          const input = await prepareParsedTrackSave(
-            album,
-            track,
-            legacyMetadata,
-            firstPart.position,
-          );
-          prepared.push({ track, metadata, input });
-        } catch (error) {
-          await setQueueStatus([track.id], 'failed', {
-            claimOwnerId,
-            errorMessage: errorMessage(error, 'Failed to save v2 base metadata'),
-          });
-          result.failed++;
-        }
-      }
-      const eligibleTracks = prepared.map((item) => item.track);
-      const eligibleTrackIds = eligibleTracks.map((track) => track.id);
-      // One transaction for the base save and the v2 reconciliation: an album
-      // whose work assignments do not all resolve must leave no rows behind.
-      await db.transaction(async (transaction) => {
-        for (const item of prepared) {
-          await saveTrackMetadataInternal(item.input, transaction);
-        }
-        await saveParsedAlbumV2(
-          album.id,
-          eligibleTracks.map((track) => ({
-            id: track.id,
-            discNumber: track.disc_number,
-            trackNumber: track.track_number,
-          })),
-          prepared.map((item) => item.metadata),
-          transaction,
-        );
-        if (eligibleTrackIds.length > 0) {
-          await transaction
-            .update(trackWorkPartV2)
-            .set({ matchStatus: 'needs_review' })
-            .where(
-              and(
-                inArray(trackWorkPartV2.spotifyTrackId, eligibleTrackIds),
-                eq(trackWorkPartV2.matchSource, 'manual'),
-              ),
-            );
-        }
-        if (synthesizedPartTrackIds.size > 0) {
-          await transaction
-            .update(trackWorkPartV2)
-            .set({ matchStatus: 'needs_review' })
-            .where(inArray(trackWorkPartV2.spotifyTrackId, [...synthesizedPartTrackIds]));
-        }
-      });
-      const completedTrackIds = await getLinkedTrackIds(eligibleTrackIds);
-      if (completedTrackIds.size > 0) {
-        await setQueueStatus([...completedTrackIds], 'matched', { claimOwnerId });
-        result.matched += completedTrackIds.size;
-      }
-      return result;
-    }
   } catch (error) {
     const message = errorMessage(error, 'Failed to process album');
     const status = isRetryableProcessingError(message) ? 'pending' : 'failed';

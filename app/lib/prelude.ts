@@ -226,10 +226,8 @@ export interface LibraryWork {
   /** A work can be recorded more than once, so identity is work + recording. */
   id: string;
   /**
-   * Opaque identifiers, not numbers to do arithmetic on. The reader in
-   * production mints them from the legacy row ids and the MusicBrainz reader
-   * from MBIDs, and everything downstream only ever compares them or puts
-   * them in a URL.
+   * Opaque MusicBrainz identifiers, never numbers to do arithmetic on.
+   * Screens compare them or put them in a URL.
    *
    * Null where there is no work to navigate to — something playing that we
    * cannot place. That used to be spelled -1, which reads like an id.

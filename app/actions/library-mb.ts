@@ -8,7 +8,7 @@ import {
   readWorkCollection,
 } from './library-musicbrainz';
 import type { WorkParent, WorkSibling } from './work-hierarchy';
-import type { OtherRecording, WorkDetail, WorkSummary } from './library';
+import type { OtherRecording, WorkDetail, WorkSummary } from '@/lib/library-types';
 import { formatDuration, stripCollectionPrefix, type LibraryWork } from '@/lib/prelude';
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
 import {

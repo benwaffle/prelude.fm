@@ -52,7 +52,7 @@ export const WHAT_IT_NEEDS: Record<AlbumState, string> = {
 
 /** How anchoring relates to what the MusicBrainz reader shows in the player. */
 export const COVERAGE_LISTENER_NOTE =
-  'Anchored tracks show work, movement, and composer from MusicBrainz in the player. Unanchored tracks stay in the gap strip with an explicit reason — the parser guess is pipeline metadata only, not what listeners see.';
+  'Anchored tracks show work, movement, and composer from MusicBrainz in the player. Unanchored tracks stay in the gap strip with an explicit reason.';
 
 export type AlbumRow = {
   id: string;

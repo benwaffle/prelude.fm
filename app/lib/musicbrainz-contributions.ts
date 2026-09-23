@@ -58,14 +58,9 @@ import {
   mbWork,
   mbWorkCatalogue,
   mbSubmission,
-  composer,
   spotifyAlbum,
   spotifyTrack,
-  trackWorkPartV2,
   trackRecording,
-  work,
-  workCatalogV2,
-  workPartV2,
 } from './db/schema';
 
 /**
@@ -315,9 +310,8 @@ function groupIsrcGapsByRelease(gaps: IsrcGap[], limit: number, offset = 0): Isr
 /**
  * Recordings MusicBrainz holds but has never linked to a work.
  *
- * The highest-value human class: we can find the recording and we can often
- * propose the work, because a sibling recording on the same release already
- * points at one. The human step is a confirmation rather than a search.
+ * Sibling recordings on the same MusicBrainz release may suggest works.
+ * They are candidates for a human to verify, not inferred links.
  */
 export type WorkRelationshipGap = {
   recordingMbid: string;
@@ -328,7 +322,6 @@ export type WorkRelationshipGap = {
   albumTitle: string;
   tracks: number;
   candidates: WorkCandidate[];
-  proposals: WorkCreationProposal[];
 };
 
 export type WorkCandidate = {
@@ -338,18 +331,7 @@ export type WorkCandidate = {
   composerMbid: string | null;
   composerName: string | null;
   catalogues: { system: string; number: string }[];
-  evidence: ('existing_mb_part_link' | 'existing_mb_work_link' | 'catalogue_match')[];
-};
-
-export type WorkCreationProposal = {
-  localWorkId: number;
-  title: string;
-  type: string | null;
-  composerName: string;
-  composerMbid: string | null;
-  catalogues: { system: string; number: string }[];
-  /** Always proposal: these fields came from the legacy parser/manual model. */
-  provenance: 'legacy_proposal';
+  evidence: 'same_release_recording'[];
 };
 
 export async function workRelationshipGaps(
@@ -382,170 +364,64 @@ export async function workRelationshipGaps(
     .offset(offset);
   if (gaps.length === 0) return [];
 
-  const recordingMbids = gaps.map((gap) => gap.recordingMbid);
-  const localRows = await db
-    .select({
-      recordingMbid: trackRecording.recordingMbid,
-      localWorkId: work.id,
-      workTitle: work.title,
-      parserType: work.parserForm,
-      workMbid: work.musicbrainzId,
-      partMbid: workPartV2.musicbrainzId,
-      composerName: composer.name,
-      composerMbid: composer.musicbrainzId,
+  // A work on another recording of the same MusicBrainz release is a
+  // suggestion, never proof that this recording performs it.
+  const releaseMbids = [
+    ...new Set(gaps.map((gap) => gap.releaseMbid).filter((id): id is string => !!id)),
+  ];
+  if (releaseMbids.length === 0) return gaps.map((gap) => ({ ...gap, candidates: [] }));
+  const siblings = await db
+    .selectDistinct({
+      releaseMbid: mbReleaseTrack.releaseMbid,
+      recordingMbid: mbReleaseTrack.recordingMbid,
+      workMbid: mbWork.mbid,
+      title: mbWork.title,
+      type: mbWork.type,
+      composerMbid: mbWork.composerMbid,
+      composerName: mbArtist.name,
     })
-    .from(trackRecording)
-    .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
-    .innerJoin(trackWorkPartV2, eq(trackWorkPartV2.spotifyTrackId, spotifyTrack.spotifyId))
-    .innerJoin(workPartV2, eq(workPartV2.id, trackWorkPartV2.workPartId))
-    .innerJoin(work, eq(work.id, workPartV2.workId))
-    .innerJoin(composer, eq(composer.id, work.composerId))
-    .where(inArray(trackRecording.recordingMbid, recordingMbids));
-
-  const localWorkIds = [...new Set(localRows.map((row) => row.localWorkId))];
-  const localCatalogues =
-    localWorkIds.length === 0
+    .from(mbReleaseTrack)
+    .innerJoin(mbRecordingWork, eq(mbRecordingWork.recordingMbid, mbReleaseTrack.recordingMbid))
+    .innerJoin(mbWork, eq(mbWork.mbid, mbRecordingWork.workMbid))
+    .leftJoin(mbArtist, eq(mbArtist.mbid, mbWork.composerMbid))
+    .where(inArray(mbReleaseTrack.releaseMbid, releaseMbids));
+  const workMbids = [...new Set(siblings.map((row) => row.workMbid))];
+  const catalogues =
+    workMbids.length === 0
       ? []
       : await db
-          .select({
-            localWorkId: workCatalogV2.workId,
-            system: workCatalogV2.system,
-            number: workCatalogV2.number,
-            normalizedSystem: workCatalogV2.normalizedSystem,
-            normalizedNumber: workCatalogV2.normalizedNumber,
-            source: workCatalogV2.source,
-          })
-          .from(workCatalogV2)
-          .where(inArray(workCatalogV2.workId, localWorkIds));
-
-  const cataloguesByLocalWork = new Map<
-    number,
-    {
-      system: string;
-      number: string;
-      normalizedSystem: string;
-      normalizedNumber: string;
-      source: 'parser' | 'musicbrainz';
-    }[]
-  >();
-  for (const catalogue of localCatalogues) {
-    const rows = cataloguesByLocalWork.get(catalogue.localWorkId) ?? [];
-    rows.push(catalogue);
-    cataloguesByLocalWork.set(catalogue.localWorkId, rows);
-  }
-
-  const allMbCatalogues = await db.select().from(mbWorkCatalogue);
-  const mbidsByCatalogue = new Map<string, string[]>();
-  for (const catalogue of allMbCatalogues) {
-    const key = `${catalogue.normalizedSystem}\u0000${catalogue.normalizedNumber}`;
-    const mbids = mbidsByCatalogue.get(key) ?? [];
-    mbids.push(catalogue.workMbid);
-    mbidsByCatalogue.set(key, mbids);
-  }
-
-  const candidateEvidence = new Map<string, Map<string, Set<WorkCandidate['evidence'][number]>>>();
-  const addCandidate = (
-    recordingMbid: string,
-    workMbid: string | null,
-    source: WorkCandidate['evidence'][number],
-  ) => {
-    if (!workMbid) return;
-    const byWork = candidateEvidence.get(recordingMbid) ?? new Map();
-    const sources = byWork.get(workMbid) ?? new Set();
-    sources.add(source);
-    byWork.set(workMbid, sources);
-    candidateEvidence.set(recordingMbid, byWork);
-  };
-
-  for (const row of localRows) {
-    addCandidate(row.recordingMbid, row.partMbid, 'existing_mb_part_link');
-    addCandidate(row.recordingMbid, row.workMbid, 'existing_mb_work_link');
-    for (const catalogue of cataloguesByLocalWork.get(row.localWorkId) ?? []) {
-      const key = `${catalogue.normalizedSystem}\u0000${catalogue.normalizedNumber}`;
-      for (const workMbid of mbidsByCatalogue.get(key) ?? []) {
-        addCandidate(row.recordingMbid, workMbid, 'catalogue_match');
-      }
-    }
-  }
-
-  const candidateMbids = [
-    ...new Set([...candidateEvidence.values()].flatMap((byWork) => [...byWork.keys()])),
-  ];
-  const [candidateRows, candidateCatalogues] = await Promise.all([
-    candidateMbids.length === 0
-      ? []
-      : db
-          .select({
-            workMbid: mbWork.mbid,
-            title: mbWork.title,
-            type: mbWork.type,
-            composerMbid: mbWork.composerMbid,
-            composerName: mbArtist.name,
-          })
-          .from(mbWork)
-          .leftJoin(mbArtist, eq(mbArtist.mbid, mbWork.composerMbid))
-          .where(inArray(mbWork.mbid, candidateMbids)),
-    candidateMbids.length === 0
-      ? []
-      : db
           .select({
             workMbid: mbWorkCatalogue.workMbid,
             system: mbWorkCatalogue.system,
             number: mbWorkCatalogue.number,
           })
           .from(mbWorkCatalogue)
-          .where(inArray(mbWorkCatalogue.workMbid, candidateMbids)),
-  ]);
-  const candidateByMbid = new Map(candidateRows.map((row) => [row.workMbid, row]));
-  const candidateCataloguesByMbid = new Map<string, { system: string; number: string }[]>();
-  for (const catalogue of candidateCatalogues) {
-    const rows = candidateCataloguesByMbid.get(catalogue.workMbid) ?? [];
-    rows.push({ system: catalogue.system, number: catalogue.number });
-    candidateCataloguesByMbid.set(catalogue.workMbid, rows);
-  }
-
+          .where(inArray(mbWorkCatalogue.workMbid, workMbids));
   return gaps.map((gap) => {
-    const proposals = new Map<number, WorkCreationProposal>();
-    for (const row of localRows.filter(
-      (candidate) => candidate.recordingMbid === gap.recordingMbid,
-    )) {
-      proposals.set(row.localWorkId, {
-        localWorkId: row.localWorkId,
-        title: row.workTitle,
-        type: row.parserType,
-        composerName: row.composerName,
-        composerMbid: row.composerMbid,
-        catalogues: (cataloguesByLocalWork.get(row.localWorkId) ?? [])
-          .filter((catalogue) => catalogue.source === 'parser')
-          .map((catalogue) => ({
-            system: catalogue.system,
-            number: catalogue.number,
-          })),
-        provenance: 'legacy_proposal',
-      });
-    }
-
+    const seen = new Set<string>();
     const candidates: WorkCandidate[] = [];
-    for (const [workMbid, evidence] of candidateEvidence.get(gap.recordingMbid) ?? []) {
-      const row = candidateByMbid.get(workMbid);
-      if (!row) continue;
+    for (const row of siblings) {
+      if (
+        row.releaseMbid !== gap.releaseMbid ||
+        row.recordingMbid === gap.recordingMbid ||
+        seen.has(row.workMbid)
+      )
+        continue;
+      seen.add(row.workMbid);
       candidates.push({
-        ...row,
-        catalogues: candidateCataloguesByMbid.get(workMbid) ?? [],
-        evidence: [...evidence],
+        workMbid: row.workMbid,
+        title: row.title,
+        type: row.type,
+        composerMbid: row.composerMbid,
+        composerName: row.composerName,
+        catalogues: catalogues
+          .filter((catalogue) => catalogue.workMbid === row.workMbid)
+          .map(({ system, number }) => ({ system, number })),
+        evidence: ['same_release_recording'],
       });
     }
-    candidates.sort((a, b) => {
-      const rank = (candidate: WorkCandidate) =>
-        candidate.evidence.includes('existing_mb_part_link')
-          ? 0
-          : candidate.evidence.includes('existing_mb_work_link')
-            ? 1
-            : 2;
-      return rank(a) - rank(b) || a.title.localeCompare(b.title);
-    });
-
-    return { ...gap, candidates, proposals: [...proposals.values()] };
+    candidates.sort((a, b) => a.title.localeCompare(b.title));
+    return { ...gap, candidates };
   });
 }
 

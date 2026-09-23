@@ -13,8 +13,7 @@ export default function WorkDetailPage({
   const { workId } = use(params);
   const { rec } = use(searchParams);
 
-  // The identity is whatever the reader minted — a legacy row id today, an
-  // MBID once the MusicBrainz reader is the one being read. The route does
+  // MusicBrainz work identity is an MBID. The route does
   // not need to know which.
   if (workId === '') {
     return (

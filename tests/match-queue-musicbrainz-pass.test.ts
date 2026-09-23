@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test, { afterEach, before, beforeEach } from 'node:test';
+import test, { before, beforeEach } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 import type { MbRelease, MusicBrainzSource } from '../app/lib/musicbrainz-source';
@@ -28,7 +28,6 @@ before(async () => {
 
 beforeEach(async () => {
   await resetTestDatabase(db);
-  process.env.PIPELINE = 'musicbrainz';
   await db.insert(schema.spotifyAlbum).values({
     spotifyId: 'album-1',
     title: 'Mozart: Piano Sonatas',
@@ -51,10 +50,6 @@ beforeEach(async () => {
       claimOwnerId: OWNER,
     })),
   );
-});
-
-afterEach(() => {
-  delete process.env.PIPELINE;
 });
 
 function source(answers: Partial<MusicBrainzSource>): MusicBrainzSource {
@@ -228,6 +223,10 @@ test('a track MusicBrainz places and calls classical is matched', async () => {
   });
 
   assert.equal(result.matched, 2);
+  assert.equal(result.musicbrainz?.releaseCached, true);
+  assert.equal(result.musicbrainz?.alreadyCached, false);
+  assert.equal(result.musicbrainz?.anchored, 2);
+  assert.ok((result.musicbrainz?.requests ?? 0) > 0);
   assert.equal(result.unresolved, 0);
   assert.equal(result.failed, 0);
   for (const row of await queueRows()) {
@@ -351,54 +350,4 @@ test('an unresolved track is not reclaimed on the next cron tick', async () => {
     null,
     'there is nothing left for a worker to claim',
   );
-});
-
-test('the language model is not called when PIPELINE=musicbrainz', async () => {
-  let parseCalls = 0;
-  await runPass({
-    readAlbum,
-    musicBrainzSource: source({
-      releasesByBarcode: async () => [],
-      searchReleases: async () => [],
-    }),
-    parseAlbum: async () => {
-      parseCalls++;
-      return [];
-    },
-  });
-
-  assert.equal(parseCalls, 0);
-  // Nor does the pass write the tables the model used to fill.
-  for (const table of [schema.composer, schema.work, schema.workPartV2, schema.trackWorkPartV2]) {
-    assert.deepEqual(await db.select().from(table), [], 'a legacy table was written to');
-  }
-});
-
-test('the legacy pipeline still calls the language model, so the seam is real', async () => {
-  delete process.env.PIPELINE;
-  let parseCalls = 0;
-
-  const result = await runPass({
-    readAlbum,
-    // Non-classical for every track: enough to show the model was asked
-    // without dragging the legacy save path into this test.
-    parseAlbum: async () => {
-      parseCalls++;
-      return [1, 2].map(() => ({
-        isClassical: false,
-        composerName: null,
-        formalName: '',
-        nickname: null,
-        catalogSystem: null,
-        catalogNumber: null,
-        form: null,
-        yearComposed: null,
-        recordingGroup: null,
-        parts: [],
-      }));
-    },
-  });
-
-  assert.equal(parseCalls, 1);
-  assert.equal(result.notClassical, 2);
 });

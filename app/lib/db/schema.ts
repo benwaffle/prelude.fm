@@ -115,70 +115,6 @@ export const accountRelations = relations(account, ({ one }) => ({
   }),
 }));
 
-/*
- * Classical Music Schema
- */
-
-export const composer = sqliteTable('composer', {
-  id: integer('id').primaryKey(),
-  name: text('name').notNull(),
-  birthYear: integer('birth_year'),
-  deathYear: integer('death_year'),
-  biography: text('biography'),
-  spotifyArtistId: text('spotify_artist_id')
-    .unique()
-    .references(() => spotifyArtist.spotifyId),
-  /** MusicBrainz artist MBID, when we have confidently matched this composer. */
-  musicbrainzId: text('musicbrainz_id').unique(),
-});
-
-export const work = sqliteTable(
-  'work',
-  {
-    id: integer('id').primaryKey(),
-    composerId: integer('composer_id')
-      .notNull()
-      .references(() => composer.id),
-    title: text('title').notNull(),
-    nickname: text('nickname'), // "moonlight", "spring"
-    catalogSystem: text('catalog_system'), // "BWV", "K", "Op" - nullable for works without catalog numbers
-    catalogNumber: text('catalog_number'), // "1052", "27/2" - nullable for works without catalog numbers
-    yearComposed: integer('year_composed'),
-    /**
-     * The musical form, as MusicBrainz states it.
-     *
-     * Empty where MusicBrainz has no type for the work. That is a gap rather
-     * than a failure: the parser's guess is kept in `parser_form` and is not
-     * shown, because it was inferred from a Spotify track title and nobody
-     * has checked it.
-     */
-    form: text('form'),
-    /**
-     * What the parser guessed the form was, before MusicBrainz was consulted.
-     *
-     * Kept rather than discarded because it is useful for things that do not
-     * need to be right — recommendation, grouping, categorisation — and it is
-     * more specific than MusicBrainz's fixed vocabulary: "violin concerto"
-     * where MusicBrainz says "concerto". It is simply not evidence, so it
-     * does not sit in the column the reader displays.
-     */
-    parserForm: text('parser_form'),
-    /** MusicBrainz work MBID of the *parent* work, when matched. */
-    musicbrainzId: text('musicbrainz_id').unique(),
-  },
-  (table) => [
-    index('work_composer_idx').on(table.composerId),
-    // For works WITH catalog numbers: unique by composer + catalog
-    uniqueIndex('work_composer_catalog_idx')
-      .on(table.composerId, table.catalogSystem, table.catalogNumber)
-      .where(sql`${table.catalogSystem} IS NOT NULL AND ${table.catalogNumber} IS NOT NULL`),
-    // For works WITHOUT catalog numbers: unique by composer + title
-    uniqueIndex('work_composer_title_idx')
-      .on(table.composerId, table.title)
-      .where(sql`${table.catalogSystem} IS NULL AND ${table.catalogNumber} IS NULL`),
-  ],
-);
-
 export const spotifyAlbum = sqliteTable(
   'spotify_album',
   {
@@ -232,146 +168,6 @@ export const spotifyTrack = sqliteTable(
     isrc: text('isrc'),
   },
   (table) => [index('spotify_track_isrc_idx').on(table.isrc)],
-);
-
-/**
- * Parallel v2 metadata tables. These intentionally coexist with movement,
- * track_movement, and recording until the migration has been validated.
- */
-export const workCatalogV2 = sqliteTable(
-  'work_catalog_v2',
-  {
-    id: integer('id').primaryKey(),
-    workId: integer('work_id')
-      .notNull()
-      .references(() => work.id),
-    system: text('system').notNull(),
-    number: text('number').notNull(),
-    normalizedSystem: text('normalized_system').notNull(),
-    normalizedNumber: text('normalized_number').notNull(),
-    isPrimary: integer('is_primary', { mode: 'boolean' }).default(false).notNull(),
-    /**
-     * Where this catalogue reference came from. MusicBrainz carries alternate
-     * catalogues our parser never sees (Chopin's B./C., Scarlatti's Longo,
-     * the revised Köchel), and a reader searching by one of those needs to
-     * find the work. Keeping the source means a wrong import can be undone
-     * without touching parser-derived rows.
-     */
-    source: text('source', { enum: ['parser', 'musicbrainz'] })
-      .default('parser')
-      .notNull(),
-  },
-  (table) => [
-    index('work_catalog_v2_work_idx').on(table.workId),
-    index('work_catalog_v2_lookup_idx').on(table.normalizedSystem, table.normalizedNumber),
-    uniqueIndex('work_catalog_v2_work_catalog_idx').on(
-      table.workId,
-      table.normalizedSystem,
-      table.normalizedNumber,
-    ),
-  ],
-);
-
-export const workPartV2 = sqliteTable(
-  'work_part_v2',
-  {
-    id: integer('id').primaryKey(),
-    workId: integer('work_id')
-      .notNull()
-      .references(() => work.id),
-    position: integer('position').notNull(),
-    label: text('label'),
-    title: text('title'),
-    /** What the parser called this movement, where MusicBrainz replaced it. */
-    parserTitle: text('parser_title'),
-    /** MusicBrainz work MBID of the movement/leaf work, when matched. */
-    musicbrainzId: text('musicbrainz_id'),
-  },
-  (table) => [
-    index('work_part_v2_work_idx').on(table.workId),
-    index('work_part_v2_musicbrainz_idx').on(table.musicbrainzId),
-    uniqueIndex('work_part_v2_work_position_idx').on(table.workId, table.position),
-  ],
-);
-
-export const recordingV2 = sqliteTable(
-  'recording_v2',
-  {
-    id: integer('id').primaryKey(),
-    spotifyAlbumId: text('spotify_album_id')
-      .notNull()
-      .references(() => spotifyAlbum.spotifyId),
-    workId: integer('work_id')
-      .notNull()
-      .references(() => work.id),
-    popularity: integer('popularity'),
-  },
-  (table) => [
-    index('recording_v2_work_idx').on(table.workId),
-    index('recording_v2_album_idx').on(table.spotifyAlbumId),
-  ],
-);
-
-export const recordingTrackV2 = sqliteTable(
-  'recording_track_v2',
-  {
-    recordingId: integer('recording_id')
-      .notNull()
-      .references(() => recordingV2.id),
-    spotifyTrackId: text('spotify_track_id')
-      .notNull()
-      .references(() => spotifyTrack.spotifyId),
-  },
-  (table) => [
-    primaryKey({ columns: [table.recordingId, table.spotifyTrackId] }),
-    uniqueIndex('recording_track_v2_track_idx').on(table.spotifyTrackId),
-  ],
-);
-
-export const trackWorkPartV2 = sqliteTable(
-  'track_work_part_v2',
-  {
-    spotifyTrackId: text('spotify_track_id')
-      .notNull()
-      .references(() => spotifyTrack.spotifyId),
-    workPartId: integer('work_part_id')
-      .notNull()
-      .references(() => workPartV2.id),
-    startMs: integer('start_ms'),
-    endMs: integer('end_ms'),
-    matchSource: text('match_source', {
-      enum: ['parser', 'migrated', 'manual', 'musicbrainz'],
-    })
-      .default('migrated')
-      .notNull(),
-    matchStatus: text('match_status', { enum: ['confirmed', 'needs_review'] })
-      .default('needs_review')
-      .notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.spotifyTrackId, table.workPartId] }),
-    index('track_work_part_v2_part_idx').on(table.workPartId),
-    index('track_work_part_v2_status_idx').on(table.matchStatus),
-  ],
-);
-
-export const metadataMigrationAudit = sqliteTable(
-  'metadata_migration_audit',
-  {
-    id: integer('id').primaryKey(),
-    entityType: text('entity_type').notNull(),
-    sourceId: text('source_id').notNull(),
-    targetId: text('target_id'),
-    decision: text('decision').notNull(),
-    reason: text('reason'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex('metadata_migration_audit_entity_source_idx').on(table.entityType, table.sourceId),
-    index('metadata_migration_audit_decision_idx').on(table.decision),
-  ],
 );
 
 export const spotifyArtist = sqliteTable('spotify_artist', {
@@ -455,46 +251,16 @@ export const trackClassification = sqliteTable(
   (table) => [index('track_classification_state_idx').on(table.state)],
 );
 
-/*
- * Classical Music Relations
- */
-
-export const composerRelations = relations(composer, ({ one, many }) => ({
-  works: many(work),
-  spotifyArtist: one(spotifyArtist, {
-    fields: [composer.spotifyArtistId],
-    references: [spotifyArtist.spotifyId],
-  }),
-}));
-
-export const workRelations = relations(work, ({ one, many }) => ({
-  composer: one(composer, {
-    fields: [work.composerId],
-    references: [composer.id],
-  }),
-  parts: many(workPartV2),
-  recordings: many(recordingV2),
-}));
-
-export const spotifyAlbumRelations = relations(spotifyAlbum, ({ many }) => ({
-  recordings: many(recordingV2),
-}));
-
 export const spotifyTrackRelations = relations(spotifyTrack, ({ one, many }) => ({
   album: one(spotifyAlbum, {
     fields: [spotifyTrack.spotifyAlbumId],
     references: [spotifyAlbum.spotifyId],
   }),
   trackArtists: many(trackArtists),
-  workParts: many(trackWorkPartV2),
 }));
 
-export const spotifyArtistRelations = relations(spotifyArtist, ({ one, many }) => ({
+export const spotifyArtistRelations = relations(spotifyArtist, ({ many }) => ({
   trackArtists: many(trackArtists),
-  composer: one(composer, {
-    fields: [spotifyArtist.spotifyId],
-    references: [composer.spotifyArtistId],
-  }),
 }));
 
 export const trackArtistsRelations = relations(trackArtists, ({ one }) => ({

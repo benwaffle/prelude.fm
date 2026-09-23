@@ -17,7 +17,6 @@
   pnpm mb:ingest artists [--limit n] read artist stubs, composers first
   pnpm mb:ingest refresh [--limit n] re-read cached releases for newly stored fields
   pnpm mb:ingest check               run the cache invariants
-  pnpm mb:ingest credits [--limit n] old credit line vs MusicBrainz, side by side
  *
  * The same `ingestAlbum` runs in the worker; this is for bulk backfill and for
  * looking at one album by hand.
@@ -142,117 +141,6 @@ async function main() {
     );
     console.log(`re-read ${result.releases} releases in ${result.requests} requests`);
     await report();
-    return;
-  }
-
-  if (options.step === 'credits') {
-    // The old credit line ranks Spotify artist *names* by how often they
-    // appear across the recording's tracks, drops the composer when we know
-    // which Spotify artist that is, and reads the top two. Reproduced
-    // faithfully here, composer exclusion included, so the comparison is
-    // against what the reader actually shows rather than a weaker version
-    // of it.
-    const { performingCredits, creditLine } = await import('@/lib/musicbrainz-credits');
-    const limit = Number.isFinite(options.limit) ? options.limit : 25;
-
-    const rows = await db.all<{
-      trackId: string;
-      trackTitle: string;
-      recordingMbid: string;
-      recordingId: number | null;
-      composerArtistId: string | null;
-    }>(sql`
-      select t.spotify_id as trackId, t.title as trackTitle,
-             tr.recording_mbid as recordingMbid,
-             rt.recording_id as recordingId,
-             c.spotify_artist_id as composerArtistId
-        from track_recording tr
-        join spotify_track t on t.spotify_id = tr.spotify_track_id
-        left join recording_track_v2 rt on rt.spotify_track_id = t.spotify_id
-        left join recording_v2 r on r.id = rt.recording_id
-        left join work w on w.id = r.work_id
-        left join composer c on c.id = w.composer_id
-       order by random() limit ${limit}
-    `);
-
-    let changed = 0;
-    let composerWasCredited = 0;
-    let gainedInstrument = 0;
-
-    for (const row of rows) {
-      // Exactly creditsFor: frequency over the recording's tracks, composer
-      // excluded, falling back to including them when nothing else remains.
-      const artists = await db.all<{ id: string; name: string }>(sql`
-        select sa.spotify_id as id, sa.name as name
-          from track_artists ta
-          join spotify_artist sa on sa.spotify_id = ta.spotify_artist_id
-         where ta.spotify_track_id in (
-           select coalesce(
-             (select spotify_track_id from recording_track_v2 where recording_id = ${row.recordingId}),
-             ${row.trackId})
-           union select ${row.trackId}
-         )
-      `);
-      const rank = (excludeComposer: boolean) => {
-        const counts = new Map<string, number>();
-        for (const artist of artists) {
-          if (excludeComposer && row.composerArtistId && artist.id === row.composerArtistId)
-            continue;
-          counts.set(artist.name, (counts.get(artist.name) ?? 0) + 1);
-        }
-        return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
-      };
-      const ranked = rank(true);
-      const effective = ranked.length > 0 ? ranked : rank(false);
-      const old = { performer: effective[0] ?? null, ensemble: effective[1] ?? null };
-
-      const credits = await db.all<{
-        artistMbid: string;
-        name: string;
-        role: string;
-        instrument: string;
-      }>(sql`
-        select c.artist_mbid as artistMbid, a.name as name, c.role as role,
-               c.instrument as instrument
-          from mb_recording_credit c
-          join mb_artist a on a.mbid = c.artist_mbid
-         where c.recording_mbid = ${row.recordingMbid}
-      `);
-      const parsed = performingCredits(credits);
-      const next = creditLine(parsed);
-
-      const before = `${old.performer ?? '-'} / ${old.ensemble ?? '-'}`;
-      const after = `${next.performer ?? '-'} / ${next.ensemble ?? '-'}`;
-      if (before !== after) changed++;
-      if (parsed.soloists.some((soloist) => soloist.instrument)) gainedInstrument++;
-
-      // Did the old line put the composer in a performing slot? Only
-      // answerable where we know the composer's name.
-      const composerName = await db.all<{ name: string }>(sql`
-        select name from spotify_artist where spotify_id = ${row.composerArtistId}
-      `);
-      const composer = composerName[0]?.name;
-      const misattributed =
-        composer && (old.performer === composer || old.ensemble === composer) ? ' <- composer' : '';
-      if (misattributed) composerWasCredited++;
-
-      console.log(row.trackTitle.slice(0, 50));
-      console.log(`  was: ${before}${misattributed}`);
-      console.log(
-        `  now: ${after}` +
-          (parsed.soloists.length
-            ? `    [${parsed.soloists
-                .map((s) => (s.instrument ? `${s.name} (${s.instrument})` : s.name))
-                .join(', ')}]`
-            : ''),
-      );
-    }
-
-    console.log(
-      `\n${changed}/${rows.length} credit lines change · ` +
-        `${composerWasCredited} had the composer in a performing slot · ` +
-        `${gainedInstrument} now name an instrument`,
-    );
     return;
   }
 
