@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAdminFailure } from '../components/AdminFailure';
+import { useAdminAction } from '../components/useAdminAction';
 import {
   getBotPayload,
   recordIsrcSubmission,
@@ -37,40 +37,24 @@ export function IsrcSection({
   onBotChange: (bot: BotStatus) => void;
   onLoadMore: () => void;
 }) {
-  const [pending, setPending] = useState<string | null>(null);
-  const busy = pending !== null;
-  const { clearFailure, showFailure } = useAdminFailure();
+  const { pending, busy, run } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
-  const { feedback: submissionFeedback, submit } = useBotSubmission({
-    clearFailure,
-    showFailure,
-    setPending,
-    onBotChange,
-    onReload,
-  });
+  const { feedback: submissionFeedback, submit } = useBotSubmission({ run, onBotChange, onReload });
 
   async function confirmHand(releaseMbid: string) {
-    clearFailure();
-    setPending('Confirming hand submission…');
-    try {
+    await run('Confirming hand submission…', async () => {
       await recordIsrcSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   async function submitBot(releaseMbid: string, albumTitle: string) {
-    await submit(
-      releaseMbid,
-      submitBotBatch,
-      (count) =>
+    await submit(releaseMbid, submitBotBatch, {
+      success: (count) =>
         `${albumTitle}: submitted ${count} ISRCs. They stay pending until MusicBrainz shows them.`,
-      'No eligible ISRC was found for this release.',
-    );
+      empty: 'No eligible ISRC was found for this release.',
+    });
   }
 
   async function revealPayload(releaseMbid: string) {
@@ -78,28 +62,16 @@ export function IsrcSection({
       setPayload(null);
       return;
     }
-    clearFailure();
-    setPending('Loading bot payload…');
-    try {
+    await run('Loading bot payload…', async () => {
       setPayload({ releaseMbid, xml: await getBotPayload(releaseMbid) });
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   async function recheck(releaseMbid: string) {
-    clearFailure();
-    setPending('Rechecking MusicBrainz…');
-    try {
+    await run('Rechecking MusicBrainz…', async () => {
       await recheckIsrcRelease(releaseMbid);
       await onReload();
-    } catch (error) {
-      showFailure(error);
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   return (

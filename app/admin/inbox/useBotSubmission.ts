@@ -1,82 +1,49 @@
 'use client';
 
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useState } from 'react';
 import { getBotStatus, type BotStatus, type BotSubmissionResult } from '../actions/contribute';
-import type { BotSubmissionFeedback } from './BotSubmissionNotice';
+import type { useAdminAction } from '../components/useAdminAction';
+import {
+  submitThenRefresh,
+  type BotSubmissionFeedback,
+  type BotSubmissionMessages,
+} from './bot-submission';
 
+/**
+ * prelude_fm_bot submissions from one Inbox section, run as that section's
+ * admin actions. Each outcome stays on its release's row.
+ */
 export function useBotSubmission({
-  clearFailure,
-  showFailure,
-  setPending,
+  run,
   onBotChange,
   onReload,
 }: {
-  clearFailure: () => void;
-  showFailure: (error: unknown) => void;
-  setPending: Dispatch<SetStateAction<string | null>>;
+  run: ReturnType<typeof useAdminAction>['run'];
   onBotChange: (bot: BotStatus) => void;
   onReload: () => Promise<void>;
 }) {
   const [feedback, setFeedback] = useState<Record<string, BotSubmissionFeedback>>({});
 
-  async function submit(
+  function submit(
     releaseMbid: string,
-    action: (releaseMbid: string) => Promise<BotSubmissionResult>,
-    successMessage: (submitted: number) => string,
-    emptyMessage: string,
+    submission: (releaseMbid: string) => Promise<BotSubmissionResult>,
+    messages: BotSubmissionMessages,
   ) {
-    clearFailure();
-    setFeedback((current) => {
-      const next = { ...current };
-      delete next[releaseMbid];
-      return next;
-    });
-    setPending('Submitting with prelude_fm_bot…');
-    let accepted = false;
-    try {
-      const result = await action(releaseMbid);
-      if (!result.ok) {
-        setFeedback((current) => ({
-          ...current,
-          [releaseMbid]: {
-            kind: 'error',
-            message: result.detail,
-            httpStatus: result.status,
-          },
-        }));
-        return;
-      }
-      if (result.submitted === 0) {
-        setFeedback((current) => ({
-          ...current,
-          [releaseMbid]: { kind: 'empty', message: emptyMessage },
-        }));
-        return;
-      }
-
-      accepted = true;
-      setFeedback((current) => ({
-        ...current,
-        [releaseMbid]: { kind: 'success', message: successMessage(result.submitted) },
-      }));
-      onBotChange(await getBotStatus());
-      await onReload();
-    } catch (error) {
-      if (accepted) {
-        // A later status/reload failure does not change MusicBrainz's acceptance.
-        showFailure(error);
-      } else {
-        setFeedback((current) => ({
-          ...current,
-          [releaseMbid]: {
-            kind: 'error',
-            message: `Submission status could not be confirmed: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        }));
-      }
-    } finally {
-      setPending(null);
-    }
+    return run('Submitting with prelude_fm_bot…', () =>
+      submitThenRefresh(() => submission(releaseMbid), messages, {
+        show: (next) =>
+          setFeedback((current) => {
+            const updated = { ...current };
+            if (next) updated[releaseMbid] = next;
+            else delete updated[releaseMbid];
+            return updated;
+          }),
+        refresh: async () => {
+          onBotChange(await getBotStatus());
+          await onReload();
+        },
+      }),
+    );
   }
 
   return { feedback, submit };

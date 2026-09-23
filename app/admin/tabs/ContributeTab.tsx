@@ -13,7 +13,7 @@ import {
   type ContributionView,
 } from '../actions/contribute';
 import { Spinner } from '../components/Spinner';
-import { useAdminFailure } from '../components/AdminFailure';
+import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
 import type { InboxClass } from '../lib/admin-url';
 import type { InboxFocus } from '../lib/inbox-focus';
 import { BarcodesSection } from '../inbox/BarcodesSection';
@@ -36,51 +36,42 @@ export function ContributeTab({
   inboxClass?: InboxClass;
   onClassChange?: (inboxClass: InboxClass) => void;
 }) {
-  const { clearFailure, showFailure } = useAdminFailure();
   const [view, setView] = useState<ContributionView | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [bot, setBot] = useState<BotStatus | null>(null);
-  const [botLoadFailed, setBotLoadFailed] = useState(false);
+  const [botError, setBotError] = useState<string | null>(null);
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
   const handledTarget = useRef<string | null>(null);
 
+  /** Refresh after an action; a failure here is that action's failure. */
   const reload = useCallback(async () => {
-    const next = await getContributions(limits);
-    setView(next);
-    setLoadFailed(false);
+    setView(await getContributions(limits));
+    setLoadError(null);
   }, [limits]);
 
   useEffect(() => {
     let cancelled = false;
     void getContributions(limits)
       .then((next) => {
-        if (!cancelled) {
-          setView(next);
-          setLoadFailed(false);
-        }
+        if (cancelled) return;
+        setView(next);
+        setLoadError(null);
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setLoadFailed(true);
-          showFailure(error);
-        }
+        if (!cancelled) setLoadError(adminFailureMessage(error));
       });
     return () => {
       cancelled = true;
     };
-  }, [limits, showFailure]);
+    // loadAttempt is only a dependency: Retry bumps it to run this load again.
+  }, [limits, loadAttempt]);
 
   useEffect(() => {
     getBotStatus()
-      .then((next) => {
-        setBot(next);
-        setBotLoadFailed(false);
-      })
-      .catch((error: unknown) => {
-        setBotLoadFailed(true);
-        showFailure(error);
-      });
-  }, [showFailure]);
+      .then(setBot)
+      .catch((error: unknown) => setBotError(adminFailureMessage(error)));
+  }, []);
 
   useEffect(() => {
     if (!view) return;
@@ -99,34 +90,28 @@ export function ContributeTab({
   }, [focus, inboxClass, view]);
 
   function loadMore(key: keyof ContributionListLimits, total: number) {
-    clearFailure();
     setLimits((current) => ({
       ...current,
       [key]: nextListLimit(current[key], total),
     }));
   }
 
-  if (!view)
-    return loadFailed ? (
-      <button
-        className="act"
-        onClick={() => {
-          clearFailure();
-          setLoadFailed(false);
-          void reload().catch((error: unknown) => {
-            setLoadFailed(true);
-            showFailure(error);
-          });
-        }}
-      >
-        Retry Inbox load
-      </button>
-    ) : (
-      <Spinner className="h-4 w-4" />
-    );
+  const failure = loadError !== null && (
+    <LoadFailure
+      what="the Inbox"
+      error={loadError}
+      onRetry={() => {
+        setLoadError(null);
+        setLoadAttempt((attempt) => attempt + 1);
+      }}
+    />
+  );
+
+  if (!view) return failure || <Spinner className="h-4 w-4" />;
 
   return (
     <div className="flex flex-col gap-6 pb-16">
+      {failure}
       <p className="max-w-[90ch] text-[var(--ink-2)]">
         Opening a MusicBrainz, Harmony, or MagicISRC link writes nothing. Confirm writes the ledger.
         Recheck reads the cache.
@@ -140,9 +125,9 @@ export function ContributeTab({
         <span className="mono">
           {bot
             ? `${bot.spentToday} / ${bot.dailyCap} edits today`
-            : botLoadFailed
-              ? 'bot status unavailable'
-              : 'Loading bot status…'}
+            : botError === null
+              ? 'Loading bot status…'
+              : `bot status unavailable: ${botError}`}
         </span>
         <span className="text-[var(--ink-2)]">
           {bot ? (bot.configured ? 'configured' : 'not configured') : '—'} · ISRCs and barcodes
