@@ -21,10 +21,11 @@
  * are attributed to the wrong account.
  */
 import { loadEnvConfig } from '@next/env';
-import { botAuthorizationUrl } from '../app/lib/musicbrainz-oauth';
-
-const TOKEN = 'https://musicbrainz.org/oauth2/token';
-const REDIRECT = 'urn:ietf:wg:oauth:2.0:oob';
+import {
+  botAuthorizationUrl,
+  BOT_REDIRECT_URI,
+  TOKEN_ENDPOINT,
+} from '../app/lib/musicbrainz-oauth';
 
 async function main() {
   loadEnvConfig(process.cwd());
@@ -59,7 +60,7 @@ ${url}
     return;
   }
 
-  const response = await fetch(TOKEN, {
+  const response = await fetch(TOKEN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -67,7 +68,7 @@ ${url}
       code,
       client_id: clientId,
       client_secret: clientSecret,
-      redirect_uri: REDIRECT,
+      redirect_uri: BOT_REDIRECT_URI,
     }),
   });
 

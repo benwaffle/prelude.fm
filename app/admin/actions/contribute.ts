@@ -109,19 +109,15 @@ export async function getBotPayload(releaseMbid: string): Promise<string> {
   return run.payload;
 }
 
-export async function submitBotBatch(releaseMbid: string): Promise<{
-  submitted: number;
-  album: string | null;
-  error: string | null;
-}> {
+export type BotSubmissionResult =
+  | { ok: true; submitted: number; title: string | null }
+  | { ok: false; status: number | null; detail: string };
+
+export async function submitBotBatch(releaseMbid: string): Promise<BotSubmissionResult> {
   await checkAuth();
   try {
     const run = await runIsrcBot({ apply: true, releaseMbid });
-    return {
-      submitted: run.edits,
-      album: run.albumTitle,
-      error: null,
-    };
+    return { ok: true, submitted: run.edits, title: run.albumTitle };
   } catch (error) {
     const message =
       error instanceof MusicBrainzBotError
@@ -129,7 +125,11 @@ export async function submitBotBatch(releaseMbid: string): Promise<{
         : error instanceof Error
           ? error.message
           : String(error);
-    return { submitted: 0, album: null, error: message };
+    return {
+      ok: false,
+      status: error instanceof MusicBrainzBotError ? error.status : null,
+      detail: message,
+    };
   }
 }
 
@@ -140,19 +140,11 @@ export async function getBarcodeBotPayload(releaseMbid: string): Promise<string>
   return run.payload;
 }
 
-export async function submitBarcodeBotBatch(releaseMbid: string): Promise<{
-  submitted: number;
-  release: string | null;
-  error: string | null;
-}> {
+export async function submitBarcodeBotBatch(releaseMbid: string): Promise<BotSubmissionResult> {
   await checkAuth();
   try {
     const run = await runBarcodeBot({ apply: true, releaseMbid });
-    return {
-      submitted: run.edits,
-      release: run.evidence[0]?.releaseTitle ?? null,
-      error: null,
-    };
+    return { ok: true, submitted: run.edits, title: run.evidence[0]?.releaseTitle ?? null };
   } catch (error) {
     const message =
       error instanceof MusicBrainzBotError
@@ -160,7 +152,11 @@ export async function submitBarcodeBotBatch(releaseMbid: string): Promise<{
         : error instanceof Error
           ? error.message
           : String(error);
-    return { submitted: 0, release: null, error: message };
+    return {
+      ok: false,
+      status: error instanceof MusicBrainzBotError ? error.status : null,
+      detail: message,
+    };
   }
 }
 

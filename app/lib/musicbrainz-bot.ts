@@ -41,6 +41,13 @@ import { barcodeSubmissionDraft } from './musicbrainz-manual-submissions';
 import { botAccessToken } from './musicbrainz-oauth';
 
 const BASE = 'https://musicbrainz.org/ws/2';
+const MAX_ERROR_BODY = 4096;
+
+function rejectedBody(body: string): string {
+  return body.length > MAX_ERROR_BODY
+    ? `${body.slice(0, MAX_ERROR_BODY)}\n[response truncated after ${MAX_ERROR_BODY} characters]`
+    : body;
+}
 
 /** Identifies the submitting software, which MusicBrainz requires on a POST. */
 const CLIENT = 'preludefm-0.1';
@@ -70,7 +77,14 @@ const MAX_ISRC_EDITS_PER_ALBUM = 200;
 /** Barcode batches stay smaller — each release is a separate edit to review. */
 const MAX_BARCODE_EDITS_PER_BATCH = 50;
 
-export class MusicBrainzBotError extends Error {}
+export class MusicBrainzBotError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number | null = null,
+  ) {
+    super(message);
+  }
+}
 
 export type IsrcBotRun = {
   /** The release this batch belongs to; every item is from it. */
@@ -191,7 +205,10 @@ export async function runIsrcBot(
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new MusicBrainzBotError(`MusicBrainz refused the submission: ${response.status} ${body}`);
+    throw new MusicBrainzBotError(
+      `MusicBrainz refused the submission: ${response.status} ${rejectedBody(body)}`,
+      response.status,
+    );
   }
 
   for (const gap of gaps) {
@@ -291,7 +308,10 @@ export async function runBarcodeBot(
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new MusicBrainzBotError(`MusicBrainz refused the submission: ${response.status} ${body}`);
+    throw new MusicBrainzBotError(
+      `MusicBrainz refused the submission: ${response.status} ${rejectedBody(body)}`,
+      response.status,
+    );
   }
 
   for (const gap of gaps) {

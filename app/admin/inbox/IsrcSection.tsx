@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useAdminFailure } from '../components/AdminFailure';
 import {
   getBotPayload,
-  getBotStatus,
   recordIsrcSubmission,
   recheckIsrcRelease,
   submitBotBatch,
@@ -16,7 +15,8 @@ import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
-import { BotSubmissionNotice, type BotSubmissionFeedback } from './BotSubmissionNotice';
+import { BotSubmissionNotice } from './BotSubmissionNotice';
+import { useBotSubmission } from './useBotSubmission';
 
 export function IsrcSection({
   rows,
@@ -42,9 +42,13 @@ export function IsrcSection({
   const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
-  const [submissionFeedback, setSubmissionFeedback] = useState<
-    Record<string, BotSubmissionFeedback>
-  >({});
+  const { feedback: submissionFeedback, submit } = useBotSubmission({
+    clearFailure,
+    showFailure,
+    setPending,
+    onBotChange,
+    onReload,
+  });
 
   async function confirmHand(releaseMbid: string) {
     clearFailure();
@@ -60,49 +64,13 @@ export function IsrcSection({
   }
 
   async function submitBot(releaseMbid: string, albumTitle: string) {
-    clearFailure();
-    setSubmissionFeedback((current) => {
-      const next = { ...current };
-      delete next[releaseMbid];
-      return next;
-    });
-    setPending('Submitting with prelude_fm_bot…');
-    try {
-      const result = await submitBotBatch(releaseMbid);
-      if (result.error || result.submitted === 0) {
-        setSubmissionFeedback((current) => ({
-          ...current,
-          [releaseMbid]: {
-            kind: 'error',
-            message: result.error ?? 'No eligible ISRC was found for this release.',
-          },
-        }));
-        return;
-      }
-      setSubmissionFeedback((current) => ({
-        ...current,
-        [releaseMbid]: {
-          kind: 'success',
-          message: `${albumTitle}: submitted ${result.submitted} ISRCs. They stay pending until MusicBrainz shows them.`,
-        },
-      }));
-      try {
-        onBotChange(await getBotStatus());
-        await onReload();
-      } catch (error) {
-        showFailure(error);
-      }
-    } catch (error) {
-      setSubmissionFeedback((current) => ({
-        ...current,
-        [releaseMbid]: {
-          kind: 'error',
-          message: `Submission status could not be confirmed: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      }));
-    } finally {
-      setPending(null);
-    }
+    await submit(
+      releaseMbid,
+      submitBotBatch,
+      (count) =>
+        `${albumTitle}: submitted ${count} ISRCs. They stay pending until MusicBrainz shows them.`,
+      'No eligible ISRC was found for this release.',
+    );
   }
 
   async function revealPayload(releaseMbid: string) {

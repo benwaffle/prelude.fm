@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useAdminFailure } from '../components/AdminFailure';
 import {
   getBarcodeBotPayload,
-  getBotStatus,
   recordBarcodeSubmission,
   recheckBarcode,
   submitBarcodeBotBatch,
@@ -16,7 +15,8 @@ import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
-import { BotSubmissionNotice, type BotSubmissionFeedback } from './BotSubmissionNotice';
+import { BotSubmissionNotice } from './BotSubmissionNotice';
+import { useBotSubmission } from './useBotSubmission';
 
 export function BarcodesSection({
   rows,
@@ -40,9 +40,13 @@ export function BarcodesSection({
   const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
-  const [submissionFeedback, setSubmissionFeedback] = useState<
-    Record<string, BotSubmissionFeedback>
-  >({});
+  const { feedback: submissionFeedback, submit } = useBotSubmission({
+    clearFailure,
+    showFailure,
+    setPending,
+    onBotChange,
+    onReload,
+  });
 
   async function confirmHand(releaseMbid: string) {
     clearFailure();
@@ -58,49 +62,12 @@ export function BarcodesSection({
   }
 
   async function submitBot(releaseMbid: string, releaseTitle: string) {
-    clearFailure();
-    setSubmissionFeedback((current) => {
-      const next = { ...current };
-      delete next[releaseMbid];
-      return next;
-    });
-    setPending('Submitting with prelude_fm_bot…');
-    try {
-      const result = await submitBarcodeBotBatch(releaseMbid);
-      if (result.error || result.submitted === 0) {
-        setSubmissionFeedback((current) => ({
-          ...current,
-          [releaseMbid]: {
-            kind: 'error',
-            message: result.error ?? 'No eligible barcode was found for this release.',
-          },
-        }));
-        return;
-      }
-      setSubmissionFeedback((current) => ({
-        ...current,
-        [releaseMbid]: {
-          kind: 'success',
-          message: `${releaseTitle}: submitted barcode. It stays pending until MusicBrainz shows it.`,
-        },
-      }));
-      try {
-        onBotChange(await getBotStatus());
-        await onReload();
-      } catch (error) {
-        showFailure(error);
-      }
-    } catch (error) {
-      setSubmissionFeedback((current) => ({
-        ...current,
-        [releaseMbid]: {
-          kind: 'error',
-          message: `Submission status could not be confirmed: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      }));
-    } finally {
-      setPending(null);
-    }
+    await submit(
+      releaseMbid,
+      submitBarcodeBotBatch,
+      () => `${releaseTitle}: submitted barcode. It stays pending until MusicBrainz shows it.`,
+      'No eligible barcode was found for this release.',
+    );
   }
 
   async function revealPayload(releaseMbid: string) {

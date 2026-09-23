@@ -125,10 +125,6 @@ export function ContributeTab({
       <Spinner className="h-4 w-4" />
     );
 
-  const botChanged = (nextBot: BotStatus) => {
-    setBot(nextBot);
-  };
-
   return (
     <div className="flex flex-col gap-6 pb-16">
       <p className="max-w-[90ch] text-[var(--ink-2)]">
@@ -179,7 +175,7 @@ export function ContributeTab({
           bot={bot}
           activeClass={inboxClass}
           onReload={reload}
-          onBotChange={botChanged}
+          onBotChange={setBot}
           onLoadMore={() => loadMore('isrcReleases', view.counts.isrcReleases)}
         />
         <BarcodesSection
@@ -188,7 +184,7 @@ export function ContributeTab({
           bot={bot}
           activeClass={inboxClass}
           onReload={reload}
-          onBotChange={botChanged}
+          onBotChange={setBot}
           onLoadMore={() => loadMore('barcodes', view.counts.barcodes)}
         />
       </InboxStage>
