@@ -3,7 +3,13 @@
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 import { Icon, Waveform } from '../Icon';
-import { initialsOf, numeralPrefix, type LibraryWork, type Movement } from '@/lib/prelude';
+import {
+  initialsOf,
+  numeralPrefix,
+  unnamedMovementNote,
+  type LibraryWork,
+  type Movement,
+} from '@/lib/prelude';
 import type { MusicBrainzGapCode } from '@/lib/musicbrainz-library';
 
 /** Movements beyond this fold behind a "+ n more" link into the detail view. */
@@ -247,7 +253,7 @@ function MovementRow({
         <span className="truncate">{movement.name}</span>
         {movement.unnamed && (
           <span
-            title="No movement metadata — showing the Spotify track title"
+            title={unnamedMovementNote(movement)}
             className="shrink-0 font-meta text-[8px] tracking-[0.18em] text-muted uppercase not-italic"
           >
             unparsed

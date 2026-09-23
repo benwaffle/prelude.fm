@@ -195,7 +195,10 @@ export interface Movement {
   position: number;
   roman: string;
   name: string;
-  /** No movement metadata was parsed; `name` is Spotify's raw track title. */
+  /**
+   * No MusicBrainz title. `name` is blank for a cached part without one, or
+   * Spotify's raw track title for a track we have not matched at all.
+   */
   unnamed: boolean;
   /**
    * The work has this part but the recording has no track for it. Rendered
@@ -208,6 +211,13 @@ export interface Movement {
   liked: boolean;
   trackId: string | null;
   uri: string | null;
+}
+
+/** What an unnamed movement's marker says is shown in place of a title. */
+export function unnamedMovementNote(movement: Movement): string {
+  return movement.name
+    ? 'No MusicBrainz title — showing the Spotify track title'
+    : 'No MusicBrainz title';
 }
 
 /** The movements a recording actually carries, in programme order. */
