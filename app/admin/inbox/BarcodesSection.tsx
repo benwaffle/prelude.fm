@@ -34,27 +34,28 @@ export function BarcodesSection({
   onBotChange: (bot: BotStatus, result: string) => void;
   onLoadMore: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const busy = pending !== null;
   const { clearFailure, showFailure } = useAdminFailure();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
 
   async function confirmHand(releaseMbid: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Confirming hand submission…');
     try {
       await recordBarcodeSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function submitBot(releaseMbid: string, releaseTitle: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Submitting with prelude_fm_bot…');
     try {
       const result = await submitBarcodeBotBatch(releaseMbid);
       await onReload();
@@ -67,7 +68,7 @@ export function BarcodesSection({
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -77,26 +78,26 @@ export function BarcodesSection({
       return;
     }
     clearFailure();
-    setBusy(true);
+    setPending('Loading bot payload…');
     try {
       setPayload({ releaseMbid, xml: await getBarcodeBotPayload(releaseMbid) });
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function recheck(releaseMbid: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Rechecking MusicBrainz…');
     try {
       await recheckBarcode(releaseMbid);
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -108,6 +109,7 @@ export function BarcodesSection({
       channel="BOT"
       total={total}
       shown={rows.length}
+      pending={pending}
       description="These releases were matched by title and duration. The Spotify barcode is shown as evidence and stays pending until the cache holds it."
     >
       {rows.map((gap) => {

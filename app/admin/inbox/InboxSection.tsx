@@ -20,6 +20,7 @@ export function InboxSection({
   total,
   shown,
   countLabel,
+  pending,
   description,
   children,
   emptyLabel = '0 to fix',
@@ -31,6 +32,7 @@ export function InboxSection({
   total: number;
   shown: number;
   countLabel?: ReactNode;
+  pending?: string | null;
   description?: ReactNode;
   children?: ReactNode;
   emptyLabel?: string;
@@ -51,6 +53,19 @@ export function InboxSection({
           <span className="text-[11px] text-[var(--faint)]">{shownOfTotalLabel(shown, total)}</span>
         )}
       </div>
+      {pending && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--rule)] bg-[var(--slip)] px-4 py-2 text-[var(--ink-2)]"
+        >
+          <span
+            aria-hidden="true"
+            className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-r-transparent"
+          />
+          {pending}
+        </div>
+      )}
       {total > 0 && description && (
         <div className="inbox-section-note text-[var(--ink-2)]">{description}</div>
       )}

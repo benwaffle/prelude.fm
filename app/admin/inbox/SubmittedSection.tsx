@@ -18,21 +18,22 @@ export function SubmittedSection({
   activeClass?: InboxClass;
   onReload: () => Promise<void>;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const busy = pending !== null;
   const { clearFailure, showFailure } = useAdminFailure();
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
-  const pending = counts.pending ?? 0;
+  const pendingCount = counts.pending ?? 0;
 
   async function recheck() {
     clearFailure();
-    setBusy(true);
+    setPending('Rechecking MusicBrainz…');
     try {
       await reconcileSubmissions();
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -44,7 +45,8 @@ export function SubmittedSection({
       channel="REPORT"
       total={total}
       shown={rows.length}
-      countLabel={`${total} ledgered · ${pending} pending`}
+      pending={pending}
+      countLabel={`${total} ledgered · ${pendingCount} pending`}
       description="A submitted edit remains a proposal until Recheck fetches it into the cache."
     >
       <div className="toolbar">

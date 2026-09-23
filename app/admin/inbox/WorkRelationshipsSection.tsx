@@ -30,7 +30,8 @@ export function WorkRelationshipsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const busy = pending !== null;
   const { clearFailure, showFailure } = useAdminFailure();
   const [relationshipForms, setRelationshipForms] = useState<Record<string, { editId: string }>>(
     {},
@@ -42,7 +43,7 @@ export function WorkRelationshipsSection({
   async function confirmRelationship(recordingMbid: string, workMbid: string) {
     const key = `${recordingMbid}:${workMbid}`;
     clearFailure();
-    setBusy(true);
+    setPending('Confirming work relationship…');
     try {
       await recordWorkRelationshipSubmission(
         recordingMbid,
@@ -53,27 +54,27 @@ export function WorkRelationshipsSection({
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function recheckRelationship(recordingMbid: string, workMbid: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Rechecking work relationship…');
     try {
       await recheckWorkRelationship(recordingMbid, workMbid);
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function confirmCreation(recordingMbid: string) {
     const form = createForms[recordingMbid] ?? { workMbid: '', editId: '' };
     clearFailure();
-    setBusy(true);
+    setPending('Confirming created work…');
     try {
       await recordWorkCreationSubmission(recordingMbid, form.workMbid, {
         editId: form.editId,
@@ -82,20 +83,20 @@ export function WorkRelationshipsSection({
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
   async function recheckWork(workMbid: string) {
     clearFailure();
-    setBusy(true);
+    setPending('Rechecking created work…');
     try {
       await recheckCreatedWork(workMbid);
       await onReload();
     } catch (error) {
       showFailure(error);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -107,6 +108,7 @@ export function WorkRelationshipsSection({
       channel="HAND"
       total={total}
       shown={rows.length}
+      pending={pending}
       description="Candidates come from sibling recordings on the same cached MusicBrainz release. They are possibilities, not inferred relationships."
     >
       {rows.map((gap) => {
