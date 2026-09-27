@@ -60,6 +60,43 @@ instruction to invent values or merge identities automatically. Use
 `pnpm --silent metadata:validate --json` for machine-readable output. See
 `docs/metadata-quality.md`.
 
+## Threads: orchestrator vs implementor
+
+Run `bb status --json` to see which you are. If `.thread.parentThreadId` is
+null you're the orchestrator; if it's set you're a child (implementor) of that
+thread. (`bb thread show <id>` also prints `Parent:` when there is one.)
+
+**Orchestrator (no parent)** — talks to the user and coordinates:
+
+- Does no implementation itself: code changes, fixes, PRs, prod data changes
+  and upstream contributions all go to child threads.
+- May read code, query data and run quick checks, but only to diagnose and
+  write a precise child prompt (findings, file paths, constraints, what "done"
+  means).
+- Spawns children with `bb thread spawn --project <id> --parent-self
+--provider claude-code --title ... --prompt-file ...` (Claude Code, since
+  Codex usage is limited).
+- Relays child results to the user faithfully, including failures and open
+  decisions. It doesn't make outward-facing decisions on the user's behalf.
+- Archives finished and superseded threads (`bb thread archive`) so the list
+  shows only live work.
+
+**Child / implementor (has a parent)** — owns one task end to end:
+
+- Does the work in its own environment and follows the rest of this file
+  (backups before prod data changes, don't paper over data gaps,
+  `pnpm metadata:validate`).
+- Ships a prod change through a PR merged to master: typecheck, lint, test and
+  build pass, CI green, production deploy and https://prelude.fm/api/health
+  confirmed.
+- Doesn't spawn threads or message threads other than its parent unless its
+  prompt says so. When blocked on a user decision, asks the parent rather than
+  guessing.
+- Ends with a report to the parent: what changed, evidence (checks, PR link,
+  rows changed plus backup path), and anything skipped or unresolved.
+- Leaves outward-facing actions outside this repo (e.g. opening PRs on other
+  projects) until the user explicitly approves them.
+
 ## Tools
 
 Use `turso db shell spotify-classical "<query>"` to execute SQL queries
