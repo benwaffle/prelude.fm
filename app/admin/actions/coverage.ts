@@ -7,17 +7,11 @@ import { musicBrainzApi } from '@/lib/musicbrainz';
 import { anchorTracksByIsrc } from '@/lib/musicbrainz-ingest';
 import { isrcEligibleGapsByRelease, magicIsrcLink } from '@/lib/musicbrainz-contributions';
 import { checkAuth } from './auth';
-import type { AlbumRow, AlbumState, AlbumTrackRow, Coverage } from '../lib/album-state';
+import type { AlbumRow, AlbumState, AlbumTrackRow } from '../lib/album-state';
 import {
   loadMusicBrainzAlbumRows,
   loadMusicBrainzAlbumTracks,
-  summarizeMusicBrainzAlbumCoverage,
 } from '../lib/musicbrainz-album-coverage';
-
-export async function getCoverage(): Promise<Coverage> {
-  await checkAuth();
-  return summarizeMusicBrainzAlbumCoverage(await loadMusicBrainzAlbumRows());
-}
 
 export async function getAlbums(state?: AlbumState, search?: string): Promise<AlbumRow[]> {
   await checkAuth();

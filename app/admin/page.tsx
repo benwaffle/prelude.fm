@@ -10,17 +10,20 @@ import { Spinner } from './components/Spinner';
 import { AlbumsTab } from './tabs/AlbumsTab';
 import { ContributeTab } from './tabs/ContributeTab';
 import { HealthTab } from './tabs/HealthTab';
+import { OverviewTab } from './tabs/OverviewTab';
 import type { InboxFocus } from './lib/inbox-focus';
 import { parseAdminUrl, patchAdminUrl, type AdminTab, type AdminUrlPatch } from './lib/admin-url';
 
 /*
  * A workbench for closing MusicBrainz gaps — not a second catalogue.
- * /catalog and the player stay the map; admin is Inbox, Albums, and Health.
+ * /catalog and the player stay the map. Overview says how much of the
+ * library the player can show and what would show the rest; the Inbox is
+ * where those edits are made; Details keeps the album list and cache checks.
  */
 const TABS: { id: AdminTab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
   { id: 'inbox', label: 'Inbox' },
-  { id: 'albums', label: 'Albums' },
-  { id: 'health', label: 'Health' },
+  { id: 'details', label: 'Details' },
 ];
 
 export default function AdminPage() {
@@ -115,7 +118,7 @@ function AdminPageContent() {
       class: nextTab === 'inbox' ? (inboxClass ?? null) : null,
       album: nextTab === 'inbox' && focus?.kind === 'album' ? focus.id : null,
       release: nextTab === 'inbox' && focus?.kind === 'release' ? focus.id : null,
-      filter: nextTab === 'albums' ? (albumFilter ?? null) : null,
+      filter: nextTab === 'details' ? (albumFilter ?? null) : null,
     });
   }
 
@@ -162,23 +165,48 @@ function AdminPageContent() {
           />
         )}
 
-        {tab === 'albums' && (
-          <AlbumsTab
-            state={albumFilter}
-            onStateChange={(nextFilter) =>
+        {tab === 'overview' && (
+          <OverviewTab
+            onOpenInbox={(nextClass) =>
               updateUrl({
-                tab: 'albums',
-                filter: nextFilter ?? null,
-                class: null,
+                tab: 'inbox',
+                class: nextClass,
                 album: null,
                 release: null,
+                filter: null,
               })
             }
-            onOpenInbox={openInbox}
           />
         )}
 
-        {tab === 'health' && <HealthTab />}
+        {tab === 'details' && (
+          <div className="flex flex-col gap-4 pb-16">
+            <details className="fold" open={albumFilter !== undefined}>
+              <summary>Albums</summary>
+              <div className="fold-body">
+                <AlbumsTab
+                  state={albumFilter}
+                  onStateChange={(nextFilter) =>
+                    updateUrl({
+                      tab: 'details',
+                      filter: nextFilter ?? null,
+                      class: null,
+                      album: null,
+                      release: null,
+                    })
+                  }
+                  onOpenInbox={openInbox}
+                />
+              </div>
+            </details>
+            <details className="fold">
+              <summary>Cache checks and deployment</summary>
+              <div className="fold-body">
+                <HealthTab />
+              </div>
+            </details>
+          </div>
+        )}
       </main>
     </>
   );

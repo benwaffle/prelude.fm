@@ -10,7 +10,7 @@ test('admin URL state validates tabs, classes, filters, and focus', () => {
       ),
     ),
     {
-      tab: 'albums',
+      tab: 'details',
       inboxClass: 'missing',
       focus: { kind: 'album', id: 'spotify-album' },
       albumFilter: 'absent',
@@ -22,12 +22,19 @@ test('admin URL state ignores unknown values', () => {
   assert.deepEqual(
     parseAdminUrl(new URLSearchParams('tab=nope&class=nope&filter=nope&album=%20')),
     {
-      tab: 'inbox',
+      tab: 'overview',
       inboxClass: undefined,
       focus: null,
       albumFilter: undefined,
     },
   );
+});
+
+test('the old Albums and Health tabs open Details', () => {
+  assert.equal(parseAdminUrl(new URLSearchParams('tab=albums')).tab, 'details');
+  assert.equal(parseAdminUrl(new URLSearchParams('tab=health')).tab, 'details');
+  assert.equal(parseAdminUrl(new URLSearchParams('tab=inbox')).tab, 'inbox');
+  assert.equal(parseAdminUrl(new URLSearchParams('tab=toString')).tab, 'overview');
 });
 
 test('admin URL patches preserve unrelated state and remove null values', () => {

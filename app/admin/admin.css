@@ -650,6 +650,24 @@
   background: var(--slip-2);
 }
 
+/* The readiness funnel: a count, what it counts, and how many stop there.
+   Narrow and right-aligned so the counts read down as a column. */
+.desk table.readiness-funnel {
+  width: auto;
+  min-width: min(100%, 560px);
+}
+
+.desk table.readiness-funnel td:first-child {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.desk table.readiness-funnel td:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* A value we do not have. Saying so plainly beats inventing a
    placeholder that reads like real data. */
 .desk .absent {
