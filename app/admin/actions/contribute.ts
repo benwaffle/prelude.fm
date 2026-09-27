@@ -1,6 +1,6 @@
 'use server';
 
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { mbSubmission, mbWork } from '@/lib/db/schema';
 import { resolveContributionLimits, type ContributionListLimits } from '@/lib/contribution-list';
@@ -304,8 +304,10 @@ export async function getContributions(
         note: mbSubmission.note,
       })
       .from(mbSubmission)
+      // Applied edits are done; the count says how many without listing them.
+      .where(ne(mbSubmission.outcome, 'applied'))
       .orderBy(desc(mbSubmission.submittedAt))
-      .limit(30),
+      .limit(200),
   ]);
 
   const recordingMbids = workGaps.map((gap) => gap.recordingMbid);
@@ -1223,7 +1225,10 @@ export async function reconcileSubmissions() {
     })
     .from(mbSubmission)
     .where(eq(mbSubmission.outcome, 'pending'));
-  await pullPendingSubmissionsFromMusicBrainz(musicBrainzApi('interactive'), pending);
+  const { requests, targets } = await pullPendingSubmissionsFromMusicBrainz(
+    musicBrainzApi('interactive'),
+    pending,
+  );
 
   async function applyWhere(
     kind: 'isrc' | 'barcode' | 'work_relationship' | 'work' | 'release',
@@ -1356,6 +1361,9 @@ export async function reconcileSubmissions() {
           .returning({ id: mbSubmission.id });
 
   return {
+    checked: pending.length,
+    targets,
+    requests,
     applied:
       isrc.length +
       barcodes.length +

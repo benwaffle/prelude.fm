@@ -3,6 +3,9 @@
 import { useCallback, useState } from 'react';
 import { useAdminFailure } from './AdminFailure';
 
+/** Fired after every admin action, so the gateway counter shows what it spent. */
+export const ADMIN_ACTION_DONE = 'admin-action-done';
+
 export type AdminActionEffects = {
   clearFailure: () => void;
   showFailure: (error: unknown) => void;
@@ -31,6 +34,7 @@ export async function runAdminAction(
     effects.showFailure(error);
   } finally {
     effects.setPending(null);
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(ADMIN_ACTION_DONE));
   }
 }
 

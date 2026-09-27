@@ -8,7 +8,7 @@ import {
   type GatewayView,
 } from '../actions/gateway';
 import { adminFailureMessage } from './AdminFailure';
-import { useAdminAction } from './useAdminAction';
+import { ADMIN_ACTION_DONE, useAdminAction } from './useAdminAction';
 
 /**
  * The MusicBrainz request budget, and the switch that stops it.
@@ -37,7 +37,11 @@ export function GatewayBar() {
   useEffect(() => {
     refresh();
     const timer = setInterval(refresh, 30_000);
-    return () => clearInterval(timer);
+    window.addEventListener(ADMIN_ACTION_DONE, refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener(ADMIN_ACTION_DONE, refresh);
+    };
   }, [refresh]);
 
   if (!status)
