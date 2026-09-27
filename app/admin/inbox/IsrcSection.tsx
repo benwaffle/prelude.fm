@@ -12,11 +12,82 @@ import {
 } from '../actions/contribute';
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
-import { InboxRow } from './InboxRow';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 import { BotSubmissionNotice } from './BotSubmissionNotice';
 import { useBotSubmission } from './useBotSubmission';
+
+type IsrcRelease = ContributionView['isrcReleases'][number];
+
+function IsrcTrackTable({ tracks }: { tracks: IsrcRelease['tracks'] }) {
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Disc/track</th>
+          <th>Our track</th>
+          <th>MusicBrainz recording</th>
+          <th>Δ</th>
+          <th>ISRC</th>
+          <th>Submitted</th>
+        </tr>
+      </thead>
+      <tbody>
+        {tracks.map((track) => (
+          <tr key={`${track.medium}-${track.position}`}>
+            <td className="mono whitespace-nowrap">
+              {track.medium}-{track.position}
+            </td>
+            <td>{track.trackTitle}</td>
+            <td>
+              <a
+                href={`https://musicbrainz.org/recording/${track.recordingMbid}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {track.recordingTitle}
+              </a>
+            </td>
+            <td className="mono whitespace-nowrap">{track.delta}ms</td>
+            <td className="mono whitespace-nowrap">{track.isrc}</td>
+            <td className="album-meta whitespace-nowrap">
+              {!track.ledger ? (
+                'not yet submitted'
+              ) : track.ledger.editId ? (
+                <>
+                  {track.ledger.outcome} ·{' '}
+                  <a
+                    href={`https://musicbrainz.org/edit/${track.ledger.editId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    edit {track.ledger.editId}
+                  </a>
+                </>
+              ) : (
+                track.ledger.label
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** "3 submitted (2 pending, 1 applied)", or null when nothing is submitted yet. */
+function submittedSummary(tracks: IsrcRelease['tracks']): string | null {
+  const byOutcome = new Map<string, number>();
+  for (const track of tracks) {
+    if (track.ledger) {
+      byOutcome.set(track.ledger.outcome, (byOutcome.get(track.ledger.outcome) ?? 0) + 1);
+    }
+  }
+  const submitted = [...byOutcome.values()].reduce((sum, count) => sum + count, 0);
+  if (submitted === 0) return null;
+  const parts = [...byOutcome].map(([outcome, count]) => `${count} ${outcome}`);
+  return `${submitted} submitted (${parts.join(', ')})`;
+}
 
 export function IsrcSection({
   rows,
@@ -87,13 +158,14 @@ export function IsrcSection({
       description="Each track is on the barcode-matched release, the complete tracklists align, and durations agree within three seconds."
     >
       {rows.map((release) => {
-        const hasLedger = release.tracks.some((track) => track.ledger);
+        const submitted = submittedSummary(release.tracks);
         const evidence = (
           <span className="min-w-0">
             <span className="block truncate">{release.albumTitle}</span>
             <span className="album-meta">
               {release.missing} missing
-              {release.eligible < release.missing
+              {submitted ? ` · ${submitted}` : ''}
+              {submitted && release.eligible > 0
                 ? ` · ${release.eligible} still eligible to submit`
                 : ''}
               {' · '}barcode {release.barcode ?? <span className="absent">missing</span>}
@@ -121,7 +193,7 @@ export function IsrcSection({
 
         if (release.eligible === 0) {
           return (
-            <InboxRow
+            <ConfirmDisclosure
               key={release.releaseMbid}
               data-inbox-release={release.releaseMbid}
               evidence={
@@ -131,8 +203,11 @@ export function IsrcSection({
                 </>
               }
               links={links}
-              action={
-                hasLedger ? (
+              label="Tracks"
+              primary={false}
+              disabled={busy}
+              extraAction={
+                submitted ? (
                   <button
                     className="act"
                     disabled={busy}
@@ -142,7 +217,9 @@ export function IsrcSection({
                   </button>
                 ) : undefined
               }
-            />
+            >
+              <IsrcTrackTable tracks={release.tracks} />
+            </ConfirmDisclosure>
           );
         }
 
@@ -155,42 +232,7 @@ export function IsrcSection({
             links={links}
             disabled={busy}
           >
-            <table>
-              <thead>
-                <tr>
-                  <th>Disc/track</th>
-                  <th>Our track</th>
-                  <th>MusicBrainz recording</th>
-                  <th>Δ</th>
-                  <th>ISRC</th>
-                  <th>Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {release.tracks.map((track) => (
-                  <tr key={`${track.medium}-${track.position}`}>
-                    <td className="mono whitespace-nowrap">
-                      {track.medium}-{track.position}
-                    </td>
-                    <td>{track.trackTitle}</td>
-                    <td>
-                      <a
-                        href={`https://musicbrainz.org/recording/${track.recordingMbid}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {track.recordingTitle}
-                      </a>
-                    </td>
-                    <td className="mono whitespace-nowrap">{track.delta}ms</td>
-                    <td className="mono whitespace-nowrap">{track.isrc}</td>
-                    <td className="album-meta whitespace-nowrap">
-                      {track.ledger?.label ?? 'not yet submitted'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <IsrcTrackTable tracks={release.tracks} />
             <p className="mt-2 text-[11px] text-[var(--faint)]">
               The release barcode is the album barcode
               {release.upc && release.upc !== release.barcode ? ` (${release.upc} padded)` : ''}.
