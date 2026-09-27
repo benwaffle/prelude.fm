@@ -25,7 +25,8 @@ import { MisalignedSection } from '../inbox/MisalignedSection';
 import { MissingReleasesSection } from '../inbox/MissingReleasesSection';
 import { StreamingUrlsSection } from '../inbox/StreamingUrlsSection';
 import { SubmittedSection } from '../inbox/SubmittedSection';
-import { TriageHeader } from '../inbox/TriageHeader';
+import { blockedByInboxClass, TriageHeader } from '../inbox/TriageHeader';
+import { getReadinessFunnel } from '../actions/readiness';
 import { WorkRelationshipsSection } from '../inbox/WorkRelationshipsSection';
 
 export function ContributeTab({
@@ -43,6 +44,8 @@ export function ContributeTab({
   const [bot, setBot] = useState<BotStatus | null>(null);
   const [botError, setBotError] = useState<string | null>(null);
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
+  const [blocked, setBlocked] = useState<ReturnType<typeof blockedByInboxClass>>();
+  const [blockedError, setBlockedError] = useState<string | null>(null);
   const handledTarget = useRef<string | null>(null);
 
   const { showFailure } = useAdminFailure();
@@ -82,6 +85,12 @@ export function ContributeTab({
     };
     // loadAttempt is only a dependency: Retry bumps it to run this load again.
   }, [limits, loadAttempt]);
+
+  useEffect(() => {
+    getReadinessFunnel()
+      .then((funnel) => setBlocked(blockedByInboxClass(funnel)))
+      .catch((error: unknown) => setBlockedError(adminFailureMessage(error)));
+  }, []);
 
   useEffect(() => {
     getBotStatus()
@@ -133,7 +142,13 @@ export function ContributeTab({
         submitted. Recheck reads the cache.
       </p>
 
-      <TriageHeader counts={view.counts} activeClass={inboxClass} onClassChange={onClassChange} />
+      <TriageHeader
+        counts={view.counts}
+        blocked={blocked}
+        blockedError={blockedError}
+        activeClass={inboxClass}
+        onClassChange={onClassChange}
+      />
 
       <div className="bot-cap-strip">
         <span className="tag">BOT</span>

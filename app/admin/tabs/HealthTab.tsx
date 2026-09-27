@@ -16,7 +16,7 @@ type DeployHealth = {
   invariants: { state: string; failing: string[]; stale: string[]; neverRun: string[] };
 };
 
-/** Cache fill, unsettled-tree samples, and deployment facts for the MusicBrainz reader. */
+/** Deployment facts, unsettled-tree samples, and cache checks for the MusicBrainz reader. */
 export function HealthTab() {
   const [health, setHealth] = useState<CacheHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -81,37 +81,6 @@ export function HealthTab() {
               /api/health
             </Link>
             .
-          </p>
-        </div>
-      </section>
-
-      <section>
-        <p className="eyebrow mb-2">The MusicBrainz cache</p>
-        <div className="slip px-4 py-4">
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
-            <Figure
-              label="Albums cached"
-              value={health.cache.albumsCached}
-              of={health.cache.albums}
-            />
-            <Figure
-              label="Tracks anchored"
-              value={health.cache.tracksAnchored}
-              of={health.cache.tracks}
-            />
-            <Figure
-              label="Reaching a work"
-              value={health.cache.tracksReachingWork}
-              of={health.cache.tracks}
-            />
-            <Figure label="Works read" value={health.cache.worksRead} of={health.cache.works} />
-            <Figure label="Works with a parent" value={health.cache.worksWithParent} />
-            <Figure label="Credits" value={health.cache.credits} />
-          </dl>
-          <p className="mt-3 max-w-[70ch] text-[var(--ink-2)]">
-            Anchored means a track is tied to a MusicBrainz recording, by its ISRC or by its
-            position on a release whose tracklist lines up. Reaching a work means MusicBrainz also
-            says what that recording is a performance of.
           </p>
         </div>
       </section>
@@ -185,20 +154,6 @@ export function HealthTab() {
           </div>
         </section>
       )}
-    </div>
-  );
-}
-
-function Figure({ label, value, of }: { label: string; value: number; of?: number }) {
-  return (
-    <div className="py-1">
-      <dt className="text-[11px] text-[var(--ink-2)]">{label}</dt>
-      <dd className="mono text-[15px]">
-        {value.toLocaleString()}
-        {of !== undefined && (
-          <span className="text-[11px] text-[var(--faint)]"> / {of.toLocaleString()}</span>
-        )}
-      </dd>
     </div>
   );
 }

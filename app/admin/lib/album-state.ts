@@ -28,8 +28,8 @@ export type AlbumState =
   | 'unchecked';
 
 export const STATE_LABEL: Record<AlbumState, string> = {
-  anchored: 'Anchored',
-  partial: 'Partly anchored',
+  anchored: 'All linked',
+  partial: 'Partly linked',
   needs_isrcs: 'Needs ISRCs',
   absent: 'Not in MusicBrainz',
   ambiguous: 'Barcode not unique',
@@ -42,17 +42,13 @@ export const WHAT_IT_NEEDS: Record<AlbumState, string> = {
   partial:
     'Some tracks resolve and some do not. Where MusicBrainz has the release, the rest need their ISRCs submitting; where it does not, these recordings are in MusicBrainz under some other release and this one still needs adding.',
   needs_isrcs:
-    'MusicBrainz has the release but none of our ISRCs. Submitting them anchors the album.',
+    'MusicBrainz has the release but none of our ISRCs. Submitting them links the album’s tracks.',
   absent:
     'No release with this barcode exists in MusicBrainz. It has to be added before anything else.',
   ambiguous:
     'Several releases share this barcode, so none identifies the album. Pick the right one by hand.',
   unchecked: 'Not yet looked up. Run `pnpm mb:backfill releases`.',
 };
-
-/** How anchoring relates to what the MusicBrainz reader shows in the player. */
-export const COVERAGE_LISTENER_NOTE =
-  'Anchored tracks show work, movement, and composer from MusicBrainz in the player. Unanchored tracks stay in the gap strip with an explicit reason.';
 
 export type AlbumRow = {
   id: string;
@@ -71,16 +67,6 @@ export type AlbumRow = {
   mbReleaseId: string | null;
   candidates: number | null;
   state: AlbumState;
-};
-
-export type Coverage = {
-  albums: number;
-  tracks: number;
-  anchoredTracks: number;
-  classifiedTracks: number;
-  classicalTracks: number;
-  tracksReachingWork: number;
-  byState: { state: AlbumState; albums: number; tracks: number }[];
 };
 
 export type AlbumTrackWork = {

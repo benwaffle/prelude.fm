@@ -1,8 +1,14 @@
 import { type AlbumState } from './album-state';
 import { type InboxFocus } from './inbox-focus';
 
-export const ADMIN_TABS = ['inbox', 'albums', 'health'] as const;
+export const ADMIN_TABS = ['overview', 'inbox', 'details'] as const;
 export type AdminTab = (typeof ADMIN_TABS)[number];
+
+/** Tabs that were folded into Details, so old links still land somewhere. */
+const FOLDED_TABS = new Map<string, AdminTab>([
+  ['albums', 'details'],
+  ['health', 'details'],
+]);
 
 export const INBOX_CLASSES = [
   'missing',
@@ -36,7 +42,9 @@ type SearchReader = Pick<URLSearchParams, 'get'>;
 
 export function parseAdminUrl(search: SearchReader): AdminUrlState {
   const requestedTab = search.get('tab');
-  const tab = ADMIN_TABS.includes(requestedTab as AdminTab) ? (requestedTab as AdminTab) : 'inbox';
+  const tab = ADMIN_TABS.includes(requestedTab as AdminTab)
+    ? (requestedTab as AdminTab)
+    : (FOLDED_TABS.get(requestedTab ?? '') ?? 'overview');
   const requestedClass = search.get('class');
   const inboxClass = INBOX_CLASSES.includes(requestedClass as InboxClass)
     ? (requestedClass as InboxClass)

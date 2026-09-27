@@ -10,7 +10,7 @@ import {
   trackClassification,
   trackRecording,
 } from '@/lib/db/schema';
-import type { AlbumRow, AlbumState, AlbumTrackRow, Coverage } from './album-state';
+import type { AlbumRow, AlbumState, AlbumTrackRow } from './album-state';
 
 /**
  * Album status facts from the provider, durable classification, anchors, and
@@ -65,47 +65,6 @@ export async function loadMusicBrainzAlbumRows(
     .groupBy(spotifyAlbum.spotifyId);
 
   return rows.map((row) => ({ ...row, state: deriveState(row) }));
-}
-
-export function summarizeMusicBrainzAlbumCoverage(albums: AlbumRow[]): Coverage {
-  const byState = new Map<AlbumState, { albums: number; tracks: number }>();
-  let tracks = 0;
-  let anchoredTracks = 0;
-  let classifiedTracks = 0;
-  let classicalTracks = 0;
-  let tracksReachingWork = 0;
-
-  for (const album of albums) {
-    tracks += album.tracks;
-    anchoredTracks += album.anchored;
-    classifiedTracks += album.classified;
-    classicalTracks += album.classical;
-    tracksReachingWork += album.tracksReachingWork;
-    const entry = byState.get(album.state) ?? { albums: 0, tracks: 0 };
-    entry.albums++;
-    entry.tracks += album.tracks;
-    byState.set(album.state, entry);
-  }
-
-  const order: AlbumState[] = [
-    'anchored',
-    'partial',
-    'needs_isrcs',
-    'absent',
-    'ambiguous',
-    'unchecked',
-  ];
-  return {
-    albums: albums.length,
-    tracks,
-    anchoredTracks,
-    classifiedTracks,
-    classicalTracks,
-    tracksReachingWork,
-    byState: order
-      .filter((state) => byState.has(state))
-      .map((state) => ({ state, ...byState.get(state)! })),
-  };
 }
 
 export async function loadMusicBrainzAlbumTracks(

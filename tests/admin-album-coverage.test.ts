@@ -6,12 +6,11 @@ let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
 let loadMusicBrainzAlbumRows: typeof import('../app/admin/lib/musicbrainz-album-coverage').loadMusicBrainzAlbumRows;
 let loadMusicBrainzAlbumTracks: typeof import('../app/admin/lib/musicbrainz-album-coverage').loadMusicBrainzAlbumTracks;
-let summarizeMusicBrainzAlbumCoverage: typeof import('../app/admin/lib/musicbrainz-album-coverage').summarizeMusicBrainzAlbumCoverage;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ loadMusicBrainzAlbumRows, loadMusicBrainzAlbumTracks, summarizeMusicBrainzAlbumCoverage } =
+  ({ loadMusicBrainzAlbumRows, loadMusicBrainzAlbumTracks } =
     await import('../app/admin/lib/musicbrainz-album-coverage'));
 });
 
@@ -120,16 +119,6 @@ test('Albums counts only provider, classification, anchor, and MusicBrainz facts
     works: 2,
     worksCached: 1,
     state: 'partial',
-  });
-
-  assert.deepEqual(summarizeMusicBrainzAlbumCoverage([album]), {
-    albums: 1,
-    tracks: 4,
-    anchoredTracks: 2,
-    classifiedTracks: 3,
-    classicalTracks: 1,
-    tracksReachingWork: 1,
-    byState: [{ state: 'partial', albums: 1, tracks: 4 }],
   });
 });
 
