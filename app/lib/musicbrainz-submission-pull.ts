@@ -94,7 +94,7 @@ export async function pullAlbumFromMusicBrainz(
 export async function pullPendingSubmissionsFromMusicBrainz(
   source: MusicBrainzSource,
   rows: PendingLedgerPull[],
-): Promise<{ requests: number }> {
+): Promise<{ requests: number; targets: number }> {
   let requests = 0;
   const releases = new Set<string>();
   const recordings = new Set<string>();
@@ -142,5 +142,5 @@ export async function pullPendingSubmissionsFromMusicBrainz(
     requests += (await pullAlbumFromMusicBrainz(source, albumId, knownReleaseMbid)).requests;
   }
 
-  return { requests };
+  return { requests, targets: releases.size + recordings.size + works.size + albums.size };
 }
