@@ -232,6 +232,8 @@ export type ContributionView = {
       outcome: string;
       editId: string | null;
       label: string;
+      /** The bot's note, which MusicBrainz did not attach to the edit. */
+      unsentNote: string | null;
     } | null;
   })[];
   streamingUrls: (Awaited<ReturnType<typeof streamingUrlGaps>>[number] & {
@@ -511,6 +513,8 @@ export async function getContributions(
             releaseMbid: mbSubmission.targetMbid,
             outcome: mbSubmission.outcome,
             editId: mbSubmission.editId,
+            submittedBy: mbSubmission.submittedBy,
+            note: mbSubmission.note,
           })
           .from(mbSubmission)
           .where(
@@ -527,6 +531,8 @@ export async function getContributions(
         outcome: row.outcome,
         editId: row.editId,
         label: describeLedgerState(row),
+        // MusicBrainz drops the note on bot barcode edits (MBS-14476).
+        unsentNote: row.submittedBy.startsWith('bot:') && row.note ? row.note : null,
       },
     ]),
   );
