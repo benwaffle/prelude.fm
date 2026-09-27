@@ -10,6 +10,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 
@@ -26,18 +27,18 @@ export function ContestedIsrcsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, run } = useAdminAction();
+  const { pending, busy, runRow, row: rowAction } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(isrc: string, disposition: 'reported' | 'fixed') {
-    await run('Confirming submission…', async () => {
+    await runRow(isrc, 'Confirming submission…', async () => {
       await recordContestedIsrcReport(isrc, disposition, forms[isrc] ?? { editId: '' });
       await onReload();
     });
   }
 
   async function recheck(isrc: string) {
-    await run('Rechecking MusicBrainz…', async () => {
+    await runRow(isrc, 'Rechecking MusicBrainz…', async () => {
       await recheckErrorReport('contested_isrc', isrc);
       await onReload();
     });
@@ -55,6 +56,7 @@ export function ContestedIsrcsSection({
       description="An ISRC identifies one recording. Every conflicting MusicBrainz recording remains visible until the cache shows the correction."
     >
       {rows.map((row) => {
+        const state = rowAction(row.isrc);
         const evidence = (
           <span className="min-w-0">
             <span className="mono block">{row.isrc}</span>
@@ -66,6 +68,7 @@ export function ContestedIsrcsSection({
                 </span>
               ))}
             </span>
+            <RowActionStatus row={state} />
           </span>
         );
         const links = (
@@ -88,7 +91,7 @@ export function ContestedIsrcsSection({
               }
               links={links}
               action={
-                <button className="act" disabled={busy} onClick={() => recheck(row.isrc)}>
+                <button className="act" disabled={state.busy} onClick={() => recheck(row.isrc)}>
                   Recheck
                 </button>
               }
@@ -98,7 +101,7 @@ export function ContestedIsrcsSection({
 
         const form = forms[row.isrc] ?? { editId: '' };
         return (
-          <ConfirmDisclosure key={row.isrc} evidence={evidence} links={links} disabled={busy}>
+          <ConfirmDisclosure key={row.isrc} evidence={evidence} links={links}>
             <div className="toolbar px-0">
               {row.recordingMbids.map((mbid) => (
                 <a
@@ -125,12 +128,16 @@ export function ContestedIsrcsSection({
               <button
                 className="act"
                 data-variant="primary"
-                disabled={busy}
+                disabled={state.busy}
                 onClick={() => confirm(row.isrc, 'reported')}
               >
                 Confirm report
               </button>
-              <button className="act" disabled={busy} onClick={() => confirm(row.isrc, 'fixed')}>
+              <button
+                className="act"
+                disabled={state.busy}
+                onClick={() => confirm(row.isrc, 'fixed')}
+              >
                 Confirm fix
               </button>
             </div>

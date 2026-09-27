@@ -13,6 +13,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxSection } from './InboxSection';
+import { RowActionStatus } from './RowActionStatus';
 import { LoadMoreRows } from './LoadMoreRows';
 import { BotSubmissionNotice } from './BotSubmissionNotice';
 import { useBotSubmission } from './useBotSubmission';
@@ -108,13 +109,17 @@ export function IsrcSection({
   onBotChange: (bot: BotStatus) => void;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, run } = useAdminAction();
+  const { pending, busy, runRow, row } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
-  const { feedback: submissionFeedback, submit } = useBotSubmission({ run, onBotChange, onReload });
+  const {
+    feedback: submissionFeedback,
+    submit,
+    dismiss: dismissFeedback,
+  } = useBotSubmission({ runRow, onBotChange, onReload });
 
   async function confirmHand(releaseMbid: string) {
-    await run('Confirming hand submission…', async () => {
+    await runRow(releaseMbid, 'Confirming hand submission…', async () => {
       await recordIsrcSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
       await onReload();
     });
@@ -133,13 +138,13 @@ export function IsrcSection({
       setPayload(null);
       return;
     }
-    await run('Loading bot payload…', async () => {
+    await runRow(releaseMbid, 'Loading bot payload…', async () => {
       setPayload({ releaseMbid, xml: await getBotPayload(releaseMbid) });
     });
   }
 
   async function recheck(releaseMbid: string) {
-    await run('Rechecking MusicBrainz…', async () => {
+    await runRow(releaseMbid, 'Rechecking MusicBrainz…', async () => {
       await recheckIsrcRelease(releaseMbid);
       await onReload();
     });
@@ -158,6 +163,7 @@ export function IsrcSection({
       description="Each track is on the barcode-matched release, the complete tracklists align, and durations agree within three seconds."
     >
       {rows.map((release) => {
+        const state = row(release.releaseMbid);
         const submitted = submittedSummary(release.tracks);
         const evidence = (
           <span className="min-w-0">
@@ -170,6 +176,7 @@ export function IsrcSection({
                 : ''}
               {' · '}barcode {release.barcode ?? <span className="absent">missing</span>}
             </span>
+            <RowActionStatus row={state} />
           </span>
         );
         const feedback = submissionFeedback[release.releaseMbid];
@@ -199,18 +206,22 @@ export function IsrcSection({
               evidence={
                 <>
                   {evidence}
-                  {feedback && <BotSubmissionNotice feedback={feedback} />}
+                  {feedback && (
+                    <BotSubmissionNotice
+                      feedback={feedback}
+                      onDismiss={() => dismissFeedback(release.releaseMbid)}
+                    />
+                  )}
                 </>
               }
               links={links}
               label="Tracks"
               primary={false}
-              disabled={busy}
               extraAction={
                 submitted ? (
                   <button
                     className="act"
-                    disabled={busy}
+                    disabled={state.busy}
                     onClick={() => recheck(release.releaseMbid)}
                   >
                     Recheck
@@ -230,7 +241,6 @@ export function IsrcSection({
             data-inbox-release={release.releaseMbid}
             evidence={evidence}
             links={links}
-            disabled={busy}
           >
             <IsrcTrackTable tracks={release.tracks} />
             <p className="mt-2 text-[11px] text-[var(--faint)]">
@@ -244,14 +254,14 @@ export function IsrcSection({
                   <button
                     className="act"
                     data-variant="primary"
-                    disabled={busy}
+                    disabled={state.busy}
                     onClick={() => submitBot(release.releaseMbid, release.albumTitle)}
                   >
                     Confirm {release.eligible} as prelude_fm_bot
                   </button>
                   <button
                     className="act"
-                    disabled={busy}
+                    disabled={state.busy}
                     onClick={() => revealPayload(release.releaseMbid)}
                   >
                     {payload?.releaseMbid === release.releaseMbid ? 'Hide' : 'View'} payload
@@ -271,7 +281,7 @@ export function IsrcSection({
               />
               <button
                 className="act"
-                disabled={busy}
+                disabled={state.busy}
                 onClick={() => confirmHand(release.releaseMbid)}
               >
                 Confirm hand submission
@@ -282,7 +292,12 @@ export function IsrcSection({
                 {payload.xml}
               </pre>
             )}
-            {feedback && <BotSubmissionNotice feedback={feedback} />}
+            {feedback && (
+              <BotSubmissionNotice
+                feedback={feedback}
+                onDismiss={() => dismissFeedback(release.releaseMbid)}
+              />
+            )}
           </ConfirmDisclosure>
         );
       })}

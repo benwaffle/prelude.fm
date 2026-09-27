@@ -10,15 +10,16 @@ import {
 } from './bot-submission';
 
 /**
- * prelude_fm_bot submissions from one Inbox section, run as that section's
- * admin actions. Each outcome stays on its release's row.
+ * prelude_fm_bot submissions from one Inbox section, each run as its
+ * release's row action. Each outcome stays on its release's row until that
+ * row is submitted again or the outcome is dismissed.
  */
 export function useBotSubmission({
-  run,
+  runRow,
   onBotChange,
   onReload,
 }: {
-  run: ReturnType<typeof useAdminAction>['run'];
+  runRow: ReturnType<typeof useAdminAction>['runRow'];
   onBotChange: (bot: BotStatus) => void;
   onReload: () => Promise<void>;
 }) {
@@ -29,7 +30,7 @@ export function useBotSubmission({
     submission: (releaseMbid: string) => Promise<BotSubmissionResult>,
     messages: BotSubmissionMessages,
   ) {
-    return run('Submitting with prelude_fm_bot…', () =>
+    return runRow(releaseMbid, 'Submitting with prelude_fm_bot…', () =>
       submitThenRefresh(() => submission(releaseMbid), messages, {
         show: (next) =>
           setFeedback((current) => {
@@ -46,5 +47,13 @@ export function useBotSubmission({
     );
   }
 
-  return { feedback, submit };
+  function dismiss(releaseMbid: string) {
+    setFeedback((current) => {
+      const updated = { ...current };
+      delete updated[releaseMbid];
+      return updated;
+    });
+  }
+
+  return { feedback, submit, dismiss };
 }

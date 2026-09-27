@@ -19,7 +19,8 @@ import { ADMIN_ACTION_DONE, useAdminAction } from './useAdminAction';
  * worse stop button.
  */
 export function GatewayBar() {
-  const { pending, busy, run } = useAdminAction();
+  // Stopping must not wait behind queued edits.
+  const { pending, busy, run } = useAdminAction({ queue: false });
   const [status, setStatus] = useState<GatewayView | null>(null);
   // The poll's failure stays here, beside the figures it failed to refresh.
   const [loadError, setLoadError] = useState<string | null>(null);

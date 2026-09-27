@@ -13,7 +13,8 @@ import {
   type ContributionView,
 } from '../actions/contribute';
 import { Spinner } from '../components/Spinner';
-import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
+import { afterAdminBurst } from '../components/admin-action-queue';
+import { adminFailureMessage, LoadFailure, useAdminFailure } from '../components/AdminFailure';
 import type { InboxClass } from '../lib/admin-url';
 import type { InboxFocus } from '../lib/inbox-focus';
 import { BarcodesSection } from '../inbox/BarcodesSection';
@@ -44,11 +45,26 @@ export function ContributeTab({
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
   const handledTarget = useRef<string | null>(null);
 
-  /** Refresh after an action; a failure here is that action's failure. */
-  const reload = useCallback(async () => {
-    setView(await getContributions(limits));
-    setLoadError(null);
-  }, [limits]);
+  const { showFailure } = useAdminFailure();
+
+  /**
+   * Refresh after an action; a failure here is that action's failure. During
+   * a burst of queued actions only the last one reloads, so rows neither
+   * flicker nor move mid-burst; if that reload is owed past the last action,
+   * its failure goes to the admin failure notice.
+   */
+  const reload = useCallback(
+    () =>
+      afterAdminBurst(
+        'inbox-reload',
+        async () => {
+          setView(await getContributions(limits));
+          setLoadError(null);
+        },
+        showFailure,
+      ),
+    [limits, showFailure],
+  );
 
   useEffect(() => {
     let cancelled = false;

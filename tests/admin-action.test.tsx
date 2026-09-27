@@ -3,52 +3,174 @@ import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BotSubmissionResult } from '../app/admin/actions/contribute';
 import { LoadFailure } from '../app/admin/components/AdminFailure';
-import { runAdminAction, type AdminActionEffects } from '../app/admin/components/useAdminAction';
+import { afterAdminBurst } from '../app/admin/components/admin-action-queue';
+import {
+  pendingSummary,
+  runAdminAction,
+  type AdminActionEffects,
+} from '../app/admin/components/useAdminAction';
 import {
   botSubmissionFeedback,
   submitThenRefresh,
   type BotSubmissionFeedback,
 } from '../app/admin/inbox/bot-submission';
 
-function recordingEffects() {
-  const events: string[] = [];
+function recordingEffects(events: string[] = [], name = '') {
   const failures: unknown[] = [];
+  const prefix = name ? `${name}:` : '';
   const effects: AdminActionEffects = {
-    clearFailure: () => events.push('clear'),
+    clearFailure: () => events.push(`${prefix}clear`),
     showFailure: (error) => {
-      events.push('failure');
+      events.push(`${prefix}failure`);
       failures.push(error);
     },
-    setPending: (label) => events.push(`pending:${label}`),
+    setStatus: (status) => events.push(`${prefix}${status ?? 'idle'}`),
   };
   return { events, failures, effects };
 }
 
-test('an admin action clears the last failure, shows progress, then clears progress', async () => {
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Let queued promise callbacks run. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('an admin action clears its last failure, waits its turn, runs, then goes idle', async () => {
   const { events, failures, effects } = recordingEffects();
+  await runAdminAction(async () => {
+    events.push('action');
+  }, effects);
+  assert.deepEqual(events, ['clear', 'queued', 'running', 'action', 'idle']);
+  assert.deepEqual(failures, []);
+});
+
+test('an unqueued admin action runs at once', async () => {
+  const { events, effects } = recordingEffects();
   await runAdminAction(
-    'Rechecking MusicBrainz…',
     async () => {
       events.push('action');
     },
     effects,
+    { queue: false },
   );
-  assert.deepEqual(events, ['clear', 'pending:Rechecking MusicBrainz…', 'action', 'pending:null']);
-  assert.deepEqual(failures, []);
+  assert.deepEqual(events, ['clear', 'running', 'action', 'idle']);
 });
 
 test('a failed admin action reports the thrown error and still ends its pending state', async () => {
   const { events, failures, effects } = recordingEffects();
   const rejected = new Error('MusicBrainz rejected edit 42');
-  await runAdminAction(
-    'Confirming submission…',
-    async () => {
-      throw rejected;
-    },
-    effects,
-  );
-  assert.deepEqual(events, ['clear', 'pending:Confirming submission…', 'failure', 'pending:null']);
+  await runAdminAction(async () => {
+    throw rejected;
+  }, effects);
+  assert.deepEqual(events, ['clear', 'queued', 'running', 'failure', 'idle']);
   assert.deepEqual(failures, [rejected]);
+});
+
+test('two row actions each keep their own pending state and outcome', async () => {
+  const events: string[] = [];
+  const a = recordingEffects(events, 'a');
+  const b = recordingEffects(events, 'b');
+  const first = deferred();
+  const second = deferred();
+
+  const runA = runAdminAction(() => first.promise, a.effects);
+  const runB = runAdminAction(() => second.promise, b.effects);
+  await settle();
+  // Server actions run one at a time: b waits, and says so.
+  assert.deepEqual(events, ['a:clear', 'a:queued', 'a:running', 'b:clear', 'b:queued']);
+
+  first.resolve();
+  await settle();
+  assert.deepEqual(events.slice(5), ['a:idle', 'b:running']);
+
+  const rejected = new Error('Daily bot edit cap reached');
+  second.reject(rejected);
+  await Promise.all([runA, runB]);
+  assert.deepEqual(events.slice(7), ['b:failure', 'b:idle']);
+  assert.deepEqual(a.failures, []);
+  assert.deepEqual(b.failures, [rejected]);
+});
+
+test("one row's failure survives another row starting", async () => {
+  const events: string[] = [];
+  const a = recordingEffects(events, 'a');
+  const b = recordingEffects(events, 'b');
+  await runAdminAction(async () => {
+    throw new Error('MusicBrainz refused the submission: 401');
+  }, a.effects);
+  await runAdminAction(async () => {}, b.effects);
+  // Only b cleared its failure; a's is still showing.
+  assert.equal(events.filter((event) => event.endsWith(':clear')).join(), 'a:clear,b:clear');
+  assert.equal(events.indexOf('a:clear') < events.indexOf('a:failure'), true);
+  assert.equal(a.failures.length, 1);
+});
+
+test('a burst of actions reloads once, after the last', async () => {
+  let reloads = 0;
+  const reload = async () => {
+    reloads += 1;
+  };
+  const gate = deferred();
+  const runs = [0, 1, 2].map((index) =>
+    runAdminAction(async () => {
+      if (index === 0) await gate.promise;
+      await afterAdminBurst('inbox-reload', reload, () => {});
+    }, recordingEffects().effects),
+  );
+  await settle();
+  gate.resolve();
+  await Promise.all(runs);
+  assert.equal(reloads, 1);
+});
+
+test('a reload owed past a failed last action still runs and reports its failure', async () => {
+  const reloadFailed = new Error('Inbox reload failed');
+  const reported: unknown[] = [];
+  const gate = deferred();
+  const first = runAdminAction(async () => {
+    await gate.promise;
+    await afterAdminBurst(
+      'inbox-reload',
+      async () => {
+        throw reloadFailed;
+      },
+      (error) => reported.push(error),
+    );
+  }, recordingEffects().effects);
+  const last = recordingEffects();
+  const second = runAdminAction(async () => {
+    throw new Error('rejected');
+  }, last.effects);
+  await settle();
+  gate.resolve();
+  await Promise.all([first, second]);
+  await settle();
+  assert.deepEqual(reported, [reloadFailed]);
+});
+
+test('the section header names the running action and how many wait', () => {
+  const idle = { label: '', status: null };
+  assert.equal(pendingSummary(idle, []), null);
+  assert.equal(
+    pendingSummary(idle, [
+      { label: 'Submitting with prelude_fm_bot…', status: 'running', failure: null },
+      { label: 'Submitting with prelude_fm_bot…', status: 'queued', failure: null },
+      { label: 'Submitting with prelude_fm_bot…', status: 'queued', failure: null },
+      { label: 'Rechecking MusicBrainz…', status: null, failure: 'failed' },
+    ]),
+    'Submitting with prelude_fm_bot… · 2 more queued',
+  );
+  assert.equal(
+    pendingSummary(idle, [{ label: 'Confirming…', status: 'queued', failure: null }]),
+    '1 queued behind other admin actions',
+  );
 });
 
 const messages = {
@@ -89,7 +211,6 @@ async function submitThroughAction(result: BotSubmissionResult, refresh: () => P
   const shown: (BotSubmissionFeedback | null)[] = [];
   let refreshed = 0;
   await runAdminAction(
-    'Submitting with prelude_fm_bot…',
     () =>
       submitThenRefresh(async () => result, messages, {
         show: (feedback) => shown.push(feedback),

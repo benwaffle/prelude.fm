@@ -1,7 +1,13 @@
 import { Notice } from '../components/Notice';
 import type { BotSubmissionFeedback } from './bot-submission';
 
-export function BotSubmissionNotice({ feedback }: { feedback: BotSubmissionFeedback }) {
+export function BotSubmissionNotice({
+  feedback,
+  onDismiss,
+}: {
+  feedback: BotSubmissionFeedback;
+  onDismiss?: () => void;
+}) {
   if (feedback.kind !== 'error') {
     return (
       <div role="status">
@@ -26,6 +32,11 @@ export function BotSubmissionNotice({ feedback }: { feedback: BotSubmissionFeedb
             {feedback.message}
           </pre>
         </details>
+        {onDismiss && (
+          <button type="button" className="mt-1 underline" onClick={onDismiss}>
+            Dismiss
+          </button>
+        )}
       </Notice>
     </div>
   );
