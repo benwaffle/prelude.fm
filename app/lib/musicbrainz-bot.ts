@@ -22,6 +22,7 @@ import { normalizeIsrc } from './isrc';
 import { scheduleMusicBrainzRequest } from './musicbrainz-gateway';
 import {
   barcodeEligibleGaps,
+  isrcBatchGaps,
   isrcEligibleGaps,
   type BarcodeGap,
 } from './musicbrainz-contributions';
@@ -145,7 +146,16 @@ export async function editsSpentToday(now = new Date()): Promise<number> {
  * because the failure mode here is writing to somebody else's database.
  */
 export async function runIsrcBot(
-  options: { apply?: boolean; maxEdits?: number; releaseMbid?: string } = {},
+  options: {
+    apply?: boolean;
+    maxEdits?: number;
+    releaseMbid?: string;
+    /**
+     * Send this one ISRC, even though voters rejected it before. The batch
+     * never includes a rejected ISRC; only its own row's click does.
+     */
+    resubmit?: { recordingMbid: string; isrc: string };
+  } = {},
 ): Promise<IsrcBotRun> {
   const maxEdits = options.maxEdits ?? MAX_ISRC_EDITS_PER_ALBUM;
   const spentToday = await editsSpentToday();
@@ -164,7 +174,14 @@ export async function runIsrcBot(
    * a bot that picks its own target would be deciding what to submit, which
    * is the part that has not been earned yet.
    */
-  const everything = await isrcEligibleGaps(5_000);
+  const resubmit = options.resubmit;
+  const everything = resubmit
+    ? (await isrcEligibleGaps(5_000)).filter(
+        (gap) =>
+          gap.recordingMbid === resubmit.recordingMbid &&
+          normalizeIsrc(gap.isrc) === normalizeIsrc(resubmit.isrc),
+      )
+    : await isrcBatchGaps(5_000);
   const releaseMbid = options.releaseMbid ?? everything[0]?.releaseMbid;
   const gaps = everything.filter((gap) => gap.releaseMbid === releaseMbid).slice(0, allowance);
   const items: IsrcSubmissionItem[] = gaps.map((gap) => ({
@@ -267,7 +284,9 @@ export async function runBarcodeBot(
     );
   }
 
-  const everything = await barcodeEligibleGaps(5_000);
+  // A named release is its row's own click, so a barcode rejected before may
+  // go again; an unnamed batch leaves rejected ones out.
+  const everything = await barcodeEligibleGaps(5_000, 0, { batch: !options.releaseMbid });
   const gaps = options.releaseMbid
     ? everything.filter((gap) => gap.releaseMbid === options.releaseMbid).slice(0, 1)
     : everything.slice(0, allowance);

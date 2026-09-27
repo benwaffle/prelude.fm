@@ -1,0 +1,2 @@
+DROP INDEX `mb_submission_identity_idx`;--> statement-breakpoint
+CREATE UNIQUE INDEX `mb_submission_identity_idx` ON `mb_submission` (`kind`,`target_mbid`,`value`) WHERE "mb_submission"."outcome" in ('pending', 'applied');

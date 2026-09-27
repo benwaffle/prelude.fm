@@ -13,6 +13,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
@@ -128,6 +129,7 @@ export function BarcodesSection({
             <code className="mono block select-all text-[11px] text-[var(--ink-2)]">
               {gap.barcode}
             </code>
+            {!gap.ledger && gap.previous && <PreviousSubmission previous={gap.previous} />}
             <RowActionStatus row={state} />
           </span>
         );
@@ -195,7 +197,7 @@ export function BarcodesSection({
                     disabled={state.busy}
                     onClick={() => submitBot(gap.releaseMbid, gap.releaseTitle)}
                   >
-                    Confirm as prelude_fm_bot
+                    {gap.previous?.explicitOnly ? 'Resubmit' : 'Confirm'} as prelude_fm_bot
                   </button>
                   <button
                     className="act"

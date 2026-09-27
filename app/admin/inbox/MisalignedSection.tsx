@@ -10,6 +10,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
@@ -70,6 +71,7 @@ export function MisalignedSection({
               {diagnosis}
               {album.anchoredByIsrc > 0 && ` · ${album.anchoredByIsrc} anchored by ISRC regardless`}
             </span>
+            {!album.ledger && album.previous && <PreviousSubmission previous={album.previous} />}
             <RowActionStatus row={state} />
           </span>
         );

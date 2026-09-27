@@ -246,6 +246,78 @@ export function describeLedgerState(entry: { outcome: string; editId: string | n
     : `${entry.outcome} · edit ID missing`;
 }
 
+/**
+ * Outcomes that mean the edit is in hand: still being voted on, or landed.
+ *
+ * Only these block offering the same edit again. A rejected or withdrawn
+ * submission is history, not a done job, so its gap returns to the Inbox —
+ * with that history shown beside it.
+ */
+export const BLOCKING_OUTCOMES = ['pending', 'applied'] as const;
+
+/** What keeps an edit out of a batch: in hand, or rejected by voters before. */
+export const BATCH_BLOCKING_OUTCOMES = [...BLOCKING_OUTCOMES, 'rejected'] as const;
+
+export function blocksResubmission(outcome: string): boolean {
+  return (BLOCKING_OUTCOMES as readonly string[]).includes(outcome);
+}
+
+/**
+ * The submission that is in hand, if any, and the latest one that is not.
+ *
+ * The database allows one blocking row per edit identity, so `current` is
+ * unique; `previous` is the most recent rejected or withdrawn attempt.
+ */
+export function splitSubmissionHistory<T extends { id: number; outcome: string }>(
+  rows: readonly T[],
+): { current: T | null; previous: T | null } {
+  let current: T | null = null;
+  let previous: T | null = null;
+  for (const row of rows) {
+    if (blocksResubmission(row.outcome)) {
+      if (!current || row.id > current.id) current = row;
+    } else if (!previous || row.id > previous.id) {
+      previous = row;
+    }
+  }
+  return { current, previous };
+}
+
+/** Group ledger rows by an identity key, then split each group. */
+export function submissionHistoryBy<T extends { id: number; outcome: string }>(
+  rows: readonly T[],
+  keyOf: (row: T) => string | null,
+): Map<string, { current: T | null; previous: T | null }> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    if (key === null) continue;
+    const list = grouped.get(key) ?? [];
+    list.push(row);
+    grouped.set(key, list);
+  }
+  return new Map([...grouped].map(([key, list]) => [key, splitSubmissionHistory(list)]));
+}
+
+/** "rejected before (edit 123)", so a returned gap does not read as a fresh one. */
+export function describePreviousSubmission(entry: {
+  outcome: string;
+  editId: string | null;
+}): string {
+  return entry.editId
+    ? `${entry.outcome} before (edit ${entry.editId})`
+    : `${entry.outcome} before (edit ID missing)`;
+}
+
+/**
+ * Voters turned a rejected edit down. Sending it again unasked would annoy
+ * the editors who did, so a batch leaves it out and only an explicit per-row
+ * click resubmits it. A withdrawn edit was ours to pull and counts as fresh.
+ */
+export function needsExplicitResubmission(previous: { outcome: string } | null): boolean {
+  return previous?.outcome === 'rejected';
+}
+
 /** The cache now holds a barcode for the release we submitted one to. */
 export function cachedBarcodeLanded(barcode: string | null | undefined): boolean {
   return typeof barcode === 'string' && barcode.trim() !== '';
