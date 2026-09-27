@@ -6,6 +6,7 @@ import { InboxRow } from './InboxRow';
 export function ConfirmDisclosure({
   evidence,
   links,
+  extraAction,
   children,
   label = 'Confirm…',
   disabled = false,
@@ -15,6 +16,8 @@ export function ConfirmDisclosure({
 }: {
   evidence: ReactNode;
   links?: ReactNode;
+  /** Shown beside the toggle, so it stays reachable while the row is closed. */
+  extraAction?: ReactNode;
   children: ReactNode;
   label?: string;
   disabled?: boolean;
@@ -29,15 +32,18 @@ export function ConfirmDisclosure({
         evidence={evidence}
         links={links}
         action={
-          <button
-            className="act shrink-0"
-            data-variant={primary ? 'primary' : undefined}
-            disabled={disabled}
-            aria-expanded={open}
-            onClick={() => setOpen((current) => !current)}
-          >
-            {open ? 'Close' : label}
-          </button>
+          <>
+            {extraAction}
+            <button
+              className="act shrink-0"
+              data-variant={primary ? 'primary' : undefined}
+              disabled={disabled}
+              aria-expanded={open}
+              onClick={() => setOpen((current) => !current)}
+            >
+              {open ? 'Close' : label}
+            </button>
+          </>
         }
       />
       {open && <div className="inbox-disclosure">{children}</div>}
