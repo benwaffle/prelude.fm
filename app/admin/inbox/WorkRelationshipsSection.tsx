@@ -14,6 +14,7 @@ import type { InboxClass } from '../lib/admin-url';
 import { mbWorkPickHit } from '@/lib/musicbrainz-pick';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 
@@ -30,7 +31,7 @@ export function WorkRelationshipsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, run } = useAdminAction();
+  const { pending, busy, runRow, row: rowAction } = useAdminAction();
   const [relationshipForms, setRelationshipForms] = useState<Record<string, { editId: string }>>(
     {},
   );
@@ -40,7 +41,7 @@ export function WorkRelationshipsSection({
 
   async function confirmRelationship(recordingMbid: string, workMbid: string) {
     const key = `${recordingMbid}:${workMbid}`;
-    await run('Confirming work relationship…', async () => {
+    await runRow(recordingMbid, 'Confirming work relationship…', async () => {
       await recordWorkRelationshipSubmission(
         recordingMbid,
         workMbid,
@@ -51,7 +52,7 @@ export function WorkRelationshipsSection({
   }
 
   async function recheckRelationship(recordingMbid: string, workMbid: string) {
-    await run('Rechecking work relationship…', async () => {
+    await runRow(recordingMbid, 'Rechecking work relationship…', async () => {
       await recheckWorkRelationship(recordingMbid, workMbid);
       await onReload();
     });
@@ -59,7 +60,7 @@ export function WorkRelationshipsSection({
 
   async function confirmCreation(recordingMbid: string) {
     const form = createForms[recordingMbid] ?? { workMbid: '', editId: '' };
-    await run('Confirming created work…', async () => {
+    await runRow(recordingMbid, 'Confirming created work…', async () => {
       await recordWorkCreationSubmission(recordingMbid, form.workMbid, {
         editId: form.editId,
       });
@@ -67,8 +68,8 @@ export function WorkRelationshipsSection({
     });
   }
 
-  async function recheckWork(workMbid: string) {
-    await run('Rechecking created work…', async () => {
+  async function recheckWork(recordingMbid: string, workMbid: string) {
+    await runRow(recordingMbid, 'Rechecking created work…', async () => {
       await recheckCreatedWork(workMbid);
       await onReload();
     });
@@ -93,6 +94,7 @@ export function WorkRelationshipsSection({
           gap.candidates.map((candidate) => [candidate.workMbid, candidate]),
         );
         const seed = gap.recordingTitle;
+        const state = rowAction(gap.recordingMbid);
 
         return (
           <ConfirmDisclosure
@@ -107,6 +109,7 @@ export function WorkRelationshipsSection({
                   {gap.ledger.length > 0 &&
                     ` · ${gap.ledger.length} recorded${gap.ledger.some((row) => !row.editId) ? ', edit ID missing' : ''}`}
                 </span>
+                <RowActionStatus row={state} />
               </span>
             }
             links={
@@ -120,12 +123,11 @@ export function WorkRelationshipsSection({
               </>
             }
             label={gap.candidates.length > 0 ? 'Pick…' : 'Confirm…'}
-            disabled={busy}
           >
             <MbPicker
               seed={seed}
               hits={hits}
-              busy={busy}
+              busy={state.busy}
               pickNote="Confirming a candidate records only the relationship you submitted. Opening a work writes nothing."
               renderHitActions={(hit) => {
                 const candidate = candidatesByMbid.get(hit.mbid);
@@ -141,7 +143,7 @@ export function WorkRelationshipsSection({
                       </span>
                       <button
                         className="act shrink-0"
-                        disabled={busy}
+                        disabled={state.busy}
                         onClick={() => recheckRelationship(gap.recordingMbid, candidate.workMbid)}
                       >
                         Recheck
@@ -168,7 +170,7 @@ export function WorkRelationshipsSection({
                     <button
                       className="act shrink-0"
                       data-variant="primary"
-                      disabled={busy}
+                      disabled={state.busy}
                       onClick={() => confirmRelationship(gap.recordingMbid, candidate.workMbid)}
                     >
                       Confirm link
@@ -202,8 +204,10 @@ export function WorkRelationshipsSection({
                   action={
                     <button
                       className="act"
-                      disabled={busy || !created.workMbid}
-                      onClick={() => created.workMbid && recheckWork(created.workMbid)}
+                      disabled={state.busy || !created.workMbid}
+                      onClick={() =>
+                        created.workMbid && recheckWork(gap.recordingMbid, created.workMbid)
+                      }
                     >
                       Recheck
                     </button>
@@ -242,7 +246,7 @@ export function WorkRelationshipsSection({
                   <button
                     className="act"
                     data-variant="primary"
-                    disabled={busy || createForm.workMbid.trim() === ''}
+                    disabled={state.busy || createForm.workMbid.trim() === ''}
                     onClick={() => confirmCreation(gap.recordingMbid)}
                   >
                     Confirm created work

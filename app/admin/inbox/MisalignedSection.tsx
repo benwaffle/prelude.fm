@@ -10,6 +10,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 
@@ -26,18 +27,18 @@ export function MisalignedSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, run } = useAdminAction();
+  const { pending, busy, runRow, row } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(albumId: string, disposition: 'reported' | 'fixed') {
-    await run('Confirming submission…', async () => {
+    await runRow(albumId, 'Confirming submission…', async () => {
       await recordMisalignedTracklistReport(albumId, disposition, forms[albumId] ?? { editId: '' });
       await onReload();
     });
   }
 
   async function recheck(albumId: string) {
-    await run('Rechecking MusicBrainz…', async () => {
+    await runRow(albumId, 'Rechecking MusicBrainz…', async () => {
       await recheckErrorReport('misaligned_tracklist', albumId);
       await onReload();
     });
@@ -55,6 +56,7 @@ export function MisalignedSection({
       description="Both tracklists stay visible because the error may be in either source. Reporting records the decision; it does not alter the cached tracklist."
     >
       {rows.map((album) => {
+        const state = row(album.albumId);
         const diagnosis =
           album.diagnosis.kind === 'reordered'
             ? 'same recordings, different order'
@@ -68,6 +70,7 @@ export function MisalignedSection({
               {diagnosis}
               {album.anchoredByIsrc > 0 && ` · ${album.anchoredByIsrc} anchored by ISRC regardless`}
             </span>
+            <RowActionStatus row={state} />
           </span>
         );
         const links = (
@@ -106,7 +109,11 @@ export function MisalignedSection({
               }
               links={links}
               action={
-                <button className="act" disabled={busy} onClick={() => recheck(album.albumId)}>
+                <button
+                  className="act"
+                  disabled={state.busy}
+                  onClick={() => recheck(album.albumId)}
+                >
                   Recheck
                 </button>
               }
@@ -121,7 +128,6 @@ export function MisalignedSection({
             data-inbox-album={album.albumId}
             evidence={evidence}
             links={links}
-            disabled={busy}
           >
             <table>
               <thead>
@@ -178,14 +184,14 @@ export function MisalignedSection({
               <button
                 className="act"
                 data-variant="primary"
-                disabled={busy}
+                disabled={state.busy}
                 onClick={() => confirm(album.albumId, 'reported')}
               >
                 Confirm report
               </button>
               <button
                 className="act"
-                disabled={busy}
+                disabled={state.busy}
                 onClick={() => confirm(album.albumId, 'fixed')}
               >
                 Confirm fix

@@ -13,6 +13,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 import { BotSubmissionNotice } from './BotSubmissionNotice';
@@ -63,13 +64,17 @@ export function BarcodesSection({
   onBotChange: (bot: BotStatus) => void;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, run } = useAdminAction();
+  const { pending, busy, runRow, row } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
-  const { feedback: submissionFeedback, submit } = useBotSubmission({ run, onBotChange, onReload });
+  const {
+    feedback: submissionFeedback,
+    submit,
+    dismiss: dismissFeedback,
+  } = useBotSubmission({ runRow, onBotChange, onReload });
 
   async function confirmHand(releaseMbid: string) {
-    await run('Confirming hand submission…', async () => {
+    await runRow(releaseMbid, 'Confirming hand submission…', async () => {
       await recordBarcodeSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
       await onReload();
     });
@@ -88,13 +93,13 @@ export function BarcodesSection({
       setPayload(null);
       return;
     }
-    await run('Loading bot payload…', async () => {
+    await runRow(releaseMbid, 'Loading bot payload…', async () => {
       setPayload({ releaseMbid, xml: await getBarcodeBotPayload(releaseMbid) });
     });
   }
 
   async function recheck(releaseMbid: string) {
-    await run('Rechecking MusicBrainz…', async () => {
+    await runRow(releaseMbid, 'Rechecking MusicBrainz…', async () => {
       await recheckBarcode(releaseMbid);
       await onReload();
     });
@@ -112,6 +117,7 @@ export function BarcodesSection({
       description="These releases were matched by title and duration. The Spotify barcode is shown as evidence and stays pending until the cache holds it."
     >
       {rows.map((gap) => {
+        const state = row(gap.releaseMbid);
         const evidence = (
           <span className="min-w-0">
             <span className="block truncate">{gap.releaseTitle}</span>
@@ -122,6 +128,7 @@ export function BarcodesSection({
             <code className="mono block select-all text-[11px] text-[var(--ink-2)]">
               {gap.barcode}
             </code>
+            <RowActionStatus row={state} />
           </span>
         );
         const links = (
@@ -143,13 +150,20 @@ export function BarcodesSection({
                     <UnsentBarcodeNote releaseMbid={gap.releaseMbid} note={gap.ledger.unsentNote} />
                   )}
                   {submissionFeedback[gap.releaseMbid] && (
-                    <BotSubmissionNotice feedback={submissionFeedback[gap.releaseMbid]} />
+                    <BotSubmissionNotice
+                      feedback={submissionFeedback[gap.releaseMbid]}
+                      onDismiss={() => dismissFeedback(gap.releaseMbid)}
+                    />
                   )}
                 </>
               }
               links={links}
               action={
-                <button className="act" disabled={busy} onClick={() => recheck(gap.releaseMbid)}>
+                <button
+                  className="act"
+                  disabled={state.busy}
+                  onClick={() => recheck(gap.releaseMbid)}
+                >
                   Recheck
                 </button>
               }
@@ -164,12 +178,11 @@ export function BarcodesSection({
             data-inbox-release={gap.releaseMbid}
             evidence={evidence}
             links={links}
-            disabled={busy}
           >
             <div className="toolbar px-0">
               <button
                 className="act"
-                disabled={busy}
+                disabled={state.busy}
                 onClick={() => navigator.clipboard.writeText(gap.barcode)}
               >
                 Copy barcode
@@ -179,14 +192,14 @@ export function BarcodesSection({
                   <button
                     className="act"
                     data-variant="primary"
-                    disabled={busy}
+                    disabled={state.busy}
                     onClick={() => submitBot(gap.releaseMbid, gap.releaseTitle)}
                   >
                     Confirm as prelude_fm_bot
                   </button>
                   <button
                     className="act"
-                    disabled={busy}
+                    disabled={state.busy}
                     onClick={() => revealPayload(gap.releaseMbid)}
                   >
                     {payload?.releaseMbid === gap.releaseMbid ? 'Hide' : 'View'} payload
@@ -204,7 +217,11 @@ export function BarcodesSection({
                   }))
                 }
               />
-              <button className="act" disabled={busy} onClick={() => confirmHand(gap.releaseMbid)}>
+              <button
+                className="act"
+                disabled={state.busy}
+                onClick={() => confirmHand(gap.releaseMbid)}
+              >
                 Confirm hand submission
               </button>
             </div>
@@ -214,7 +231,10 @@ export function BarcodesSection({
               </pre>
             )}
             {submissionFeedback[gap.releaseMbid] && (
-              <BotSubmissionNotice feedback={submissionFeedback[gap.releaseMbid]} />
+              <BotSubmissionNotice
+                feedback={submissionFeedback[gap.releaseMbid]}
+                onDismiss={() => dismissFeedback(gap.releaseMbid)}
+              />
             )}
           </ConfirmDisclosure>
         );

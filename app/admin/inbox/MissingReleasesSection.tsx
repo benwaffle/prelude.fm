@@ -20,6 +20,7 @@ import {
 import { ChannelBadge } from './ChannelBadge';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 
@@ -36,21 +37,21 @@ export function MissingReleasesSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, run } = useAdminAction();
+  const { pending, busy, runRow, row } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { releaseMbid: string; editId: string }>>({});
   const [liveHits, setLiveHits] = useState<Record<string, MbPickHit[]>>({});
   const [lookup, setLookup] = useState<Record<string, string | 'loading'>>({});
 
   async function confirm(albumId: string) {
     const form = forms[albumId] ?? { releaseMbid: '', editId: '' };
-    await run('Confirming submission…', async () => {
+    await runRow(albumId, 'Confirming submission…', async () => {
       await recordReleaseSubmission(albumId, form);
       await onReload();
     });
   }
 
   async function recheck(albumId: string) {
-    await run('Rechecking MusicBrainz…', async () => {
+    await runRow(albumId, 'Rechecking MusicBrainz…', async () => {
       await recheckReleaseSubmission(albumId);
       await onReload();
     });
@@ -83,7 +84,7 @@ export function MissingReleasesSection({
         releaseMbid,
       },
     }));
-    await run('Attaching release…', async () => {
+    await runRow(albumId, 'Attaching release…', async () => {
       const result = await attachPickedReleaseToAlbum({ albumId, releaseMbid });
       if (result.attached) {
         await onReload();
@@ -117,6 +118,7 @@ export function MissingReleasesSection({
         const ambiguous = album.reason === AMBIGUOUS_BARCODE_REASON;
         const hits = liveHits[album.albumId] ?? album.barcodeHits;
         const lookupState = lookup[album.albumId];
+        const state = row(album.albumId);
         const evidence = (
           <>
             <span className="mono inbox-count">{album.tracks}</span>
@@ -132,6 +134,7 @@ export function MissingReleasesSection({
                   ` · ${album.tracks - album.unanchored} track(s) already reach a recording elsewhere`}
                 {album.ledger?.releaseMbid && ` · ${album.ledger.releaseMbid}`}
               </span>
+              <RowActionStatus row={state} />
             </span>
           </>
         );
@@ -174,7 +177,11 @@ export function MissingReleasesSection({
               }
               links={links}
               action={
-                <button className="act" disabled={busy} onClick={() => recheck(album.albumId)}>
+                <button
+                  className="act"
+                  disabled={state.busy}
+                  onClick={() => recheck(album.albumId)}
+                >
                   Recheck
                 </button>
               }
@@ -189,7 +196,6 @@ export function MissingReleasesSection({
             evidence={evidence}
             links={links}
             label={ambiguous ? 'Pick…' : 'Confirm…'}
-            disabled={busy}
           >
             {ambiguous && (
               <div className="mb-4">
@@ -203,7 +209,7 @@ export function MissingReleasesSection({
                       : null
                   }
                   pickedMbid={form.releaseMbid}
-                  busy={busy}
+                  busy={state.busy}
                   pickNote="A cached pick attaches the album. A live, uncached hit only fills the confirmation form and does not write the cache."
                   onPick={(mbid) => pick(album.albumId, mbid)}
                   onLookup={album.upc ? () => lookUp(album.albumId, album.upc ?? '') : undefined}
@@ -236,7 +242,7 @@ export function MissingReleasesSection({
               <button
                 className="act"
                 data-variant="primary"
-                disabled={busy}
+                disabled={state.busy}
                 onClick={() => confirm(album.albumId)}
               >
                 Confirm submission

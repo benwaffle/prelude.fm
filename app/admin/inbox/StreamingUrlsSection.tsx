@@ -10,6 +10,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 
@@ -26,18 +27,18 @@ export function StreamingUrlsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, run } = useAdminAction();
+  const { pending, busy, runRow, row } = useAdminAction();
   const [forms, setForms] = useState<Record<string, { editId: string }>>({});
 
   async function confirm(releaseMbid: string, albumId: string) {
-    await run('Confirming submission…', async () => {
+    await runRow(`${releaseMbid}:${albumId}`, 'Confirming submission…', async () => {
       await recordStreamingUrlSubmission(releaseMbid, albumId, forms[albumId] ?? { editId: '' });
       await onReload();
     });
   }
 
-  async function recheck(releaseMbid: string) {
-    await run('Rechecking MusicBrainz…', async () => {
+  async function recheck(releaseMbid: string, albumId: string) {
+    await runRow(`${releaseMbid}:${albumId}`, 'Rechecking MusicBrainz…', async () => {
       await recheckStreamingUrl(releaseMbid);
       await onReload();
     });
@@ -55,6 +56,7 @@ export function StreamingUrlsSection({
       description="Only releases whose URL relations were fetched are listed. Unfetched remains unknown, not missing."
     >
       {rows.map((gap) => {
+        const state = row(`${gap.releaseMbid}:${gap.albumId}`);
         const evidence = (
           <span className="min-w-0">
             <span className="block truncate">{gap.releaseTitle}</span>
@@ -62,6 +64,7 @@ export function StreamingUrlsSection({
             <code className="mono block max-w-[60ch] truncate select-all text-[11px] text-[var(--ink-2)]">
               {gap.spotifyUrl}
             </code>
+            <RowActionStatus row={state} />
           </span>
         );
         const links = (
@@ -84,7 +87,11 @@ export function StreamingUrlsSection({
               }
               links={links}
               action={
-                <button className="act" disabled={busy} onClick={() => recheck(gap.releaseMbid)}>
+                <button
+                  className="act"
+                  disabled={state.busy}
+                  onClick={() => recheck(gap.releaseMbid, gap.albumId)}
+                >
                   Recheck
                 </button>
               }
@@ -100,7 +107,6 @@ export function StreamingUrlsSection({
             data-inbox-album={gap.albumId}
             evidence={evidence}
             links={links}
-            disabled={busy}
           >
             <div className="toolbar px-0">
               <button className="act" onClick={() => navigator.clipboard.writeText(gap.spotifyUrl)}>
@@ -120,7 +126,7 @@ export function StreamingUrlsSection({
               <button
                 className="act"
                 data-variant="primary"
-                disabled={busy}
+                disabled={state.busy}
                 onClick={() => confirm(gap.releaseMbid, gap.albumId)}
               >
                 Confirm submission
