@@ -28,6 +28,11 @@ test('the note links the source an editor would check', () => {
   assert.match(note, /https:\/\/open\.spotify\.com\/album\/album1/);
 });
 
+test('the note links the MusicBrainz release the ISRCs were matched on', () => {
+  const note = editNoteFor([gap()]);
+  assert.match(note, /Release: https:\/\/musicbrainz\.org\/release\/rel1/);
+});
+
 test('both barcodes appear, each labelled as whose it is', () => {
   // The same number written two ways — Spotify pads a UPC-12. Calling one of
   // them the other is the sort of small inaccuracy that costs a bot trust.

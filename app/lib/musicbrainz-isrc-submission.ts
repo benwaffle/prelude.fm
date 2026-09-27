@@ -132,7 +132,8 @@ export function editNoteFor(gaps: IsrcGap[]): string {
   /*
    * Written so another editor can check the claim rather than take it. The
    * barcode is what ties the two releases together, the Spotify link is the
-   * source the ISRCs came from, and the worst duration difference bounds the
+   * source the ISRCs came from, the release link is the MusicBrainz side of
+   * that pairing, and the worst duration difference bounds the
    * whole batch — an editor who disagrees can open all three and see.
    *
    * It deliberately does not restate which ISRC went where: the edit itself
@@ -142,6 +143,7 @@ export function editNoteFor(gaps: IsrcGap[]): string {
   return [
     `${gaps.length} ISRC(s) from the Spotify release with ${barcodes}.`,
     `Source: ${source}`,
+    `Release: https://musicbrainz.org/release/${first.releaseMbid}`,
     `Each ISRC is taken from the Spotify track at the same disc and track position; every track's duration agrees with MusicBrainz to within ${describeDelta(worst)} (tolerance 3s).`,
     `Submitted by prelude_fm_bot, operated by ${contact}. Replies to this note are read.`,
   ].join('\n\n');

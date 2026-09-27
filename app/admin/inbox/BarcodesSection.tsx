@@ -16,7 +16,35 @@ import { InboxRow } from './InboxRow';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 import { BotSubmissionNotice } from './BotSubmissionNotice';
+import { Notice } from '../components/Notice';
 import { useBotSubmission } from './useBotSubmission';
+
+/**
+ * MusicBrainz drops the note on barcode edits sent through its API
+ * (MBS-14476), so the edit went in without one. Show it for adding by hand.
+ */
+function UnsentBarcodeNote({ releaseMbid, note }: { releaseMbid: string; note: string }) {
+  return (
+    <Notice intent="info">
+      <p>
+        MusicBrainz did not attach this note to the barcode edit. Add it by hand from the{' '}
+        <a
+          className="underline"
+          href={`https://musicbrainz.org/release/${releaseMbid}/edits`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          release&rsquo;s edit history
+        </a>
+        .
+      </p>
+      <pre className="mono mt-2 whitespace-pre-wrap break-words text-[11px]">{note}</pre>
+      <button className="act mt-2" onClick={() => navigator.clipboard.writeText(note)}>
+        Copy note
+      </button>
+    </Notice>
+  );
+}
 
 export function BarcodesSection({
   rows,
@@ -111,6 +139,9 @@ export function BarcodesSection({
                 <>
                   {evidence}
                   <span className="album-meta">{gap.ledger.label}</span>
+                  {gap.ledger.unsentNote && (
+                    <UnsentBarcodeNote releaseMbid={gap.releaseMbid} note={gap.ledger.unsentNote} />
+                  )}
                   {submissionFeedback[gap.releaseMbid] && (
                     <BotSubmissionNotice feedback={submissionFeedback[gap.releaseMbid]} />
                   )}

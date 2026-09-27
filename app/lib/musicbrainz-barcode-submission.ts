@@ -36,6 +36,11 @@ export function buildBarcodeSubmission(items: BarcodeSubmissionItem[], editNote 
     )
     .join('\n');
 
+  /*
+   * Sent although MusicBrainz currently drops it: its barcode handler never
+   * reads <edit-note> (MBS-14476), unlike the ISRC one. Until that ships, the
+   * Inbox shows the note on the row so it can be added to the edit by hand.
+   */
   const note = editNote.trim() ? `  <edit-note>${escapeXml(editNote.trim())}</edit-note>\n` : '';
 
   return (
