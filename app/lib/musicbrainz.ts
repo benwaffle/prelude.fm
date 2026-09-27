@@ -10,6 +10,7 @@ import {
   scheduleMusicBrainzRequest,
   type MusicBrainzChannel,
 } from './musicbrainz-gateway';
+import { normalizeIsrc } from './isrc';
 import type {
   MbArtist,
   MbCredit,
@@ -123,7 +124,7 @@ export async function findRecordingsByIsrcs(
   const found = new Map<string, string>();
   if (isrcs.length === 0) return found;
 
-  const wanted = new Set(isrcs);
+  const wanted = new Set(isrcs.map((isrc) => normalizeIsrc(isrc)));
   const query = isrcs.map((isrc) => `isrc:${isrc}`).join(' OR ');
   const result = await mbGet<{ recordings?: MbRecordingSearchHit[] }>(
     `/recording?query=${encodeURIComponent(query)}&fmt=json&limit=100`,
@@ -131,7 +132,8 @@ export async function findRecordingsByIsrcs(
   );
 
   for (const recording of result?.recordings ?? []) {
-    for (const isrc of recording.isrcs ?? []) {
+    for (const reported of recording.isrcs ?? []) {
+      const isrc = normalizeIsrc(reported);
       if (wanted.has(isrc) && !found.has(isrc)) found.set(isrc, recording.id);
     }
   }

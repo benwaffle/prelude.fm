@@ -1,6 +1,7 @@
 import type { Track } from '@spotify/web-api-ts-sdk';
 import { db, type DatabaseExecutor } from './db';
 import { spotifyAlbum, spotifyArtist, spotifyTrack, trackArtists } from './db/schema';
+import { normalizeIsrc } from './isrc';
 import type { SpotifyAlbumMetadata } from './spotify-app-client';
 
 /**
@@ -59,7 +60,8 @@ export async function hydrateProviderAlbum(
   for (const track of tracks) {
     // Only write the ISRC when Spotify gave us one, so a payload that omits
     // it cannot erase a value an earlier read stored.
-    const isrc = track.external_ids?.isrc ? { isrc: track.external_ids.isrc } : {};
+    const spotifyIsrc = normalizeIsrc(track.external_ids?.isrc);
+    const isrc = spotifyIsrc ? { isrc: spotifyIsrc } : {};
     const values = {
       spotifyId: track.id,
       title: track.name,

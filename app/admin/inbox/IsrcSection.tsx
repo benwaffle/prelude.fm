@@ -163,7 +163,7 @@ export function IsrcSection({
                   <th>MusicBrainz recording</th>
                   <th>Δ</th>
                   <th>ISRC</th>
-                  <th>Ledger</th>
+                  <th>Submitted</th>
                 </tr>
               </thead>
               <tbody>
@@ -184,7 +184,9 @@ export function IsrcSection({
                     </td>
                     <td className="mono whitespace-nowrap">{track.delta}ms</td>
                     <td className="mono whitespace-nowrap">{track.isrc}</td>
-                    <td className="album-meta whitespace-nowrap">{track.ledger?.label ?? ''}</td>
+                    <td className="album-meta whitespace-nowrap">
+                      {track.ledger?.label ?? 'not yet submitted'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -192,7 +194,7 @@ export function IsrcSection({
             <p className="mt-2 text-[11px] text-[var(--faint)]">
               The release barcode is the album barcode
               {release.upc && release.upc !== release.barcode ? ` (${release.upc} padded)` : ''}.
-              The bot and MagicISRC only receive rows not already in the ledger.
+              The bot and MagicISRC only receive rows not yet recorded as submitted.
             </p>
             <div className="toolbar px-0">
               {bot?.configured && (

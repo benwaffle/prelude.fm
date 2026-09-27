@@ -18,6 +18,7 @@
 import { and, gte, inArray, sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbSubmission } from './db/schema';
+import { normalizeIsrc } from './isrc';
 import { scheduleMusicBrainzRequest } from './musicbrainz-gateway';
 import {
   barcodeEligibleGaps,
@@ -218,7 +219,7 @@ export async function runIsrcBot(
         kind: 'isrc',
         targetMbid: gap.recordingMbid,
         subject: gap.spotifyTrackId,
-        value: gap.isrc,
+        value: normalizeIsrc(gap.isrc),
         evidence: {
           releaseMbid: gap.releaseMbid,
           barcode: gap.barcode,

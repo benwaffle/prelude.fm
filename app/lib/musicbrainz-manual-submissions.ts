@@ -536,7 +536,8 @@ export function errorReportDraft(
         recordingUrls: recordings.map((mbid) => `https://musicbrainz.org/recording/${mbid}`),
         recordingTitles: report.titles,
         identityRecordingMbid: recordings[0],
-        identityNote: 'Ledger identity only; the report concerns every recording listed.',
+        identityNote:
+          'Stored against the first recording only; the report concerns every recording listed.',
         confirmedBy: 'human',
       },
     };
