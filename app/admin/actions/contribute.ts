@@ -10,7 +10,8 @@ import {
   contributionCounts,
   cachedReleasesSharingBarcodes,
   harmonyImportLink,
-  isrcEligibleGapsByRelease,
+  isrcBatchGapsByRelease,
+  isrcEligibleGaps,
   isrcGapsByRelease,
   magicIsrcLink,
   misalignedAlbums,
@@ -56,6 +57,11 @@ import {
   createdWorkCacheState,
   createdWorkLanded,
   describeLedgerState,
+  blocksResubmission,
+  describePreviousSubmission,
+  needsExplicitResubmission,
+  splitSubmissionHistory,
+  submissionHistoryBy,
   errorReportDraftFromContested,
   errorReportDraftFromMisaligned,
   ManualSubmissionError,
@@ -110,14 +116,20 @@ export async function getBotPayload(releaseMbid: string): Promise<string> {
   return run.payload;
 }
 
+/** One ISRC voters rejected before, one track at a time. */
+export type IsrcResubmission = { recordingMbid: string; isrc: string };
+
 export type BotSubmissionResult =
   | { ok: true; submitted: number; title: string | null }
   | { ok: false; status: number | null; detail: string };
 
-export async function submitBotBatch(releaseMbid: string): Promise<BotSubmissionResult> {
+export async function submitBotBatch(
+  releaseMbid: string,
+  resubmit?: IsrcResubmission,
+): Promise<BotSubmissionResult> {
   await checkAuth();
   try {
-    const run = await runIsrcBot({ apply: true, releaseMbid });
+    const run = await runIsrcBot({ apply: true, releaseMbid, resubmit });
     return { ok: true, submitted: run.edits, title: run.albumTitle };
   } catch (error) {
     const message =
@@ -161,6 +173,16 @@ export async function submitBarcodeBotBatch(releaseMbid: string): Promise<BotSub
   }
 }
 
+export type SubmissionHistoryView = {
+  id: number;
+  outcome: string;
+  editId: string | null;
+  /** "rejected before (edit 123)". */
+  label: string;
+  /** Rejected: a batch leaves it out; only its own row resubmits it. */
+  explicitOnly: boolean;
+};
+
 export type ContributionView = {
   counts: Awaited<ReturnType<typeof contributionCounts>>;
   isrcReleases: {
@@ -168,7 +190,12 @@ export type ContributionView = {
     albumId: string;
     albumTitle: string;
     missing: number;
+    /** Tracks with no submission in hand, including ones rejected or withdrawn before. */
     eligible: number;
+    /** What the bot, MagicISRC and hand-confirm send: eligible minus rejected before. */
+    batch: number;
+    /** Eligible tracks voters rejected before; each needs its own click. */
+    rejected: number;
     link: string;
     /** The release's barcode, and ours — identical by construction, shown anyway. */
     barcode: string | null;
@@ -189,6 +216,8 @@ export type ContributionView = {
         editId: string | null;
         label: string;
       } | null;
+      /** The latest rejected or withdrawn attempt, kept so a returned gap shows its history. */
+      previous: SubmissionHistoryView | null;
     }[];
   }[];
   workGaps: (Awaited<ReturnType<typeof workRelationshipGaps>>[number] & {
@@ -202,6 +231,8 @@ export type ContributionView = {
       editId: string | null;
       submittedAt: Date;
       submittedBy: string;
+      /** Pending or applied; a rejected or withdrawn row is history. */
+      active: boolean;
       label: string;
     }[];
   })[];
@@ -214,6 +245,8 @@ export type ContributionView = {
       disposition: string | null;
       label: string;
     } | null;
+    /** The latest rejected or withdrawn attempt, kept so a returned gap shows its history. */
+    previous: SubmissionHistoryView | null;
   })[];
   missing: (Awaited<ReturnType<typeof missingReleases>>[number] & {
     harmony: string;
@@ -225,6 +258,8 @@ export type ContributionView = {
       releaseMbid: string | null;
       label: string;
     } | null;
+    /** The latest rejected or withdrawn attempt, kept so a returned gap shows its history. */
+    previous: SubmissionHistoryView | null;
   })[];
   barcodes: (Awaited<ReturnType<typeof barcodeGaps>>[number] & {
     edit: string;
@@ -236,6 +271,8 @@ export type ContributionView = {
       /** The bot's note, which MusicBrainz did not attach to the edit. */
       unsentNote: string | null;
     } | null;
+    /** The latest rejected or withdrawn attempt, kept so a returned gap shows its history. */
+    previous: SubmissionHistoryView | null;
   })[];
   streamingUrls: (Awaited<ReturnType<typeof streamingUrlGaps>>[number] & {
     edit: string;
@@ -246,6 +283,8 @@ export type ContributionView = {
       editId: string | null;
       label: string;
     } | null;
+    /** The latest rejected or withdrawn attempt, kept so a returned gap shows its history. */
+    previous: SubmissionHistoryView | null;
   })[];
   misaligned: (Awaited<ReturnType<typeof misalignedAlbums>>[number] & {
     ledger: {
@@ -255,6 +294,8 @@ export type ContributionView = {
       disposition: string | null;
       label: string;
     } | null;
+    /** The latest rejected or withdrawn attempt, kept so a returned gap shows its history. */
+    previous: SubmissionHistoryView | null;
   })[];
   recent: {
     id: number;
@@ -267,6 +308,32 @@ export type ContributionView = {
     note: string | null;
   }[];
 };
+
+function historyView(
+  row: { id: number; outcome: string; editId: string | null } | null | undefined,
+): SubmissionHistoryView | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    outcome: row.outcome,
+    editId: row.editId,
+    label: describePreviousSubmission(row),
+    explicitOnly: needsExplicitResubmission(row),
+  };
+}
+
+/** The latest rejected or withdrawn attempt per key, for rows whose gap came back. */
+function previousBy<T extends { id: number; outcome: string; editId: string | null }>(
+  rows: readonly T[],
+  keyOf: (row: T) => string | null,
+): Map<string, SubmissionHistoryView> {
+  const map = new Map<string, SubmissionHistoryView>();
+  for (const [key, { previous }] of submissionHistoryBy(rows, keyOf)) {
+    const view = historyView(previous);
+    if (view) map.set(key, view);
+  }
+  return map;
+}
 
 export async function getContributions(
   limits?: Partial<ContributionListLimits>,
@@ -411,20 +478,23 @@ export async function getContributions(
         .filter((upc): upc is string => Boolean(upc)),
     ),
   ]);
+  const releasePreviousByAlbum = previousBy(releaseLedgerRows, (row) => row.albumId);
   const releaseLedgerByAlbum = new Map(
-    releaseLedgerRows.map((row) => {
-      const releaseMbid = (row.evidence as { releaseMbid?: unknown } | null)?.releaseMbid;
-      return [
-        row.albumId,
-        {
-          id: row.id,
-          outcome: row.outcome,
-          editId: row.editId,
-          releaseMbid: typeof releaseMbid === 'string' ? releaseMbid : null,
-          label: describeLedgerState(row),
-        },
-      ] as const;
-    }),
+    releaseLedgerRows
+      .filter((row) => blocksResubmission(row.outcome))
+      .map((row) => {
+        const releaseMbid = (row.evidence as { releaseMbid?: unknown } | null)?.releaseMbid;
+        return [
+          row.albumId,
+          {
+            id: row.id,
+            outcome: row.outcome,
+            editId: row.editId,
+            releaseMbid: typeof releaseMbid === 'string' ? releaseMbid : null,
+            label: describeLedgerState(row),
+          },
+        ] as const;
+      }),
   );
 
   const contestedIsrcValues = contested.map((row) => row.isrc);
@@ -464,7 +534,7 @@ export async function getContributions(
     disposition: string | null;
     label: string;
   } | null {
-    const row = errorLedgerRows.find(match);
+    const row = errorLedgerRows.find((entry) => blocksResubmission(entry.outcome) && match(entry));
     if (!row) return null;
     const disposition = (row.evidence as { disposition?: unknown } | null)?.disposition;
     return {
@@ -474,6 +544,12 @@ export async function getContributions(
       disposition: typeof disposition === 'string' ? disposition : null,
       label: describeLedgerState(row),
     };
+  }
+
+  function errorPreviousOf(
+    match: (row: (typeof errorLedgerRows)[number]) => boolean,
+  ): SubmissionHistoryView | null {
+    return historyView(splitSubmissionHistory(errorLedgerRows.filter(match)).previous);
   }
 
   const streamingAlbumIds = streamingUrls.map((gap) => gap.albumId);
@@ -494,16 +570,19 @@ export async function getContributions(
               inArray(mbSubmission.subject, streamingAlbumIds),
             ),
           );
+  const streamingPreviousByAlbum = previousBy(streamingLedgerRows, (row) => row.albumId);
   const streamingLedgerByAlbum = new Map(
-    streamingLedgerRows.map((row) => [
-      row.albumId,
-      {
-        id: row.id,
-        outcome: row.outcome,
-        editId: row.editId,
-        label: describeLedgerState(row),
-      },
-    ]),
+    streamingLedgerRows
+      .filter((row) => blocksResubmission(row.outcome))
+      .map((row) => [
+        row.albumId,
+        {
+          id: row.id,
+          outcome: row.outcome,
+          editId: row.editId,
+          label: describeLedgerState(row),
+        },
+      ]),
   );
 
   const barcodeReleaseMbids = barcodes.map((gap) => gap.releaseMbid);
@@ -526,18 +605,21 @@ export async function getContributions(
               inArray(mbSubmission.targetMbid, barcodeReleaseMbids),
             ),
           );
+  const barcodePreviousByRelease = previousBy(barcodeLedgerRows, (row) => row.releaseMbid);
   const barcodeLedgerByRelease = new Map(
-    barcodeLedgerRows.map((row) => [
-      row.releaseMbid,
-      {
-        id: row.id,
-        outcome: row.outcome,
-        editId: row.editId,
-        label: describeLedgerState(row),
-        // MusicBrainz drops the note on bot barcode edits (MBS-14476).
-        unsentNote: row.submittedBy.startsWith('bot:') && row.note ? row.note : null,
-      },
-    ]),
+    barcodeLedgerRows
+      .filter((row) => blocksResubmission(row.outcome))
+      .map((row) => [
+        row.releaseMbid,
+        {
+          id: row.id,
+          outcome: row.outcome,
+          editId: row.editId,
+          label: describeLedgerState(row),
+          // MusicBrainz drops the note on bot barcode edits (MBS-14476).
+          unsentNote: row.submittedBy.startsWith('bot:') && row.note ? row.note : null,
+        },
+      ]),
   );
 
   const isrcRecordingMbids = [
@@ -561,21 +643,28 @@ export async function getContributions(
               inArray(mbSubmission.targetMbid, isrcRecordingMbids),
             ),
           );
+  const isrcPairKey = (recordingMbid: string | null, isrc: string | null) =>
+    recordingMbid && isrc ? `${recordingMbid}:${isrc}` : null;
+  const isrcPreviousByPair = previousBy(isrcLedgerRows, (row) =>
+    isrcPairKey(row.recordingMbid, row.isrc),
+  );
   const isrcLedgerByPair = new Map(
-    isrcLedgerRows.flatMap((row) => {
-      if (!row.recordingMbid || !row.isrc) return [];
-      return [
-        [
-          `${row.recordingMbid}:${row.isrc}`,
-          {
-            id: row.id,
-            outcome: row.outcome,
-            editId: row.editId,
-            label: describeLedgerState(row),
-          },
-        ] as const,
-      ];
-    }),
+    isrcLedgerRows
+      .filter((row) => blocksResubmission(row.outcome))
+      .flatMap((row) => {
+        if (!row.recordingMbid || !row.isrc) return [];
+        return [
+          [
+            `${row.recordingMbid}:${row.isrc}`,
+            {
+              id: row.id,
+              outcome: row.outcome,
+              editId: row.editId,
+              label: describeLedgerState(row),
+            },
+          ] as const,
+        ];
+      }),
   );
 
   return {
@@ -592,9 +681,14 @@ export async function getContributions(
         barcode: gap.barcode,
         delta: gap.durationDeltaMs,
         ledger: isrcLedgerByPair.get(`${gap.recordingMbid}:${gap.isrc}`) ?? null,
+        previous: isrcPreviousByPair.get(`${gap.recordingMbid}:${gap.isrc}`) ?? null,
       }));
       const eligible = release.gaps.filter(
         (gap) => !isrcLedgerByPair.has(`${gap.recordingMbid}:${gap.isrc}`),
+      );
+      // Rejected before: offered again, but only through the track's own click.
+      const batch = eligible.filter(
+        (gap) => !isrcPreviousByPair.get(`${gap.recordingMbid}:${gap.isrc}`)?.explicitOnly,
       );
       return {
         releaseMbid: release.releaseMbid,
@@ -602,7 +696,9 @@ export async function getContributions(
         albumTitle: release.albumTitle,
         missing: release.missing,
         eligible: eligible.length,
-        link: eligible.length === 0 ? '' : magicIsrcLink(release.releaseMbid, eligible),
+        batch: batch.length,
+        rejected: eligible.length - batch.length,
+        link: batch.length === 0 ? '' : magicIsrcLink(release.releaseMbid, batch),
         barcode: release.gaps[0]?.barcode ?? null,
         upc: release.gaps[0]?.upc ?? null,
         tracks,
@@ -620,13 +716,17 @@ export async function getContributions(
         editId: row.editId,
         submittedAt: row.submittedAt,
         submittedBy: row.submittedBy,
-        label: describeLedgerState(row),
+        active: blocksResubmission(row.outcome),
+        label: blocksResubmission(row.outcome)
+          ? describeLedgerState(row)
+          : describePreviousSubmission(row),
       })),
     })),
     contested: contested.map((row) => ({
       ...row,
       isrcUrl: `https://musicbrainz.org/isrc/${row.isrc}`,
       ledger: errorLedgerOf((entry) => entry.value === row.isrc),
+      previous: errorPreviousOf((entry) => entry.value === row.isrc),
     })),
     missing: missing.map((album) => ({
       ...album,
@@ -636,21 +736,25 @@ export async function getContributions(
           ? (barcodeHitsByUpc.get(normalisePickBarcode(album.upc) ?? '') ?? [])
           : [],
       ledger: releaseLedgerByAlbum.get(album.albumId) ?? null,
+      previous: releasePreviousByAlbum.get(album.albumId) ?? null,
     })),
     barcodes: barcodes.map((gap) => ({
       ...gap,
       edit: releaseEditLink(gap.releaseMbid),
       ledger: barcodeLedgerByRelease.get(gap.releaseMbid) ?? null,
+      previous: barcodePreviousByRelease.get(gap.releaseMbid) ?? null,
     })),
     streamingUrls: streamingUrls.map((gap) => ({
       ...gap,
       edit: releaseEditLink(gap.releaseMbid),
       spotifyUrl: spotifyAlbumUrl(gap.albumId),
       ledger: streamingLedgerByAlbum.get(gap.albumId) ?? null,
+      previous: streamingPreviousByAlbum.get(gap.albumId) ?? null,
     })),
     misaligned: misaligned.map((album) => ({
       ...album,
       ledger: errorLedgerOf((entry) => entry.subject === album.albumId),
+      previous: errorPreviousOf((entry) => entry.subject === album.albumId),
     })),
     recent,
   };
@@ -672,11 +776,48 @@ export async function recordIsrcSubmission(
   const submitter = `human:${session.user.name}`;
   const editId = normalizeEditId(options.editId);
 
-  const releases = await isrcEligibleGapsByRelease(500);
+  // The batch: a rejected ISRC is only recorded through its own row.
+  const releases = await isrcBatchGapsByRelease(500);
   const release = releases.find((candidate) => candidate.releaseMbid === releaseMbid);
   if (!release) throw new Error('That release has no outstanding ISRCs');
 
-  for (const gap of release.gaps) {
+  await recordIsrcGaps(release.gaps, submitter, { note: options.note, editId });
+  return getContributions();
+}
+
+/**
+ * Record a hand resubmission of one ISRC that voters rejected before. The
+ * rejected row stays as history beside the new pending one.
+ */
+export async function recordIsrcResubmission(
+  releaseMbid: string,
+  resubmit: IsrcResubmission,
+  options: { note?: string; editId?: string } = {},
+) {
+  const session = await checkAuth();
+  const isrc = normalizeIsrc(resubmit.isrc);
+  const gap = (await isrcEligibleGaps(5_000)).find(
+    (candidate) =>
+      candidate.releaseMbid === releaseMbid &&
+      candidate.recordingMbid === resubmit.recordingMbid &&
+      normalizeIsrc(candidate.isrc) === isrc,
+  );
+  if (!gap) throw new ManualSubmissionError('That ISRC is not outstanding on this release');
+
+  await recordIsrcGaps([gap], `human:${session.user.name}`, {
+    note: options.note,
+    editId: normalizeEditId(options.editId),
+  });
+  return getContributions();
+}
+
+async function recordIsrcGaps(
+  gaps: IsrcGap[],
+  submitter: string,
+  options: { note?: string; editId: string | null },
+) {
+  const { editId } = options;
+  for (const gap of gaps) {
     await db
       .insert(mbSubmission)
       .values({
@@ -698,8 +839,6 @@ export async function recordIsrcSubmission(
       })
       .onConflictDoNothing();
   }
-
-  return getContributions();
 }
 
 /**

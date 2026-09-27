@@ -10,6 +10,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
@@ -64,6 +65,7 @@ export function StreamingUrlsSection({
             <code className="mono block max-w-[60ch] truncate select-all text-[11px] text-[var(--ink-2)]">
               {gap.spotifyUrl}
             </code>
+            {!gap.ledger && gap.previous && <PreviousSubmission previous={gap.previous} />}
             <RowActionStatus row={state} />
           </span>
         );

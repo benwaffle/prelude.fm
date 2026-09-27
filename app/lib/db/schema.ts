@@ -753,8 +753,11 @@ export const mbSubmission = sqliteTable(
     note: text('note'),
   },
   (table) => [
-    // One submission per value per target: the deduplicator.
-    uniqueIndex('mb_submission_identity_idx').on(table.kind, table.targetMbid, table.value),
+    // One submission in hand per value per target: the deduplicator. Rejected
+    // and withdrawn rows are history and may sit beside a later attempt.
+    uniqueIndex('mb_submission_identity_idx')
+      .on(table.kind, table.targetMbid, table.value)
+      .where(sql`${table.outcome} in ('pending', 'applied')`),
     index('mb_submission_outcome_idx').on(table.outcome),
     index('mb_submission_subject_idx').on(table.subject),
   ],

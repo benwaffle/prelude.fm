@@ -42,6 +42,8 @@ import {
   type SpotifyReleaseEvidence,
 } from './musicbrainz-contribution-safety';
 import {
+  BATCH_BLOCKING_OUTCOMES,
+  BLOCKING_OUTCOMES,
   isStreamingUrlContributionGap,
   spotifyFreeStreamingUrlState,
   type ReleaseUrlRelation,
@@ -100,17 +102,27 @@ export {
  * is `isrcEligibleGaps`, which excludes them.
  */
 export async function isrcGaps(limit = 200): Promise<IsrcGap[]> {
-  return verifiedIsrcGaps(await isrcGapRows(false), limit);
+  return verifiedIsrcGaps(await isrcGapRows('all'), limit);
 }
 
 /**
- * Cache gaps that nobody has submitted yet.
+ * Cache gaps with no submission in hand (pending or applied).
  *
- * The bot, MagicISRC links, and hand-confirm write this set. The displayed
- * list is `isrcGaps`, which keeps pending ledger rows visible.
+ * Includes gaps whose earlier submission was rejected or withdrawn: those
+ * are offered again. The displayed list is `isrcGaps`, which keeps pending
+ * ledger rows visible.
  */
 export async function isrcEligibleGaps(limit = 200): Promise<IsrcGap[]> {
-  return verifiedIsrcGaps(await isrcGapRows(true), limit);
+  return verifiedIsrcGaps(await isrcGapRows('eligible'), limit);
+}
+
+/**
+ * What a release's batch may carry: eligible gaps minus those MusicBrainz
+ * voters rejected before. The bot, MagicISRC links and hand-confirm send
+ * this set; a rejected gap goes again only through its own per-row click.
+ */
+export async function isrcBatchGaps(limit = 200): Promise<IsrcGap[]> {
+  return verifiedIsrcGaps(await isrcGapRows('batch'), limit);
 }
 
 /**
@@ -158,7 +170,7 @@ async function verifiedIsrcGaps(candidates: IsrcGap[], limit: number): Promise<I
   ).slice(0, limit);
 }
 
-async function isrcGapRows(eligibleOnly: boolean): Promise<IsrcGap[]> {
+async function isrcGapRows(scope: 'all' | 'eligible' | 'batch'): Promise<IsrcGap[]> {
   const delta = sql<number>`abs(coalesce(${mbReleaseTrack.length}, ${mbRecording.length}) - ${spotifyTrack.durationMs})`;
 
   return db
@@ -204,14 +216,15 @@ async function isrcGapRows(eligibleOnly: boolean): Promise<IsrcGap[]> {
           where ${mbRecordingIsrc.recordingMbid} = ${trackRecording.recordingMbid}
             and ${mbRecordingIsrc.isrc} = ${spotifyTrack.isrc}
         )`,
-        eligibleOnly
-          ? sql`not exists (
+        scope === 'all'
+          ? undefined
+          : sql`not exists (
               select 1 from ${mbSubmission}
               where ${mbSubmission.kind} = 'isrc'
                 and ${mbSubmission.targetMbid} = ${trackRecording.recordingMbid}
                 and ${mbSubmission.value} = ${spotifyTrack.isrc}
-            )`
-          : undefined,
+                and ${inArray(mbSubmission.outcome, scope === 'batch' ? [...BATCH_BLOCKING_OUTCOMES] : [...BLOCKING_OUTCOMES])}
+            )`,
       ),
     );
 }
@@ -279,6 +292,10 @@ export async function isrcEligibleGapsByRelease(
   offset = 0,
 ): Promise<IsrcGapRelease[]> {
   return groupIsrcGapsByRelease(await isrcEligibleGaps(2_000), limit, offset);
+}
+
+export async function isrcBatchGapsByRelease(limit = 100, offset = 0): Promise<IsrcGapRelease[]> {
+  return groupIsrcGapsByRelease(await isrcBatchGaps(2_000), limit, offset);
 }
 
 function groupIsrcGapsByRelease(gaps: IsrcGap[], limit: number, offset = 0): IsrcGapRelease[] {
@@ -748,12 +765,18 @@ export async function barcodeGaps(limit = 50, offset = 0): Promise<BarcodeGap[]>
 }
 
 /**
- * Barcode gaps nobody has submitted yet.
+ * Barcode gaps with no submission in hand (pending or applied).
  *
  * The displayed list is `barcodeGaps`, which keeps pending ledger rows visible.
- * The bot only receives rows from this set.
+ * The bot only receives rows from this set. With `batch`, releases whose
+ * barcode edit was rejected before are left out too: those go again only
+ * when their own row asks.
  */
-export async function barcodeEligibleGaps(limit = 200, offset = 0): Promise<BarcodeGap[]> {
+export async function barcodeEligibleGaps(
+  limit = 200,
+  offset = 0,
+  { batch = false }: { batch?: boolean } = {},
+): Promise<BarcodeGap[]> {
   const gaps = await barcodeGaps(5_000);
   if (gaps.length === 0) return [];
 
@@ -764,7 +787,16 @@ export async function barcodeEligibleGaps(limit = 200, offset = 0): Promise<Barc
       value: mbSubmission.value,
     })
     .from(mbSubmission)
-    .where(and(eq(mbSubmission.kind, 'barcode'), inArray(mbSubmission.targetMbid, releaseMbids)));
+    .where(
+      and(
+        eq(mbSubmission.kind, 'barcode'),
+        inArray(mbSubmission.targetMbid, releaseMbids),
+        inArray(
+          mbSubmission.outcome,
+          batch ? [...BATCH_BLOCKING_OUTCOMES] : [...BLOCKING_OUTCOMES],
+        ),
+      ),
+    );
 
   const ledgered = new Set(ledgerRows.map((row) => `${row.targetMbid}\u0000${row.value ?? ''}`));
 

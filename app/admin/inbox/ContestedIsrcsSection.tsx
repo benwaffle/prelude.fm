@@ -10,6 +10,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
@@ -68,6 +69,7 @@ export function ContestedIsrcsSection({
                 </span>
               ))}
             </span>
+            {!row.ledger && row.previous && <PreviousSubmission previous={row.previous} />}
             <RowActionStatus row={state} />
           </span>
         );

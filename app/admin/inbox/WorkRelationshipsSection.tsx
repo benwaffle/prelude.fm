@@ -87,7 +87,12 @@ export function WorkRelationshipsSection({
       description="Candidates come from sibling recordings on the same cached MusicBrainz release. They are possibilities, not inferred relationships."
     >
       {rows.map((gap) => {
-        const created = gap.ledger.find((row) => row.kind === 'work');
+        const inHand = gap.ledger.filter((row) => row.active);
+        const history = gap.ledger.filter((row) => !row.active);
+        const created = inHand.find((row) => row.kind === 'work');
+        const createdBefore = history
+          .filter((row) => row.kind === 'work')
+          .sort((a, b) => b.id - a.id)[0];
         const createForm = createForms[gap.recordingMbid] ?? { workMbid: '', editId: '' };
         const hits = gap.candidates.map(mbWorkPickHit);
         const candidatesByMbid = new Map(
@@ -106,8 +111,9 @@ export function WorkRelationshipsSection({
                 <span className="album-meta">
                   {gap.albumTitle} · {gap.candidates.length} MusicBrainz candidate
                   {gap.candidates.length === 1 ? '' : 's'}
-                  {gap.ledger.length > 0 &&
-                    ` · ${gap.ledger.length} recorded${gap.ledger.some((row) => !row.editId) ? ', edit ID missing' : ''}`}
+                  {inHand.length > 0 &&
+                    ` · ${inHand.length} recorded${inHand.some((row) => !row.editId) ? ', edit ID missing' : ''}`}
+                  {history.length > 0 && ` · ${history.length} rejected or withdrawn before`}
                 </span>
                 <RowActionStatus row={state} />
               </span>
@@ -132,7 +138,13 @@ export function WorkRelationshipsSection({
               renderHitActions={(hit) => {
                 const candidate = candidatesByMbid.get(hit.mbid);
                 if (!candidate) return null;
-                const recorded = gap.ledger.find(
+                const before = history
+                  .filter(
+                    (row) =>
+                      row.kind === 'work_relationship' && row.workMbid === candidate.workMbid,
+                  )
+                  .sort((a, b) => b.id - a.id)[0];
+                const recorded = inHand.find(
                   (row) => row.kind === 'work_relationship' && row.workMbid === candidate.workMbid,
                 );
                 if (recorded) {
@@ -155,7 +167,10 @@ export function WorkRelationshipsSection({
                 const form = relationshipForms[key] ?? { editId: '' };
                 return (
                   <>
-                    <span className="album-meta shrink-0">{candidate.evidence.join(', ')}</span>
+                    <span className="album-meta shrink-0">
+                      {candidate.evidence.join(', ')}
+                      {before && ` · ${before.label}`}
+                    </span>
                     <input
                       className="mono w-36 shrink-0"
                       placeholder="edit ID (optional)"
@@ -215,6 +230,11 @@ export function WorkRelationshipsSection({
                 />
               ) : (
                 <div className="toolbar px-0">
+                  {createdBefore && (
+                    <span className="album-meta">
+                      created work {createdBefore.workMbid} · {createdBefore.label}
+                    </span>
+                  )}
                   <input
                     className="mono min-w-52 flex-1"
                     placeholder="new work MBID"

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useAdminAction } from '../components/useAdminAction';
 import {
   getBotPayload,
+  recordIsrcResubmission,
   recordIsrcSubmission,
   recheckIsrcRelease,
   submitBotBatch,
@@ -13,6 +14,7 @@ import {
 import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxSection } from './InboxSection';
+import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
 import { LoadMoreRows } from './LoadMoreRows';
 import { BotSubmissionNotice } from './BotSubmissionNotice';
@@ -20,7 +22,16 @@ import { useBotSubmission } from './useBotSubmission';
 
 type IsrcRelease = ContributionView['isrcReleases'][number];
 
-function IsrcTrackTable({ tracks }: { tracks: IsrcRelease['tracks'] }) {
+type IsrcTrack = IsrcRelease['tracks'][number];
+
+function IsrcTrackTable({
+  tracks,
+  resubmitActions,
+}: {
+  tracks: IsrcRelease['tracks'];
+  /** Controls for a track voters rejected before; omitted in the read-only view. */
+  resubmitActions?: (track: IsrcTrack) => ReactNode;
+}) {
   return (
     <table>
       <thead>
@@ -53,7 +64,14 @@ function IsrcTrackTable({ tracks }: { tracks: IsrcRelease['tracks'] }) {
             <td className="mono whitespace-nowrap">{track.isrc}</td>
             <td className="album-meta whitespace-nowrap">
               {!track.ledger ? (
-                'not yet submitted'
+                track.previous ? (
+                  <span className="flex flex-col items-start gap-1">
+                    <PreviousSubmission previous={track.previous} />
+                    {track.previous.explicitOnly && resubmitActions?.(track)}
+                  </span>
+                ) : (
+                  'not yet submitted'
+                )
               ) : track.ledger.editId ? (
                 <>
                   {track.ledger.outcome} ·{' '}
@@ -133,6 +151,29 @@ export function IsrcSection({
     });
   }
 
+  async function resubmitBot(releaseMbid: string, track: IsrcTrack) {
+    await submit(
+      releaseMbid,
+      () => submitBotBatch(releaseMbid, { recordingMbid: track.recordingMbid, isrc: track.isrc }),
+      {
+        success: () =>
+          `${track.trackTitle}: resubmitted ${track.isrc}. It stays pending until MusicBrainz shows it.`,
+        empty: 'That ISRC is no longer outstanding on this release.',
+      },
+    );
+  }
+
+  async function resubmitHand(releaseMbid: string, track: IsrcTrack) {
+    await runRow(releaseMbid, 'Confirming hand resubmission…', async () => {
+      await recordIsrcResubmission(
+        releaseMbid,
+        { recordingMbid: track.recordingMbid, isrc: track.isrc },
+        forms[releaseMbid] ?? { editId: '' },
+      );
+      await onReload();
+    });
+  }
+
   async function revealPayload(releaseMbid: string) {
     if (payload?.releaseMbid === releaseMbid) {
       setPayload(null);
@@ -171,8 +212,9 @@ export function IsrcSection({
             <span className="album-meta">
               {release.missing} missing
               {submitted ? ` · ${submitted}` : ''}
-              {submitted && release.eligible > 0
-                ? ` · ${release.eligible} still eligible to submit`
+              {submitted && release.batch > 0 ? ` · ${release.batch} still eligible to submit` : ''}
+              {release.rejected > 0
+                ? ` · ${release.rejected} rejected before, resubmitted one at a time`
                 : ''}
               {' · '}barcode {release.barcode ?? <span className="absent">missing</span>}
             </span>
@@ -182,7 +224,7 @@ export function IsrcSection({
         const feedback = submissionFeedback[release.releaseMbid];
         const links = (
           <>
-            {release.eligible > 0 && (
+            {release.batch > 0 && (
               <a className="act" href={release.link} target="_blank" rel="noreferrer">
                 MagicISRC
               </a>
@@ -242,14 +284,37 @@ export function IsrcSection({
             evidence={evidence}
             links={links}
           >
-            <IsrcTrackTable tracks={release.tracks} />
+            <IsrcTrackTable
+              tracks={release.tracks}
+              resubmitActions={(track) => (
+                <span className="flex gap-1">
+                  {bot?.configured && (
+                    <button
+                      className="act"
+                      disabled={state.busy}
+                      onClick={() => resubmitBot(release.releaseMbid, track)}
+                    >
+                      Resubmit as prelude_fm_bot
+                    </button>
+                  )}
+                  <button
+                    className="act"
+                    disabled={state.busy}
+                    onClick={() => resubmitHand(release.releaseMbid, track)}
+                  >
+                    Confirm hand resubmission
+                  </button>
+                </span>
+              )}
+            />
             <p className="mt-2 text-[11px] text-[var(--faint)]">
               The release barcode is the album barcode
               {release.upc && release.upc !== release.barcode ? ` (${release.upc} padded)` : ''}.
-              The bot and MagicISRC only receive rows not yet recorded as submitted.
+              The bot and MagicISRC only receive rows not yet recorded as submitted, and never an
+              ISRC voters rejected before: each of those goes again only from its own track.
             </p>
             <div className="toolbar px-0">
-              {bot?.configured && (
+              {bot?.configured && release.batch > 0 && (
                 <>
                   <button
                     className="act"
@@ -257,7 +322,7 @@ export function IsrcSection({
                     disabled={state.busy}
                     onClick={() => submitBot(release.releaseMbid, release.albumTitle)}
                   >
-                    Confirm {release.eligible} as prelude_fm_bot
+                    Confirm {release.batch} as prelude_fm_bot
                   </button>
                   <button
                     className="act"
@@ -279,13 +344,15 @@ export function IsrcSection({
                   }))
                 }
               />
-              <button
-                className="act"
-                disabled={state.busy}
-                onClick={() => confirmHand(release.releaseMbid)}
-              >
-                Confirm hand submission
-              </button>
+              {release.batch > 0 && (
+                <button
+                  className="act"
+                  disabled={state.busy}
+                  onClick={() => confirmHand(release.releaseMbid)}
+                >
+                  Confirm hand submission
+                </button>
+              )}
             </div>
             {payload?.releaseMbid === release.releaseMbid && (
               <pre className="mono overflow-x-auto text-[11px] text-[var(--ink-2)]">

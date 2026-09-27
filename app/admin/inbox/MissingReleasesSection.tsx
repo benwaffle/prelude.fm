@@ -20,6 +20,7 @@ import {
 import { ChannelBadge } from './ChannelBadge';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
+import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
@@ -134,6 +135,7 @@ export function MissingReleasesSection({
                   ` · ${album.tracks - album.unanchored} track(s) already reach a recording elsewhere`}
                 {album.ledger?.releaseMbid && ` · ${album.ledger.releaseMbid}`}
               </span>
+              {!album.ledger && album.previous && <PreviousSubmission previous={album.previous} />}
               <RowActionStatus row={state} />
             </span>
           </>
