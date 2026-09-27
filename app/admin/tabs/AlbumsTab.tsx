@@ -48,7 +48,7 @@ function nextStep(
                   : 'No verified ISRC action',
               hint:
                 submission.missing > 0
-                  ? 'Open the matching ISRC row in Inbox. MagicISRC and the bot only receive ledger-eligible rows.'
+                  ? 'Open the matching ISRC row in Inbox. MagicISRC and the bot only receive rows not yet recorded as submitted.'
                   : 'The gap stays visible until eligibility checks pass.',
               focus: inboxFocusForAlbum(album),
             }
@@ -59,7 +59,7 @@ function nextStep(
             }
         : {
             label: 'Add release in Inbox',
-            hint: 'Some recordings may already be in MusicBrainz under another release; this pressing still needs adding through Harmony with ledger confirmation.',
+            hint: 'Some recordings may already be in MusicBrainz under another release; this pressing still needs adding through Harmony, then confirmed as submitted.',
             focus: inboxFocusForAlbum(album),
           };
 

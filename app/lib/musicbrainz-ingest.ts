@@ -13,6 +13,7 @@
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from './db';
 import { forChunks } from './db/chunked';
+import { normalizeIsrc } from './isrc';
 import {
   mbRecording,
   mbRecordingIsrc,
@@ -442,8 +443,9 @@ export async function anchorTracksByIsrc(
 
   const byIsrc = new Map<string, string[]>();
   for (const row of rows) {
-    if (!row.isrc) continue;
-    byIsrc.set(row.isrc, [...(byIsrc.get(row.isrc) ?? []), row.spotifyId]);
+    const isrc = normalizeIsrc(row.isrc);
+    if (!isrc) continue;
+    byIsrc.set(isrc, [...(byIsrc.get(isrc) ?? []), row.spotifyId]);
   }
 
   const isrcs = [...byIsrc.keys()];

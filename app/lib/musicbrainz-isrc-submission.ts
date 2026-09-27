@@ -127,7 +127,7 @@ export function editNoteFor(gaps: IsrcGap[]): string {
   const barcodes =
     ours.replace(/^0+/, '') === theirs.replace(/^0+/, '') && ours !== theirs
       ? `barcode ${ours} (this release: ${theirs} — the same barcode without the leading zero)`
-      : `barcode ${ours}, which is this release's barcode`;
+      : `barcode ${ours}`;
 
   /*
    * Written so another editor can check the claim rather than take it. The

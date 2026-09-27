@@ -44,7 +44,8 @@ test('both barcodes appear, each labelled as whose it is', () => {
 
 test('identical barcodes are not explained away as padding', () => {
   const note = editNoteFor([gap({ upc: '028946813423', barcode: '028946813423' })]);
-  assert.match(note, /which is this release's barcode/);
+  assert.match(note, /Spotify release with barcode 028946813423\./);
+  assert.doesNotMatch(note, /which is this release's barcode/);
   assert.doesNotMatch(note, /leading zero/);
 });
 

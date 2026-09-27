@@ -31,6 +31,7 @@ import {
   mbWorkCatalogue,
 } from './db/schema';
 import type { MusicBrainzChannel } from './musicbrainz-budget';
+import { normalizeIsrc } from './isrc';
 import { cataloguesOf, composerOf, parentPartOf, yearOf } from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
 import type { AnonymousImportRunInput } from './track-classification';
@@ -314,7 +315,7 @@ async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
 
   const isrcs = dedupe(
     [...recordings.values()].flatMap((recording) =>
-      recording.isrcs.map((isrc) => ({ isrc, recordingMbid: recording.id })),
+      recording.isrcs.map((isrc) => ({ isrc: normalizeIsrc(isrc), recordingMbid: recording.id })),
     ),
     (row) => `${row.isrc}:${row.recordingMbid}`,
   );
@@ -618,7 +619,7 @@ export async function ingestRecording(
     (row) => `${row.recordingMbid}:${row.workMbid}`,
   );
   const isrcs = dedupe(
-    detail.isrcs.map((isrc) => ({ isrc, recordingMbid: detail.id })),
+    detail.isrcs.map((isrc) => ({ isrc: normalizeIsrc(isrc), recordingMbid: detail.id })),
     (row) => `${row.isrc}:${row.recordingMbid}`,
   );
   const credits = dedupe(

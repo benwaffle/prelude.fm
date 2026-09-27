@@ -113,8 +113,8 @@ export function ContributeTab({
     <div className="flex flex-col gap-6 pb-16">
       {failure}
       <p className="max-w-[90ch] text-[var(--ink-2)]">
-        Opening a MusicBrainz, Harmony, or MagicISRC link writes nothing. Confirm writes the ledger.
-        Recheck reads the cache.
+        Opening a MusicBrainz, Harmony, or MagicISRC link writes nothing. Confirming records it as
+        submitted. Recheck reads the cache.
       </p>
 
       <TriageHeader counts={view.counts} activeClass={inboxClass} onClassChange={onClassChange} />

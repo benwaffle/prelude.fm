@@ -68,6 +68,7 @@ import {
   streamingUrlDraftFromGap,
   type ManualSubmissionDraft,
 } from '@/lib/musicbrainz-manual-submissions';
+import { normalizeIsrc } from '@/lib/isrc';
 import { checkAuth } from './auth';
 
 /**
@@ -682,7 +683,7 @@ export async function recordIsrcSubmission(
         kind: 'isrc',
         targetMbid: gap.recordingMbid,
         subject: gap.spotifyTrackId,
-        value: gap.isrc,
+        value: normalizeIsrc(gap.isrc),
         evidence: {
           releaseMbid: gap.releaseMbid,
           barcode: gap.barcode,
