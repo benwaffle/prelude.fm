@@ -58,6 +58,8 @@ export type PrecheckIsrcHit = {
   isrc: string;
   recordingMbid: string;
   recordingTitle: string;
+  /** The recording's length; absent on checks stored before it was kept. */
+  lengthMs?: number | null;
   /** Release groups the recording already appears on, per the search index. */
   groups: { mbid: string; title: string }[];
 };

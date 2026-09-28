@@ -7,12 +7,16 @@ import {
   attachPickedReleaseToAlbum,
   lookupBarcodeReleaseHits,
   measureReleaseCorrections,
+  prepareMusicBrainzSeed,
+  recordMusicBrainzSeeded,
   recordReleaseSubmission,
   recheckReleaseSubmission,
   runReleasePrecheck,
   type ContributionView,
 } from '../actions/contribute';
 import type { CachedPrecheck } from '@/lib/release-precheck-run';
+import type { PreparedSeed } from '@/lib/release-seeding-run';
+import { SeedOnMusicBrainzForm, SeedPreview } from './MusicBrainzSeed';
 import { MbPicker } from '../components/MbPicker';
 import type { InboxClass } from '../lib/admin-url';
 import {
@@ -47,6 +51,7 @@ export function MissingReleasesSection({
   const [liveHits, setLiveHits] = useState<Record<string, MbPickHit[]>>({});
   const [lookup, setLookup] = useState<Record<string, string | 'loading'>>({});
   const [prechecks, setPrechecks] = useState<Record<string, CachedPrecheck>>({});
+  const [seeds, setSeeds] = useState<Record<string, PreparedSeed>>({});
 
   /*
    * Once the release is attached, what was corrected is measured straight
@@ -75,6 +80,27 @@ export function MissingReleasesSection({
       const result = await runReleasePrecheck(albumId);
       setPrechecks((current) => ({ ...current, [albumId]: result }));
     });
+  }
+
+  async function prepareSeed(albumId: string) {
+    await runRow(albumId, 'Preparing the MusicBrainz seed…', async () => {
+      const result = await prepareMusicBrainzSeed(albumId);
+      setSeeds((current) => ({ ...current, [albumId]: result }));
+    });
+  }
+
+  /*
+   * The form opens MusicBrainz itself; this only notes that it was opened,
+   * so the correction record compares against our seed. Not awaited: the
+   * submit must stay a direct user action or the new tab is blocked.
+   */
+  function seeded(albumId: string) {
+    void recordMusicBrainzSeeded(albumId).then(() =>
+      setSeeds((current) => {
+        const seed = current[albumId] ?? rows.find((row) => row.albumId === albumId)?.seed;
+        return seed ? { ...current, [albumId]: { ...seed, seededAt: new Date() } } : current;
+      }),
+    );
   }
 
   async function lookUp(albumId: string, upc: string) {
@@ -140,6 +166,7 @@ export function MissingReleasesSection({
         const lookupState = lookup[album.albumId];
         const state = row(album.albumId);
         const checked = prechecks[album.albumId] ?? album.precheck;
+        const prepared = seeds[album.albumId] ?? album.seed;
         const evidence = (
           <>
             <span
@@ -171,6 +198,13 @@ export function MissingReleasesSection({
         );
         const links = (
           <>
+            {prepared && !album.ledger && (
+              <SeedOnMusicBrainzForm
+                albumId={album.albumId}
+                plan={prepared.plan}
+                onSeeded={seeded}
+              />
+            )}
             <a className="act" href={album.harmony} target="_blank" rel="noreferrer">
               Harmony
             </a>
@@ -228,9 +262,23 @@ export function MissingReleasesSection({
             links={links}
             label={ambiguous ? 'Pick…' : 'Confirm…'}
             extraAction={
-              <button className="act" disabled={state.busy} onClick={() => precheck(album.albumId)}>
-                {checked ? 'Pre-check again' : 'Pre-check'}
-              </button>
+              <>
+                <button
+                  className="act"
+                  disabled={state.busy}
+                  onClick={() => precheck(album.albumId)}
+                >
+                  {checked ? 'Pre-check again' : 'Pre-check'}
+                </button>
+                <button
+                  className="act"
+                  disabled={state.busy}
+                  onClick={() => prepareSeed(album.albumId)}
+                  title="Work out which existing recordings to pre-fill, for Seed on MusicBrainz"
+                >
+                  {prepared ? 'Prepare seed again' : 'Prepare seed'}
+                </button>
+              </>
             }
           >
             <div className="mb-4">
@@ -242,13 +290,34 @@ export function MissingReleasesSection({
                   its release group and its recordings on MusicBrainz first.
                 </p>
               )}
+              <div className="mt-4">
+                <p className="eyebrow mb-1">Seed on MusicBrainz</p>
+                {prepared ? (
+                  <>
+                    <SeedPreview seed={prepared} />
+                    <div className="mt-2">
+                      <SeedOnMusicBrainzForm
+                        albumId={album.albumId}
+                        plan={prepared.plan}
+                        onSeeded={seeded}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <p className="absent">
+                    Not prepared yet. Prepare seed works out which existing recordings to pre-fill
+                    (by ISRC, or by position in an existing edition), so the release editor opens
+                    with them already chosen instead of picking each by hand.
+                  </p>
+                )}
+              </div>
               <p className="mt-3">
-                Then{' '}
+                Then enter the edit (from the seed above, or{' '}
                 <a href={album.harmony} target="_blank" rel="noreferrer">
-                  open Harmony
+                  Harmony
                 </a>
-                , enter the edit, and confirm below with the new release MBID so the album attaches
-                and the corrections are measured.
+                ) and confirm below with the new release MBID so the album attaches and the
+                corrections are measured.
               </p>
             </div>
             {ambiguous && (

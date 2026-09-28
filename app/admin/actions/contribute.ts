@@ -85,6 +85,12 @@ import {
   type CachedPrecheck,
 } from '@/lib/release-precheck-run';
 import {
+  cachedReleaseSeeds,
+  markReleaseSeeded,
+  prepareReleaseSeed,
+  type PreparedSeed,
+} from '@/lib/release-seeding-run';
+import {
   correctionRecords,
   measureReleaseCorrection,
   type CorrectionRow,
@@ -273,6 +279,8 @@ export type ContributionView = {
     libraryTracks: number | null;
     /** The cached pre-check; null until somebody runs it. */
     precheck: CachedPrecheck | null;
+    /** Our prepared release-editor seed; null until somebody prepares it. */
+    seed: PreparedSeed | null;
     harmony: string;
     barcodeHits: MbPickHit[];
     ledger: {
@@ -507,7 +515,7 @@ export async function getContributions(
   }
 
   const missingAlbumIds = missing.map((album) => album.albumId);
-  const [releaseLedgerRows, barcodeHitsByUpc, prechecks] = await Promise.all([
+  const [releaseLedgerRows, barcodeHitsByUpc, prechecks, seeds] = await Promise.all([
     missingAlbumIds.length === 0
       ? Promise.resolve([])
       : db
@@ -529,6 +537,7 @@ export async function getContributions(
         .filter((upc): upc is string => Boolean(upc)),
     ),
     cachedReleasePrechecks(missingAlbumIds),
+    cachedReleaseSeeds(missingAlbumIds),
   ]);
   const releasePreviousByAlbum = previousBy(releaseLedgerRows, (row) => row.albumId);
   const releaseLedgerByAlbum = new Map(
@@ -783,6 +792,7 @@ export async function getContributions(
     missing: missing.map((album) => ({
       ...album,
       precheck: prechecks.get(album.albumId) ?? null,
+      seed: seeds.get(album.albumId) ?? null,
       harmony: harmonyImportLink(album.albumId),
       barcodeHits:
         album.reason === AMBIGUOUS_BARCODE_REASON
@@ -1218,6 +1228,25 @@ export async function runReleasePrecheck(albumId: string): Promise<CachedPrechec
   const cached = (await cachedReleasePrechecks([albumId])).get(albumId);
   if (!cached) throw new Error('The pre-check ran but was not stored');
   return cached;
+}
+
+/**
+ * Prepare our release-editor seed for one album: which existing recordings
+ * to pre-fill and why. Reads MusicBrainz and Spotify; writes only the seed
+ * (and the pre-check, if the album had none). Submits nothing.
+ */
+export async function prepareMusicBrainzSeed(albumId: string): Promise<PreparedSeed> {
+  await checkAuth();
+  return prepareReleaseSeed(albumId);
+}
+
+/**
+ * The person opened the seed on MusicBrainz, from their own browser. From
+ * now on the album's correction record compares against this seed.
+ */
+export async function recordMusicBrainzSeeded(albumId: string): Promise<void> {
+  await checkAuth();
+  await markReleaseSeeded(albumId);
 }
 
 /**

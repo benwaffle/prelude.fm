@@ -20,6 +20,8 @@ const BASELINE_LABEL: Record<ReleaseCorrectionRecord['baselineSource'], string> 
   precheck: 'the Spotify album as read by the pre-check',
   spotify: 'the Spotify album, read when measuring (no pre-check was stored)',
   library: 'our stored copy of the Spotify album (Spotify could not be read; no album artist)',
+  'prelude-seed':
+    'the form prelude.fm seeded (our credits and pre-filled recordings), because the Seed on MusicBrainz button was used',
 };
 
 /**
@@ -235,6 +237,9 @@ function CorrectionDetail({ record }: { record: ReleaseCorrectionRecord }) {
           Recordings: {recordings.reused} reused, {recordings.created} new
           {recordings.unknown > 0 && `, ${recordings.unknown} couldn’t tell`}. Of the new ones,{' '}
           {recordings.titleChanged} retitled and {recordings.artistsChanged} with changed artists.
+          {recordings.seededKept !== undefined &&
+            (recordings.seededKept > 0 || (recordings.seededReplaced ?? 0) > 0) &&
+            ` Pre-filled: ${recordings.seededKept} kept, ${recordings.seededReplaced ?? 0} replaced.`}
         </li>
       </ul>
       {record.incomplete.length > 0 && (

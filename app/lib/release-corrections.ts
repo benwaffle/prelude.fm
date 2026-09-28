@@ -69,6 +69,7 @@ export type CorrectionType =
   | 'release-title'
   | 'release-artist'
   | 'release-group-reused'
+  | 'seeded-recordings-replaced'
   | 'track-titles'
   | 'track-title-punctuation'
   | 'track-artists'
@@ -84,6 +85,7 @@ export const CORRECTION_LABELS: Record<CorrectionType, string> = {
   'release-title': 'Album title changed',
   'release-artist': 'Album artist changed',
   'release-group-reused': 'Joined an existing album group',
+  'seeded-recordings-replaced': 'Pre-filled recordings replaced',
   'track-titles': 'Track titles reworded',
   'track-title-punctuation': 'Track titles: punctuation only',
   'track-artists': 'Track artists changed',
@@ -101,7 +103,11 @@ export type ReleaseCorrectionRecord = {
   releaseTitle: string;
   releaseGroupMbid: string;
   /** Where the seed came from: the stored pre-check, a live Spotify read, or our copy. */
-  baselineSource: 'precheck' | 'spotify' | 'library';
+  /**
+   * `prelude-seed`: the form we seeded (our credits and pre-filled
+   * recordings). The others are the Spotify album Harmony would read.
+   */
+  baselineSource: 'precheck' | 'spotify' | 'library' | 'prelude-seed';
   kind: AlbumKind;
   kindWhy: string;
   tracks: {
@@ -121,6 +127,12 @@ export type ReleaseCorrectionRecord = {
     reused: number;
     created: number;
     unknown: number;
+    /** Reused recordings the baseline did not already name (a person picked them). */
+    reusedUnseeded?: number;
+    /** Tracks whose pre-filled recording landed as seeded. */
+    seededKept?: number;
+    /** Tracks whose pre-filled recording was swapped for another. */
+    seededReplaced?: number;
     /** Of the created recordings: title differs from the Spotify track title. */
     titleChanged: number;
     /** Of the created recordings: artists differ from the Spotify track artists. */
@@ -167,7 +179,7 @@ export function sameCredit(
 ): boolean {
   const remaining = [...landed];
   for (const artist of seeded) {
-    const mbid = mbidOf(artist);
+    const mbid = artist.mbid ?? mbidOf(artist);
     const index = remaining.findIndex(
       (candidate) =>
         (mbid !== null && candidate.mbid === mbid) ||
@@ -184,7 +196,7 @@ export function sameCredit(
 export type TrackPair = {
   seed: SeedTrack;
   landed: LandedTrack;
-  by: 'isrc' | 'position' | 'duration';
+  by: 'recording' | 'isrc' | 'position' | 'duration';
 };
 
 const POSITION_TOLERANCE_MS = 5_000;
@@ -212,7 +224,13 @@ export function pairTracks(
     freeLanded.delete(l);
   };
 
+  // A recording we pre-filled is the surest pairing there is.
   for (const s of seedTracks) {
+    if (!s.recordingMbid) continue;
+    const match = [...freeLanded].find((l) => l.recording.mbid === s.recordingMbid);
+    if (match) take(s, match, 'recording');
+  }
+  for (const s of [...freeSeed]) {
     if (!s.isrc) continue;
     const isrc = s.isrc.toUpperCase();
     const match = [...freeLanded].find((l) =>
@@ -296,6 +314,8 @@ export function compareRelease(input: {
   composers: number | null;
   /** MusicBrainz artist for a Spotify artist id, where the pre-check found one linked. */
   artistMbids?: Map<string, string>;
+  /** The release group we seeded, when the baseline is our own seed. */
+  seededReleaseGroup?: string | null;
 }): ReleaseCorrectionRecord {
   const { seed, landed, origins } = input;
   const mbidOf = (artist: SeedArtist) =>
@@ -312,6 +332,9 @@ export function compareRelease(input: {
     reused: 0,
     created: 0,
     unknown: 0,
+    reusedUnseeded: 0,
+    seededKept: 0,
+    seededReplaced: 0,
     titleChanged: 0,
     artistsChanged: 0,
     examples: [] as { from: string; to: string }[],
@@ -343,6 +366,13 @@ export function compareRelease(input: {
     const origin = origins.get(track.recording.mbid) ?? 'unknown';
     recordings[origin]++;
     const s = pairedByLanded.get(track);
+    if (s?.recordingMbid) {
+      if (s.recordingMbid === track.recording.mbid) recordings.seededKept++;
+      else recordings.seededReplaced++;
+    }
+    if (origin === 'reused' && s?.recordingMbid !== track.recording.mbid) {
+      recordings.reusedUnseeded++;
+    }
     if (origin !== 'created' || !s) continue;
     if (compareTitle(s.title, track.recording.title) === 'changed') {
       recordings.titleChanged++;
@@ -385,11 +415,14 @@ export function compareRelease(input: {
   const corrections: CorrectionType[] = [];
   if (releaseTitle.changed) corrections.push('release-title');
   if (releaseArtist?.changed) corrections.push('release-artist');
-  if (releaseGroup === 'reused') corrections.push('release-group-reused');
+  if (releaseGroup === 'reused' && input.seededReleaseGroup !== landed.releaseGroup.mbid) {
+    corrections.push('release-group-reused');
+  }
   if (titles.changed > 0) corrections.push('track-titles');
   if (titles.punctuationOnly > 0) corrections.push('track-title-punctuation');
   if (trackArtists.changed > 0) corrections.push('track-artists');
-  if (recordings.reused > 0) corrections.push('recordings-reused');
+  if (recordings.reusedUnseeded > 0) corrections.push('recordings-reused');
+  if (recordings.seededReplaced > 0) corrections.push('seeded-recordings-replaced');
   if (recordings.titleChanged > 0) corrections.push('recording-titles');
   if (recordings.artistsChanged > 0) corrections.push('recording-artists');
   if (added.length > 0) corrections.push('tracks-added');
