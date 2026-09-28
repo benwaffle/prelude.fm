@@ -376,6 +376,25 @@ export function placeTrack(
 
 const EXAMPLES = 5;
 
+/**
+ * Library tracks each album holds in the funnel's missing-release buckets:
+ * how many tracks adding (or picking) that album's release would move past
+ * the first step. The same placement the Overview counts, per album.
+ */
+export function tracksBlockedOnReleaseByAlbum(
+  tracks: ReadinessTrack[],
+  submissions: ReadinessSubmissions = NO_SUBMISSIONS,
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const track of tracks) {
+    if (track.classification === 'not_classical') continue;
+    const placement = placeTrack(track, submissions);
+    if (placement?.bucket !== 'add-release' && placement?.bucket !== 'pick-release') continue;
+    counts.set(track.spotifyAlbumId, (counts.get(track.spotifyAlbumId) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export function readinessFunnel(
   tracks: ReadinessTrack[],
   submissions: ReadinessSubmissions = NO_SUBMISSIONS,

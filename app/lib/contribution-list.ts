@@ -1,3 +1,4 @@
+import type { MissingRelease } from './musicbrainz-contributions';
 /**
  * How many rows an Inbox section shows at a time.
  *
@@ -52,4 +53,25 @@ export function nextListLimit(
 
 export function pageSlice<T>(rows: T[], limit: number, offset = 0): T[] {
   return rows.slice(offset, offset + limit);
+}
+
+/**
+ * Missing albums, biggest unblock first.
+ *
+ * `unblocks` is the Overview funnel's per-album count of library tracks held
+ * at "add the missing release"; null when it could not be loaded, in which
+ * case every row says so and the order falls back to the album's size.
+ */
+export function rankMissingReleases<T extends MissingRelease>(
+  rows: T[],
+  unblocks: Map<string, number> | null,
+): (T & { libraryTracks: number | null })[] {
+  return rows
+    .map((row) => ({ ...row, libraryTracks: unblocks ? (unblocks.get(row.albumId) ?? 0) : null }))
+    .sort(
+      (a, b) =>
+        (b.libraryTracks ?? 0) - (a.libraryTracks ?? 0) ||
+        b.tracks - a.tracks ||
+        a.albumId.localeCompare(b.albumId),
+    );
 }

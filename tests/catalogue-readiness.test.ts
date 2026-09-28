@@ -381,3 +381,24 @@ test('rows read from the player projection agree with what the player shows', ()
   assert.equal(funnel.notClassical, 0);
   assert.equal(funnel.inScope, 5);
 });
+
+test('tracks blocked on a release are counted per album, the way the funnel places them', async () => {
+  const { tracksBlockedOnReleaseByAlbum } = await import('../app/lib/catalogue-readiness');
+  const missing = { ...unlinked, release: 'missing' as const, releaseMbid: null, tracklist: null };
+  const counts = tracksBlockedOnReleaseByAlbum([
+    readyTrack({ ...missing, spotifyAlbumId: 'big' }),
+    readyTrack({ ...missing, spotifyAlbumId: 'big' }),
+    readyTrack({ ...missing, spotifyAlbumId: 'big', classification: 'not_classical' }),
+    readyTrack({ ...missing, spotifyAlbumId: 'small' }),
+    readyTrack({
+      ...unlinked,
+      spotifyAlbumId: 'picked',
+      release: 'ambiguous',
+      releaseMbid: null,
+      tracklist: null,
+    }),
+    // Already linked by ISRC elsewhere: adding the release does not unblock it.
+    readyTrack({ spotifyAlbumId: 'big', release: 'missing', releaseMbid: null, tracklist: null }),
+  ]);
+  assert.deepEqual(Object.fromEntries(counts), { big: 2, small: 1, picked: 1 });
+});

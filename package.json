@@ -15,6 +15,7 @@
     "metadata:validate": "tsx scripts/validate-metadata.ts",
     "metadata:accounting": "tsx scripts/mb-accounting.ts",
     "metadata:readiness": "tsx scripts/catalogue-readiness.ts",
+    "metadata:release-precheck": "tsx scripts/release-precheck.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test 'tests/**/*.test.{ts,tsx}'",
     "db:generate": "drizzle-kit generate",

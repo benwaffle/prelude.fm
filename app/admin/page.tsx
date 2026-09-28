@@ -11,6 +11,7 @@ import { AlbumsTab } from './tabs/AlbumsTab';
 import { ContributeTab } from './tabs/ContributeTab';
 import { HealthTab } from './tabs/HealthTab';
 import { OverviewTab } from './tabs/OverviewTab';
+import { ReleaseCorrectionsTab } from './tabs/ReleaseCorrectionsTab';
 import type { InboxFocus } from './lib/inbox-focus';
 import { parseAdminUrl, patchAdminUrl, type AdminTab, type AdminUrlPatch } from './lib/admin-url';
 
@@ -197,6 +198,12 @@ function AdminPageContent() {
                   }
                   onOpenInbox={openInbox}
                 />
+              </div>
+            </details>
+            <details className="fold">
+              <summary>Releases added through Harmony: what was corrected</summary>
+              <div className="fold-body">
+                <ReleaseCorrectionsTab />
               </div>
             </details>
             <details className="fold">

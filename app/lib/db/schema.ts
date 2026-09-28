@@ -7,6 +7,8 @@ import {
   primaryKey,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+import type { ReleasePrecheck } from '../release-precheck';
+import type { ReleaseCorrectionRecord } from '../release-corrections';
 
 /*
  * Better Auth
@@ -781,3 +783,58 @@ export const mbInvariantResult = sqliteTable('mb_invariant_result', {
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
 });
+
+/*
+ * Adding missing releases
+ */
+
+/**
+ * What we could find out about a missing album before somebody adds it
+ * through Harmony: whether MusicBrainz already has it in some form, which
+ * MusicBrainz artists its Spotify artists are, and what Harmony will likely
+ * get wrong for a classical release.
+ *
+ * Cached because each check costs live MusicBrainz requests, and a page load
+ * must not spend them. One row per album, overwritten when run again.
+ */
+export const mbReleasePrecheck = sqliteTable('mb_release_precheck', {
+  spotifyAlbumId: text('spotify_album_id')
+    .primaryKey()
+    .references(() => spotifyAlbum.spotifyId),
+  result: text('result', { mode: 'json' }).$type<ReleasePrecheck>().notNull(),
+  /** MusicBrainz requests the check spent. */
+  requests: integer('requests').notNull(),
+  checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+});
+
+/**
+ * What the person adding a release had to change, compared with what Harmony
+ * would have seeded from Spotify.
+ *
+ * The measurement that decides which kinds of album a bot could one day add
+ * unattended: an album kind whose releases land with no corrections is a
+ * candidate, one that always needs its credits rewritten is not.
+ */
+export const mbReleaseCorrection = sqliteTable(
+  'mb_release_correction',
+  {
+    spotifyAlbumId: text('spotify_album_id')
+      .primaryKey()
+      .references(() => spotifyAlbum.spotifyId),
+    releaseMbid: text('release_mbid').notNull(),
+    kind: text('kind', {
+      enum: ['new-edition', 'box-set', 'compilation', 'single-composer', 'unknown'],
+    }).notNull(),
+    /** How many kinds of correction were found; 0 means none. */
+    corrections: integer('corrections').notNull(),
+    /** Some comparisons could not be made, so a 0 above is not the whole story. */
+    incomplete: integer('incomplete', { mode: 'boolean' }).notNull(),
+    record: text('record', { mode: 'json' }).$type<ReleaseCorrectionRecord>().notNull(),
+    measuredAt: integer('measured_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [index('mb_release_correction_kind_idx').on(table.kind)],
+);
