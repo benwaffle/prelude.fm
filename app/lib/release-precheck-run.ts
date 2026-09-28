@@ -89,6 +89,8 @@ export async function loadReleaseSeed(
       albumId,
       title: album.name,
       upc: album.external_ids?.upc ?? null,
+      releaseDate: album.release_date || null,
+      label: album.label || null,
       source: 'spotify',
       albumArtists: album.artists.map((artist) => ({ spotifyId: artist.id, name: artist.name })),
       tracks: tracks.map((track) => ({
@@ -265,6 +267,7 @@ async function lookUpIsrcs(counter: Counter, seed: ReleaseSeed): Promise<Prechec
       recordings?: {
         id: string;
         title: string;
+        length?: number | null;
         isrcs?: string[];
         releases?: { 'release-group'?: { id: string; title: string } }[];
       }[];
@@ -282,6 +285,7 @@ async function lookUpIsrcs(counter: Counter, seed: ReleaseSeed): Promise<Prechec
           isrc,
           recordingMbid: recording.id,
           recordingTitle: recording.title,
+          lengthMs: recording.length ?? null,
           groups: [...groups.values()],
         });
       }

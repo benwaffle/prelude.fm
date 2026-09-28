@@ -27,6 +27,8 @@ import {
   type ReleaseCorrectionRecord,
 } from './release-corrections';
 import { cachedReleasePrechecks, loadReleaseSeed } from './release-precheck-run';
+import { cachedReleaseSeeds } from './release-seeding-run';
+import { seedPlanBaseline } from './release-seeding';
 
 const CHANNEL: MusicBrainzChannel = 'interactive';
 const SEARCH_CHUNK = 20;
@@ -250,13 +252,24 @@ export async function measureReleaseCorrection(
   if (!landed) throw new CorrectionMeasureError(`MusicBrainz has no release ${releaseMbid}`);
 
   const cached = (await cachedReleasePrechecks([albumId], database)).get(albumId);
-  const seed = cached?.result.seed ?? (await loadReleaseSeed(albumId, database));
-  const baselineSource = cached ? 'precheck' : seed.source;
-  const knownBefore = new Set(
-    cached?.result.isrcs.state === 'done'
+  // When our own seed was opened on MusicBrainz, that form is what the person
+  // corrected; otherwise it is the Spotify album Harmony reads.
+  const seeded = (await cachedReleaseSeeds([albumId], database)).get(albumId);
+  const usedSeed = seeded?.seededAt ? seeded.plan : null;
+  const seed = usedSeed
+    ? seedPlanBaseline(usedSeed)
+    : (cached?.result.seed ?? (await loadReleaseSeed(albumId, database)));
+  const baselineSource = usedSeed ? 'prelude-seed' : cached ? 'precheck' : seed.source;
+  // Recordings we found before the release existed: by ISRC, or pre-filled
+  // into the seed (which only ever names existing recordings).
+  const knownBefore = new Set([
+    ...(cached?.result.isrcs.state === 'done'
       ? cached.result.isrcs.value.hits.map((hit) => hit.recordingMbid)
-      : [],
-  );
+      : []),
+    ...(seeded?.plan.tracks ?? []).flatMap((track) =>
+      track.recording.state === 'matched' ? [track.recording.recordingMbid] : [],
+    ),
+  ]);
   const origins = await recordingOrigins(
     releaseMbid,
     landed.tracks.map((track) => track.recording.mbid),
@@ -275,6 +288,7 @@ export async function measureReleaseCorrection(
     landed,
     origins,
     artistMbids,
+    seededReleaseGroup: usedSeed?.releaseGroupMbid ?? null,
     composers: await composerCount(albumId, landed, database),
   });
 

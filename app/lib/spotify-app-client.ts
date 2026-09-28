@@ -207,6 +207,8 @@ export async function getSpotifyAlbumSeed(albumId: string) {
     name: string;
     artists: SpotifyArtistMetadata[];
     external_ids?: { upc?: string };
+    release_date?: string;
+    label?: string;
   }>(`/albums/${albumId}`);
   const tracks = await getSpotifyTracksByIds(await getSpotifyAlbumTrackIds(albumId));
   return { album, tracks };

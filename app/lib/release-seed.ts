@@ -12,7 +12,12 @@
  * Harmony's own merge — the comparison cannot tell which.
  */
 
-export type SeedArtist = { spotifyId: string | null; name: string };
+export type SeedArtist = {
+  spotifyId: string | null;
+  name: string;
+  /** Set only on a baseline we seeded ourselves, where the artist was credited by MBID. */
+  mbid?: string | null;
+};
 
 export type SeedTrack = {
   disc: number;
@@ -21,6 +26,8 @@ export type SeedTrack = {
   durationMs: number;
   isrc: string | null;
   artists: SeedArtist[];
+  /** Set only on a baseline we seeded ourselves: the existing recording we pre-filled. */
+  recordingMbid?: string | null;
 };
 
 export type ReleaseSeed = {
@@ -35,6 +42,10 @@ export type ReleaseSeed = {
   source: 'spotify' | 'library';
   albumArtists: SeedArtist[];
   tracks: SeedTrack[];
+  /** Spotify's release date as given ('YYYY', 'YYYY-MM' or 'YYYY-MM-DD'); absent on older checks. */
+  releaseDate?: string | null;
+  /** Spotify's label name; absent on older checks. */
+  label?: string | null;
 };
 
 /** Tracks in disc-then-position order. */

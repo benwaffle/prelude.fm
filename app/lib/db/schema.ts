@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/sqlite-core';
 import type { ReleasePrecheck } from '../release-precheck';
 import type { ReleaseCorrectionRecord } from '../release-corrections';
+import type { SeedPlan } from '../release-seeding';
 
 /*
  * Better Auth
@@ -838,3 +839,23 @@ export const mbReleaseCorrection = sqliteTable(
   },
   (table) => [index('mb_release_correction_kind_idx').on(table.kind)],
 );
+
+/**
+ * The release-editor seed we prepared for a missing album: the plan (track
+ * by track, which recording is pre-filled and why) from which the form is
+ * built. `seededAt` is set when the person opened it on MusicBrainz; from
+ * then on the correction record compares against this seed rather than the
+ * Spotify album.
+ */
+export const mbReleaseSeed = sqliteTable('mb_release_seed', {
+  spotifyAlbumId: text('spotify_album_id')
+    .primaryKey()
+    .references(() => spotifyAlbum.spotifyId),
+  plan: text('plan', { mode: 'json' }).$type<SeedPlan>().notNull(),
+  /** MusicBrainz requests spent preparing it (the pre-check is counted separately). */
+  requests: integer('requests').notNull(),
+  preparedAt: integer('prepared_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+  seededAt: integer('seeded_at', { mode: 'timestamp_ms' }),
+});

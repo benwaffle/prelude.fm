@@ -169,6 +169,13 @@
       "when": 1790571965061,
       "tag": "0023_release_precheck_and_corrections",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1790574797738,
+      "tag": "0024_release_seed",
+      "breakpoints": true
     }
   ]
 }
