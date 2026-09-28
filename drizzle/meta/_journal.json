@@ -162,6 +162,13 @@
       "when": 1790507451060,
       "tag": "0022_mb_submission_blocking_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1790571965061,
+      "tag": "0023_release_precheck_and_corrections",
+      "breakpoints": true
     }
   ]
 }

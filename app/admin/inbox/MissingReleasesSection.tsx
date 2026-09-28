@@ -6,10 +6,13 @@ import { useAdminAction } from '../components/useAdminAction';
 import {
   attachPickedReleaseToAlbum,
   lookupBarcodeReleaseHits,
+  measureReleaseCorrections,
   recordReleaseSubmission,
   recheckReleaseSubmission,
+  runReleasePrecheck,
   type ContributionView,
 } from '../actions/contribute';
+import type { CachedPrecheck } from '@/lib/release-precheck-run';
 import { MbPicker } from '../components/MbPicker';
 import type { InboxClass } from '../lib/admin-url';
 import {
@@ -21,6 +24,7 @@ import { ChannelBadge } from './ChannelBadge';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
 import { PreviousSubmission } from './PreviousSubmission';
+import { PrecheckSummary, ReleasePrecheckPanel } from './ReleasePrecheckPanel';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
@@ -42,19 +46,34 @@ export function MissingReleasesSection({
   const [forms, setForms] = useState<Record<string, { releaseMbid: string; editId: string }>>({});
   const [liveHits, setLiveHits] = useState<Record<string, MbPickHit[]>>({});
   const [lookup, setLookup] = useState<Record<string, string | 'loading'>>({});
+  const [prechecks, setPrechecks] = useState<Record<string, CachedPrecheck>>({});
 
+  /*
+   * Once the release is attached, what was corrected is measured straight
+   * away. A failure stays on the row; the Details tab lists every added
+   * album that still has no measurement, with a button to retry.
+   */
   async function confirm(albumId: string) {
     const form = forms[albumId] ?? { releaseMbid: '', editId: '' };
-    await runRow(albumId, 'Confirming submission…', async () => {
-      await recordReleaseSubmission(albumId, form);
+    await runRow(albumId, 'Confirming and attaching the release…', async () => {
+      const { landed } = await recordReleaseSubmission(albumId, form);
+      if (landed) await measureReleaseCorrections(albumId);
       await onReload();
     });
   }
 
   async function recheck(albumId: string) {
     await runRow(albumId, 'Rechecking MusicBrainz…', async () => {
-      await recheckReleaseSubmission(albumId);
+      const { landed } = await recheckReleaseSubmission(albumId);
+      if (landed) await measureReleaseCorrections(albumId);
       await onReload();
+    });
+  }
+
+  async function precheck(albumId: string) {
+    await runRow(albumId, 'Pre-checking against MusicBrainz…', async () => {
+      const result = await runReleasePrecheck(albumId);
+      setPrechecks((current) => ({ ...current, [albumId]: result }));
     });
   }
 
@@ -112,7 +131,7 @@ export function MissingReleasesSection({
       total={total}
       shown={rows.length}
       pending={pending}
-      description="Harmony seeds a release from Spotify. Ambiguous barcodes stay a hand pick among actual MusicBrainz releases."
+      description="Biggest first: the count is library tracks adding the release would unblock (the Overview's count), then the album's own size. Pre-check before Harmony — it asks MusicBrainz whether the album, its release group or its recordings already exist, and lists what Harmony will likely get wrong. Confirming with the new release MBID attaches it and measures what you corrected. Ambiguous barcodes stay a hand pick among actual MusicBrainz releases."
     >
       {rows.map((album) => {
         const form = forms[album.albumId] ?? { releaseMbid: '', editId: '' };
@@ -120,22 +139,32 @@ export function MissingReleasesSection({
         const hits = liveHits[album.albumId] ?? album.barcodeHits;
         const lookupState = lookup[album.albumId];
         const state = row(album.albumId);
+        const checked = prechecks[album.albumId] ?? album.precheck;
         const evidence = (
           <>
-            <span className="mono inbox-count">{album.tracks}</span>
+            <span
+              className="mono inbox-count"
+              title="Library tracks adding this release would unblock"
+            >
+              {album.libraryTracks ?? '?'}
+            </span>
             <span className="min-w-0">
               <span className="flex items-baseline gap-2">
                 <span className="block truncate">{album.albumTitle}</span>
                 {ambiguous && <ChannelBadge channel="HAND" />}
               </span>
               <span className="block text-[11px] text-[var(--ink-2)]">
-                {album.year ? `${album.year} · ` : ''}
+                {album.libraryTracks === null
+                  ? "couldn't count library tracks · "
+                  : `${album.libraryTracks} library track(s) unblocked · `}
+                {album.tracks} on the album · {album.year ? `${album.year} · ` : ''}
                 {album.reason}
                 {album.unanchored < album.tracks &&
                   ` · ${album.tracks - album.unanchored} track(s) already reach a recording elsewhere`}
                 {album.ledger?.releaseMbid && ` · ${album.ledger.releaseMbid}`}
               </span>
               {!album.ledger && album.previous && <PreviousSubmission previous={album.previous} />}
+              {!album.ledger && <PrecheckSummary precheck={checked} />}
               <RowActionStatus row={state} />
             </span>
           </>
@@ -198,7 +227,30 @@ export function MissingReleasesSection({
             evidence={evidence}
             links={links}
             label={ambiguous ? 'Pick…' : 'Confirm…'}
+            extraAction={
+              <button className="act" disabled={state.busy} onClick={() => precheck(album.albumId)}>
+                {checked ? 'Pre-check again' : 'Pre-check'}
+              </button>
+            }
           >
+            <div className="mb-4">
+              {checked ? (
+                <ReleasePrecheckPanel precheck={checked} />
+              ) : (
+                <p className="absent">
+                  Not pre-checked yet. Pre-check before opening Harmony: it looks for this album,
+                  its release group and its recordings on MusicBrainz first.
+                </p>
+              )}
+              <p className="mt-3">
+                Then{' '}
+                <a href={album.harmony} target="_blank" rel="noreferrer">
+                  open Harmony
+                </a>
+                , enter the edit, and confirm below with the new release MBID so the album attaches
+                and the corrections are measured.
+              </p>
+            </div>
             {ambiguous && (
               <div className="mb-4">
                 <MbPicker

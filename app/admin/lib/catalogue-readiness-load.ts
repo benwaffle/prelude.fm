@@ -4,6 +4,7 @@ import { mbSubmission, spotifyTrack } from '@/lib/db/schema';
 import {
   readinessFunnel,
   readinessTracksFrom,
+  tracksBlockedOnReleaseByAlbum,
   type ReadinessFunnel,
   type ReadinessSubmissions,
 } from '@/lib/catalogue-readiness';
@@ -17,6 +18,22 @@ import { loadMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
 export async function loadReadinessFunnel(
   database: DatabaseExecutor = db,
 ): Promise<ReadinessFunnel> {
+  const { tracks, submissions } = await loadReadinessTracks(database);
+  return readinessFunnel(tracks, submissions);
+}
+
+/**
+ * Per missing album, the library tracks adding its release would unblock —
+ * the Overview's own count, so the Inbox order and the funnel agree.
+ */
+export async function loadTracksBlockedOnRelease(
+  database: DatabaseExecutor = db,
+): Promise<Map<string, number>> {
+  const { tracks, submissions } = await loadReadinessTracks(database);
+  return tracksBlockedOnReleaseByAlbum(tracks, submissions);
+}
+
+async function loadReadinessTracks(database: DatabaseExecutor) {
   const trackRows = await database
     .select({ spotifyId: spotifyTrack.spotifyId, isrc: spotifyTrack.isrc })
     .from(spotifyTrack);
@@ -29,7 +46,7 @@ export async function loadReadinessFunnel(
     projectMusicBrainzLibrary(facts),
     new Map(trackRows.map((row) => [row.spotifyId, row.isrc])),
   );
-  return readinessFunnel(tracks, await loadReadinessSubmissions(database));
+  return { tracks, submissions: await loadReadinessSubmissions(database) };
 }
 
 /**

@@ -1,9 +1,13 @@
 'use server';
 
-import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { mbSubmission, mbWork } from '@/lib/db/schema';
-import { resolveContributionLimits, type ContributionListLimits } from '@/lib/contribution-list';
+import { mbReleaseCorrection, mbSubmission, mbWork, spotifyAlbum } from '@/lib/db/schema';
+import {
+  rankMissingReleases,
+  resolveContributionLimits,
+  type ContributionListLimits,
+} from '@/lib/contribution-list';
 import {
   barcodeGaps,
   contestedIsrcs,
@@ -75,6 +79,22 @@ import {
   type ManualSubmissionDraft,
 } from '@/lib/musicbrainz-manual-submissions';
 import { normalizeIsrc } from '@/lib/isrc';
+import {
+  cachedReleasePrechecks,
+  refreshReleasePrecheck,
+  type CachedPrecheck,
+} from '@/lib/release-precheck-run';
+import {
+  correctionRecords,
+  measureReleaseCorrection,
+  type CorrectionRow,
+} from '@/lib/release-corrections-run';
+import {
+  summariseCorrections,
+  type CorrectionSummaryRow,
+  type ReleaseCorrectionRecord,
+} from '@/lib/release-corrections';
+import { loadTracksBlockedOnRelease } from '../lib/catalogue-readiness-load';
 import { checkAuth } from './auth';
 
 /**
@@ -249,6 +269,10 @@ export type ContributionView = {
     previous: SubmissionHistoryView | null;
   })[];
   missing: (Awaited<ReturnType<typeof missingReleases>>[number] & {
+    /** Library tracks adding this release would unblock (the Overview's count); null if not counted. */
+    libraryTracks: number | null;
+    /** The cached pre-check; null until somebody runs it. */
+    precheck: CachedPrecheck | null;
     harmony: string;
     barcodeHits: MbPickHit[];
     ledger: {
@@ -335,6 +359,33 @@ function previousBy<T extends { id: number; outcome: string; editId: string | nu
   return map;
 }
 
+/**
+ * The funnel's per-album counts are the whole library read through the
+ * player's projection, which is too slow to redo for every Inbox reload.
+ * Held for a minute, and dropped whenever a release lands.
+ */
+const UNBLOCK_TTL_MS = 60_000;
+let unblockCache: { at: number; counts: Promise<Map<string, number> | null> } | null = null;
+
+function tracksBlockedOnRelease(): Promise<Map<string, number> | null> {
+  if (!unblockCache || Date.now() - unblockCache.at > UNBLOCK_TTL_MS) {
+    unblockCache = {
+      at: Date.now(),
+      counts: loadTracksBlockedOnRelease().catch(() => {
+        unblockCache = null;
+        return null;
+      }),
+    };
+  }
+  return unblockCache.counts;
+}
+
+/** Missing albums in order of library tracks unblocked, then paged. */
+async function rankedMissingReleases(limit: number) {
+  const [rows, unblocks] = await Promise.all([missingReleases(5_000), tracksBlockedOnRelease()]);
+  return rankMissingReleases(rows, unblocks).slice(0, limit);
+}
+
 export async function getContributions(
   limits?: Partial<ContributionListLimits>,
 ): Promise<ContributionView> {
@@ -356,7 +407,7 @@ export async function getContributions(
     isrcGapsByRelease(page.isrcReleases),
     workRelationshipGaps(page.workGaps),
     contestedIsrcs(page.contested),
-    missingReleases(page.missing),
+    rankedMissingReleases(page.missing),
     barcodeGaps(page.barcodes),
     streamingUrlGaps(page.streamingUrls),
     misalignedAlbums(page.misaligned),
@@ -456,7 +507,7 @@ export async function getContributions(
   }
 
   const missingAlbumIds = missing.map((album) => album.albumId);
-  const [releaseLedgerRows, barcodeHitsByUpc] = await Promise.all([
+  const [releaseLedgerRows, barcodeHitsByUpc, prechecks] = await Promise.all([
     missingAlbumIds.length === 0
       ? Promise.resolve([])
       : db
@@ -477,6 +528,7 @@ export async function getContributions(
         .map((album) => album.upc)
         .filter((upc): upc is string => Boolean(upc)),
     ),
+    cachedReleasePrechecks(missingAlbumIds),
   ]);
   const releasePreviousByAlbum = previousBy(releaseLedgerRows, (row) => row.albumId);
   const releaseLedgerByAlbum = new Map(
@@ -730,6 +782,7 @@ export async function getContributions(
     })),
     missing: missing.map((album) => ({
       ...album,
+      precheck: prechecks.get(album.albumId) ?? null,
       harmony: harmonyImportLink(album.albumId),
       barcodeHits:
         album.reason === AMBIGUOUS_BARCODE_REASON
@@ -1080,46 +1133,40 @@ export async function attachPickedReleaseToAlbum(request: PickedReleaseAttachReq
   );
 }
 
-/** Record a Harmony submission only after the editor confirms the external edit. */
+/**
+ * Record a Harmony submission only after the editor confirms the external
+ * edit. With the new release's MBID, the release is fetched and attached
+ * straight away, so the album's tracks anchor and the funnel moves; the
+ * caller then measures what was corrected.
+ */
 export async function recordReleaseSubmission(
   albumId: string,
   options: { note?: string; editId?: string; releaseMbid?: string } = {},
-) {
+): Promise<{ landed: boolean }> {
   const session = await checkAuth();
   const gap = (await missingReleases(5_000)).find((album) => album.albumId === albumId);
   if (!gap) {
     throw new ManualSubmissionError('That album is not a missing-release contribution');
   }
 
-  await recordManualSubmission(
-    `human:${session.user.name}`,
-    releaseSubmissionDraftFromGap(gap, options.releaseMbid),
-    options,
-  );
-  return getContributions();
+  const draft = releaseSubmissionDraftFromGap(gap, options.releaseMbid);
+  await recordManualSubmission(`human:${session.user.name}`, draft, options);
+  const releaseMbid =
+    typeof draft.evidence?.releaseMbid === 'string' ? draft.evidence.releaseMbid : null;
+  if (!releaseMbid) return { landed: false };
+  return { landed: await pullReleaseAndApply(albumId, releaseMbid) };
 }
 
 /**
- * Fetch the submitted release from MusicBrainz (by MBID when we have one),
- * then apply the ledger row if the album is now matched. Submits nothing.
+ * Fetch the album's release (by MBID when known), attach it, and mark the
+ * pending release submission applied if the album is now matched.
  */
-export async function recheckReleaseSubmission(albumId: string) {
-  await checkAuth();
-  const [confirmed] = await db
-    .select({ id: mbSubmission.id, evidence: mbSubmission.evidence })
-    .from(mbSubmission)
-    .where(and(eq(mbSubmission.kind, 'release'), eq(mbSubmission.subject, albumId)))
-    .limit(1);
-  if (!confirmed) {
-    throw new ManualSubmissionError('That album has no release confirmation');
-  }
-
-  const knownReleaseMbid =
-    typeof confirmed.evidence?.releaseMbid === 'string' ? confirmed.evidence.releaseMbid : null;
+async function pullReleaseAndApply(albumId: string, knownReleaseMbid: string | null) {
   await pullAlbumFromMusicBrainz(musicBrainzApi('interactive'), albumId, knownReleaseMbid);
   const mbReleaseId = await observeAlbumReleaseMatch(albumId);
   const landed = cachedReleaseMatchLanded(mbReleaseId);
   if (landed) {
+    unblockCache = null;
     await db
       .update(mbSubmission)
       .set({ outcome: 'applied', outcomeAt: new Date() })
@@ -1131,8 +1178,93 @@ export async function recheckReleaseSubmission(albumId: string) {
         ),
       );
   }
+  return landed;
+}
 
+/**
+ * Fetch the submitted release from MusicBrainz (by MBID when we have one),
+ * then apply the ledger row if the album is now matched. Submits nothing.
+ */
+export async function recheckReleaseSubmission(albumId: string) {
+  await checkAuth();
+  const confirmed = await confirmedRelease(albumId);
+  if (!confirmed) {
+    throw new ManualSubmissionError('That album has no release confirmation');
+  }
+  const landed = await pullReleaseAndApply(albumId, confirmed.releaseMbid);
   return { landed, view: await getContributions() };
+}
+
+/** The album's latest release confirmation, with the MBID it named if any. */
+async function confirmedRelease(albumId: string) {
+  const [confirmed] = await db
+    .select({ id: mbSubmission.id, evidence: mbSubmission.evidence })
+    .from(mbSubmission)
+    .where(and(eq(mbSubmission.kind, 'release'), eq(mbSubmission.subject, albumId)))
+    .orderBy(desc(mbSubmission.submittedAt))
+    .limit(1);
+  if (!confirmed) return null;
+  const releaseMbid = confirmed.evidence?.releaseMbid;
+  return { id: confirmed.id, releaseMbid: typeof releaseMbid === 'string' ? releaseMbid : null };
+}
+
+/**
+ * Run the missing-release pre-checks for one album against live MusicBrainz
+ * and cache them. Writes only the pre-check cache.
+ */
+export async function runReleasePrecheck(albumId: string): Promise<CachedPrecheck> {
+  await checkAuth();
+  await refreshReleasePrecheck(albumId);
+  const cached = (await cachedReleasePrechecks([albumId])).get(albumId);
+  if (!cached) throw new Error('The pre-check ran but was not stored');
+  return cached;
+}
+
+/**
+ * Compare the album's landed release with the Spotify seed and store the
+ * correction record. Reads MusicBrainz; submits nothing.
+ */
+export async function measureReleaseCorrections(albumId: string): Promise<ReleaseCorrectionRecord> {
+  await checkAuth();
+  const confirmed = await confirmedRelease(albumId);
+  return measureReleaseCorrection(albumId, confirmed?.releaseMbid ?? null);
+}
+
+export type ReleaseCorrectionsView = {
+  rows: CorrectionRow[];
+  summary: CorrectionSummaryRow[];
+  /** Albums added through the Inbox and matched, with no correction record yet. */
+  unmeasured: { albumId: string; albumTitle: string; releaseMbid: string | null }[];
+};
+
+export async function getReleaseCorrections(): Promise<ReleaseCorrectionsView> {
+  await checkAuth();
+  const [rows, unmeasured] = await Promise.all([
+    correctionRecords(),
+    db
+      .select({
+        albumId: spotifyAlbum.spotifyId,
+        albumTitle: spotifyAlbum.title,
+        releaseMbid: spotifyAlbum.mbReleaseId,
+      })
+      .from(mbSubmission)
+      .innerJoin(spotifyAlbum, eq(spotifyAlbum.spotifyId, mbSubmission.subject))
+      .leftJoin(mbReleaseCorrection, eq(mbReleaseCorrection.spotifyAlbumId, spotifyAlbum.spotifyId))
+      .where(
+        and(
+          eq(mbSubmission.kind, 'release'),
+          inArray(mbSubmission.outcome, ['pending', 'applied']),
+          isNotNull(spotifyAlbum.mbReleaseId),
+          isNull(mbReleaseCorrection.spotifyAlbumId),
+        ),
+      )
+      .groupBy(spotifyAlbum.spotifyId),
+  ]);
+  return {
+    rows,
+    summary: summariseCorrections(rows.map((row) => row.record)),
+    unmeasured,
+  };
 }
 
 /**

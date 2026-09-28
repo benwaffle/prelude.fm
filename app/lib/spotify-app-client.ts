@@ -196,3 +196,18 @@ export async function findSpotifyArtistByName(name: string) {
   artistSearchCache.set(normalizedName, request);
   return request;
 }
+
+/**
+ * The album as Harmony reads it: title, barcode, album artists in credit
+ * order, and every track with its artists in credit order and its ISRC.
+ */
+export async function getSpotifyAlbumSeed(albumId: string) {
+  const album = await spotifyFetch<{
+    id: string;
+    name: string;
+    artists: SpotifyArtistMetadata[];
+    external_ids?: { upc?: string };
+  }>(`/albums/${albumId}`);
+  const tracks = await getSpotifyTracksByIds(await getSpotifyAlbumTrackIds(albumId));
+  return { album, tracks };
+}
