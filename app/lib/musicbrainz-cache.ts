@@ -13,7 +13,7 @@
  * So: one request for the release, then one for each work we have never
  * looked at, and none at all for anything already cached.
  */
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from './db';
 import {
   mbArtist,
@@ -757,25 +757,45 @@ export async function drainRecordingStubs(
  *
  * The stub rows are the queue: `mb_work.detail = 'stub'` means named but
  * never read, so there is no separate work list to keep in step.
+ *
+ * A stub MusicBrainz will not hand back as itself — removed, or merged into
+ * another work, so the answer carries a different MBID — stays a stub: we
+ * still have not read that work, and the gap should keep showing. Its
+ * `fetched_at` moves to now so the next slice starts with stubs nobody has
+ * tried yet; without that, a slice's worth of such works at the head of the
+ * table would be asked for again on every pass and the rest never reached.
  */
 export async function drainWorkStubs(
   source: MusicBrainzSource,
   limit: number,
-): Promise<{ works: number; requests: number }> {
+): Promise<{ works: number; requests: number; unavailable: number }> {
   const stubs = await db
     .select({ mbid: mbWork.mbid })
     .from(mbWork)
     .where(eq(mbWork.detail, 'stub'))
+    .orderBy(asc(mbWork.fetchedAt), asc(mbWork.mbid))
     .limit(limit);
 
   let requests = 0;
   let works = 0;
+  let unavailable = 0;
   for (const stub of stubs) {
     const { requests: spent } = await ingestWorkTree(source, stub.mbid);
     requests += spent;
-    if (spent > 0) works++;
+    if (spent === 0) continue;
+
+    const [still] = await db
+      .select({ mbid: mbWork.mbid })
+      .from(mbWork)
+      .where(and(eq(mbWork.mbid, stub.mbid), eq(mbWork.detail, 'stub')));
+    if (still) {
+      await db.update(mbWork).set({ fetchedAt: new Date() }).where(eq(mbWork.mbid, stub.mbid));
+      unavailable++;
+    } else {
+      works++;
+    }
   }
-  return { works, requests };
+  return { works, requests, unavailable };
 }
 
 /**
