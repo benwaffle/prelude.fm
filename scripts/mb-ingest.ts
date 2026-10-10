@@ -14,6 +14,7 @@
  *   pnpm mb:ingest report              what the cache holds and what it reaches
   pnpm mb:ingest loose [--limit n]   anchor tracks by ISRC alone, no release needed
   pnpm mb:ingest recordings [--limit n] read recordings an ISRC named but nobody has
+  pnpm mb:ingest works [--limit n]   read works a recording named but nobody has
   pnpm mb:ingest artists [--limit n] read artist stubs, composers first
   pnpm mb:ingest refresh [--limit n] re-read cached releases for newly stored fields
   pnpm mb:ingest check               run the cache invariants

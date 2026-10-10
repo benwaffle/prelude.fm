@@ -72,6 +72,8 @@ export interface QueueWorkerResult {
     albumsCached: number;
     tracksAnchored: number;
     worksRead: number;
+    /** Work stubs asked for that MusicBrainz did not return as themselves. */
+    worksUnavailable: number;
     recordingsRead: number;
     artistsRead: number;
     requests: number;
@@ -439,6 +441,7 @@ export async function runMatchQueueWorker(
     albumsCached: albums.filter((album) => album.musicbrainz?.releaseCached).length,
     tracksAnchored: albums.reduce((sum, album) => sum + (album.musicbrainz?.anchored ?? 0), 0),
     worksRead: 0,
+    worksUnavailable: 0,
     recordingsRead: 0,
     artistsRead: 0,
     requests: albums.reduce((sum, album) => sum + (album.musicbrainz?.requests ?? 0), 0),
@@ -476,9 +479,10 @@ export async function runMatchQueueWorker(
 
         const swept =
           recordings.recordings > 0
-            ? { works: 0, requests: 0 }
+            ? { works: 0, requests: 0, unavailable: 0 }
             : await drainWorkStubs(musicBrainzApi('backfill'), WORK_SWEEP_SIZE);
         musicbrainz.worksRead += swept.works;
+        musicbrainz.worksUnavailable += swept.unavailable;
         musicbrainz.requests += swept.requests;
 
         if (recordings.recordings === 0 && swept.works === 0) {
