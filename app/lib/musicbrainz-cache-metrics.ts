@@ -12,14 +12,6 @@ import type { AnonymousImportRunInput } from './track-classification';
 
 export type { AnonymousImportRunInput };
 
-export type MarginalRequestPercentiles = {
-  runs: number;
-  mean: number | null;
-  p50: number | null;
-  p90: number | null;
-  p99: number | null;
-};
-
 function metricDay(now = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
@@ -75,12 +67,6 @@ export async function recordMusicBrainzRequest(
     });
 }
 
-function percentile(sorted: number[], p: number): number | null {
-  if (sorted.length === 0) return null;
-  const index = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
-  return sorted[index] ?? null;
-}
-
 /** Persist one anonymous import/worker pass for marginal-request analysis. */
 export async function recordAnonymousImportRun(input: AnonymousImportRunInput): Promise<number> {
   const [row] = await db
@@ -99,25 +85,4 @@ export async function recordAnonymousImportRun(input: AnonymousImportRunInput): 
     })
     .returning({ id: mbImportRun.id });
   return row.id;
-}
-
-/** Rolling marginal MusicBrainz requests per import run. */
-export async function marginalRequestPercentiles(
-  sinceDays = 30,
-): Promise<MarginalRequestPercentiles> {
-  const since = new Date(Date.now() - sinceDays * 86_400_000);
-  const rows = await db
-    .select({ requestsCaused: mbImportRun.requestsCaused })
-    .from(mbImportRun)
-    .where(sql`${mbImportRun.completedAt} >= ${since.getTime()}`)
-    .orderBy(mbImportRun.requestsCaused);
-  const values = rows.map((row) => row.requestsCaused);
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return {
-    runs: values.length,
-    mean: values.length > 0 ? total / values.length : null,
-    p50: percentile(values, 50),
-    p90: percentile(values, 90),
-    p99: percentile(values, 99),
-  };
 }

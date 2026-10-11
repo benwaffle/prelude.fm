@@ -16,9 +16,3 @@ export function titlesAreCompatible(left: string, right: string) {
   const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
   return intersection / Math.max(leftTokens.size, rightTokens.size) >= 0.6;
 }
-
-export function candidateIsSpecificEnough(candidateTitle: string, preferredTitle: string) {
-  const candidateTokens = normalizeMetadataText(candidateTitle).split(' ').filter(Boolean);
-  const preferredTokens = normalizeMetadataText(preferredTitle).split(' ').filter(Boolean);
-  return candidateTokens.length >= Math.ceil(preferredTokens.length * 0.75);
-}

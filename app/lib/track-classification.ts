@@ -22,13 +22,6 @@ export type TrackClassificationRow = {
 /** MusicBrainz album-pass outcome stored on `match_queue.pipeline_outcome`. */
 export type PipelineOutcome = 'ready' | 'unanchored' | 'unclassified' | 'not_classical';
 
-/** Columns on `match_queue` written when an MB pass finishes a track. */
-export type PipelineCompletion = {
-  pipelineOutcome: PipelineOutcome;
-  pipelineReason: string | null;
-  pipelineCompletedAt: Date;
-};
-
 export const PROVENANCE_RANK: Record<TrackClassificationProvenance, number> = {
   manual: 3,
   musicbrainz: 2,
