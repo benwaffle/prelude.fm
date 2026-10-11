@@ -1,4 +1,16 @@
-import { and, eq, exists, inArray, isNotNull, isNull, ne, notLike, or, sql } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notLike,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { db, type DatabaseExecutor } from '@/lib/db';
 import { forChunks } from '@/lib/db/chunked';
 import {
@@ -794,21 +806,15 @@ export async function findProviderTracksForWork(
   workMbid: string,
   database: DatabaseExecutor = db,
 ): Promise<string[]> {
-  const workMbids = await descendantWorkMbids(workMbid, database);
-  const relations = await forChunks(workMbids, (chunk) =>
+  const tree = subtreeOf(sql`select ${workMbid}`);
+  const [workMbids, anchors] = await Promise.all([
+    descendantWorkMbids(workMbid, database),
     database
-      .select({ recordingMbid: mbRecordingWork.recordingMbid })
-      .from(mbRecordingWork)
-      .where(inArray(mbRecordingWork.workMbid, chunk)),
-  );
-  const anchors = await forChunks(
-    relations.map((relation) => relation.recordingMbid),
-    (chunk) =>
-      database
-        .select({ spotifyTrackId: trackRecording.spotifyTrackId })
-        .from(trackRecording)
-        .where(inArray(trackRecording.recordingMbid, chunk)),
-  );
+      .select({ spotifyTrackId: trackRecording.spotifyTrackId })
+      .from(trackRecording)
+      .innerJoin(mbRecordingWork, eq(mbRecordingWork.recordingMbid, trackRecording.recordingMbid))
+      .where(sql`${mbRecordingWork.workMbid} in ${tree}`),
+  ]);
   const own = await ownWorkHoldings(workMbids, database);
   return Array.from(
     new Set([
@@ -825,34 +831,87 @@ export async function findProviderTracksForComposer(
   workLimit = 12,
   database: DatabaseExecutor = db,
 ): Promise<string[]> {
-  const excluded = new Set(await descendantWorkMbids(excludeWorkMbid, database));
-  const works = await database
-    .select({ mbid: mbWork.mbid })
-    .from(mbWork)
-    .where(and(eq(mbWork.composerMbid, composerMbid), isNull(mbWork.parentMbid)));
+  // Every work tree of the composer is read in one pass, rather than one
+  // walk per work: a prolific composer has hundreds of top-level works, and
+  // a round trip each was most of a work page's load time.
+  const tree = subtreeOf(
+    sql`select w.mbid from mb_work w where w.composer_mbid = ${composerMbid} and w.parent_mbid is null`,
+  );
+  const [excludedMbids, works, nodes, anchors, own] = await Promise.all([
+    descendantWorkMbids(excludeWorkMbid, database),
+    database
+      .select({ mbid: mbWork.mbid })
+      .from(mbWork)
+      .where(and(eq(mbWork.composerMbid, composerMbid), isNull(mbWork.parentMbid))),
+    database
+      .select({ mbid: mbWork.mbid, parentMbid: mbWork.parentMbid })
+      .from(mbWork)
+      .where(sql`${mbWork.mbid} in ${tree}`),
+    database
+      .select({ workMbid: mbRecordingWork.workMbid, spotifyTrackId: trackRecording.spotifyTrackId })
+      .from(trackRecording)
+      .innerJoin(mbRecordingWork, eq(mbRecordingWork.recordingMbid, trackRecording.recordingMbid))
+      .where(sql`${mbRecordingWork.workMbid} in ${tree}`),
+    ownWorkHoldings(null, database),
+  ]);
+
+  // Which top-level work each node of the trees is filed under.
+  const parentOf = new Map(nodes.map((node) => [node.mbid, node.parentMbid]));
+  const rootOf = new Map<string, string>();
+  const findRoot = (mbid: string): string | null => {
+    const seen = new Set<string>();
+    let current = mbid;
+    while (!seen.has(current)) {
+      seen.add(current);
+      const parent = parentOf.get(current);
+      if (parent === undefined) return null;
+      if (parent === null) return current;
+      current = parent;
+    }
+    return null;
+  };
+  for (const node of nodes) {
+    const root = findRoot(node.mbid);
+    if (root) rootOf.set(node.mbid, root);
+  }
+
+  const tracksByRoot = new Map<string, string[]>();
+  const file = (workMbid: string, spotifyTrackId: string) => {
+    const root = rootOf.get(workMbid);
+    if (!root) return;
+    tracksByRoot.set(root, [...(tracksByRoot.get(root) ?? []), spotifyTrackId]);
+  };
+  for (const anchor of anchors) file(anchor.workMbid, anchor.spotifyTrackId);
+  for (const holding of own) file(holding.workMbid, holding.spotifyTrackId);
+
+  const excluded = new Set(excludedMbids);
   const trackIds: string[] = [];
   for (const work of works) {
     if (excluded.has(work.mbid) || trackIds.length >= workLimit * 32) continue;
-    trackIds.push(...(await findProviderTracksForWork(work.mbid, database)));
+    trackIds.push(...new Set(tracksByRoot.get(work.mbid) ?? []));
   }
   return Array.from(new Set(trackIds));
 }
 
-/** A work and everything filed beneath it, to a bounded depth. */
+/**
+ * The MBIDs of the works under the seed works, the seeds included, as a
+ * subquery. UNION (not UNION ALL) drops a work already reached, so a cycle in
+ * the cache ends the walk instead of looping.
+ */
+function subtreeOf(seed: SQL) {
+  return sql`(with recursive tree(mbid) as (${seed} union select child.mbid from mb_work child join tree on child.parent_mbid = tree.mbid) select mbid from tree)`;
+}
+
+/** A work and everything filed beneath it. */
 async function descendantWorkMbids(
   workMbid: string,
   database: DatabaseExecutor,
 ): Promise<string[]> {
-  const found = new Set([workMbid]);
-  let frontier = [workMbid];
-  for (let depth = 0; depth < MAX_WORK_GENERATIONS && frontier.length > 0; depth++) {
-    const children = await forChunks(frontier, (chunk) =>
-      database.select({ mbid: mbWork.mbid }).from(mbWork).where(inArray(mbWork.parentMbid, chunk)),
-    );
-    frontier = children.map((child) => child.mbid).filter((mbid) => !found.has(mbid));
-    for (const mbid of frontier) found.add(mbid);
-  }
-  return Array.from(found);
+  const rows = await database
+    .select({ mbid: mbWork.mbid })
+    .from(mbWork)
+    .where(sql`${mbWork.mbid} in ${subtreeOf(sql`select ${workMbid}`)}`);
+  return Array.from(new Set([workMbid, ...rows.map((row) => row.mbid)]));
 }
 
 /**
@@ -917,6 +976,19 @@ export async function findHeldWorkMbids(
     if (root) held.add(root);
   }
   return held;
+}
+
+/** The composer MusicBrainz files on this work, if the cache has one. */
+export async function readWorkComposerMbid(
+  workMbid: string,
+  database: DatabaseExecutor = db,
+): Promise<string | null> {
+  const [row] = await database
+    .select({ composerMbid: mbWork.composerMbid })
+    .from(mbWork)
+    .where(eq(mbWork.mbid, workMbid))
+    .limit(1);
+  return row?.composerMbid ?? null;
 }
 
 /** A work's parent and the parent's other parts, straight from the cache. */

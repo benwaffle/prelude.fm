@@ -7,6 +7,7 @@ import {
   findProviderTracksForWork,
   loadMusicBrainzLibraryFacts,
   readWorkCollection,
+  readWorkComposerMbid,
 } from './library-musicbrainz';
 import type { WorkParent, WorkSibling } from './work-hierarchy';
 import type { OtherRecording, WorkDetail, WorkSummary } from '@/lib/library-types';
@@ -55,6 +56,17 @@ export async function getMusicBrainzWorkDetail(
   likedTrackIds: string[] = [],
 ): Promise<WorkDetail | null> {
   const liked = new Set(likedTrackIds);
+  // "More by the composer" needs only the composer, which is almost always
+  // the one MusicBrainz files on this work. Starting it now, alongside this
+  // work's own read, rather than after it halves the page's wait. If the
+  // card turns out to name someone else, it is read again for them below.
+  const composerRead = readWorkComposerMbid(workMbid);
+  const early = composerRead.then((composerMbid) =>
+    composerMbid ? worksByComposer(composerMbid, workMbid, liked) : [],
+  );
+  // Settled here so an unused early read cannot surface as an unhandled rejection.
+  early.catch(() => {});
+
   const trackIds = await findProviderTracksForWork(workMbid);
   if (trackIds.length === 0) return null;
 
@@ -93,9 +105,11 @@ export async function getMusicBrainzWorkDetail(
       tint: card.tint,
     }));
 
-  const moreByComposer = chosen.composerId
-    ? await worksByComposer(chosen.composerId, workMbid, liked)
-    : [];
+  const moreByComposer = !chosen.composerId
+    ? []
+    : chosen.composerId === (await composerRead)
+      ? await early
+      : await worksByComposer(chosen.composerId, workMbid, liked);
 
   return { work: chosen, others, moreByComposer };
 }
