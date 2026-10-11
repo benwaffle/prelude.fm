@@ -3,16 +3,18 @@ import { eq } from 'drizzle-orm';
 import test, { before, beforeEach } from 'node:test';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 import { projectMusicBrainzLibrary } from '../app/lib/musicbrainz-library';
-import { musicBrainzLibraryView } from '../app/lib/musicbrainz-library-view';
+import { keepLikedHoldings, musicBrainzLibraryView } from '../app/lib/musicbrainz-library-view';
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
 let loadMusicBrainzLibraryFacts: typeof import('@/app/actions/library-musicbrainz').loadMusicBrainzLibraryFacts;
+let findAlbumMateTrackIds: typeof import('@/app/actions/library-musicbrainz').findAlbumMateTrackIds;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ loadMusicBrainzLibraryFacts } = await import('@/app/actions/library-musicbrainz'));
+  ({ loadMusicBrainzLibraryFacts, findAlbumMateTrackIds } =
+    await import('@/app/actions/library-musicbrainz'));
 });
 
 /** Two of a sonata's three movements, on one album, anchored by ISRC. */
@@ -197,6 +199,52 @@ test('shows the movement this issue does not carry as missing, from MusicBrainz'
     works[0].movements.map((movement) => movement.n),
     [1, 2, 3],
   );
+});
+
+/** The library as the home screen reads it: liked tracks plus their album-mates. */
+async function libraryOf(likedTrackIds: string[]) {
+  const liked = new Set(likedTrackIds);
+  const facts = await loadMusicBrainzLibraryFacts(await findAlbumMateTrackIds(likedTrackIds));
+  return keepLikedHoldings(musicBrainzLibraryView(projectMusicBrainzLibrary(facts), liked), liked);
+}
+
+test("liking one movement puts the album's other movements on the card, playable", async () => {
+  // An album-mate that MusicBrainz cannot place, and nobody liked.
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-encore',
+    title: 'Encore',
+    trackNumber: 3,
+    discNumber: 1,
+    durationMs: 120_000,
+    popularity: 10,
+    spotifyAlbumId: 'album-1',
+    isrc: null,
+  });
+
+  const { works, unresolvedTracks, accounting } = await libraryOf(['track-i']);
+
+  assert.equal(works.length, 1);
+  const movements = works[0].movements;
+  assert.deepEqual(
+    movements.map((movement) => [movement.trackId, movement.liked, movement.missing]),
+    [
+      ['track-i', true, false],
+      ['track-ii', false, false],
+      [null, false, true],
+    ],
+    'the unliked movement is a real, playable track, not a missing part',
+  );
+  assert.equal(movements[1].uri, 'spotify:track:track-ii');
+  assert.deepEqual(unresolvedTracks, [], 'an unliked album-mate is not a library gap');
+  assert.deepEqual(
+    accounting.map((track) => track.spotifyTrackId),
+    ['track-i'],
+  );
+});
+
+test('an album-mate of a work with nothing liked does not make a card', async () => {
+  const { works } = await libraryOf([]);
+  assert.deepEqual(works, []);
 });
 
 test('two performances of one work stay two cards', async () => {

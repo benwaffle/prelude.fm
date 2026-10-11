@@ -26,6 +26,18 @@ test('a movement titled after its parent belongs to the parent', () => {
   assert.equal(level.reason, 'titled-as-part');
 });
 
+test('a movement belongs to a parent whose title adds a catalogue reference', () => {
+  const level = workLevelOf(
+    node({
+      title: 'Sinfonia in G minor, op. 6 no. 6: I. Allegro',
+      parentMbid: 'sinfonia',
+      parentTitle: 'Sinfonia in G minor, op. 6 no. 6, W. C12',
+    }),
+  );
+  assert.equal(level.mbid, 'sinfonia');
+  assert.equal(level.reason, 'titled-as-part');
+});
+
 test('a work with parts is the work, not one of its parts', () => {
   // "Prelude and Fugue No. 1" is untyped and sits inside the book, but it has
   // a prelude and a fugue under it, so it is the piece.
