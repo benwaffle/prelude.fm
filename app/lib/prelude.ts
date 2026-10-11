@@ -296,3 +296,26 @@ export function stripCollectionPrefix(title: string, parentTitle: string): strin
   if (!title.startsWith(prefix)) return title;
   return title.slice(prefix.length).trim() || title;
 }
+
+/**
+ * A recording as a queue entry: its playable movements in order, titled the
+ * way the library titles it. A work MusicBrainz leaves untitled goes by its
+ * album, which is real, rather than a made-up name.
+ */
+export function queueEntryFor(work: LibraryWork): {
+  uris: string[];
+  title: string;
+  subtitle: string | null;
+  cover: string | null;
+} {
+  const title = work.title
+    ? `${work.title}${work.nickname ? ` “${work.nickname}”` : ''}`
+    : work.album;
+  return {
+    uris: playable(work.movements).map((m) => m.uri as string),
+    title,
+    subtitle:
+      [work.composer ?? work.composerFull, work.performer].filter(Boolean).join(' · ') || null,
+    cover: work.cover,
+  };
+}

@@ -38,6 +38,26 @@ export interface PlaybackDevice {
  */
 export type LocalPlayerStatus = 'connecting' | 'ready' | 'unavailable';
 
+/** A recording waiting to play after what's playing now. */
+export interface QueueEntry {
+  id: string;
+  uris: string[];
+  title: string;
+  subtitle: string | null;
+  cover: string | null;
+}
+
+/**
+ * What Spotify was last given to play, in the pieces it came from: what the
+ * listener started, then each queued recording. Spotify plays the list through
+ * on its own, so queued recordings follow on with no gap even with the screen
+ * off; the pieces let us tell which queued recording has started.
+ */
+interface Segment {
+  entryId: string | null;
+  uris: string[];
+}
+
 interface SpotifyPlayerContextValue {
   /** True when there is a device to send playback to. */
   isReady: boolean;
@@ -59,7 +79,14 @@ interface SpotifyPlayerContextValue {
   dismissDevicePrompt: () => void;
   refreshDevices: () => Promise<void>;
   chooseDevice: (device: PlaybackDevice) => Promise<void>;
+  /** Play these tracks, then whatever is queued. */
   play: (uris: string[]) => Promise<void>;
+  queue: QueueEntry[];
+  addToQueue: (entry: Omit<QueueEntry, 'id'>) => void;
+  removeFromQueue: (id: string) => void;
+  clearQueue: () => void;
+  /** Start the first queued recording when nothing is playing. */
+  playQueue: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   togglePlay: () => Promise<void>;
@@ -81,6 +108,18 @@ const REMOTE_POLL_MS = 3_000;
 const LOCAL_PLAYER_NAME = 'prelude.fm';
 
 const NO_LOCAL_PLAYBACK = 'Spotify’s player didn’t start in this browser.';
+
+/** Queue edits made in quick succession go to Spotify as one. */
+const QUEUE_SYNC_DELAY_MS = 400;
+
+let nextQueueId = 0;
+
+/** Spotify may play a relinked copy of the track we asked for. */
+function trackUris(track: Track | null): string[] {
+  if (!track) return [];
+  const linked = (track as Track & { linked_from?: { uri?: string } }).linked_from?.uri;
+  return linked ? [track.uri, linked] : [track.uri];
+}
 
 interface SpotifyApiDevice {
   id: string | null;
@@ -183,6 +222,7 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
   const [devices, setDevices] = useState<PlaybackDevice[]>([]);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [pendingUris, setPendingUris] = useState<string[] | null>(null);
+  const [queue, setQueue] = useState<QueueEntry[]>([]);
 
   const playerRef = useRef<Spotify.Player | null>(null);
   const accessTokenRef = useRef(accessToken);
@@ -197,6 +237,14 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
     paused: true,
   });
   const progressSubscribersRef = useRef<Set<(progress: PlaybackProgress) => void>>(new Set());
+  const queueRef = useRef<QueueEntry[]>([]);
+  const segmentsRef = useRef<Segment[]>([]);
+  /** Which segment is playing; segments before it are done. */
+  const segmentIndexRef = useRef(0);
+  /** Set when the queue changed and Spotify hasn't been told yet. */
+  const queueDirtyRef = useRef(false);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentTrackRef = useRef<Track | null>(null);
 
   // Keep the refs in sync with the latest values for the SDK's callbacks.
   useEffect(() => {
@@ -208,6 +256,32 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
   useEffect(() => {
     localDeviceIdRef.current = localDeviceId;
   }, [localDeviceId]);
+  useEffect(() => {
+    currentTrackRef.current = state.currentTrack;
+  }, [state.currentTrack]);
+
+  const updateQueue = useCallback((next: QueueEntry[]) => {
+    queueRef.current = next;
+    setQueue(next);
+  }, []);
+
+  // When a queued recording starts, it leaves the queue (and so do any the
+  // listener skipped past to get to it).
+  useEffect(() => {
+    const uris = trackUris(state.currentTrack);
+    if (uris.length === 0) return;
+    const segments = segmentsRef.current;
+    for (let i = segmentIndexRef.current; i < segments.length; i++) {
+      if (!segments[i].uris.some((u) => uris.includes(u))) continue;
+      segmentIndexRef.current = i;
+      const startedId = segments[i].entryId;
+      if (startedId !== null) {
+        const at = queueRef.current.findIndex((e) => e.id === startedId);
+        if (at >= 0) updateQueue(queueRef.current.slice(at + 1));
+      }
+      return;
+    }
+  }, [state.currentTrack, updateQueue]);
 
   const notifyProgressSubscribers = useCallback(() => {
     const progress = progressRef.current;
@@ -448,12 +522,15 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
   );
 
   const playOn = useCallback(
-    async (device: PlaybackDevice, uris: string[]) => {
+    async (device: PlaybackDevice, uris: string[], positionMs?: number) => {
       try {
         await spotifyApi(
           accessTokenRef.current,
           `/me/player/play?device_id=${encodeURIComponent(device.id)}`,
-          { method: 'PUT', body: { uris } },
+          {
+            method: 'PUT',
+            body: positionMs ? { uris, position_ms: Math.round(positionMs) } : { uris },
+          },
         );
         setPlaybackError(null);
       } catch (err) {
@@ -465,8 +542,18 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
     [pollRemote],
   );
 
-  const play = useCallback(
-    async (uris: string[]) => {
+  /**
+   * Hand Spotify these tracks with the whole queue after them, and remember
+   * the pieces so we can tell when a queued recording starts.
+   */
+  const playWithQueue = useCallback(
+    async (start: Segment, positionMs?: number) => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      queueDirtyRef.current = false;
+      const segments = [start, ...queueRef.current.map((e) => ({ entryId: e.id, uris: e.uris }))];
+      segmentsRef.current = segments;
+      segmentIndexRef.current = 0;
+      const uris = segments.flatMap((s) => s.uris);
       const output = outputRef.current;
       if (!output) {
         // Nowhere to play yet: hold the request and ask where.
@@ -474,10 +561,70 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
         refreshDevices();
         return;
       }
-      await playOn(output, uris);
+      await playOn(output, uris, positionMs);
     },
     [playOn, refreshDevices],
   );
+
+  const play = useCallback(
+    (uris: string[]) => playWithQueue({ entryId: null, uris }),
+    [playWithQueue],
+  );
+
+  /**
+   * Spotify can't edit a list it is already playing, so after a queue change
+   * the rest of the current recording and the new queue go to it again, from
+   * where playback is now. That costs a moment's pause, so it waits while
+   * paused and happens on resume instead.
+   */
+  const syncQueue = useCallback(async () => {
+    const track = currentTrackRef.current;
+    if (!track) return;
+    const uris = trackUris(track);
+    const segment = segmentsRef.current[segmentIndexRef.current];
+    const at = segment ? segment.uris.findIndex((u) => uris.includes(u)) : -1;
+    // Something we didn't start (from the Spotify app, say): keep the track.
+    const rest = at >= 0 ? segment.uris.slice(at) : [track.uri];
+    await playWithQueue({ entryId: null, uris: rest }, getPosition(progressRef.current));
+  }, [playWithQueue]);
+
+  const queueChanged = useCallback(() => {
+    if (!currentTrackRef.current) return;
+    queueDirtyRef.current = true;
+    if (progressRef.current.paused) return;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => void syncQueue(), QUEUE_SYNC_DELAY_MS);
+  }, [syncQueue]);
+
+  const addToQueue = useCallback(
+    (entry: Omit<QueueEntry, 'id'>) => {
+      if (entry.uris.length === 0) return;
+      updateQueue([...queueRef.current, { ...entry, id: `q${++nextQueueId}` }]);
+      queueChanged();
+    },
+    [updateQueue, queueChanged],
+  );
+
+  const removeFromQueue = useCallback(
+    (id: string) => {
+      updateQueue(queueRef.current.filter((e) => e.id !== id));
+      queueChanged();
+    },
+    [updateQueue, queueChanged],
+  );
+
+  const clearQueue = useCallback(() => {
+    if (queueRef.current.length === 0) return;
+    updateQueue([]);
+    queueChanged();
+  }, [updateQueue, queueChanged]);
+
+  const playQueue = useCallback(async () => {
+    const [first, ...rest] = queueRef.current;
+    if (!first) return;
+    updateQueue(rest);
+    await playWithQueue({ entryId: null, uris: first.uris });
+  }, [updateQueue, playWithQueue]);
 
   const chooseDevice = useCallback(
     async (device: PlaybackDevice) => {
@@ -520,11 +667,16 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
   }, [remoteCommand]);
 
   const resume = useCallback(async () => {
-    if (isLocal()) await playerRef.current?.resume();
+    if (queueDirtyRef.current) await syncQueue();
+    else if (isLocal()) await playerRef.current?.resume();
     else await remoteCommand('PUT', '/me/player/play');
-  }, [remoteCommand]);
+  }, [remoteCommand, syncQueue]);
 
   const togglePlay = useCallback(async () => {
+    if (queueDirtyRef.current && progressRef.current.paused) {
+      await syncQueue();
+      return;
+    }
     if (isLocal()) {
       await playerRef.current?.togglePlay();
       return;
@@ -539,7 +691,7 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
     };
     setState((s) => ({ ...s, isPaused: !paused }));
     await remoteCommand('PUT', paused ? '/me/player/play' : '/me/player/pause');
-  }, [remoteCommand]);
+  }, [remoteCommand, syncQueue]);
 
   const seek = useCallback(
     async (positionMs: number) => {
@@ -599,6 +751,11 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
     refreshDevices,
     chooseDevice,
     play,
+    queue,
+    addToQueue,
+    removeFromQueue,
+    clearQueue,
+    playQueue,
     pause,
     resume,
     togglePlay,

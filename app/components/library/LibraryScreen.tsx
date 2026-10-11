@@ -266,14 +266,6 @@ function Toolbar({
         <Icon name="play" size={12} />
         Play all
       </button>
-      <button
-        type="button"
-        disabled={disabled}
-        className="inline-flex cursor-pointer items-center gap-[9px] px-[13px] py-[9px] font-meta text-[10px] tracking-[0.18em] text-muted uppercase transition-colors duration-150 hover:text-ink disabled:cursor-default disabled:opacity-40"
-      >
-        <Icon name="shuffle" size={12} />
-        Shuffle
-      </button>
 
       <div className="ml-auto flex flex-wrap items-center gap-[10px] max-[900px]:ml-0 max-[900px]:w-full">
         <span className="font-meta text-[9px] tracking-[0.2em] text-muted uppercase max-[900px]:hidden">
