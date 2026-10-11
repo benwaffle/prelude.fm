@@ -1,4 +1,4 @@
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db, type DatabaseExecutor } from './db';
 import { forChunks } from './db/chunked';
 import { heldWorkLinks } from './db/held-work-links';
@@ -12,6 +12,7 @@ import {
   mbReleaseUrl,
   mbWorkCatalogue,
   spotifyAlbum,
+  spotifyArtist,
   spotifyTrack,
   trackRecording,
 } from './db/schema';
@@ -33,6 +34,7 @@ import type {
   TrackAnchorFact,
 } from './musicbrainz-library-facts';
 import { catalogedComposerMbids, classifyTracks } from './musicbrainz-track-classification';
+import { portraitOf } from './prelude';
 
 /**
  * Reads everything the MusicBrainz reader projection needs, from the Spotify
@@ -220,7 +222,11 @@ export async function loadMusicBrainzLibraryFacts(
         database.select().from(mbWorkCatalogue).where(inArray(mbWorkCatalogue.workMbid, chunk)),
     ),
     forChunks([...composerMbids, ...creditRows.map((credit) => credit.artistMbid)], (chunk) =>
-      database.select().from(mbArtist).where(inArray(mbArtist.mbid, chunk)),
+      database
+        .select({ artist: mbArtist, images: spotifyArtist.images })
+        .from(mbArtist)
+        .leftJoin(spotifyArtist, eq(spotifyArtist.spotifyId, mbArtist.spotifyArtistId))
+        .where(inArray(mbArtist.mbid, chunk)),
     ),
     catalogedComposerMbids(composerMbids, database),
     readIsrcRecordings(unanchoredIsrcs, database),
@@ -293,7 +299,7 @@ export async function loadMusicBrainzLibraryFacts(
       }),
     ),
     mbArtists: artistRows.map(
-      (artist): MbArtistFact => ({
+      ({ artist, images }): MbArtistFact => ({
         mbid: artist.mbid,
         name: artist.name,
         creditedName: artist.creditedName,
@@ -301,6 +307,7 @@ export async function loadMusicBrainzLibraryFacts(
         type: artist.type,
         beginYear: artist.beginYear,
         endYear: artist.endYear,
+        portrait: portraitOf(images),
       }),
     ),
     mbRecordingCredits: creditRows.map(

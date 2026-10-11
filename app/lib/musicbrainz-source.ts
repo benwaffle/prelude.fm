@@ -55,6 +55,7 @@ export type MbArtist = {
   'sort-name'?: string | null;
   type?: string | null;
   'life-span'?: { begin?: string | null; end?: string | null };
+  relations?: MbRelation[];
 };
 
 export type MbRecordingSearchHit = {

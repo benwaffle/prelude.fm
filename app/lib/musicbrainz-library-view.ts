@@ -347,9 +347,7 @@ export function musicBrainzLibraryView(
       composer: head.work.composer?.name ? shortName(head.work.composer.name) : null,
       composerFull: head.work.composer?.name ?? null,
       composerId: head.work.composer?.mbid ?? null,
-      // MusicBrainz has no artist portrait, and Spotify's is not the
-      // composer's unless something has matched the two.
-      composerImage: null,
+      composerImage: head.work.composer?.portrait ?? null,
       era: eraFor(head.work.composer?.beginYear ?? null),
       years: lifespan(head.work.composer?.beginYear ?? null, head.work.composer?.endYear ?? null),
       title: head.work.title,

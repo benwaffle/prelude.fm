@@ -4,7 +4,7 @@ import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { forChunks, jsonList } from '@/lib/db/chunked';
 import { heldWorkLinks } from '@/lib/db/held-work-links';
-import { mbArtist, mbWork, mbWorkCatalogue } from '@/lib/db/schema';
+import { mbArtist, mbWork, mbWorkCatalogue, spotifyArtist } from '@/lib/db/schema';
 import { readWorkNeighbourhood, subtreeOf } from '@/lib/db/work-tree-sql';
 import { filmScoreInputs } from '@/lib/film-score-inputs';
 import { filmScoreReason } from '@/lib/film-scores';
@@ -20,7 +20,7 @@ import { readLibraryCards } from '@/lib/musicbrainz-library-cards';
 import { recordingRowOf } from '@/lib/musicbrainz-library-view';
 import { ancestry } from '@/lib/musicbrainz-work-tree';
 import { findProviderTracksForWork } from '@/lib/musicbrainz-work-queries';
-import { eraFor, lifespan, shortName, surname } from '@/lib/prelude';
+import { eraFor, lifespan, portraitOf, shortName, surname } from '@/lib/prelude';
 import type {
   CatalogComposer,
   CatalogRecording,
@@ -110,10 +110,14 @@ export async function getMusicBrainzCatalogComposers(): Promise<CatalogComposer[
   if (byComposer.size === 0) return [];
 
   const artists = await forChunks(byComposer.keys(), (chunk) =>
-    db.select().from(mbArtist).where(inArray(mbArtist.mbid, chunk)),
+    db
+      .select({ artist: mbArtist, images: spotifyArtist.images })
+      .from(mbArtist)
+      .leftJoin(spotifyArtist, eq(spotifyArtist.spotifyId, mbArtist.spotifyArtistId))
+      .where(inArray(mbArtist.mbid, chunk)),
   );
   return artists
-    .map((artist): CatalogComposer => {
+    .map(({ artist, images }): CatalogComposer => {
       const entry = byComposer.get(artist.mbid)!;
       return {
         id: artist.mbid,
@@ -124,9 +128,7 @@ export async function getMusicBrainzCatalogComposers(): Promise<CatalogComposer[
         born: artist.beginYear,
         died: artist.endYear,
         years: lifespan(artist.beginYear, artist.endYear),
-        // MusicBrainz has no portrait, and Spotify's artist image is not the
-        // composer's unless something has matched the two.
-        image: null,
+        image: portraitOf(images),
         workCount: entry.works,
         recordingCount: entry.holdings.size,
       };

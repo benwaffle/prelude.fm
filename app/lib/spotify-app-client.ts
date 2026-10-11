@@ -31,20 +31,10 @@ interface SpotifyAlbumResponse extends SpotifyAlbumMetadata {
 }
 
 let cachedToken: { accessToken: string; expiresAt: number } | null = null;
-const artistSearchCache = new Map<string, Promise<SpotifyArtistMetadata | null>>();
 let spotifyBlockedUntil = 0;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function normalizeArtistName(name: string) {
-  return name
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .replace(/\p{Pd}/gu, '-')
-    .trim()
-    .toLocaleLowerCase();
 }
 
 async function getSpotifyAppAccessToken() {
@@ -177,24 +167,6 @@ export async function getSpotifyAlbumTracks(albumId: string) {
   ]);
   const tracks = await getSpotifyTracksByIds(trackIds);
   return { album, tracks };
-}
-
-export async function findSpotifyArtistByName(name: string) {
-  const normalizedName = normalizeArtistName(name);
-  const cached = artistSearchCache.get(normalizedName);
-  if (cached) return cached;
-
-  const request = spotifyFetch<{
-    artists: { items: Array<SpotifyArtistMetadata & { popularity?: number }> };
-  }>(`/search?type=artist&limit=10&q=${encodeURIComponent(`artist:${name}`)}`).then(
-    ({ artists }) =>
-      artists.items
-        .filter((artist) => normalizeArtistName(artist.name) === normalizedName)
-        .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))[0] ?? null,
-  );
-
-  artistSearchCache.set(normalizedName, request);
-  return request;
 }
 
 /**

@@ -283,7 +283,7 @@ export async function getArtist(
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
   onAttempt?: OnMbAttempt,
 ): Promise<MbArtist | null> {
-  return mbGet<MbArtist>(`/artist/${artistId}?fmt=json`, channel, onAttempt);
+  return mbGet<MbArtist>(`/artist/${artistId}?inc=url-rels&fmt=json`, channel, onAttempt);
 }
 
 /* --------------------------------------------------- the release read --- */

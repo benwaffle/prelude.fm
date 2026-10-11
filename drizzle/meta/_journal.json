@@ -204,6 +204,13 @@
       "when": 1791756812870,
       "tag": "0028_missing_release_stages",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1791759519520,
+      "tag": "0029_mb_artist_spotify_link",
+      "breakpoints": true
     }
   ]
 }

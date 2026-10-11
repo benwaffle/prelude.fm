@@ -99,6 +99,8 @@ export type MbArtistFact = {
   type: string | null;
   beginYear: number | null;
   endYear: number | null;
+  /** The linked Spotify artist's image, when MusicBrainz links one we hold. */
+  portrait?: string | null;
 };
 
 export type MbRecordingCreditFact = {

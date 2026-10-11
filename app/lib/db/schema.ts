@@ -433,6 +433,13 @@ export const mbArtist = sqliteTable('mb_artist', {
   type: text('type'),
   beginYear: integer('begin_year'),
   endYear: integer('end_year'),
+  /**
+   * The Spotify artist MusicBrainz links to this artist, which is where a
+   * composer's portrait comes from. Null with `linksReadAt` set means
+   * MusicBrainz has no link; null without it means we have not looked.
+   */
+  spotifyArtistId: text('spotify_artist_id'),
+  linksReadAt: integer('links_read_at', { mode: 'timestamp_ms' }),
   fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
