@@ -1,5 +1,6 @@
-import { loadDerivedMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
 import { anchorTracksByIsrc, ingestAlbum } from './musicbrainz-ingest';
+import { readTrackAnchors } from './musicbrainz-library-read';
+import { classifyTracks } from './musicbrainz-track-classification';
 import { hydrateProviderAlbum } from './provider-hydration';
 import { getSpotifyAlbumTracks } from './spotify-app-client';
 import type { MusicBrainzSource } from './musicbrainz-source';
@@ -85,10 +86,15 @@ export async function runMusicBrainzAlbumPass(
   }
 
   const wanted = trackIds ?? tracks.map((track) => track.id);
-  const facts = await loadDerivedMusicBrainzLibraryFacts(wanted);
-  const anchorByTrack = new Map(facts.anchors.map((anchor) => [anchor.spotifyTrackId, anchor]));
+  // The pipeline weighs current MusicBrainz evidence, not a stored verdict:
+  // an old parser proposal must not hide stronger new evidence.
+  const [anchors, classifications] = await Promise.all([
+    readTrackAnchors(wanted),
+    classifyTracks(wanted, { preferStored: false }),
+  ]);
+  const anchorByTrack = new Map(anchors.map((anchor) => [anchor.spotifyTrackId, anchor]));
   const classificationByTrack = new Map(
-    facts.classifications.map((classification) => [classification.spotifyTrackId, classification]),
+    classifications.map((classification) => [classification.spotifyTrackId, classification]),
   );
 
   return {
@@ -145,9 +151,9 @@ export async function runMusicBrainzAlbumPass(
 }
 
 async function classifyOnly(albumId: string, trackIds: string[]): Promise<AlbumPassReport> {
-  const facts = await loadDerivedMusicBrainzLibraryFacts(trackIds);
+  const classifications = await classifyTracks(trackIds, { preferStored: false });
   const classificationByTrack = new Map(
-    facts.classifications.map((classification) => [classification.spotifyTrackId, classification]),
+    classifications.map((classification) => [classification.spotifyTrackId, classification]),
   );
   return {
     albumId,

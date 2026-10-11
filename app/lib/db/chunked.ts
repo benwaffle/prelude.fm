@@ -1,3 +1,5 @@
+import { sql, type SQL } from 'drizzle-orm';
+
 /**
  * Reading a long list of ids without losing its tail.
  *
@@ -24,4 +26,21 @@ export async function forChunks<Input, Row>(
     rows.push(...(await read(unique.slice(start, start + PARAMETER_CHUNK))));
   }
   return rows;
+}
+
+/**
+ * A list of any length as a one-column subquery: the whole list binds as a
+ * single JSON parameter, so it needs no chunking. `col in (${jsonList(ids)})`
+ * still uses the column's index.
+ */
+export function jsonList(values: Iterable<string>): SQL {
+  return sql`select value from json_each(${JSON.stringify([...new Set(values)])})`;
+}
+
+/** Items in runs of `size`, for statements whose size grows with the list (multi-row inserts). */
+export function chunksOf<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let start = 0; start < items.length; start += size)
+    out.push(items.slice(start, start + size));
+  return out;
 }

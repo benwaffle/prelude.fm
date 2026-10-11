@@ -1,6 +1,7 @@
 export interface WorkSearchHit {
   workId: string;
-  title: string;
+  /** Null when the MusicBrainz cache does not hold the work. */
+  title: string | null;
   nickname: string | null;
   composerId: string;
   composerName: string;

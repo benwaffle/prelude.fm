@@ -1,5 +1,9 @@
-import { workLevelOf } from './musicbrainz-work-level';
-import { ancestry, nearestAncestorWith } from './musicbrainz-work-tree';
+import {
+  indexWorks,
+  resolveDisplayWork,
+  type DisplayWorkNode,
+  type DisplayWorkReference,
+} from './musicbrainz-display-work';
 
 /**
  * Which MusicBrainz work a held recording belongs under, and what that work
@@ -7,94 +11,65 @@ import { ancestry, nearestAncestorWith } from './musicbrainz-work-tree';
  *
  * The catalogue has to agree with the library about what counts as a work,
  * or clicking a card's catalogue number would land on a work the catalogue
- * has never heard of. Both use `workLevelOf`, and both take the catalogue
- * reference and the composer from the nearest ancestor that carries one,
- * because that is where MusicBrainz files them.
+ * has never heard of. Both use `resolveDisplayWork`.
  */
 
-export type CatalogueWorkNode = {
-  mbid: string;
-  title: string;
-  type: string | null;
-  parentMbid: string | null;
-  orderingKey: number | null;
-  composerMbid: string | null;
-};
+export type CatalogueWorkNode = DisplayWorkNode;
 
-export type CatalogueReference = {
-  workMbid: string;
+export type CatalogueReference = DisplayWorkReference & {
   system: string;
   number: string;
 };
 
+/** A held track of a work: a MusicBrainz recording, or a track we linked ourselves. */
+export type HeldRelation = {
+  recordingMbid: string | null;
+  spotifyTrackId: string;
+  workMbid: string;
+};
+
 export type ShapedCatalogueWork = {
   mbid: string;
-  title: string;
+  /** Null when the cache does not hold the work, which is a gap to show, not a row to drop. */
+  title: string | null;
   type: string | null;
   composerMbid: string | null;
-  /** The nearest reference at or above the work, if MusicBrainz has one. */
+  /** The first of the nearest references at or above the work, if MusicBrainz has one. */
   reference: CatalogueReference | null;
-  recordingMbids: string[];
+  /** MusicBrainz recordings, and `track:<spotify id>` for a track with none. */
+  holdings: string[];
 };
 
 /**
  * Groups held recordings under the work a reader would call theirs.
  *
- * `relations` is recording → the work MusicBrainz relates it to; the level
- * rule then decides whether that work, or the one above it, is the thing to
- * show.
+ * `relations` is held track → the work it is of; the level rule then decides
+ * whether that work, or the one above it, is the thing to show. A work the
+ * cache does not hold stays in the list, untitled.
  */
 export function shapeHeldCatalogue(
-  relations: Array<{ recordingMbid: string; workMbid: string }>,
+  relations: HeldRelation[],
   works: CatalogueWorkNode[],
   references: CatalogueReference[],
 ): ShapedCatalogueWork[] {
-  const byMbid = new Map(works.map((work) => [work.mbid, work]));
-  const parents = new Set(
-    works.map((work) => work.parentMbid).filter((mbid): mbid is string => mbid !== null),
-  );
-  const referencesByWork = new Map<string, CatalogueReference>();
-  for (const reference of references) {
-    if (!referencesByWork.has(reference.workMbid))
-      referencesByWork.set(reference.workMbid, reference);
-  }
-
+  const index = indexWorks(works, references);
   const shaped = new Map<string, ShapedCatalogueWork>();
   for (const relation of relations) {
-    const related = byMbid.get(relation.workMbid);
-    if (!related) continue;
-    const parent = related.parentMbid ? byMbid.get(related.parentMbid) : undefined;
-    const level = workLevelOf({
-      mbid: related.mbid,
-      title: related.title,
-      type: related.type,
-      parentMbid: related.parentMbid,
-      parentTitle: parent?.title ?? null,
-      parentType: parent?.type ?? null,
-      hasChildren: parents.has(related.mbid),
-      orderingKey: related.orderingKey,
-    });
-    const display = byMbid.get(level.mbid);
-    if (!display) continue;
-
-    const existing = shaped.get(display.mbid);
+    const holding = relation.recordingMbid ?? `track:${relation.spotifyTrackId}`;
+    const resolved = resolveDisplayWork(relation.workMbid, index);
+    const mbid = resolved.level?.mbid ?? relation.workMbid;
+    const existing = shaped.get(mbid);
     if (existing) {
-      if (!existing.recordingMbids.includes(relation.recordingMbid)) {
-        existing.recordingMbids.push(relation.recordingMbid);
-      }
+      if (!existing.holdings.includes(holding)) existing.holdings.push(holding);
       continue;
     }
-    const carrier = nearestAncestorWith(display.mbid, byMbid, (node) =>
-      referencesByWork.has(node.mbid),
-    );
-    shaped.set(display.mbid, {
-      mbid: display.mbid,
-      title: display.title,
-      type: display.type,
-      composerMbid:
-        ancestry(display.mbid, byMbid).find((node) => node.composerMbid)?.composerMbid ?? null,
-      reference: carrier ? (referencesByWork.get(carrier.mbid) ?? null) : null,
-      recordingMbids: [relation.recordingMbid],
+    shaped.set(mbid, {
+      mbid,
+      title: resolved.display?.title ?? null,
+      type: resolved.display?.type ?? null,
+      composerMbid: resolved.composerMbid,
+      reference: resolved.references[0] ?? null,
+      holdings: [holding],
     });
   }
   return Array.from(shaped.values());

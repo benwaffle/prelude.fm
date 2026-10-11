@@ -7,14 +7,15 @@ let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
 let worksNeedingDetail: typeof import('../app/lib/musicbrainz-cache').worksNeedingDetail;
 let releaseIsCached: typeof import('../app/lib/musicbrainz-cache').releaseIsCached;
-let recordAnonymousImportRun: typeof import('../app/lib/musicbrainz-cache').recordAnonymousImportRun;
-let marginalRequestPercentiles: typeof import('../app/lib/musicbrainz-cache').marginalRequestPercentiles;
+let recordAnonymousImportRun: typeof import('../app/lib/musicbrainz-cache-metrics').recordAnonymousImportRun;
+let marginalRequestPercentiles: typeof import('../app/lib/musicbrainz-cache-metrics').marginalRequestPercentiles;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ worksNeedingDetail, releaseIsCached, recordAnonymousImportRun, marginalRequestPercentiles } =
-    await import('../app/lib/musicbrainz-cache'));
+  ({ worksNeedingDetail, releaseIsCached } = await import('../app/lib/musicbrainz-cache'));
+  ({ recordAnonymousImportRun, marginalRequestPercentiles } =
+    await import('../app/lib/musicbrainz-cache-metrics'));
 });
 
 beforeEach(async () => {

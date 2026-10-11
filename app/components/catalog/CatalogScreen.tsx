@@ -224,7 +224,7 @@ export function CatalogScreen() {
         {level === 2 && work && (
           <>
             <span className="text-rule">/</span>
-            <span className="text-ink">{work.catalog ?? work.title}</span>
+            <span className="text-ink">{work.catalog ?? work.title ?? <Uncached />}</span>
           </>
         )}
       </div>
@@ -306,7 +306,7 @@ function SearchResults({
           >
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] text-ink">
-                {hit.title}
+                {hit.title ?? <Uncached />}
                 {hit.nickname && <span className="text-muted"> “{hit.nickname}”</span>}
               </span>
               <span className="block truncate font-meta text-[10px] text-muted">
@@ -542,7 +542,7 @@ function WorkPane({
                   selectedId === w.id ? 'font-semibold' : ''
                 }`}
               >
-                {w.title}
+                {w.title ?? <Uncached />}
                 {w.nickname && (
                   <>
                     , <span className="text-accent italic">“{w.nickname}”</span>
@@ -738,4 +738,13 @@ function RecordingPane({
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** A held work the MusicBrainz cache has no row for: kept in the list, and said so. */
+function Uncached() {
+  return (
+    <span className="font-meta text-[0.62em] tracking-[0.14em] text-muted uppercase italic">
+      work not in the MusicBrainz cache
+    </span>
+  );
 }

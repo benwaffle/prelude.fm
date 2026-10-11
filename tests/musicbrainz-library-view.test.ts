@@ -7,14 +7,14 @@ import { keepLikedHoldings, musicBrainzLibraryView } from '../app/lib/musicbrain
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
-let loadMusicBrainzLibraryFacts: typeof import('@/app/actions/library-musicbrainz').loadMusicBrainzLibraryFacts;
-let findAlbumMateTrackIds: typeof import('@/app/actions/library-musicbrainz').findAlbumMateTrackIds;
+let loadMusicBrainzLibraryFacts: typeof import('@/lib/musicbrainz-library-read').loadMusicBrainzLibraryFacts;
+let findAlbumMateTrackIds: typeof import('@/lib/musicbrainz-work-queries').findAlbumMateTrackIds;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ loadMusicBrainzLibraryFacts, findAlbumMateTrackIds } =
-    await import('@/app/actions/library-musicbrainz'));
+  ({ loadMusicBrainzLibraryFacts } = await import('@/lib/musicbrainz-library-read'));
+  ({ findAlbumMateTrackIds } = await import('@/lib/musicbrainz-work-queries'));
 });
 
 /** Two of a sonata's three movements, on one album, anchored by ISRC. */
@@ -416,7 +416,7 @@ test('the detail of a work gathers every issue of it we can play', async () => {
     workMbid: 'part-i',
   });
 
-  const { getMusicBrainzWorkDetail } = await import('@/app/actions/library-mb');
+  const { getMusicBrainzWorkDetail } = await import('@/lib/musicbrainz-work-page');
   const detail = await getMusicBrainzWorkDetail('sonata', null, ['track-i']);
 
   assert.ok(detail);
@@ -433,12 +433,12 @@ test('the detail of a work gathers every issue of it we can play', async () => {
 });
 
 test('asking for a work MusicBrainz cannot play returns nothing, not an empty card', async () => {
-  const { getMusicBrainzWorkDetail } = await import('@/app/actions/library-mb');
+  const { getMusicBrainzWorkDetail } = await import('@/lib/musicbrainz-work-page');
   assert.equal(await getMusicBrainzWorkDetail('not-a-work', null, []), null);
 });
 
 test('a collection names every part MusicBrainz lists, held or not', async () => {
-  const { getMusicBrainzWorkParent } = await import('@/app/actions/library-mb');
+  const { getMusicBrainzWorkParent } = await import('@/lib/musicbrainz-work-page');
   const collection = await getMusicBrainzWorkParent('part-i');
 
   assert.ok(collection);
@@ -458,7 +458,7 @@ test('a collection names every part MusicBrainz lists, held or not', async () =>
 });
 
 test('a work with no collection above it has none, rather than an empty one', async () => {
-  const { getMusicBrainzWorkParent } = await import('@/app/actions/library-mb');
+  const { getMusicBrainzWorkParent } = await import('@/lib/musicbrainz-work-page');
   assert.equal(await getMusicBrainzWorkParent('sonata'), null);
 });
 
@@ -531,7 +531,7 @@ test('a collection counts a part we hold only through its own parts', async () =
     matchedBy: 'isrc',
   });
 
-  const { getMusicBrainzWorkParent } = await import('@/app/actions/library-mb');
+  const { getMusicBrainzWorkParent } = await import('@/lib/musicbrainz-work-page');
   const collection = await getMusicBrainzWorkParent('wtc-1');
 
   assert.ok(collection);
@@ -732,4 +732,87 @@ test('a composer with more works than one statement can bind returns all of them
   assert.equal(listed.length, total + 1);
   const composers = await getMusicBrainzCatalogComposers();
   assert.equal(composers.find((entry) => entry.id === 'mozart')?.workCount, total + 1);
+});
+
+test('more by the composer finds their other works, by MusicBrainz or by our own link', async () => {
+  await db.insert(schema.mbWork).values([
+    {
+      mbid: 'fantasia',
+      title: 'Fantasia in D minor, K. 397',
+      type: 'Fantasia',
+      parentMbid: null,
+      orderingKey: null,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+  ]);
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-fantasia',
+    title: 'Fantasia in D minor',
+    trackNumber: 3,
+    discNumber: 1,
+    durationMs: 360_000,
+    popularity: 20,
+    spotifyAlbumId: 'album-1',
+    isrc: null,
+  });
+  // No MusicBrainz recording: held through our own track link.
+  await db.insert(schema.trackWorkLink).values({
+    spotifyTrackId: 'track-fantasia',
+    workMbid: 'fantasia',
+    requests: 0,
+  });
+
+  const { getMusicBrainzWorkDetail } = await import('@/lib/musicbrainz-work-page');
+  const detail = await getMusicBrainzWorkDetail('sonata', null);
+  assert.ok(detail);
+  assert.deepEqual(
+    detail.moreByComposer.map((work) => [work.workId, work.trackIds]),
+    [['fantasia', ['track-fantasia']]],
+    'the work itself is excluded; the other is found through the own link',
+  );
+});
+
+test('a proposal stands in for a recording MusicBrainz relates to no work, unless dismissed', async () => {
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-iii',
+    title: 'Piano Sonata No. 16: III. Rondo',
+    trackNumber: 3,
+    discNumber: 1,
+    durationMs: 100_000,
+    popularity: 10,
+    spotifyAlbumId: 'album-1',
+    isrc: 'GBAAA0000013',
+  });
+  await db.insert(schema.trackRecording).values({
+    spotifyTrackId: 'track-iii',
+    recordingMbid: 'rec-iii',
+    isrc: 'GBAAA0000013',
+    matchedBy: 'isrc',
+  });
+  await db.insert(schema.mbWorkProposal).values({
+    recordingMbid: 'rec-iii',
+    workMbid: 'part-iii',
+    proposal: { workMbid: 'part-iii', confidence: 'medium' } as never,
+    requests: 0,
+  });
+
+  const { findProviderTracksForWork } = await import('@/lib/musicbrainz-work-queries');
+  const { heldWorkLinks } = await import('@/lib/db/held-work-links');
+  assert.ok((await findProviderTracksForWork('sonata')).includes('track-iii'));
+  assert.deepEqual(await heldWorkLinks({ tracks: ['track-iii'] }), [
+    {
+      spotifyTrackId: 'track-iii',
+      recordingMbid: 'rec-iii',
+      workMbid: 'part-iii',
+      linkedBy: 'prelude',
+      confidence: 'medium',
+    },
+  ]);
+
+  await db
+    .update(schema.mbWorkProposal)
+    .set({ status: 'dismissed' })
+    .where(eq(schema.mbWorkProposal.recordingMbid, 'rec-iii'));
+  assert.ok(!(await findProviderTracksForWork('sonata')).includes('track-iii'));
 });

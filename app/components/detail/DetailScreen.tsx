@@ -6,7 +6,7 @@ import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import type { OtherRecording, WorkDetail, WorkSummary } from '@/lib/library-types';
 import { getMusicBrainzWorkPage } from '@/app/actions/library-mb';
-import type { WorkParent } from '@/app/actions/work-hierarchy';
+import type { WorkParent } from '@/lib/library-types';
 import {
   hexToRgba,
   initialsOf,

@@ -44,6 +44,50 @@ export function playedMovementCount(work: LibraryWork): number {
   return work.movements.filter((movement) => !movement.missing).length;
 }
 
+/** A card as one row in a list of recordings of its work. */
+export type RecordingRow = {
+  recordingId: string;
+  albumId: string;
+  album: string;
+  cover: string | null;
+  year: number | null;
+  performer: string | null;
+  ensemble: string | null;
+  /** The movements this issue carries, added up; null when it carries none. */
+  durationMs: number | null;
+  duration: string | null;
+  /**
+   * Spotify popularity belongs to a track, not to a MusicBrainz recording,
+   * and nothing here has aggregated it yet. Unranked is the honest answer,
+   * and the screens already say so.
+   */
+  popularity: null;
+  tint: string;
+  unmatched: false;
+};
+
+export function recordingRowOf(card: LibraryWork): RecordingRow {
+  const played = card.movements.filter((movement) => movement.durationMs !== null);
+  const durationMs =
+    played.length === 0
+      ? null
+      : played.reduce((sum, movement) => sum + (movement.durationMs ?? 0), 0);
+  return {
+    recordingId: card.recordingId ?? card.id,
+    albumId: card.albumId ?? card.id,
+    album: card.album,
+    cover: card.cover,
+    year: card.year,
+    performer: card.performer,
+    ensemble: card.ensemble,
+    durationMs,
+    duration: durationMs === null ? null : formatDuration(durationMs),
+    popularity: null,
+    tint: card.tint,
+    unmatched: false,
+  };
+}
+
 export type MusicBrainzLibrary = {
   works: LibraryWork[];
   /** Every held track that is not on a card, with what is missing. */

@@ -5,14 +5,14 @@ import { projectMusicBrainzLibrary } from '../app/lib/musicbrainz-library';
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
-let loadMusicBrainzLibraryFacts: typeof import('@/app/actions/library-musicbrainz').loadMusicBrainzLibraryFacts;
-let loadDerivedMusicBrainzLibraryFacts: typeof import('@/app/actions/library-musicbrainz').loadDerivedMusicBrainzLibraryFacts;
+let loadMusicBrainzLibraryFacts: typeof import('@/lib/musicbrainz-library-read').loadMusicBrainzLibraryFacts;
+let classifyTracks: typeof import('@/lib/musicbrainz-track-classification').classifyTracks;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ loadMusicBrainzLibraryFacts, loadDerivedMusicBrainzLibraryFacts } =
-    await import('@/app/actions/library-musicbrainz'));
+  ({ loadMusicBrainzLibraryFacts } = await import('@/lib/musicbrainz-library-read'));
+  ({ classifyTracks } = await import('@/lib/musicbrainz-track-classification'));
 });
 
 /**
@@ -426,9 +426,9 @@ test('the reader uses durable classification while the pipeline can derive stron
     },
   ]);
 
-  const derived = await loadDerivedMusicBrainzLibraryFacts(['held-1']);
-  assert.equal(derived.classifications[0].state, 'classical');
-  assert.equal(derived.classifications[0].provenance, 'musicbrainz');
+  const [derived] = await classifyTracks(['held-1'], { preferStored: false });
+  assert.equal(derived.state, 'classical');
+  assert.equal(derived.provenance, 'musicbrainz');
 });
 
 test('an ISRC naming two recordings is reported as a conflict, not anchored', async () => {

@@ -3,18 +3,18 @@
  * that read the database with their own queries instead of through the
  * facts loader — the Inbox lists above all.
  *
- * The rule itself stays in one place (`film-scores`, applied by the facts
- * loader). This finds every track the rule could possibly touch with a few
- * cheap queries, then asks the facts loader about just those, so the Inbox
+ * The rule itself stays in one place (`film-scores`, applied by
+ * `classifyTracks`). This finds every track the rule could possibly touch with a few
+ * cheap queries, then asks the classifier about just those, so the Inbox
  * and the library cannot disagree about what a film score is.
  */
 
-import { loadMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
 import { db } from './db';
-import { forChunks } from './db/chunked';
+import { forChunks, jsonList } from './db/chunked';
 import { spotifyAlbum, spotifyTrack } from './db/schema';
 import { inArray, sql } from 'drizzle-orm';
 import { FILM_COMPOSERS, isFilmScoreReason, isSoundtrackAlbum } from './film-scores';
+import { classifyTracks } from './musicbrainz-track-classification';
 
 export type FilmScoreExclusions = {
   /** Every track the rule marks as a film score. */
@@ -94,31 +94,28 @@ async function loadFilmScoreExclusions(): Promise<FilmScoreExclusions> {
   const candidateIds = [...new Set([...candidates, ...soundtrackTracks].map((row) => row.id))];
   if (candidateIds.length === 0) return { trackIds: [], albumIds: soundtrackAlbumIds, isrcs: [] };
 
-  const facts = await loadMusicBrainzLibraryFacts(candidateIds);
+  const classifications = await classifyTracks(candidateIds, { preferStored: true });
   const trackIds = new Set(
-    facts.classifications
+    classifications
       .filter((classification) => isFilmScoreReason(classification.reason))
       .map((classification) => classification.spotifyTrackId),
   );
   if (trackIds.size === 0) return { trackIds: [], albumIds: soundtrackAlbumIds, isrcs: [] };
 
+  // Every track on an album a film-score track is on.
+  const albumTracks = await db
+    .select({
+      id: spotifyTrack.spotifyId,
+      albumId: spotifyTrack.spotifyAlbumId,
+      isrc: spotifyTrack.isrc,
+    })
+    .from(spotifyTrack)
+    .where(
+      sql`${spotifyTrack.spotifyAlbumId} in (select spotify_album_id from spotify_track where spotify_id in (${jsonList(trackIds)}))`,
+    );
   const touchedAlbums = [
-    ...new Set(
-      facts.providerTracks
-        .filter((track) => trackIds.has(track.spotifyTrackId))
-        .map((track) => track.spotifyAlbumId),
-    ),
+    ...new Set(albumTracks.filter((track) => trackIds.has(track.id)).map((track) => track.albumId)),
   ];
-  const albumTracks = await forChunks(touchedAlbums, (chunk) =>
-    db
-      .select({
-        id: spotifyTrack.spotifyId,
-        albumId: spotifyTrack.spotifyAlbumId,
-        isrc: spotifyTrack.isrc,
-      })
-      .from(spotifyTrack)
-      .where(inArray(spotifyTrack.spotifyAlbumId, chunk)),
-  );
   const keptAlbums = new Set(
     albumTracks.filter((track) => !trackIds.has(track.id)).map((track) => track.albumId),
   );

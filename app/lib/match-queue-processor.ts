@@ -8,9 +8,10 @@ import {
 } from '@/lib/spotify-app-client';
 import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Track } from '@spotify/web-api-ts-sdk';
-import { runMusicBrainzAlbumPass, type TrackPassOutcome } from '@/lib/musicbrainz-worker';
+import { runMusicBrainzAlbumPass } from '@/lib/musicbrainz-worker';
 import type { MusicBrainzSource } from '@/lib/musicbrainz-source';
-import { persistMusicBrainzTrackOutcomes } from '@/lib/musicbrainz-pipeline-state';
+import { forChunks } from '@/lib/db/chunked';
+import { recordAlbumPassOutcomes } from '@/lib/musicbrainz-pipeline-state';
 
 /**
  * Lease/workflow state, not the durable verdict on a track.
@@ -114,15 +115,14 @@ function compareTrackOrder(a: Track, b: Track) {
   return a.disc_number - b.disc_number || a.track_number - b.track_number;
 }
 
+/**
+ * Set these rows' status. With `heldBy`, only rows that worker still holds
+ * are touched; the claim itself is left as it is.
+ */
 async function setQueueStatus(
   trackIds: string[],
   status: MatchQueueStatus,
-  data: {
-    claimOwnerId?: string | null;
-    errorMessage?: string | null;
-    /** Claim the rows by `claimOwnerId` but leave none held afterwards. */
-    releaseClaim?: boolean;
-  } = {},
+  options: { heldBy?: string; errorMessage?: string } = {},
 ) {
   if (trackIds.length === 0) return;
 
@@ -131,13 +131,12 @@ async function setQueueStatus(
     .set({
       status,
       processedAt: status === 'processing' || status === 'pending' ? null : now(),
-      errorMessage: data.errorMessage ?? null,
-      claimOwnerId: data.releaseClaim ? null : (data.claimOwnerId ?? undefined),
+      errorMessage: options.errorMessage ?? null,
     })
     .where(
       and(
         inArray(matchQueue.spotifyId, trackIds),
-        data.claimOwnerId ? eq(matchQueue.claimOwnerId, data.claimOwnerId) : undefined,
+        options.heldBy ? eq(matchQueue.claimOwnerId, options.heldBy) : undefined,
       ),
     );
 }
@@ -299,7 +298,7 @@ async function getNextPendingAlbumId(maxAttempts?: number) {
 }
 
 export async function claimNextPendingAlbum(
-  claimOwnerId?: string,
+  claimOwnerId: string,
   maxAttempts?: number,
 ): Promise<ClaimedAlbum | null> {
   for (let collisionRetry = 0; collisionRetry < 10; collisionRetry++) {
@@ -444,11 +443,13 @@ export async function runMatchQueueWorker(
 
   if (options.musicbrainz !== false) {
     const [
-      { drainArtistStubs, drainRecordingStubs, drainWorkStubs, recordAnonymousImportRun },
+      { drainArtistStubs, drainRecordingStubs, drainWorkStubs },
+      { recordAnonymousImportRun },
       { musicBrainzApi },
       { MusicBrainzBudgetError },
     ] = await Promise.all([
       import('@/lib/musicbrainz-cache'),
+      import('@/lib/musicbrainz-cache-metrics'),
       import('@/lib/musicbrainz'),
       import('@/lib/musicbrainz-gateway'),
     ]);
@@ -547,10 +548,10 @@ export async function runMatchQueueWorker(
 
 export async function claimPendingAlbum(
   albumId: string,
-  claimOwnerId?: string,
+  claimOwnerId: string,
   maxAttempts?: number,
 ): Promise<ClaimedAlbum | null> {
-  await db
+  const rows = await db
     .update(matchQueue)
     .set({
       status: 'processing',
@@ -565,28 +566,14 @@ export async function claimPendingAlbum(
         eq(matchQueue.status, 'pending'),
         maxAttempts === undefined ? undefined : lt(matchQueue.attempts, maxAttempts),
       ),
-    );
-
-  const rows = await db
-    .select({ spotifyId: matchQueue.spotifyId })
-    .from(matchQueue)
-    .where(
-      and(
-        eq(matchQueue.spotifyAlbumId, albumId),
-        eq(matchQueue.status, 'processing'),
-        claimOwnerId ? eq(matchQueue.claimOwnerId, claimOwnerId) : undefined,
-      ),
-    );
+    )
+    .returning({ spotifyId: matchQueue.spotifyId });
 
   if (rows.length === 0) return null;
-
-  return {
-    albumId,
-    trackIds: rows.map((row) => row.spotifyId),
-  };
+  return { albumId, trackIds: rows.map((row) => row.spotifyId) };
 }
 
-async function getProcessingTrackIds(albumId: string, claimOwnerId?: string) {
+async function getProcessingTrackIds(albumId: string, claimOwnerId: string) {
   const rows = await db
     .select({ spotifyId: matchQueue.spotifyId })
     .from(matchQueue)
@@ -594,7 +581,7 @@ async function getProcessingTrackIds(albumId: string, claimOwnerId?: string) {
       and(
         eq(matchQueue.spotifyAlbumId, albumId),
         eq(matchQueue.status, 'processing'),
-        claimOwnerId ? eq(matchQueue.claimOwnerId, claimOwnerId) : undefined,
+        eq(matchQueue.claimOwnerId, claimOwnerId),
       ),
     );
 
@@ -603,17 +590,13 @@ async function getProcessingTrackIds(albumId: string, claimOwnerId?: string) {
 
 /** Tracks already anchored to a MusicBrainz recording. */
 async function getAnchoredTrackIds(trackIds: string[]) {
-  if (trackIds.length === 0) return new Set<string>();
-  const rows: string[] = [];
-  for (let start = 0; start < trackIds.length; start += 400) {
-    const batch = trackIds.slice(start, start + 400);
-    const found = await db
+  const rows = await forChunks(trackIds, (chunk) =>
+    db
       .select({ spotifyTrackId: trackRecording.spotifyTrackId })
       .from(trackRecording)
-      .where(inArray(trackRecording.spotifyTrackId, batch));
-    rows.push(...found.map((row) => row.spotifyTrackId));
-  }
-  return new Set(rows);
+      .where(inArray(trackRecording.spotifyTrackId, chunk)),
+  );
+  return new Set(rows.map((row) => row.spotifyTrackId));
 }
 
 /**
@@ -624,19 +607,15 @@ async function getAnchoredTrackIds(trackIds: string[]) {
  * album's barcode" — which is a state the contribution console can act on,
  * unlike a composer somebody made up.
  *
- * This is the single place that maps a pass outcome to a queue status, and
- * the mapping is deliberately coarse: `ready` is `matched`, a track
- * MusicBrainz itself files as non-classical is `not_classical`, and both ways
- * of not knowing — `unanchored`, `unclassified` — are `unresolved`. The
- * durable difference between those two is already written to
- * `pipeline_outcome` by `persistMusicBrainzTrackOutcomes`, so repeating it in
- * the lease vocabulary would give two places to disagree.
+ * The outcomes, their queue statuses and the classifications are written
+ * together by `recordAlbumPassOutcomes`, which owns the outcome → status
+ * mapping.
  */
 async function processAlbumThroughMusicBrainz(
   albumId: string,
   trackIds: string[],
   result: AlbumProcessResult,
-  claimOwnerId?: string,
+  claimOwnerId: string,
   dependencies: AlbumPassDependencies = {},
 ): Promise<AlbumProcessResult> {
   const source =
@@ -661,46 +640,11 @@ async function processAlbumThroughMusicBrainz(
     anchored: report.anchored,
     requests: report.requests,
   };
-  await persistMusicBrainzTrackOutcomes(report.tracks, claimOwnerId);
-
-  const byState = new Map<TrackPassOutcome['state'], TrackPassOutcome[]>();
+  await recordAlbumPassOutcomes(report.tracks, claimOwnerId);
   for (const outcome of report.tracks) {
-    byState.set(outcome.state, [...(byState.get(outcome.state) ?? []), outcome]);
-  }
-
-  const ready = byState.get('ready') ?? [];
-  if (ready.length > 0) {
-    await setQueueStatus(
-      ready.map((outcome) => outcome.spotifyTrackId),
-      'matched',
-      { claimOwnerId },
-    );
-    result.matched += ready.length;
-  }
-
-  const notClassical = byState.get('not_classical') ?? [];
-  if (notClassical.length > 0) {
-    await setQueueStatus(
-      notClassical.map((outcome) => outcome.spotifyTrackId),
-      'not_classical',
-      { claimOwnerId },
-    );
-    result.notClassical += notClassical.length;
-  }
-
-  // No `errorMessage`: the reason belongs to the pass, not to a failure, and
-  // it is already durable in `pipeline_reason`. Writing it into the queue's
-  // error column as well would make an admin screen that lists errors report
-  // a gap in MusicBrainz as something the worker got wrong.
-  for (const outcome of [
-    ...(byState.get('unanchored') ?? []),
-    ...(byState.get('unclassified') ?? []),
-  ]) {
-    await setQueueStatus([outcome.spotifyTrackId], 'unresolved', {
-      claimOwnerId,
-      releaseClaim: true,
-    });
-    result.unresolved++;
+    if (outcome.state === 'ready') result.matched++;
+    else if (outcome.state === 'not_classical') result.notClassical++;
+    else result.unresolved++;
   }
 
   return result;
@@ -717,33 +661,10 @@ export type AlbumPassDependencies = {
 
 export async function processQueuedAlbum(
   albumId: string,
-  claimOwnerId?: string,
-  claimedTrackIds?: string[],
+  claimOwnerId: string,
+  trackIds: string[],
   dependencies: AlbumPassDependencies = {},
 ): Promise<AlbumProcessResult> {
-  let trackIdsToProcess = claimedTrackIds;
-
-  if (!trackIdsToProcess) {
-    await db
-      .update(matchQueue)
-      .set({
-        status: 'processing',
-        attempts: sql`${matchQueue.attempts} + 1`,
-        lastAttemptAt: now(),
-        errorMessage: null,
-        claimOwnerId,
-      })
-      .where(and(eq(matchQueue.spotifyAlbumId, albumId), eq(matchQueue.status, 'pending')));
-
-    trackIdsToProcess = await getProcessingTrackIds(albumId, claimOwnerId);
-  } else if (claimOwnerId) {
-    await db
-      .update(matchQueue)
-      .set({ claimOwnerId })
-      .where(inArray(matchQueue.spotifyId, trackIdsToProcess));
-  }
-
-  const trackIds = trackIdsToProcess;
   const result: AlbumProcessResult = {
     albumId,
     claimed: trackIds.length,
@@ -764,7 +685,7 @@ export async function processQueuedAlbum(
 
     if (missingTrackIds.length > 0) {
       await setQueueStatus(missingTrackIds, 'failed', {
-        claimOwnerId,
+        heldBy: claimOwnerId,
         errorMessage: 'Queued track was not found on its Spotify album',
       });
       result.errors.push(
@@ -790,7 +711,7 @@ export async function processQueuedAlbum(
     const activeTrackIds = await getProcessingTrackIds(albumId, claimOwnerId);
 
     await setQueueStatus(activeTrackIds, status, {
-      claimOwnerId,
+      heldBy: claimOwnerId,
       errorMessage: message,
     });
     result.errors.push({ message, retryable: status === 'pending' });

@@ -1,34 +1,26 @@
 'use server';
 
-import { and, eq, inArray, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { forChunks } from '@/lib/db/chunked';
-import {
-  mbArtist,
-  mbRecordingWork,
-  mbWork,
-  mbWorkCatalogue,
-  spotifyAlbum,
-  spotifyTrack,
-  trackArtists,
-  trackRecording,
-} from '@/lib/db/schema';
+import { forChunks, jsonList } from '@/lib/db/chunked';
+import { heldWorkLinks } from '@/lib/db/held-work-links';
+import { mbArtist, mbWork, mbWorkCatalogue } from '@/lib/db/schema';
+import { readWorkNeighbourhood, subtreeOf } from '@/lib/db/work-tree-sql';
+import { filmScoreInputs } from '@/lib/film-score-inputs';
 import { filmScoreReason } from '@/lib/film-scores';
 import { parseCatalogueQuery } from '@/lib/catalogue-query';
 import {
   shapeHeldCatalogue,
   type CatalogueReference,
+  type HeldRelation,
   type ShapedCatalogueWork,
 } from '@/lib/musicbrainz-catalogue-shape';
+import { indexWorks, workAttributes } from '@/lib/musicbrainz-display-work';
+import { readLibraryCards } from '@/lib/musicbrainz-library-cards';
+import { recordingRowOf } from '@/lib/musicbrainz-library-view';
 import { ancestry } from '@/lib/musicbrainz-work-tree';
-import { eraFor, formatDuration, lifespan, shortName, surname } from '@/lib/prelude';
-import {
-  findProviderTracksForWork,
-  loadMusicBrainzLibraryFacts,
-  ownWorkHoldings,
-} from './library-musicbrainz';
-import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
-import { musicBrainzLibraryView } from '@/lib/musicbrainz-library-view';
+import { findProviderTracksForWork } from '@/lib/musicbrainz-work-queries';
+import { eraFor, lifespan, shortName, surname } from '@/lib/prelude';
 import type {
   CatalogComposer,
   CatalogRecording,
@@ -40,16 +32,17 @@ import type { WorkSearchHit } from '@/lib/work-search-hit';
 /**
  * The catalogue, read from MusicBrainz: composers → works → recordings.
  *
- * "We hold" means a Spotify track is anchored to a MusicBrainz recording of
- * the work. A work MusicBrainz knows and we cannot play is not in this
- * catalogue — it is a gap the library reports, not a row to browse.
+ * "We hold" is `heldWorkLinks`: a Spotify track anchored to a MusicBrainz
+ * recording of the work, or linked to it by us where MusicBrainz has no
+ * link. A work MusicBrainz knows and we cannot play is not in this catalogue
+ * — it is a gap the library reports, not a row to browse.
  *
- * The level rule is the library's, so a card's work and a catalogue row are
- * the same work and the same identity.
+ * The level rule is the library's (`resolveDisplayWork`), so a card's work
+ * and a catalogue row are the same work, composer and catalogue number.
  */
 
 /**
- * Everything anchored, shaped into the works a reader would name.
+ * Everything held, shaped into the works a reader would name.
  *
  * `seedWorkMbids` narrows it to one neighbourhood — one composer, one search
  * result. Without that every click in the catalogue was a scan of every
@@ -57,162 +50,61 @@ import type { WorkSearchHit } from '@/lib/work-search-hit';
  * is a great deal of work to answer a question about one composer.
  */
 async function heldCatalogue(seedWorkMbids?: string[]): Promise<ShapedCatalogueWork[]> {
-  const scope = seedWorkMbids && (await descendantsOf(seedWorkMbids));
-  if (scope && scope.length === 0) return [];
-
-  const selectRelations = (where?: SQL) =>
-    db
-      .select({
-        recordingMbid: mbRecordingWork.recordingMbid,
-        workMbid: mbRecordingWork.workMbid,
-        spotifyTrackId: trackRecording.spotifyTrackId,
-        spotifyAlbumId: spotifyAlbum.spotifyId,
-        albumTitle: spotifyAlbum.title,
-      })
-      .from(mbRecordingWork)
-      .innerJoin(trackRecording, eq(trackRecording.recordingMbid, mbRecordingWork.recordingMbid))
-      .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
-      .innerJoin(spotifyAlbum, eq(spotifyAlbum.spotifyId, spotifyTrack.spotifyAlbumId))
-      .where(where);
-  const playable = [
-    ...(scope
-      ? await forChunks(scope, (chunk) => selectRelations(inArray(mbRecordingWork.workMbid, chunk)))
-      : await selectRelations()),
-    // Our own links, where MusicBrainz has none yet: the player shows these
-    // tracks under the work, so the catalogue holds the work too.
-    ...(await ownWorkHoldings(scope ?? null)).map((holding) => ({
-      recordingMbid: holding.holdingKey,
-      workMbid: holding.workMbid,
-      spotifyTrackId: holding.spotifyTrackId,
-      spotifyAlbumId: holding.spotifyAlbumId,
-      albumTitle: holding.albumTitle,
-    })),
-  ];
-  if (playable.length === 0) return [];
+  if (seedWorkMbids && seedWorkMbids.length === 0) return [];
+  const held = await heldWorkLinks(
+    seedWorkMbids ? { works: subtreeOf(jsonList(seedWorkMbids)) } : undefined,
+  );
+  if (held.length === 0) return [];
 
   // The related works, their ancestors and one generation of children — the
   // children so the level rule can tell a work with parts from a leaf.
-  const works = await readWorkNeighbourhood(playable.map((relation) => relation.workMbid));
-  const referencesByWork = await forWorks(works.map((work) => work.mbid));
-  const relations = await withoutFilmScores(playable, works, new Set(referencesByWork.keys()));
+  const [works, filmScoreInputOf] = await Promise.all([
+    readWorkNeighbourhood(held.map((link) => link.workMbid)),
+    filmScoreInputs(held.map((link) => link.spotifyTrackId)),
+  ]);
+  const references = await referencesOf(works.map((work) => work.mbid));
+  const workByMbid = new Map(works.map((work) => [work.mbid, work]));
+  const catalogued = new Set(references.map((reference) => reference.workMbid));
+  const relations = withoutFilmScores(held, (row) =>
+    filmScoreReason(
+      { workMbids: [row.workMbid], ...filmScoreInputOf(row.spotifyTrackId) },
+      workByMbid,
+      catalogued,
+    ),
+  );
   if (relations.length === 0) return [];
-  return shapeHeldCatalogue(relations, works, [...referencesByWork.values()]);
+  return shapeHeldCatalogue(relations, works, references);
 }
 
 /**
- * Film scores are not part of the catalogue (see `film-scores`). A recording
+ * Film scores are not part of the catalogue (see `film-scores`). A holding
  * stays if any track we can play it from is not a film score, which keeps a
  * Chopin nocturne that happens to be issued on a soundtrack album.
  */
-async function withoutFilmScores(
-  playable: Array<{
-    recordingMbid: string;
-    workMbid: string;
-    spotifyTrackId: string;
-    spotifyAlbumId: string;
-    albumTitle: string;
-  }>,
-  works: Awaited<ReturnType<typeof readWorkNeighbourhood>>,
-  catalogedWorkMbids: Set<string>,
-): Promise<Array<{ recordingMbid: string; workMbid: string }>> {
-  const artistRows = await forChunks(
-    Array.from(new Set(playable.map((row) => row.spotifyTrackId))),
-    (chunk) => db.select().from(trackArtists).where(inArray(trackArtists.spotifyTrackId, chunk)),
-  );
-  const artistIdsByTrack = new Map<string, string[]>();
-  for (const row of artistRows) {
-    artistIdsByTrack.set(row.spotifyTrackId, [
-      ...(artistIdsByTrack.get(row.spotifyTrackId) ?? []),
-      row.spotifyArtistId,
-    ]);
-  }
-  const workByMbid = new Map(works.map((work) => [work.mbid, work]));
-  const kept = new Map<string, { recordingMbid: string; workMbid: string }>();
-  for (const row of playable) {
-    const key = `${row.recordingMbid} ${row.workMbid}`;
-    if (kept.has(key)) continue;
-    const filmScore = filmScoreReason(
-      {
-        workMbids: [row.workMbid],
-        spotifyArtistIds: artistIdsByTrack.get(row.spotifyTrackId) ?? [],
-        album: { spotifyAlbumId: row.spotifyAlbumId, title: row.albumTitle },
-      },
-      workByMbid,
-      catalogedWorkMbids,
-    );
-    if (!filmScore) kept.set(key, { recordingMbid: row.recordingMbid, workMbid: row.workMbid });
+function withoutFilmScores(
+  held: HeldRelation[],
+  filmScoreOf: (row: HeldRelation) => string | null,
+): HeldRelation[] {
+  const kept = new Map<string, HeldRelation>();
+  for (const row of held) {
+    const key = `${row.recordingMbid ?? `track:${row.spotifyTrackId}`} ${row.workMbid}`;
+    if (!kept.has(key) && !filmScoreOf(row)) kept.set(key, row);
   }
   return [...kept.values()];
-}
-
-/** These works and everything filed beneath them, to a bounded depth. */
-async function descendantsOf(seedWorkMbids: string[]): Promise<string[]> {
-  const found = new Set(seedWorkMbids);
-  let frontier = seedWorkMbids;
-  for (let depth = 0; depth < 16 && frontier.length > 0; depth++) {
-    const children = await forChunks(frontier, (chunk) =>
-      db.select({ mbid: mbWork.mbid }).from(mbWork).where(inArray(mbWork.parentMbid, chunk)),
-    );
-    frontier = children.map((child) => child.mbid).filter((mbid) => !found.has(mbid));
-    for (const mbid of frontier) found.add(mbid);
-  }
-  return [...found];
-}
-
-async function readWorkNeighbourhood(seedMbids: string[]) {
-  const byMbid = new Map<string, Awaited<ReturnType<typeof selectWorks>>[number]>();
-  let frontier = Array.from(new Set(seedMbids));
-  for (let depth = 0; depth < 16 && frontier.length > 0; depth++) {
-    for (const row of await selectWorks(frontier)) byMbid.set(row.mbid, row);
-    frontier = Array.from(byMbid.values())
-      .map((row) => row.parentMbid)
-      .filter((mbid): mbid is string => mbid !== null && !byMbid.has(mbid));
-  }
-  const children = await forChunks(byMbid.keys(), (chunk) =>
-    db
-      .select({
-        mbid: mbWork.mbid,
-        title: mbWork.title,
-        type: mbWork.type,
-        parentMbid: mbWork.parentMbid,
-        orderingKey: mbWork.orderingKey,
-        composerMbid: mbWork.composerMbid,
-      })
-      .from(mbWork)
-      .where(inArray(mbWork.parentMbid, chunk)),
-  );
-  for (const row of children) if (!byMbid.has(row.mbid)) byMbid.set(row.mbid, row);
-  return Array.from(byMbid.values());
-}
-
-function selectWorks(mbids: string[]) {
-  return forChunks(mbids, (chunk) =>
-    db
-      .select({
-        mbid: mbWork.mbid,
-        title: mbWork.title,
-        type: mbWork.type,
-        parentMbid: mbWork.parentMbid,
-        orderingKey: mbWork.orderingKey,
-        composerMbid: mbWork.composerMbid,
-      })
-      .from(mbWork)
-      .where(inArray(mbWork.mbid, chunk)),
-  );
 }
 
 /** Column one: every composer MusicBrainz attributes something we hold to. */
 export async function getMusicBrainzCatalogComposers(): Promise<CatalogComposer[]> {
   const shaped = await heldCatalogue();
-  const byComposer = new Map<string, { works: number; recordings: Set<string> }>();
+  const byComposer = new Map<string, { works: number; holdings: Set<string> }>();
   for (const work of shaped) {
     // A work MusicBrainz attributes to nobody has no composer to file it
     // under. It is reachable from the library and from search; it is simply
     // not a row in a list of composers.
     if (!work.composerMbid) continue;
-    const entry = byComposer.get(work.composerMbid) ?? { works: 0, recordings: new Set<string>() };
+    const entry = byComposer.get(work.composerMbid) ?? { works: 0, holdings: new Set<string>() };
     entry.works += 1;
-    for (const recordingMbid of work.recordingMbids) entry.recordings.add(recordingMbid);
+    for (const holding of work.holdings) entry.holdings.add(holding);
     byComposer.set(work.composerMbid, entry);
   }
   if (byComposer.size === 0) return [];
@@ -236,7 +128,7 @@ export async function getMusicBrainzCatalogComposers(): Promise<CatalogComposer[
         // composer's unless something has matched the two.
         image: null,
         workCount: entry.works,
-        recordingCount: entry.recordings.size,
+        recordingCount: entry.holdings.size,
       };
     })
     .sort((left, right) => left.sort.localeCompare(right.sort, 'en'));
@@ -248,12 +140,11 @@ export async function getMusicBrainzCatalogWorks(composerMbid: string): Promise<
     .select({ mbid: mbWork.mbid })
     .from(mbWork)
     .where(eq(mbWork.composerMbid, composerMbid));
-  const shaped = await heldCatalogue(byThisComposer.map((work) => work.mbid));
-  const childCounts = await partCounts(
-    shaped.filter((work) => work.composerMbid === composerMbid).map((work) => work.mbid),
+  const shaped = (await heldCatalogue(byThisComposer.map((work) => work.mbid))).filter(
+    (work) => work.composerMbid === composerMbid,
   );
+  const childCounts = await partCounts(shaped.map((work) => work.mbid));
   return shaped
-    .filter((work) => work.composerMbid === composerMbid)
     .map(
       (work): CatalogWork => ({
         id: work.mbid,
@@ -266,7 +157,7 @@ export async function getMusicBrainzCatalogWorks(composerMbid: string): Promise<
         year: null,
         genre: work.type,
         movementCount: childCounts.get(work.mbid) ?? 0,
-        recordingCount: work.recordingMbids.length,
+        recordingCount: work.holdings.length,
       }),
     )
     .sort((left, right) => (left.catalog ?? '~').localeCompare(right.catalog ?? '~', 'en'));
@@ -274,13 +165,11 @@ export async function getMusicBrainzCatalogWorks(composerMbid: string): Promise<
 
 async function partCounts(workMbids: string[]): Promise<Map<string, number>> {
   if (workMbids.length === 0) return new Map();
-  const rows = await forChunks(workMbids, (chunk) =>
-    db
-      .select({ parentMbid: mbWork.parentMbid, count: sql<number>`count(*)` })
-      .from(mbWork)
-      .where(inArray(mbWork.parentMbid, chunk))
-      .groupBy(mbWork.parentMbid),
-  );
+  const rows = await db
+    .select({ parentMbid: mbWork.parentMbid, count: sql<number>`count(*)` })
+    .from(mbWork)
+    .where(sql`${mbWork.parentMbid} in (${jsonList(workMbids)})`)
+    .groupBy(mbWork.parentMbid);
   return new Map(
     rows.flatMap((row) => (row.parentMbid ? [[row.parentMbid, Number(row.count)] as const] : [])),
   );
@@ -296,45 +185,35 @@ async function partCounts(workMbids: string[]): Promise<Map<string, number>> {
 export async function getMusicBrainzCatalogWorkHeader(
   workMbid: string,
 ): Promise<CatalogWorkHeader | null> {
-  const [work] = await db
-    .select({
-      mbid: mbWork.mbid,
-      title: mbWork.title,
-      type: mbWork.type,
-      parentMbid: mbWork.parentMbid,
-      composerMbid: mbWork.composerMbid,
-    })
-    .from(mbWork)
-    .where(eq(mbWork.mbid, workMbid))
-    .limit(1);
-  if (!work) return null;
-
+  // The work, its ancestors (where its number and composer may be filed)
+  // and its parts, in one read.
   const neighbourhood = await readWorkNeighbourhood([workMbid]);
   const byMbid = new Map(neighbourhood.map((node) => [node.mbid, node]));
-  const references = await forWorks(neighbourhood.map((node) => node.mbid));
-  const carrier = ancestry(workMbid, byMbid).find((node) => references.has(node.mbid));
-  const reference = carrier ? references.get(carrier.mbid)! : null;
-  const shaped = {
-    mbid: work.mbid,
-    title: work.title,
-    type: work.type,
-    composerMbid:
-      ancestry(workMbid, byMbid).find((node) => node.composerMbid)?.composerMbid ?? null,
-    reference,
-  };
-  const [composerRow] = shaped.composerMbid
-    ? await db.select().from(mbArtist).where(eq(mbArtist.mbid, shaped.composerMbid)).limit(1)
+  const work = byMbid.get(workMbid);
+  if (!work) return null;
+
+  const lineage = ancestry(workMbid, byMbid);
+  const references = await referencesOf(lineage.map((node) => node.mbid));
+  const { references: nearest, composerMbid } = workAttributes(
+    lineage,
+    indexWorks(neighbourhood, references),
+  );
+  const [composerRow] = composerMbid
+    ? await db
+        .select({ name: mbArtist.name })
+        .from(mbArtist)
+        .where(eq(mbArtist.mbid, composerMbid))
+        .limit(1)
     : [];
-  const counts = await partCounts([workMbid]);
   return {
-    id: shaped.mbid,
-    title: shaped.title,
+    id: work.mbid,
+    title: work.title,
     nickname: null,
-    catalog: shaped.reference ? `${shaped.reference.system} ${shaped.reference.number}` : null,
+    catalog: nearest[0] ? `${nearest[0].system} ${nearest[0].number}` : null,
     year: null,
-    genre: shaped.type,
+    genre: work.type,
     composerName: composerRow?.name ?? null,
-    movementCount: counts.get(workMbid) ?? 0,
+    movementCount: neighbourhood.filter((node) => node.parentMbid === workMbid).length,
   };
 }
 
@@ -385,16 +264,15 @@ export async function searchMusicBrainzWorks(
   if (wanted.size === 0) return [];
 
   const shaped = await heldCatalogue([...wanted]);
-  const references = await forChunks([...wanted, ...shaped.map((work) => work.mbid)], (chunk) =>
-    db
-      .select({
-        workMbid: mbWorkCatalogue.workMbid,
-        system: mbWorkCatalogue.system,
-        number: mbWorkCatalogue.number,
-      })
-      .from(mbWorkCatalogue)
-      .where(inArray(mbWorkCatalogue.workMbid, chunk)),
+  // A reference sits on the piece; the query may have matched it there while
+  // the work a reader clicks is the same piece. Match either way round.
+  const hits = shaped.filter(
+    (work) => wanted.has(work.mbid) || (work.reference && wanted.has(work.reference.workMbid)),
   );
+  const [references, composerNames] = await Promise.all([
+    referencesOf(hits.flatMap((work) => (work.reference ? [work.reference.workMbid] : []))),
+    composerNamesFor(hits),
+  ]);
   const referencesByWork = new Map<string, string[]>();
   for (const reference of references) {
     referencesByWork.set(reference.workMbid, [
@@ -402,13 +280,6 @@ export async function searchMusicBrainzWorks(
       `${reference.system} ${reference.number}`,
     ]);
   }
-
-  // A reference sits on the piece; the query may have matched it there while
-  // the work a reader clicks is the same piece. Match either way round.
-  const hits = shaped.filter(
-    (work) => wanted.has(work.mbid) || (work.reference && wanted.has(work.reference.workMbid)),
-  );
-  const composerNames = await composerNamesFor(hits);
 
   return hits.slice(0, limit).map(
     (work): WorkSearchHit => ({
@@ -419,40 +290,33 @@ export async function searchMusicBrainzWorks(
       composerName: work.composerMbid ? (composerNames.get(work.composerMbid) ?? '') : '',
       matchedOn: work.reference ? `${work.reference.system} ${work.reference.number}` : null,
       references: work.reference ? (referencesByWork.get(work.reference.workMbid) ?? []) : [],
-      recordingCount: work.recordingMbids.length,
+      recordingCount: work.holdings.length,
     }),
   );
 }
 
-/** The catalogue references these works carry, nearest one per work. */
-async function forWorks(workMbids: string[]): Promise<Map<string, CatalogueReference>> {
-  if (workMbids.length === 0) return new Map();
-  const rows = await forChunks(workMbids, (chunk) =>
-    db
-      .select({
-        workMbid: mbWorkCatalogue.workMbid,
-        system: mbWorkCatalogue.system,
-        number: mbWorkCatalogue.number,
-      })
-      .from(mbWorkCatalogue)
-      .where(inArray(mbWorkCatalogue.workMbid, chunk)),
-  );
-  const byWork = new Map<string, CatalogueReference>();
-  for (const row of rows) if (!byWork.has(row.workMbid)) byWork.set(row.workMbid, row);
-  return byWork;
+/** Every catalogue reference these works carry. */
+async function referencesOf(workMbids: string[]): Promise<CatalogueReference[]> {
+  if (workMbids.length === 0) return [];
+  return db
+    .select({
+      workMbid: mbWorkCatalogue.workMbid,
+      system: mbWorkCatalogue.system,
+      number: mbWorkCatalogue.number,
+      normalizedSystem: mbWorkCatalogue.normalizedSystem,
+      normalizedNumber: mbWorkCatalogue.normalizedNumber,
+    })
+    .from(mbWorkCatalogue)
+    .where(sql`${mbWorkCatalogue.workMbid} in (${jsonList(workMbids)})`);
 }
 
 async function composerNamesFor(works: ShapedCatalogueWork[]): Promise<Map<string, string>> {
-  const mbids = Array.from(
-    new Set(works.map((work) => work.composerMbid).filter((mbid): mbid is string => !!mbid)),
-  );
+  const mbids = works.flatMap((work) => (work.composerMbid ? [work.composerMbid] : []));
   if (mbids.length === 0) return new Map();
-  const rows = await forChunks(mbids, (chunk) =>
-    db
-      .select({ mbid: mbArtist.mbid, name: mbArtist.name })
-      .from(mbArtist)
-      .where(inArray(mbArtist.mbid, chunk)),
-  );
+  const rows = await db
+    .select({ mbid: mbArtist.mbid, name: mbArtist.name })
+    .from(mbArtist)
+    .where(sql`${mbArtist.mbid} in (${jsonList(mbids)})`);
   return new Map(rows.map((row) => [row.mbid, row.name]));
 }
 
@@ -464,34 +328,20 @@ export async function getMusicBrainzCatalogRecordings(
   const liked = new Set(likedTrackIds);
   const trackIds = await findProviderTracksForWork(workMbid);
   if (trackIds.length === 0) return [];
-  const { works } = musicBrainzLibraryView(
-    projectMusicBrainzLibrary(await loadMusicBrainzLibraryFacts(trackIds)),
-    liked,
-  );
+  const { works } = await readLibraryCards(trackIds, liked);
   return (
     works
       .filter((card) => card.workId === workMbid)
       .map((card) => {
+        const { recordingId, durationMs, ...row } = recordingRowOf(card);
         const played = card.movements.filter((movement) => !movement.missing);
-        const durationMs = played.reduce((sum, movement) => sum + (movement.durationMs ?? 0), 0);
         const recording: CatalogRecording = {
-          id: card.recordingId ?? card.id,
-          album: card.album,
-          albumId: card.albumId ?? card.id,
-          cover: card.cover,
-          year: card.year,
-          performer: card.performer,
-          ensemble: card.ensemble,
-          duration: played.length === 0 ? null : formatDuration(durationMs),
-          // Spotify popularity is a track's, and nothing has aggregated it per
-          // MusicBrainz recording. The screen already says unranked.
-          popularity: null,
-          tint: card.tint,
+          ...row,
+          id: recordingId,
           liked: played.filter((movement) => movement.liked).length,
           firstTrackUri: played[0]?.uri ?? null,
-          unmatched: false,
         };
-        return { recording, durationMs };
+        return { recording, durationMs: durationMs ?? 0 };
       })
       // Compare milliseconds, not the formatted "m:ss" text: as strings "9:59"
       // sorts above "10:00".

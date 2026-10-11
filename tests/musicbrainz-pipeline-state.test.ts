@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import test, { before, beforeEach } from 'node:test';
+import { eq } from 'drizzle-orm';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 import type { PersistedTrackPassOutcome } from '../app/lib/musicbrainz-pipeline-state';
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
-let persistMusicBrainzTrackOutcomes: typeof import('@/lib/musicbrainz-pipeline-state').persistMusicBrainzTrackOutcomes;
+let recordAlbumPassOutcomes: typeof import('@/lib/musicbrainz-pipeline-state').recordAlbumPassOutcomes;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ persistMusicBrainzTrackOutcomes } = await import('@/lib/musicbrainz-pipeline-state'));
+  ({ recordAlbumPassOutcomes } = await import('@/lib/musicbrainz-pipeline-state'));
 });
 
 beforeEach(async () => {
@@ -55,7 +56,7 @@ beforeEach(async () => {
   ]);
 });
 
-test('stores pipeline completion and preserves classification provenance precedence', async () => {
+test('stores outcome, queue status and classification together, under provenance precedence', async () => {
   const completedAt = new Date('2026-09-21T12:00:00Z');
   const outcomes: PersistedTrackPassOutcome[] = [
     {
@@ -81,7 +82,7 @@ test('stores pipeline completion and preserves classification provenance precede
     },
   ];
 
-  await persistMusicBrainzTrackOutcomes(outcomes, 'worker-1', completedAt);
+  await recordAlbumPassOutcomes(outcomes, 'worker-1', completedAt);
 
   const queueRows = (await db.select().from(schema.matchQueue)).sort((left, right) =>
     left.spotifyId.localeCompare(right.spotifyId),
@@ -93,28 +94,33 @@ test('stores pipeline completion and preserves classification provenance precede
       outcome: row.pipelineOutcome,
       reason: row.pipelineReason,
       completedAt: row.pipelineCompletedAt,
+      claimOwnerId: row.claimOwnerId,
     })),
     [
       {
         spotifyId: 'manual',
-        status: 'processing',
+        status: 'matched',
         outcome: 'ready',
         reason: 'MusicBrainz gives the work a catalogue-series reference',
         completedAt,
+        claimOwnerId: 'worker-1',
       },
       {
         spotifyId: 'parser',
-        status: 'processing',
+        status: 'not_classical',
         outcome: 'not_classical',
         reason: 'the album parser ruled this not classical',
         completedAt,
+        claimOwnerId: 'worker-1',
       },
       {
         spotifyId: 'upgrade',
-        status: 'processing',
+        // Nothing to hand the reader, so no worker holds it any more.
+        status: 'unresolved',
         outcome: 'unclassified',
         reason: 'MusicBrainz has no distinguishing evidence',
         completedAt,
+        claimOwnerId: null,
       },
     ],
   );
@@ -154,4 +160,25 @@ test('stores pipeline completion and preserves classification provenance precede
       },
     ],
   );
+});
+
+test('leaves queue rows another worker holds alone', async () => {
+  await recordAlbumPassOutcomes(
+    [
+      {
+        spotifyTrackId: 'parser',
+        state: 'ready',
+        classification: 'classical',
+        classificationProvenance: 'musicbrainz',
+        reason: 'MusicBrainz gives the work a catalogue-series reference',
+      },
+    ],
+    'worker-2',
+  );
+  const [row] = await db
+    .select()
+    .from(schema.matchQueue)
+    .where(eq(schema.matchQueue.spotifyId, 'parser'));
+  assert.equal(row.status, 'processing');
+  assert.equal(row.pipelineOutcome, null);
 });

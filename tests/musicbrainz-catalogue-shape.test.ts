@@ -2,6 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { shapeHeldCatalogue, type CatalogueWorkNode } from '../app/lib/musicbrainz-catalogue-shape';
 
+const BWV_988 = {
+  workMbid: 'goldberg',
+  system: 'BWV',
+  number: '988',
+  normalizedSystem: 'bwv',
+  normalizedNumber: '988',
+};
+
 const GOLDBERG: CatalogueWorkNode[] = [
   {
     mbid: 'goldberg',
@@ -22,12 +30,14 @@ const GOLDBERG: CatalogueWorkNode[] = [
 ];
 
 test('files a movement under the piece a reader would name', () => {
-  const [shaped] = shapeHeldCatalogue([{ recordingMbid: 'rec-1', workMbid: 'aria' }], GOLDBERG, [
-    { workMbid: 'goldberg', system: 'BWV', number: '988' },
-  ]);
+  const [shaped] = shapeHeldCatalogue(
+    [{ recordingMbid: 'rec-1', spotifyTrackId: 'track-rec-1', workMbid: 'aria' }],
+    GOLDBERG,
+    [BWV_988],
+  );
 
   assert.equal(shaped.mbid, 'goldberg');
-  assert.deepEqual(shaped.reference, { workMbid: 'goldberg', system: 'BWV', number: '988' });
+  assert.deepEqual(shaped.reference, BWV_988);
   assert.equal(shaped.composerMbid, 'bach');
 });
 
@@ -35,7 +45,7 @@ test('keeps a typed work as itself and still finds its catalogue above it', () =
   // The library shows an étude as an étude; the catalogue must agree, or a
   // card's catalogue number would lead to a work the catalogue never lists.
   const [shaped] = shapeHeldCatalogue(
-    [{ recordingMbid: 'rec-1', workMbid: 'etude-1' }],
+    [{ recordingMbid: 'rec-1', spotifyTrackId: 'track-rec-1', workMbid: 'etude-1' }],
     [
       {
         mbid: 'opus-10',
@@ -54,7 +64,15 @@ test('keeps a typed work as itself and still finds its catalogue above it', () =
         composerMbid: null,
       },
     ],
-    [{ workMbid: 'opus-10', system: 'Op.', number: '10' }],
+    [
+      {
+        workMbid: 'opus-10',
+        system: 'Op.',
+        number: '10',
+        normalizedSystem: 'op',
+        normalizedNumber: '10',
+      },
+    ],
   );
 
   assert.equal(shaped.mbid, 'etude-1');
@@ -65,22 +83,53 @@ test('keeps a typed work as itself and still finds its catalogue above it', () =
 test('gathers every recording of one work into one row', () => {
   const shaped = shapeHeldCatalogue(
     [
-      { recordingMbid: 'rec-1', workMbid: 'aria' },
-      { recordingMbid: 'rec-2', workMbid: 'aria' },
-      { recordingMbid: 'rec-2', workMbid: 'aria' },
+      { recordingMbid: 'rec-1', spotifyTrackId: 'track-rec-1', workMbid: 'aria' },
+      { recordingMbid: 'rec-2', spotifyTrackId: 'track-rec-2', workMbid: 'aria' },
+      { recordingMbid: 'rec-2', spotifyTrackId: 'track-rec-2', workMbid: 'aria' },
     ],
     GOLDBERG,
     [],
   );
 
   assert.equal(shaped.length, 1);
-  assert.deepEqual(shaped[0].recordingMbids, ['rec-1', 'rec-2']);
+  assert.deepEqual(shaped[0].holdings, ['rec-1', 'rec-2']);
   assert.equal(shaped[0].reference, null, 'no catalogue anywhere above it is null, not invented');
 });
 
-test('a work MusicBrainz has not cached is left out rather than guessed at', () => {
+test('a work MusicBrainz has not cached stays in the list, untitled, rather than dropped', () => {
   assert.deepEqual(
-    shapeHeldCatalogue([{ recordingMbid: 'rec-1', workMbid: 'never-fetched' }], GOLDBERG, []),
-    [],
+    shapeHeldCatalogue(
+      [{ recordingMbid: null, spotifyTrackId: 'track-1', workMbid: 'never-fetched' }],
+      GOLDBERG,
+      [],
+    ),
+    [
+      {
+        mbid: 'never-fetched',
+        title: null,
+        type: null,
+        composerMbid: null,
+        reference: null,
+        holdings: ['track:track-1'],
+      },
+    ],
   );
+});
+
+test('picks the same first reference as a library card: sorted, not table order', () => {
+  const [shaped] = shapeHeldCatalogue(
+    [{ recordingMbid: 'rec-1', spotifyTrackId: 'track-1', workMbid: 'aria' }],
+    GOLDBERG,
+    [
+      {
+        workMbid: 'goldberg',
+        system: 'Kk.',
+        number: '9',
+        normalizedSystem: 'kk',
+        normalizedNumber: '9',
+      },
+      BWV_988,
+    ],
+  );
+  assert.equal(shaped.reference?.system, 'BWV');
 });
