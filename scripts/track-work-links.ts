@@ -5,6 +5,9 @@
  *   pnpm metadata:track-work-links                 tracks never checked
  *   pnpm metadata:track-work-links --refresh       every such track, again
  *   pnpm metadata:track-work-links --unlinked      again, every album with a track left unlinked
+ *   pnpm metadata:track-work-links --unlinked --checked-before <iso>
+ *                                                  only tracks last checked before then, so a
+ *                                                  rerun after a failure resumes
  *   pnpm metadata:track-work-links --album <id>    one Spotify album
  *   pnpm metadata:track-work-links --albums 5      stop after five albums
  *   pnpm metadata:track-work-links --no-store      store no links (works read are still cached)
@@ -51,7 +54,11 @@ async function main() {
   if (album) gaps = gaps.filter((gap) => gap.albumId === album);
   if (process.argv.includes('--unlinked')) {
     // Whole albums, so the parts found on their linked tracks help the rest.
-    const open = await run.unlinkedTracks(gaps.map((gap) => gap.spotifyTrackId));
+    const before = option('--checked-before');
+    const open = await run.unlinkedTracks(
+      gaps.map((gap) => gap.spotifyTrackId),
+      before ? new Date(before) : null,
+    );
     const albumIds = new Set(
       gaps.filter((gap) => open.has(gap.spotifyTrackId)).map((gap) => gap.albumId),
     );
