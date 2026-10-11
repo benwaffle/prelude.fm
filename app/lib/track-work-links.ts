@@ -199,6 +199,22 @@ export function confirmWork(
 }
 
 /**
+ * Signals for a part of a confirmed work. MusicBrainz often ends a part's
+ * title with its tempo ("Nocturne no. 3 in B major, op. 9 no. 3: Allegretto")
+ * where the track ends with the piece ("No. 3 in B Major"), so a part whose
+ * last section shares nothing is compared once more without it. Numbers, key
+ * and movement position still have to agree.
+ */
+function partSignals(target: ProposalTarget, candidate: ProposalCandidate) {
+  const signals = candidateSignals(target, candidate);
+  if (signals || !candidate.title.includes(':')) return signals;
+  return candidateSignals(target, {
+    ...candidate,
+    title: candidate.title.slice(0, candidate.title.lastIndexOf(':')).trim(),
+  });
+}
+
+/**
  * The one part of a confirmed work the track plays, or the work itself.
  *
  * Once catalogue number and composer have fixed the work, the title only has
@@ -230,7 +246,7 @@ export function confirmedPart(
     whole,
     ...parts.filter((part) => part.parentMbid === confirmed.workMbid),
   ]) {
-    const signals = candidateSignals(target, candidate);
+    const signals = partSignals(target, candidate);
     if (!signals) continue;
     if (candidate === whole) {
       if (movement === null && parts.every((part) => part.parentMbid !== confirmed.workMbid)) {
@@ -256,7 +272,7 @@ export function confirmedPart(
   }
   if (qualifying.length !== 1) return null;
   const [{ candidate, reason }] = qualifying;
-  const signals = candidateSignals(target, candidate)!;
+  const signals = partSignals(target, candidate)!;
   return {
     workMbid: candidate.workMbid,
     title: candidate.title,

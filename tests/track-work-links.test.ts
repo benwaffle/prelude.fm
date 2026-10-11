@@ -156,3 +156,42 @@ test('a confirmed work still needs the track to pick out exactly one part', () =
   // A movement number the work does not have.
   assert.equal(confirmedPart(target('Concerto, BWV 1042: IV. Gigue'), confirmed, parts), null);
 });
+
+test('a part titled with its tempo is still picked out by its number and key', () => {
+  const nocturnes = {
+    workMbid: 'op-9',
+    title: 'Nocturnes, op. 9',
+    composerName: 'Fryderyk Chopin',
+    catalogueNumbers: ['B. 54', 'op. 9'],
+  };
+  const nocturne = (n: number, title: string): ProposalCandidate => ({
+    workMbid: `op-9-${n}`,
+    title,
+    parentMbid: 'op-9',
+    parentTitle: nocturnes.title,
+    orderingKey: n,
+    composerName: 'Fryderyk Chopin',
+    aliases: [],
+    source: 'album',
+  });
+  const nocturneParts = [
+    nocturne(1, 'Nocturne no. 1 in B‐flat minor, op. 9 no. 1: Larghetto'),
+    nocturne(2, 'Nocturne no. 2 in E‐flat major, op. 9 no. 2: Andante'),
+    nocturne(3, 'Nocturne no. 3 in B major, op. 9 no. 3: Allegretto'),
+  ];
+  const title = 'Nocturnes, Op. 9: No. 3 in B Major';
+  const artists = ['Arthur Rubinstein', 'Frédéric Chopin'];
+  const confirmed = confirmWork(title, artists, nocturnes);
+  assert.ok(confirmed);
+  const match = confirmedPart({ ...target(title), artistNames: artists }, confirmed, nocturneParts);
+  assert.equal(match?.workMbid, 'op-9-3');
+  // A number the work's parts disagree with still picks out nothing.
+  assert.equal(
+    confirmedPart(
+      { ...target('Nocturnes, Op. 9: No. 4 in B Major'), artistNames: artists },
+      confirmWork('Nocturnes, Op. 9: No. 4 in B Major', artists, nocturnes)!,
+      nocturneParts,
+    ),
+    null,
+  );
+});

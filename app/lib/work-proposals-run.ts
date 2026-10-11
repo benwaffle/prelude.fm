@@ -217,8 +217,13 @@ async function familyCandidates(
 
 type SearchWork = MbWork & { aliases?: { name: string }[] };
 
-function quoted(name: string): string {
-  return `"${name.replace(/["\\]/g, ' ').trim()}"`;
+/**
+ * The last word of each name, so the search matches however MusicBrainz
+ * credits the artist: a quoted "Frédéric Chopin" finds nothing where the work
+ * credits "Fryderyk Chopin". The surname is all the confirmation checks need.
+ */
+function surnames(names: string[]): string[] {
+  return [...new Set(names.flatMap((name) => titleWords(name).slice(-1)))];
 }
 
 /** MusicBrainz works whose title words and composer fit the track. */
@@ -230,12 +235,10 @@ export async function searchCandidates(
   // Words only: punctuation is dropped, so nothing in the query needs escaping.
   const words = titleWords(title).slice(0, MAX_SEARCH_WORDS);
   if (words.length === 0) return [];
-  const artists = composers.filter(Boolean).slice(0, MAX_SEARCH_ARTISTS);
+  const artists = surnames(composers).slice(0, MAX_SEARCH_ARTISTS);
   const query =
     `work:(${words.join(' ')})` +
-    (artists.length > 0
-      ? ` AND (${artists.map((name) => `artist:${quoted(name)}`).join(' OR ')})`
-      : '');
+    (artists.length > 0 ? ` AND (${artists.map((name) => `artist:${name}`).join(' OR ')})` : '');
   counter.requests++;
   const result = await mbGet<{ works?: SearchWork[] }>(
     `/work?query=${encodeURIComponent(query)}&limit=${SEARCH_LIMIT}&fmt=json`,
