@@ -214,6 +214,11 @@ export type UnresolvedLibraryTrack = {
   classification: TrackClassification | null;
   /** Null only when nothing anchored the track to a MusicBrainz recording. */
   musicBrainz: UnresolvedTrackMetadata | null;
+  /**
+   * The work our own match links the track to, when MusicBrainz has no
+   * recording for it. Set only for such tracks.
+   */
+  ownWorks?: ProjectedRecordingWork[];
   gaps: MusicBrainzGap[];
 };
 
@@ -391,6 +396,9 @@ export function projectMusicBrainzLibrary(
     musicBrainz: UnresolvedTrackMetadata | null = null,
   ): void => {
     const providerTrack = trackById.get(spotifyTrackId);
+    const ownLink = anchorByTrack.has(spotifyTrackId)
+      ? undefined
+      : index.ownWorkByTrack.get(spotifyTrackId);
     unresolvedTracks.push({
       spotifyTrackId,
       providerTitle: providerTrack?.title ?? null,
@@ -398,6 +406,9 @@ export function projectMusicBrainzLibrary(
       status,
       classification,
       musicBrainz,
+      ...(ownLink
+        ? { ownWorks: [projectRecordingWork(ownLink.workMbid, index, ownLink.confidence)] }
+        : {}),
       gaps,
     });
     accountingByTrack.set(spotifyTrackId, {

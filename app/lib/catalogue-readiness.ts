@@ -374,7 +374,9 @@ export function placeTrack(
         ? 'classification-out-of-date'
         : 'add-classical-evidence',
       waiting: false,
-      group: workGroup(track.works[0]),
+      // No work to file it under only if a link's work never reached the
+      // projection; show it by album rather than fail the whole funnel.
+      group: track.works[0] ? workGroup(track.works[0]) : albumGroup(track),
     };
   }
   return null;
@@ -534,6 +536,8 @@ export function readinessTracksFrom(
   for (const unresolved of projection.unresolvedTracks) {
     if (unresolved.musicBrainz) {
       worksByTrack.set(unresolved.spotifyTrackId, unresolved.musicBrainz.works);
+    } else if (unresolved.ownWorks) {
+      worksByTrack.set(unresolved.spotifyTrackId, unresolved.ownWorks);
     }
   }
 

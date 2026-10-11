@@ -432,3 +432,22 @@ test('a track our own match links to a work skips the recording step, and is cou
   assert.equal(funnel.ready, 2);
   assert.equal(funnel.readyViaOwnLinks, 1);
 });
+
+test('an uncertain track our own match links to a work keeps that work, and the funnel loads', () => {
+  const input = facts();
+  input.ownWorkLinks = [
+    { subject: 'track', spotifyTrackId: 'unlinked', workMbid: 'sonata', confidence: 'high' },
+  ];
+  input.classifications = [
+    ...input.classifications.filter((row) => row.spotifyTrackId !== 'unlinked'),
+    { spotifyTrackId: 'unlinked', state: 'uncertain', provenance: 'musicbrainz', reason: null },
+  ];
+  const rows = readinessTracksFrom(input, projectMusicBrainzLibrary(input));
+  const ours = rows.find((row) => row.spotifyTrackId === 'unlinked')!;
+  assert.deepEqual(ours.link, { state: 'ours' });
+  assert.deepEqual(ours.works, [
+    { workMbid: 'sonata', linkedBy: 'prelude', title: 'Sonata', composer: 'named' },
+  ]);
+  assert.equal(placeTrack(ours)?.bucket, 'classification-out-of-date');
+  assert.doesNotThrow(() => readinessFunnel(rows));
+});
