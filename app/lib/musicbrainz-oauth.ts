@@ -101,8 +101,3 @@ export async function botAccessToken(): Promise<string> {
   };
   return cached.token;
 }
-
-/** Test seam, and a way to force a refresh after re-authorising. */
-export function forgetBotAccessToken() {
-  cached = null;
-}

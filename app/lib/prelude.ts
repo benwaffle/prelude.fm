@@ -165,35 +165,12 @@ export function tintFor(seed: string): { tint: string; ink: string } {
   return { tint, ink };
 }
 
-/**
- * Pick the smallest Spotify image at least `minWidth` across — their arrays
- * lead with a 1000px original, which is wasteful for a 30px monogram.
- */
-export function pickImage(
-  images: { url: string; width: number; height: number }[] | null | undefined,
-  minWidth: number,
-): string | null {
-  if (!images || images.length === 0) return null;
-  const ascending = [...images].sort((a, b) => a.width - b.width);
-  return (ascending.find((image) => image.width >= minWidth) ?? ascending[ascending.length - 1])
-    .url;
-}
-
 export function hexToRgba(hex: string, alpha: number): string {
   const h = (hex || '#222222').replace('#', '');
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-/** "BWV 1007", or null when the work carries no catalogue number. */
-export function catalogLabel(
-  system: string | null | undefined,
-  number: string | null | undefined,
-): string | null {
-  if (!system || !number) return null;
-  return `${system} ${number}`;
 }
 
 /* ---------------------------------------------------------------

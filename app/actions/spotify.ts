@@ -5,9 +5,8 @@ import { db } from '@/lib/db';
 import { matchQueue } from '@/lib/db/schema';
 import { headers } from 'next/headers';
 import { after } from 'next/server';
-import { inArray, eq, sql } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { enqueueAlbumsForTracks } from '@/lib/match-queue-processor';
-import { checkAuth } from '@/app/admin/actions/auth';
 
 export async function getSpotifyToken(): Promise<string> {
   const session = await auth.api.getSession({
@@ -97,50 +96,4 @@ export async function getQueuedTrackIds(trackIds: string[]): Promise<string[]> {
     .where(inArray(matchQueue.spotifyId, trackIds));
 
   return results.map((r) => r.spotifyId);
-}
-
-export async function getMatchQueue(
-  limit = 50,
-  offset = 0,
-): Promise<{ items: { spotifyId: string; submittedAt: Date; status: string }[]; total: number }> {
-  await checkAuth();
-  const [countResult, results] = await Promise.all([
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(matchQueue)
-      .where(eq(matchQueue.status, 'pending')),
-    db
-      .select()
-      .from(matchQueue)
-      .where(eq(matchQueue.status, 'pending'))
-      .orderBy(matchQueue.submittedAt)
-      .limit(limit)
-      .offset(offset),
-  ]);
-
-  return {
-    items: results.map((r) => ({
-      spotifyId: r.spotifyId,
-      submittedAt: r.submittedAt,
-      status: r.status,
-    })),
-    total: countResult[0]?.count ?? 0,
-  };
-}
-
-export async function updateMatchQueueStatus(
-  trackIds: string[],
-  status: 'matched' | 'failed',
-): Promise<void> {
-  await checkAuth();
-  if (trackIds.length === 0) return;
-
-  await db
-    .update(matchQueue)
-    .set({
-      status,
-      processedAt: new Date(),
-      errorMessage: status === 'matched' ? null : undefined,
-    })
-    .where(inArray(matchQueue.spotifyId, trackIds));
 }

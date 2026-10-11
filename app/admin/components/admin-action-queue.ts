@@ -53,11 +53,6 @@ async function drain() {
   }
 }
 
-/** Actions waiting behind the one running now. */
-export function queuedAdminActions(): number {
-  return tasks.length;
-}
-
 /**
  * Follow-up work, such as reloading the Inbox, that only the last action of
  * a burst needs. With actions still queued it is owed, once per `key`, and
