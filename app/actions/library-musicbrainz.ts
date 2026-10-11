@@ -127,29 +127,56 @@ async function loadMusicBrainzFacts(
   const requestedTrackIds = Array.from(new Set(spotifyTrackIds));
   if (requestedTrackIds.length === 0) return emptyFacts([]);
 
-  const requestedAnchors = await forChunks(requestedTrackIds, (chunk) =>
-    database.select().from(trackRecording).where(inArray(trackRecording.spotifyTrackId, chunk)),
-  );
-  const recordingMbids = new Set(requestedAnchors.map((anchor) => anchor.recordingMbid));
-
   // The same performance can be issued on several Spotify albums. Pulling
   // every provider track anchored to these recordings is what lets the
   // projection coalesce them into one recording with several playable
-  // occurrences instead of showing the holding twice.
-  const siblingAnchors = await forChunks(recordingMbids, (chunk) =>
-    database.select().from(trackRecording).where(inArray(trackRecording.recordingMbid, chunk)),
+  // occurrences instead of showing the holding twice. The requested tracks'
+  // own anchors are among them, so one read answers both.
+  const requested = new Set(requestedTrackIds);
+  const anchorRows = await forChunks(requestedTrackIds, (chunk) =>
+    database
+      .select()
+      .from(trackRecording)
+      .where(
+        inArray(
+          trackRecording.recordingMbid,
+          database
+            .select({ recordingMbid: trackRecording.recordingMbid })
+            .from(trackRecording)
+            .where(inArray(trackRecording.spotifyTrackId, chunk)),
+        ),
+      ),
   );
+  const requestedAnchors = anchorRows.filter((anchor) => requested.has(anchor.spotifyTrackId));
+  const recordingMbids = new Set(requestedAnchors.map((anchor) => anchor.recordingMbid));
   const anchorByTrackId = new Map(
-    [...requestedAnchors, ...siblingAnchors].map((anchor) => [anchor.spotifyTrackId, anchor]),
+    [...requestedAnchors, ...anchorRows].map((anchor) => [anchor.spotifyTrackId, anchor]),
   );
 
+  // Tracks and their albums in one round trip: the albums are found from the
+  // same track ids rather than from the tracks' rows.
   const providerTrackIds = new Set([...requestedTrackIds, ...anchorByTrackId.keys()]);
-  const providerTrackRows = await forChunks(providerTrackIds, (chunk) =>
-    database.select().from(spotifyTrack).where(inArray(spotifyTrack.spotifyId, chunk)),
-  );
-  const providerAlbumRows = await forChunks(
-    providerTrackRows.map((track) => track.spotifyAlbumId),
-    (chunk) => database.select().from(spotifyAlbum).where(inArray(spotifyAlbum.spotifyId, chunk)),
+  const [providerTrackRows, albumRows] = await Promise.all([
+    forChunks(providerTrackIds, (chunk) =>
+      database.select().from(spotifyTrack).where(inArray(spotifyTrack.spotifyId, chunk)),
+    ),
+    forChunks(providerTrackIds, (chunk) =>
+      database
+        .select()
+        .from(spotifyAlbum)
+        .where(
+          inArray(
+            spotifyAlbum.spotifyId,
+            database
+              .select({ spotifyAlbumId: spotifyTrack.spotifyAlbumId })
+              .from(spotifyTrack)
+              .where(inArray(spotifyTrack.spotifyId, chunk)),
+          ),
+        ),
+    ),
+  ]);
+  const providerAlbumRows = Array.from(
+    new Map(albumRows.map((album) => [album.spotifyId, album])).values(),
   );
 
   const [
@@ -212,7 +239,9 @@ async function loadMusicBrainzFacts(
     ),
   ]);
 
-  const [releaseTrackRows, releaseUrlRows] = await Promise.all([
+  // Release tracks and URLs feed only the final assembly, so they are read
+  // alongside the work lookups below rather than ahead of them.
+  const releaseReads = Promise.all([
     forChunks(
       releaseRows.map((release) => release.mbid),
       (chunk) =>
@@ -224,9 +253,8 @@ async function loadMusicBrainzFacts(
         database.select().from(mbReleaseUrl).where(inArray(mbReleaseUrl.releaseMbid, chunk)),
     ),
   ]);
-  const releasesWithSpotifyFreeStreaming = new Set(
-    releaseUrlRows.filter(isSpotifyFreeStreamingRelation).map((relation) => relation.releaseMbid),
-  );
+  // Settled here so a failure elsewhere cannot leave it as an unhandled rejection.
+  releaseReads.catch(() => {});
 
   const queueStatusByTrack = new Map(queueRows.map((row) => [row.spotifyId, row.status]));
   const storedClassificationByTrack = new Map<string, TrackClassification>();
@@ -287,7 +315,7 @@ async function loadMusicBrainzFacts(
     database,
   );
   const workMbids = workRows.map((work) => work.mbid);
-  const [catalogueRows, artistRows] = await Promise.all([
+  const [catalogueRows, artistRows, catalogedComposerRows] = await Promise.all([
     forChunks(workMbids, (chunk) =>
       database.select().from(mbWorkCatalogue).where(inArray(mbWorkCatalogue.workMbid, chunk)),
     ),
@@ -298,21 +326,21 @@ async function loadMusicBrainzFacts(
       ],
       (chunk) => database.select().from(mbArtist).where(inArray(mbArtist.mbid, chunk)),
     ),
+    forChunks(
+      workRows.map((work) => work.composerMbid).filter((mbid): mbid is string => !!mbid),
+      (chunk) =>
+        database
+          .select({ composerMbid: mbWork.composerMbid })
+          .from(mbWork)
+          .innerJoin(mbWorkCatalogue, eq(mbWorkCatalogue.workMbid, mbWork.mbid))
+          .innerJoin(mbArtist, eq(mbArtist.mbid, mbWork.composerMbid))
+          .where(and(inArray(mbWork.composerMbid, chunk), notLike(mbArtist.name, '[%'))),
+    ),
   ]);
-
-  const catalogedComposerMbids = new Set(
-    (
-      await forChunks(
-        workRows.map((work) => work.composerMbid).filter((mbid): mbid is string => !!mbid),
-        (chunk) =>
-          database
-            .select({ composerMbid: mbWork.composerMbid })
-            .from(mbWork)
-            .innerJoin(mbWorkCatalogue, eq(mbWorkCatalogue.workMbid, mbWork.mbid))
-            .innerJoin(mbArtist, eq(mbArtist.mbid, mbWork.composerMbid))
-            .where(and(inArray(mbWork.composerMbid, chunk), notLike(mbArtist.name, '[%'))),
-      )
-    ).map((row) => row.composerMbid!),
+  const catalogedComposerMbids = new Set(catalogedComposerRows.map((row) => row.composerMbid!));
+  const [releaseTrackRows, releaseUrlRows] = await releaseReads;
+  const releasesWithSpotifyFreeStreaming = new Set(
+    releaseUrlRows.filter(isSpotifyFreeStreamingRelation).map((relation) => relation.releaseMbid),
   );
 
   const providerTrackById = new Map(providerTrackRows.map((track) => [track.spotifyId, track]));
@@ -612,27 +640,21 @@ function classify(
 }
 
 /** Walks up the parent chain, then takes one generation of children so the
- *  reader can tell a work that has parts from a leaf. */
+ *  reader can tell a work that has parts from a leaf. One query: the seeds
+ *  go in as a JSON array (no parameter limit), the ancestors are a recursive
+ *  walk, and UNION drops a work already reached so a cycle ends the walk. */
 async function readWorkTree(
   seedMbids: string[],
   database: DatabaseExecutor,
 ): Promise<MbWorkFact[]> {
-  const byMbid = new Map<string, MbWorkFact>();
-  let frontier = Array.from(new Set(seedMbids));
-  for (let generation = 0; generation < MAX_WORK_GENERATIONS && frontier.length > 0; generation++) {
-    const rows = await forChunks(frontier, (chunk) =>
-      database.select().from(mbWork).where(inArray(mbWork.mbid, chunk)),
-    );
-    for (const row of rows) byMbid.set(row.mbid, row);
-    frontier = rows
-      .map((row) => row.parentMbid)
-      .filter((mbid): mbid is string => mbid !== null && !byMbid.has(mbid));
-  }
-  const children = await forChunks(byMbid.keys(), (chunk) =>
-    database.select().from(mbWork).where(inArray(mbWork.parentMbid, chunk)),
-  );
-  for (const row of children) if (!byMbid.has(row.mbid)) byMbid.set(row.mbid, row);
-  return Array.from(byMbid.values()).map((row) => ({
+  const seeds = Array.from(new Set(seedMbids));
+  if (seeds.length === 0) return [];
+  const lineage = sql`(with recursive up(mbid) as (select value from json_each(${JSON.stringify(seeds)}) union select parent.parent_mbid from mb_work parent join up on parent.mbid = up.mbid where parent.parent_mbid is not null) select mbid from up)`;
+  const rows = await database
+    .select()
+    .from(mbWork)
+    .where(sql`${mbWork.mbid} in ${lineage} or ${mbWork.parentMbid} in ${lineage}`);
+  return rows.map((row) => ({
     mbid: row.mbid,
     title: row.title,
     type: row.type,
