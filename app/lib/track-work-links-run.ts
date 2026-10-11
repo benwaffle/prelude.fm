@@ -13,7 +13,7 @@
  * `track_work_link`, the works it reads into `mb_*`, and the classification of
  * the tracks it links. Submits nothing to MusicBrainz.
  */
-import { and, inArray, isNull, sql } from 'drizzle-orm';
+import { and, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { loadDerivedMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
 import { db } from './db';
 import { trackClassification, trackWorkLink } from './db/schema';
@@ -431,8 +431,11 @@ export async function checkedTracks(spotifyTrackIds: string[]): Promise<Set<stri
   return checked;
 }
 
-/** Of these tracks, those checked and left without a link. */
-export async function unlinkedTracks(spotifyTrackIds: string[]): Promise<Set<string>> {
+/** Of these tracks, those checked (before `before`, when given) and left without a link. */
+export async function unlinkedTracks(
+  spotifyTrackIds: string[],
+  before: Date | null = null,
+): Promise<Set<string>> {
   const unlinked = new Set<string>();
   for (let start = 0; start < spotifyTrackIds.length; start += 400) {
     const rows = await db
@@ -442,6 +445,7 @@ export async function unlinkedTracks(spotifyTrackIds: string[]): Promise<Set<str
         and(
           inArray(trackWorkLink.spotifyTrackId, spotifyTrackIds.slice(start, start + 400)),
           isNull(trackWorkLink.workMbid),
+          before ? lt(trackWorkLink.checkedAt, before) : undefined,
         ),
       );
     for (const row of rows) unlinked.add(row.spotifyTrackId);
