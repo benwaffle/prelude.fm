@@ -23,48 +23,43 @@
  * The same `ingestAlbum` runs in the worker; this is for bulk backfill and for
  * looking at one album by hand.
  */
-import { loadEnvConfig } from '@next/env';
+import { defineScript, UsageError } from './lib/cli';
 
-type Options = { step: string; limit: number; albumId?: string; all: boolean; since?: string };
+defineScript(
+  {
+    options: {
+      limit: { type: 'integer', min: 1 },
+      all: { type: 'boolean' },
+      album: { type: 'string' },
+      since: { type: 'string' },
+    },
+    positionals: true,
+  },
+  async ({ options: flags, positionals }) => {
+    if (positionals.length > 1)
+      throw new UsageError(`One step at a time, not ${positionals.join(' ')}`);
+    const options = {
+      step: positionals[0] ?? 'report',
+      limit: flags.limit ?? Number.POSITIVE_INFINITY,
+      all: flags.all,
+      albumId: flags.album,
+      since: flags.since,
+    };
 
-function parseOptions(argv: string[]): Options {
-  const options: Options = {
-    step: argv[0] ?? 'report',
-    limit: Number.POSITIVE_INFINITY,
-    all: false,
-  };
-  for (let i = 1; i < argv.length; i++) {
-    if (argv[i] === '--limit') options.limit = Number(argv[++i]);
-    else if (argv[i] === '--all') options.all = true;
-    else if (argv[i] === '--album') options.albumId = argv[++i];
-    else if (argv[i] === '--since') options.since = argv[++i];
-    else throw new Error(`Unknown option: ${argv[i]}`);
-  }
-  return options;
-}
+    const [{ db }, ingest, cache, mb, gateway, invariants, drizzle] = await Promise.all([
+      import('@/lib/db'),
+      import('@/lib/musicbrainz-ingest'),
+      import('@/lib/musicbrainz-cache'),
+      import('@/lib/musicbrainz'),
+      import('@/lib/musicbrainz-gateway'),
+      import('@/lib/musicbrainz-invariants'),
+      import('drizzle-orm'),
+    ]);
+    const { sql } = drizzle;
+    const source = mb.musicBrainzApi('backfill');
 
-async function main() {
-  const options = parseOptions(process.argv.slice(2));
-  loadEnvConfig(process.cwd());
-
-  if (!process.env.TURSO_DATABASE_URL) {
-    throw new Error('TURSO_DATABASE_URL is required (put it in .env.local or export it)');
-  }
-
-  const [{ db }, ingest, cache, mb, gateway, invariants, drizzle] = await Promise.all([
-    import('@/lib/db'),
-    import('@/lib/musicbrainz-ingest'),
-    import('@/lib/musicbrainz-cache'),
-    import('@/lib/musicbrainz'),
-    import('@/lib/musicbrainz-gateway'),
-    import('@/lib/musicbrainz-invariants'),
-    import('drizzle-orm'),
-  ]);
-  const { sql } = drizzle;
-  const source = mb.musicBrainzApi('backfill');
-
-  async function report() {
-    const rows = await db.all<{ label: string; n: number }>(sql`
+    async function report() {
+      const rows = await db.all<{ label: string; n: number }>(sql`
       select 'spotify albums' as label, count(*) as n from spotify_album
       union all select 'albums with a cached release', count(*) from spotify_album a
         where exists (select 1 from mb_release r where r.mbid = a.mb_release_id)
@@ -86,214 +81,210 @@ async function main() {
       union all select '  read in full', count(*) from mb_artist where sort_name is not null
       union all select '  with a birth year', count(*) from mb_artist where begin_year is not null
     `);
-    const width = Math.max(...rows.map((row) => row.label.length));
-    for (const row of rows) {
-      console.log(`${row.label.padEnd(width)}  ${String(row.n).padStart(6)}`);
+      const width = Math.max(...rows.map((row) => row.label.length));
+      for (const row of rows) {
+        console.log(`${row.label.padEnd(width)}  ${String(row.n).padStart(6)}`);
+      }
+
+      const status = await gateway.musicbrainzGatewayStatus();
+      console.log(
+        `\nrequests today: ${status.total}/${status.globalCap} ` +
+          status.channels.map((c) => `${c.channel}=${c.used}`).join(' '),
+      );
     }
 
-    const status = await gateway.musicbrainzGatewayStatus();
-    console.log(
-      `\nrequests today: ${status.total}/${status.globalCap} ` +
-        status.channels.map((c) => `${c.channel}=${c.used}`).join(' '),
-    );
-  }
-
-  if (options.step === 'report') {
-    await report();
-    return;
-  }
-
-  if (options.step === 'loose') {
-    const result = await ingest.anchorTracksByIsrc(source, {
-      limit: Number.isFinite(options.limit) ? options.limit : 10_000,
-    });
-    console.log(
-      `searched ${result.searched} ISRCs in ${result.requests} requests, anchored ${result.anchored} tracks`,
-    );
-    await report();
-    return;
-  }
-
-  if (options.step === 'recordings') {
-    const result = await cache.drainRecordingStubs(
-      source,
-      Number.isFinite(options.limit) ? options.limit : 10_000,
-    );
-    console.log(
-      `read ${result.recordings} recordings in ${result.requests} requests; ` +
-        `${result.reachedWork} reached a work`,
-    );
-    await report();
-    return;
-  }
-
-  if (options.step === 'artists') {
-    const result = await cache.drainArtistStubs(
-      source,
-      Number.isFinite(options.limit) ? options.limit : 10_000,
-    );
-    console.log(`read ${result.artists} artists in ${result.requests} requests`);
-    await report();
-    return;
-  }
-
-  if (options.step === 'refresh') {
-    const result = await cache.refreshCachedReleases(
-      source,
-      Number.isFinite(options.limit) ? options.limit : 10_000,
-    );
-    console.log(`re-read ${result.releases} releases in ${result.requests} requests`);
-    await report();
-    return;
-  }
-
-  if (options.step === 'composers') {
-    const since = options.since ? new Date(options.since) : new Date();
-    console.log(`re-reading works not read since ${since.toISOString()}`);
-    const result = await cache.refreshWorkComposers(source, {
-      since,
-      limit: options.limit,
-      onProgress: (line) => console.log(line),
-    });
-    const names = new Map(
-      (await db.all<{ mbid: string; name: string }>(sql`select mbid, name from mb_artist`)).map(
-        (row) => [row.mbid, row.name],
-      ),
-    );
-    for (const work of result.changed) {
-      const from = work.from ? (names.get(work.from) ?? work.from) : 'none';
-      const to = work.to ? (names.get(work.to) ?? work.to) : 'none';
-      console.log(`changed\t${work.mbid}\t${work.title}\t${from} -> ${to}`);
+    if (options.step === 'report') {
+      await report();
+      return;
     }
-    console.log(`read ${result.read} works, ${result.changed.length} changed composer`);
-    return;
-  }
 
-  if (options.step === 'check') {
-    const results = await invariants.runMusicBrainzInvariants();
-    await invariants.recordInvariantResults(results);
-    let broken = 0;
-    for (const result of results) {
-      const mark =
-        result.violations === 0
-          ? 'ok  '
-          : result.severity === 'hard'
-            ? 'FAIL'
-            : result.severity === 'review'
-              ? 'look'
-              : 'note';
-      console.log(`${mark} ${result.name.padEnd(32)} ${result.violations}`);
-      if (result.violations > 0) {
-        console.log(`     ${result.describes}`);
-        for (const sample of result.samples) {
-          console.log(`     - ${sample.id}${sample.detail ? ` -> ${sample.detail}` : ''}`);
+    if (options.step === 'loose') {
+      const result = await ingest.anchorTracksByIsrc(source, {
+        limit: Number.isFinite(options.limit) ? options.limit : 10_000,
+      });
+      console.log(
+        `searched ${result.searched} ISRCs in ${result.requests} requests, anchored ${result.anchored} tracks`,
+      );
+      await report();
+      return;
+    }
+
+    if (options.step === 'recordings') {
+      const result = await cache.drainRecordingStubs(
+        source,
+        Number.isFinite(options.limit) ? options.limit : 10_000,
+      );
+      console.log(
+        `read ${result.recordings} recordings in ${result.requests} requests; ` +
+          `${result.reachedWork} reached a work`,
+      );
+      await report();
+      return;
+    }
+
+    if (options.step === 'artists') {
+      const result = await cache.drainArtistStubs(
+        source,
+        Number.isFinite(options.limit) ? options.limit : 10_000,
+      );
+      console.log(`read ${result.artists} artists in ${result.requests} requests`);
+      await report();
+      return;
+    }
+
+    if (options.step === 'refresh') {
+      const result = await cache.refreshCachedReleases(
+        source,
+        Number.isFinite(options.limit) ? options.limit : 10_000,
+      );
+      console.log(`re-read ${result.releases} releases in ${result.requests} requests`);
+      await report();
+      return;
+    }
+
+    if (options.step === 'composers') {
+      const since = options.since ? new Date(options.since) : new Date();
+      console.log(`re-reading works not read since ${since.toISOString()}`);
+      const result = await cache.refreshWorkComposers(source, {
+        since,
+        limit: options.limit,
+        onProgress: (line) => console.log(line),
+      });
+      const names = new Map(
+        (await db.all<{ mbid: string; name: string }>(sql`select mbid, name from mb_artist`)).map(
+          (row) => [row.mbid, row.name],
+        ),
+      );
+      for (const work of result.changed) {
+        const from = work.from ? (names.get(work.from) ?? work.from) : 'none';
+        const to = work.to ? (names.get(work.to) ?? work.to) : 'none';
+        console.log(`changed\t${work.mbid}\t${work.title}\t${from} -> ${to}`);
+      }
+      console.log(`read ${result.read} works, ${result.changed.length} changed composer`);
+      return;
+    }
+
+    if (options.step === 'check') {
+      const results = await invariants.runMusicBrainzInvariants();
+      await invariants.recordInvariantResults(results);
+      let broken = 0;
+      for (const result of results) {
+        const mark =
+          result.violations === 0
+            ? 'ok  '
+            : result.severity === 'hard'
+              ? 'FAIL'
+              : result.severity === 'review'
+                ? 'look'
+                : 'note';
+        console.log(`${mark} ${result.name.padEnd(32)} ${result.violations}`);
+        if (result.violations > 0) {
+          console.log(`     ${result.describes}`);
+          for (const sample of result.samples) {
+            console.log(`     - ${sample.id}${sample.detail ? ` -> ${sample.detail}` : ''}`);
+          }
+        }
+        if (result.violations > 0 && result.severity === 'hard') broken++;
+      }
+      // Upstream findings are contributions, not failures, so only our own
+      // broken invariants set a non-zero exit for CI.
+      return broken > 0 ? 1 : 0;
+    }
+
+    if (options.step === 'albums') {
+      const albumIds = options.albumId
+        ? [options.albumId]
+        : await ingest.albumsNeedingIngest(Number.isFinite(options.limit) ? options.limit : 10_000);
+
+      console.log(`${albumIds.length} albums to ingest`);
+      let requests = 0;
+      const outcomes = new Map<string, number>();
+      const started = Date.now();
+
+      for (const [index, albumId] of albumIds.entries()) {
+        try {
+          const result = await ingest.ingestAlbum(source, albumId);
+          requests += result.requests;
+          const outcome = result.releaseMbid
+            ? `matched:${result.matchedBy}`
+            : `unmatched:${result.reason}`;
+          outcomes.set(outcome, (outcomes.get(outcome) ?? 0) + 1);
+          console.log(
+            `[${index + 1}/${albumIds.length}] ${albumId} ${outcome} ` +
+              `${result.requests} req` +
+              (result.anchors
+                ? ` · ${result.anchors.anchored}/${result.anchors.anchored + result.anchors.unanchored} anchored` +
+                  ` (${result.anchors.byIsrc} isrc, ${result.anchors.byPosition} position)`
+                : '') +
+              (result.release?.worksFetched ? ` · ${result.release.worksFetched} works read` : ''),
+          );
+          if (result.anchors?.contestedIsrcs.length) {
+            console.log(`    contested ISRCs: ${result.anchors.contestedIsrcs.join(', ')}`);
+          }
+        } catch (error) {
+          outcomes.set('error', (outcomes.get('error') ?? 0) + 1);
+          console.error(`[${index + 1}/${albumIds.length}] ${albumId} failed:`, error);
         }
       }
-      if (result.violations > 0 && result.severity === 'hard') broken++;
-    }
-    // Upstream findings are contributions, not failures, so only our own
-    // broken invariants set a non-zero exit for CI.
-    if (broken > 0) process.exitCode = 1;
-    return;
-  }
 
-  if (options.step === 'albums') {
-    const albumIds = options.albumId
-      ? [options.albumId]
-      : await ingest.albumsNeedingIngest(Number.isFinite(options.limit) ? options.limit : 10_000);
-
-    console.log(`${albumIds.length} albums to ingest`);
-    let requests = 0;
-    const outcomes = new Map<string, number>();
-    const started = Date.now();
-
-    for (const [index, albumId] of albumIds.entries()) {
-      try {
-        const result = await ingest.ingestAlbum(source, albumId);
-        requests += result.requests;
-        const outcome = result.releaseMbid
-          ? `matched:${result.matchedBy}`
-          : `unmatched:${result.reason}`;
-        outcomes.set(outcome, (outcomes.get(outcome) ?? 0) + 1);
-        console.log(
-          `[${index + 1}/${albumIds.length}] ${albumId} ${outcome} ` +
-            `${result.requests} req` +
-            (result.anchors
-              ? ` · ${result.anchors.anchored}/${result.anchors.anchored + result.anchors.unanchored} anchored` +
-                ` (${result.anchors.byIsrc} isrc, ${result.anchors.byPosition} position)`
-              : '') +
-            (result.release?.worksFetched ? ` · ${result.release.worksFetched} works read` : ''),
-        );
-        if (result.anchors?.contestedIsrcs.length) {
-          console.log(`    contested ISRCs: ${result.anchors.contestedIsrcs.join(', ')}`);
-        }
-      } catch (error) {
-        outcomes.set('error', (outcomes.get('error') ?? 0) + 1);
-        console.error(`[${index + 1}/${albumIds.length}] ${albumId} failed:`, error);
+      const minutes = (Date.now() - started) / 60_000;
+      console.log(`\n${requests} requests in ${minutes.toFixed(1)} min`);
+      for (const [outcome, n] of [...outcomes].sort((a, b) => b[1] - a[1])) {
+        console.log(`  ${outcome}: ${n}`);
       }
+      console.log();
+      await report();
+      return;
     }
 
-    const minutes = (Date.now() - started) / 60_000;
-    console.log(`\n${requests} requests in ${minutes.toFixed(1)} min`);
-    for (const [outcome, n] of [...outcomes].sort((a, b) => b[1] - a[1])) {
-      console.log(`  ${outcome}: ${n}`);
+    if (options.step === 'anchor') {
+      const pending = await ingest.albumsNeedingAnchoring(
+        Number.isFinite(options.limit) ? options.limit : 10_000,
+        options.all,
+      );
+      console.log(`${pending.length} albums to anchor`);
+      let anchored = 0;
+      let unanchored = 0;
+      let misaligned = 0;
+      const contested: string[] = [];
+      let disagreements = 0;
+      for (const album of pending) {
+        const result = await ingest.anchorAlbumTracks(album.albumId, album.releaseMbid);
+        anchored += result.anchored;
+        unanchored += result.unanchored;
+        if (!result.tracklistAligned) misaligned++;
+        contested.push(...result.contestedIsrcs);
+        disagreements += result.isrcPositionDisagreements;
+      }
+      console.log(
+        `anchored ${anchored} tracks, ${unanchored} left unanchored, ` +
+          `${misaligned} albums whose tracklist does not line up`,
+      );
+      if (contested.length) console.log(`contested ISRCs: ${[...new Set(contested)].join(', ')}`);
+      if (disagreements) console.log(`${disagreements} tracks where ISRC and position disagree`);
+      await report();
+      return;
     }
-    console.log();
-    await report();
-    return;
-  }
 
-  if (options.step === 'anchor') {
-    const pending = await ingest.albumsNeedingAnchoring(
-      Number.isFinite(options.limit) ? options.limit : 10_000,
-      options.all,
-    );
-    console.log(`${pending.length} albums to anchor`);
-    let anchored = 0;
-    let unanchored = 0;
-    let misaligned = 0;
-    const contested: string[] = [];
-    let disagreements = 0;
-    for (const album of pending) {
-      const result = await ingest.anchorAlbumTracks(album.albumId, album.releaseMbid);
-      anchored += result.anchored;
-      unanchored += result.unanchored;
-      if (!result.tracklistAligned) misaligned++;
-      contested.push(...result.contestedIsrcs);
-      disagreements += result.isrcPositionDisagreements;
-    }
-    console.log(
-      `anchored ${anchored} tracks, ${unanchored} left unanchored, ` +
-        `${misaligned} albums whose tracklist does not line up`,
-    );
-    if (contested.length) console.log(`contested ISRCs: ${[...new Set(contested)].join(', ')}`);
-    if (disagreements) console.log(`${disagreements} tracks where ISRC and position disagree`);
-    await report();
-    return;
-  }
-
-  if (options.step === 'works') {
-    // Works named by a recording but never read, so their parents and
-    // catalogue references are still unknown.
-    const pending = await db.all<{ mbid: string }>(sql`
+    if (options.step === 'works') {
+      // Works named by a recording but never read, so their parents and
+      // catalogue references are still unknown.
+      const pending = await db.all<{ mbid: string }>(sql`
       select mbid from mb_work where detail = 'stub' limit ${Number.isFinite(options.limit) ? options.limit : 10_000}
     `);
-    console.log(`${pending.length} works to read`);
-    let requests = 0;
-    for (const [index, row] of pending.entries()) {
-      const { requests: spent } = await cache.ingestWorkTree(source, row.mbid);
-      requests += spent;
-      if ((index + 1) % 25 === 0) console.log(`  ${index + 1}/${pending.length} (${requests} req)`);
+      console.log(`${pending.length} works to read`);
+      let requests = 0;
+      for (const [index, row] of pending.entries()) {
+        const { requests: spent } = await cache.ingestWorkTree(source, row.mbid);
+        requests += spent;
+        if ((index + 1) % 25 === 0)
+          console.log(`  ${index + 1}/${pending.length} (${requests} req)`);
+      }
+      console.log(`${requests} requests`);
+      await report();
+      return;
     }
-    console.log(`${requests} requests`);
-    await report();
-    return;
-  }
 
-  throw new Error(`Unknown step: ${options.step}`);
-}
-
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack : error);
-  process.exitCode = 1;
-});
+    throw new UsageError(`Unknown step: ${options.step}`);
+  },
+);
