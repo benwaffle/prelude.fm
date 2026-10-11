@@ -28,10 +28,11 @@ import {
   mbReleaseUrl,
   mbWork,
   mbWorkCatalogue,
+  spotifyArtist,
 } from './db/schema';
 import { bumpCacheLookup, recordMusicBrainzRequest } from './musicbrainz-cache-metrics';
 import { normalizeIsrc } from './isrc';
-import { cataloguesOf, composerOf, parentPartOf, spotifyArtistIdOf, yearOf } from './musicbrainz';
+import { cataloguesOf, composerOf, parentPartOf, spotifyArtistIdsOf, yearOf } from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
 import type {
   MbArtist,
@@ -68,6 +69,21 @@ export async function releaseIsCached(releaseMbid: string): Promise<boolean> {
 
 /* ------------------------------------------------------------ entities --- */
 
+/**
+ * Of the Spotify pages MusicBrainz links, the one our tracks credit, so its
+ * portrait is one we hold; the first link when none is.
+ */
+async function heldSpotifyArtistId(artist: MbArtist): Promise<string | null> {
+  const linked = spotifyArtistIdsOf(artist);
+  if (linked.length <= 1) return linked[0] ?? null;
+  const held = await db
+    .select({ id: spotifyArtist.spotifyId, images: spotifyArtist.images })
+    .from(spotifyArtist)
+    .where(inArray(spotifyArtist.spotifyId, linked));
+  const withPortrait = held.find((row) => row.images?.length);
+  return withPortrait?.id ?? held[0]?.id ?? linked[0];
+}
+
 async function cacheArtist(artist: MbArtist) {
   const now = new Date();
   const row = {
@@ -77,7 +93,7 @@ async function cacheArtist(artist: MbArtist) {
     type: artist.type ?? null,
     beginYear: yearOf(artist['life-span']?.begin),
     endYear: yearOf(artist['life-span']?.end),
-    spotifyArtistId: spotifyArtistIdOf(artist),
+    spotifyArtistId: await heldSpotifyArtistId(artist),
     linksReadAt: now,
     fetchedAt: now,
   };

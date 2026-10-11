@@ -498,16 +498,21 @@ export function musicBrainzApi(
 
 /* ------------------------------------------------------ relation readers --- */
 
-/** The Spotify artist a MusicBrainz artist links to, if it links to one. */
-export function spotifyArtistIdOf(artist: MbArtist): string | null {
+/**
+ * The Spotify artists a MusicBrainz artist links to. Spotify often has
+ * several pages for one composer (Beethoven has three), and MusicBrainz
+ * links each of them.
+ */
+export function spotifyArtistIdsOf(artist: MbArtist): string[] {
+  const ids: string[] = [];
   for (const relation of artist.relations ?? []) {
     if (relation.ended || !relation.url) continue;
     const match = /^https?:\/\/open\.spotify\.com\/artist\/([A-Za-z0-9]+)\/?$/.exec(
       relation.url.resource,
     );
-    if (match) return match[1];
+    if (match) ids.push(match[1]);
   }
-  return null;
+  return ids;
 }
 
 /** A work in a `parts` relationship, with its position in the parent. */
