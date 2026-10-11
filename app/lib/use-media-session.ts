@@ -59,6 +59,11 @@ export function mediaDebugEnabled(): boolean {
   }
 }
 
+/** How long after Spotify starts a movement the loop is restarted. */
+const LOOP_RESTART_DELAY_MS = 4000;
+/** Long enough for Firefox to count the loop as stopped. */
+const LOOP_RESTART_GAP_MS = 300;
+
 /** iPhones and iPads give one page one playing sound at a time. */
 function isAppleTouch(): boolean {
   return (
@@ -71,12 +76,18 @@ function isAppleTouch(): boolean {
  * The lock screen, notification and headphone buttons: what's playing, and
  * controls that reach this page.
  *
- * Spotify's player plays from inside its own frame, and Chrome gives the
- * notification to a frame that is playing sound, so what this page set was
- * never shown: Android showed "prelude.fm" and a play button. A silent loop
- * on this page, playing while Spotify does, makes this page the one Chrome
- * asks. It is 15 seconds long because Chrome gives sounds under 5 seconds no
- * notification.
+ * Spotify's player plays from inside its own frame, and browsers give the
+ * notification to a frame that is making sound, so what this page set was
+ * never shown: Android showed "prelude.fm" and a play button. A loop on this
+ * page, playing while Spotify does, makes this page the one asked:
+ *
+ * - Chrome asks the top-most frame with a player, so any loop will do. It
+ *   must be over 5 seconds; shorter sounds get no notification.
+ * - Firefox asks the frame that most recently became audible, and treats
+ *   anything under -72 dB as silence. So the loop is a 30 Hz tone at -60 dB,
+ *   far below hearing at that pitch and below what phone speakers play, and
+ *   it is restarted a moment after Spotify starts each movement, so it is
+ *   the more recent of the two.
  */
 export function useMediaSession({
   active,
@@ -90,6 +101,10 @@ export function useMediaSession({
   subscribeToProgress,
 }: MediaSessionOptions) {
   const silenceRef = useRef<HTMLAudioElement | null>(null);
+  const pausedRef = useRef(isPaused);
+  useEffect(() => {
+    pausedRef.current = isPaused;
+  }, [isPaused]);
   const supported = typeof navigator !== 'undefined' && 'mediaSession' in navigator;
   const on = supported && active && track !== null;
 
@@ -98,13 +113,13 @@ export function useMediaSession({
     mediaDebugEnabled();
   }, []);
 
-  // The silent loop follows Spotify's playing and pausing.
+  // The loop follows Spotify's playing and pausing.
   useEffect(() => {
     if (!on || isAppleTouch()) return;
     if (!silenceRef.current) {
       // In the document, like any other player on the page.
       const audio = document.createElement('audio');
-      audio.src = '/silence.mp3';
+      audio.src = '/inaudible.flac';
       audio.loop = true;
       audio.preload = 'auto';
       audio.hidden = true;
@@ -113,7 +128,7 @@ export function useMediaSession({
         audio.addEventListener(event, () => {
           mediaDiagnostics.silentLoop =
             event === 'error' ? `error ${audio.error?.code ?? ''}` : event;
-          note(`silent loop ${event}${event === 'loadedmetadata' ? ` ${audio.duration}s` : ''}`);
+          note(`loop ${event}${event === 'loadedmetadata' ? ` ${audio.duration}s` : ''}`);
         });
       }
       silenceRef.current = audio;
@@ -125,16 +140,39 @@ export function useMediaSession({
         // Refused before any tap on the page; the next play after one works.
         const name = err instanceof Error ? err.name : String(err);
         mediaDiagnostics.silentLoop = `refused: ${name}`;
-        note(`silent loop refused: ${name}`);
+        note(`loop refused: ${name}`);
       });
   }, [on, isPaused]);
+
+  // Restart the loop once Spotify's sound has begun (on play, resume and each
+  // new movement), so Firefox sees this page as the latest to make sound.
+  const title = track?.title;
+  useEffect(() => {
+    if (!on || isPaused || isAppleTouch()) return;
+    let restart: ReturnType<typeof setTimeout> | undefined;
+    const timer = setTimeout(() => {
+      const audio = silenceRef.current;
+      if (!audio || pausedRef.current) return;
+      audio.pause();
+      restart = setTimeout(() => {
+        if (pausedRef.current) return;
+        note('loop restarted after Spotify');
+        audio.play().catch(() => {
+          // As above; the next play tries again.
+        });
+      }, LOOP_RESTART_GAP_MS);
+    }, LOOP_RESTART_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(restart);
+    };
+  }, [on, isPaused, title]);
 
   useEffect(() => () => silenceRef.current?.pause(), []);
   useEffect(() => {
     if (!on) silenceRef.current?.pause();
   }, [on]);
 
-  const title = track?.title;
   const artist = track?.artist;
   const album = track?.album;
   const cover = track?.cover;
