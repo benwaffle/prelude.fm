@@ -11,7 +11,7 @@ interface DevicePickerProps {
 /**
  * Where playback goes: this browser when it can play, or any Spotify Connect
  * device on the account — the Spotify app on a phone, a speaker, a desktop
- * app. Phones need this, since Spotify won't play inside a mobile browser.
+ * app.
  */
 export function DevicePicker({ onClose }: DevicePickerProps) {
   const {

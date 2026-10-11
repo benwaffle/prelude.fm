@@ -32,9 +32,9 @@ export interface PlaybackDevice {
 }
 
 /**
- * Whether this browser can play audio itself. Spotify's Web Playback SDK only
- * runs in desktop browsers; on phones it never comes up, and playback has to
- * go to the Spotify app (or a speaker) through Spotify Connect instead.
+ * Whether this browser can play audio itself through Spotify's Web Playback
+ * SDK. When it can't (an unsupported browser, no Premium), playback can still
+ * go to the Spotify app or a speaker through Spotify Connect.
  */
 export type LocalPlayerStatus = 'connecting' | 'ready' | 'unavailable';
 
@@ -80,31 +80,7 @@ const REMOTE_POLL_MS = 3_000;
 
 const LOCAL_PLAYER_NAME = 'prelude.fm';
 
-const NO_LOCAL_PLAYBACK = 'Spotify only plays inside desktop browsers, not this one.';
-
-/**
- * Remembers, per browser, that the in-browser player never came up, so a phone
- * doesn't sit through the timeout on every launch before offering its devices.
- * The SDK still gets its chance each time; if it does come up, the note goes.
- */
-const LOCAL_UNAVAILABLE_KEY = 'prelude.localPlayerUnavailable';
-
-function rememberLocalUnavailable(unavailable: boolean) {
-  try {
-    if (unavailable) localStorage.setItem(LOCAL_UNAVAILABLE_KEY, '1');
-    else localStorage.removeItem(LOCAL_UNAVAILABLE_KEY);
-  } catch {
-    // Private windows can refuse storage; the timeout still applies.
-  }
-}
-
-function knownLocalUnavailable(): boolean {
-  try {
-    return localStorage.getItem(LOCAL_UNAVAILABLE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
+const NO_LOCAL_PLAYBACK = 'Spotify’s player didn’t start in this browser.';
 
 interface SpotifyApiDevice {
   id: string | null;
@@ -212,6 +188,8 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
   const accessTokenRef = useRef(accessToken);
   const outputRef = useRef<PlaybackDevice | null>(null);
   const localDeviceIdRef = useRef<string | null>(null);
+  /** Set once the listener picks a device, so a late browser player doesn't take over. */
+  const userChoseRef = useRef(false);
   const progressRef = useRef<PlaybackProgress>({
     position: 0,
     duration: 0,
@@ -318,16 +296,12 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
     document.body.appendChild(script);
 
     let ready = false;
-    // An unsupported browser is worth remembering; an account or sign-in
-    // problem is not, since it can be fixed and says something more specific.
-    const giveUp = (problem: string, unsupported: boolean) => {
+    const giveUp = (problem: string) => {
       if (ready) return;
       setLocalStatus('unavailable');
       setLocalProblem(problem);
-      if (unsupported) rememberLocalUnavailable(true);
     };
-    if (knownLocalUnavailable()) giveUp(NO_LOCAL_PLAYBACK, true);
-    const timeout = setTimeout(() => giveUp(NO_LOCAL_PLAYBACK, true), LOCAL_PLAYER_TIMEOUT_MS);
+    const timeout = setTimeout(() => giveUp(NO_LOCAL_PLAYBACK), LOCAL_PLAYER_TIMEOUT_MS);
 
     window.onSpotifyWebPlaybackSDKReady = () => {
       const player = new window.Spotify.Player({
@@ -339,13 +313,15 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
       player.addListener('ready', ({ device_id }) => {
         ready = true;
         clearTimeout(timeout);
-        rememberLocalUnavailable(false);
         setLocalDeviceId(device_id);
         setLocalStatus('ready');
         setLocalProblem(null);
         setDevices((ds) => [localDevice(device_id), ...ds.filter((d) => !d.isThisBrowser)]);
-        // Play here unless the listener already chose somewhere else.
-        setOutputDevice((current) => current ?? localDevice(device_id));
+        // Play here unless the listener already chose somewhere else. A device
+        // picked up only because this player was slow to start gives way.
+        setOutputDevice((current) =>
+          current && userChoseRef.current ? current : localDevice(device_id),
+        );
       });
 
       player.addListener('not_ready', ({ device_id }) => {
@@ -356,17 +332,17 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
 
       player.addListener('initialization_error', ({ message }) => {
         console.error('Spotify player initialization error:', message);
-        giveUp(NO_LOCAL_PLAYBACK, true);
+        giveUp(NO_LOCAL_PLAYBACK);
       });
       player.addListener('account_error', ({ message }) => {
         console.error('Spotify player account error:', message);
         clearTimeout(timeout);
-        giveUp('Playing in the browser needs Spotify Premium.', false);
+        giveUp('Playing in the browser needs Spotify Premium.');
       });
       player.addListener('authentication_error', ({ message }) => {
         console.error('Spotify player authentication error:', message);
         clearTimeout(timeout);
-        giveUp('Spotify didn’t accept the sign-in for playing in the browser.', false);
+        giveUp('Spotify didn’t accept the sign-in for playing in the browser.');
       });
 
       player.addListener('player_state_changed', (sdkState) => {
@@ -405,7 +381,7 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
   }, [notifyProgressSubscribers, localDevice]);
 
   // When this browser can't play, pick up whatever the account is already
-  // playing on, so opening the app on a phone shows what the Spotify app is doing.
+  // playing on, so the bar shows what the Spotify app or speaker is doing.
   useEffect(() => {
     if (localStatus !== 'unavailable' || outputRef.current) return;
     let cancelled = false;
@@ -506,6 +482,7 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
   const chooseDevice = useCallback(
     async (device: PlaybackDevice) => {
       const previous = outputRef.current;
+      userChoseRef.current = true;
       outputRef.current = device;
       setOutputDevice(device);
       setPlaybackError(null);
