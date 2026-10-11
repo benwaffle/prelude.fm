@@ -43,8 +43,9 @@ import {
   normalisePickBarcode,
   type MbPickHit,
 } from '@/lib/musicbrainz-pick';
-import { cachedReleasePrechecks, type CachedPrecheck } from '@/lib/release-precheck-run';
-import { cachedReleaseSeeds, type PreparedSeed } from '@/lib/release-seeding-run';
+import { readMissingReleases } from '@/lib/missing-release-store';
+import { cachedPrecheckOf, type CachedPrecheck } from '@/lib/release-precheck-run';
+import { preparedSeedOf, type PreparedSeed } from '@/lib/release-seeding-run';
 import {
   ledgerIndex,
   readLedger,
@@ -328,8 +329,7 @@ export async function getContributions(
     contestedLedger,
     releaseLedger,
     barcodeHitsByUpc,
-    prechecks,
-    seeds,
+    missingStages,
     barcodeLedger,
     streamingLedger,
     misalignedLedger,
@@ -354,8 +354,7 @@ export async function getContributions(
         .map((album) => album.upc)
         .filter((upc): upc is string => Boolean(upc)),
     ),
-    cachedReleasePrechecks(missingAlbumIds),
-    cachedReleaseSeeds(missingAlbumIds),
+    readMissingReleases(missingAlbumIds),
     ledgerIndex(
       'barcode',
       'targetMbid',
@@ -421,8 +420,8 @@ export async function getContributions(
     })),
     missing: missing.map((album) => ({
       ...album,
-      precheck: prechecks.get(album.albumId) ?? null,
-      seed: seeds.get(album.albumId) ?? null,
+      precheck: cachedPrecheckOf(missingStages.get(album.albumId) ?? {}),
+      seed: preparedSeedOf(missingStages.get(album.albumId) ?? {}),
       harmony: harmonyImportLink(album.albumId),
       barcodeHits:
         album.reason === AMBIGUOUS_BARCODE_REASON

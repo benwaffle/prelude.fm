@@ -20,7 +20,11 @@ import {
 import { artistCreditOf, luceneQuote, type MbArtistCreditJson } from './musicbrainz';
 import { createMbSession, type MbSession } from './musicbrainz-session';
 import { normalizeIsrc } from './isrc';
-import { readMissingReleases, writeMissingRelease } from './missing-release-store';
+import {
+  readMissingReleases,
+  writeMissingRelease,
+  type MissingRelease,
+} from './missing-release-store';
 import {
   artistMatchFrom,
   artistRole,
@@ -436,25 +440,22 @@ export async function refreshReleasePrecheck(albumId: string): Promise<ReleasePr
 
 export type CachedPrecheck = { result: ReleasePrecheck; requests: number | null; checkedAt: Date };
 
+/** An album's stored pre-check, if it has one. */
+export function cachedPrecheckOf({ precheck }: MissingRelease): CachedPrecheck | null {
+  return precheck
+    ? { result: precheck.value, requests: precheck.requests, checkedAt: precheck.recordedAt }
+    : null;
+}
+
 /** Cached pre-checks for these albums. Spends no MusicBrainz requests. */
 export async function cachedReleasePrechecks(
   albumIds: string[],
 ): Promise<Map<string, CachedPrecheck>> {
   const stored = await readMissingReleases(albumIds);
   return new Map(
-    [...stored].flatMap(([albumId, { precheck }]) =>
-      precheck
-        ? [
-            [
-              albumId,
-              {
-                result: precheck.value,
-                requests: precheck.requests,
-                checkedAt: precheck.recordedAt,
-              },
-            ] as const,
-          ]
-        : [],
-    ),
+    [...stored].flatMap(([albumId, stages]) => {
+      const cached = cachedPrecheckOf(stages);
+      return cached ? [[albumId, cached] as const] : [];
+    }),
   );
 }

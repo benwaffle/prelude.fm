@@ -2,7 +2,7 @@
 
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { mbReleaseCorrection, mbSubmission, spotifyAlbum } from '@/lib/db/schema';
+import { mbMissingRelease, mbSubmission, spotifyAlbum } from '@/lib/db/schema';
 import { missingReleases } from '@/lib/gaps/missing-releases';
 import { musicBrainzApi } from '@/lib/musicbrainz';
 import {
@@ -175,13 +175,19 @@ export async function getReleaseCorrections(): Promise<ReleaseCorrectionsView> {
       })
       .from(mbSubmission)
       .innerJoin(spotifyAlbum, eq(spotifyAlbum.spotifyId, mbSubmission.subject))
-      .leftJoin(mbReleaseCorrection, eq(mbReleaseCorrection.spotifyAlbumId, spotifyAlbum.spotifyId))
+      .leftJoin(
+        mbMissingRelease,
+        and(
+          eq(mbMissingRelease.spotifyAlbumId, spotifyAlbum.spotifyId),
+          eq(mbMissingRelease.stage, 'correction'),
+        ),
+      )
       .where(
         and(
           eq(mbSubmission.kind, 'release'),
           inArray(mbSubmission.outcome, ['pending', 'applied']),
           isNotNull(spotifyAlbum.mbReleaseId),
-          isNull(mbReleaseCorrection.spotifyAlbumId),
+          isNull(mbMissingRelease.spotifyAlbumId),
         ),
       )
       .groupBy(spotifyAlbum.spotifyId),
