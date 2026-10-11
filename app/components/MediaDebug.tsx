@@ -26,7 +26,7 @@ export function MediaDebug({ output, spotifyPaused }: { output: string; spotifyP
     ['Browser', navigator.userAgent],
     ['Plays on', output],
     ['Spotify', spotifyPaused ? 'paused' : 'playing'],
-    ['Silent loop', d.silentLoop],
+    ['Quiet loop', d.silentLoop],
     ['Track info', d.metadataTitle ?? 'not set'],
     ['Session says', d.playbackState],
     ['Buttons', d.handlers.join(', ') || 'none'],
