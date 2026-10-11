@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
+import { useIsAdmin } from '@/lib/use-is-admin';
 import { getQueuedTrackIds, submitToMatchQueue } from '@/app/actions/spotify';
 import { adminGapHref, gapRoute } from '@/app/admin/lib/gap-route';
 import type { MusicBrainzGapCode, UnresolvedLibraryTrack } from '@/lib/musicbrainz-library';
@@ -49,7 +50,7 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
     }
   }
   const { data: session } = authClient.useSession();
-  const isAdmin = session?.user?.name === 'benwaffle';
+  const isAdmin = useIsAdmin(session?.user?.id) === true;
   if (tracks.length === 0) return null;
 
   // Null: the reader could not place the track but recorded no reason. Kept
