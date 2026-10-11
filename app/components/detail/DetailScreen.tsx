@@ -6,7 +6,6 @@ import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import type { OtherRecording, WorkDetail, WorkSummary } from '@/lib/library-types';
 import { getMusicBrainzWorkPage } from '@/app/actions/library-mb';
-import { refreshWorkFromMusicBrainz } from '@/app/actions/work-refresh';
 import type { WorkParent } from '@/app/actions/work-hierarchy';
 import {
   hexToRgba,
@@ -37,12 +36,10 @@ export function DetailScreen({
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading');
   const [parent, setParent] = useState<WorkParent | null>(null);
-  const [reloads, setReloads] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    // A refresh reloads in place rather than blanking the page.
-    if (reloads === 0) setStatus('loading');
+    setStatus('loading');
     const loading = getMusicBrainzWorkPage(workId, recordingId);
     loading
       .then(({ detail: result, parent: found }) => {
@@ -69,7 +66,7 @@ export function DetailScreen({
     };
     // registerWorks is the library's; it is not a reason to read the page again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workId, recordingId, reloads]);
+  }, [workId, recordingId]);
 
   // The tinted wash behind the page takes its colour from this recording.
   useEffect(() => {
@@ -142,52 +139,7 @@ export function DetailScreen({
           likedTrackIds={likedTrackIds}
         />
       )}
-
-      <MusicBrainzSource workId={workId} onRefreshed={() => setReloads((n) => n + 1)} />
     </main>
-  );
-}
-
-/**
- * Where this work's metadata comes from, and a way to re-read it after an
- * edit on MusicBrainz. The cache keeps what it read first, so without this a
- * fix made there never shows up here.
- */
-function MusicBrainzSource({ workId, onRefreshed }: { workId: string; onRefreshed: () => void }) {
-  const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
-  const refresh = () => {
-    setState('busy');
-    refreshWorkFromMusicBrainz(workId)
-      .then(() => {
-        setState('idle');
-        onRefreshed();
-      })
-      .catch((err) => {
-        console.error('Failed to refresh from MusicBrainz:', err);
-        setState('failed');
-      });
-  };
-  const meta = 'font-meta text-[10px] tracking-[0.18em] text-muted uppercase';
-  return (
-    <div className={`mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 ${meta}`}>
-      <a
-        href={`https://musicbrainz.org/work/${workId}`}
-        target="_blank"
-        rel="noreferrer"
-        className="no-underline transition-colors duration-150 hover:text-ink"
-      >
-        View on MusicBrainz
-      </a>
-      <button
-        type="button"
-        onClick={refresh}
-        disabled={state === 'busy'}
-        className={`${meta} cursor-pointer transition-colors duration-150 hover:text-ink disabled:cursor-wait`}
-      >
-        {state === 'busy' ? 'Refreshing…' : 'Refresh from MusicBrainz'}
-      </button>
-      {state === 'failed' && <span>Refresh failed</span>}
-    </div>
   );
 }
 
