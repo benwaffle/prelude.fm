@@ -869,6 +869,10 @@ export async function refreshWorkComposers(
     const after = work ? (composerOf(work)?.id ?? null) : (before?.composerMbid ?? null);
     if (!work || after === (before?.composerMbid ?? null)) return false;
     changed.push({ mbid, title: work.title, from: before?.composerMbid ?? null, to: after });
+    // Reported as it happens, so a run that dies part way still says what it changed.
+    options.onProgress?.(
+      `changed\t${mbid}\t${work.title}\t${before?.composerMbid ?? 'none'} -> ${after ?? 'none'}`,
+    );
     return true;
   }
 
