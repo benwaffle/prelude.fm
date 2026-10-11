@@ -156,8 +156,12 @@ async function worksByComposer(
   );
   // The fullest holding of each work, so the list is one row per work.
   const fullest = new Map<string, (typeof works)[number]>();
+  const tracksByWork = new Map<string, Set<string>>();
   for (const card of works) {
     if (!card.workId || card.workId === excludeWorkMbid) continue;
+    const tracks = tracksByWork.get(card.workId) ?? new Set<string>();
+    for (const movement of card.movements) if (movement.trackId) tracks.add(movement.trackId);
+    tracksByWork.set(card.workId, tracks);
     const held = fullest.get(card.workId);
     if (!held || playedMovementCount(card) > playedMovementCount(held)) {
       fullest.set(card.workId, card);
@@ -183,6 +187,7 @@ async function worksByComposer(
       duration: movement.duration,
       missing: movement.missing,
     })),
+    trackIds: Array.from(tracksByWork.get(card.workId!) ?? []),
   }));
 }
 

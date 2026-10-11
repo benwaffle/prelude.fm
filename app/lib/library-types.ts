@@ -34,6 +34,9 @@ export interface WorkSummary {
   /** The recording's tracks were never matched to movements. */
   unmatched: boolean;
   movements: { roman: string; name: string; duration: string | null; missing: boolean }[];
+  /** Every Spotify track we hold of this work, in any recording, so the page
+   *  can tell which works are already in the reader's library. */
+  trackIds: string[];
 }
 
 export interface WorkDetail {

@@ -131,7 +131,12 @@ export function DetailScreen({
       {others.length > 0 && <OtherRecordings workId={workId} others={others} />}
 
       {moreByComposer.length > 0 && work.composerFull && (
-        <MoreByComposer composer={work.composerFull} works={moreByComposer} />
+        <MoreByComposer
+          key={work.id}
+          composer={work.composerFull}
+          works={moreByComposer}
+          likedTrackIds={likedTrackIds}
+        />
       )}
     </main>
   );
@@ -434,7 +439,25 @@ function OtherRecordings({ workId, others }: { workId: string; others: OtherReco
   );
 }
 
-function MoreByComposer({ composer, works }: { composer: string; works: WorkSummary[] }) {
+/** How many of the composer's other works show before "Show all". */
+const MORE_BY_COMPOSER_SHOWN = 8;
+
+function MoreByComposer({
+  composer,
+  works,
+  likedTrackIds,
+}: {
+  composer: string;
+  works: WorkSummary[];
+  likedTrackIds: Set<string>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  // Works already in the reader's library first; otherwise the order the
+  // server gave, which makes no claim to rank.
+  const inLibrary = (w: WorkSummary) => w.trackIds.some((id) => likedTrackIds.has(id));
+  const ordered = [...works.filter((w) => inLibrary(w)), ...works.filter((w) => !inLibrary(w))];
+  const shown = expanded ? ordered : ordered.slice(0, MORE_BY_COMPOSER_SHOWN);
+
   return (
     <section className="pt-9">
       <div className="mb-6 flex items-center gap-[14px]">
@@ -445,7 +468,7 @@ function MoreByComposer({ composer, works }: { composer: string; works: WorkSumm
         </span>
       </div>
 
-      {works.map((w, i) => (
+      {shown.map((w, i) => (
         <Link
           key={w.workId}
           href={`/work/${w.workId}?rec=${w.recordingId}`}
@@ -545,6 +568,16 @@ function MoreByComposer({ composer, works }: { composer: string; works: WorkSumm
           </div>
         </Link>
       ))}
+
+      {ordered.length > MORE_BY_COMPOSER_SHOWN && (
+        <button
+          type="button"
+          onClick={() => setExpanded((open) => !open)}
+          className="mt-5 cursor-pointer border-0 bg-transparent p-0 font-meta text-[10px] tracking-[0.18em] text-muted uppercase transition-colors duration-150 hover:text-ink"
+        >
+          {expanded ? 'Show fewer' : `Show all ${ordered.length} works`}
+        </button>
+      )}
     </section>
   );
 }
