@@ -9,7 +9,7 @@
  * `interactive` channel: about one browse per group and one read per
  * candidate release, capped at `EDITION_LIMIT`.
  */
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { db, type DatabaseExecutor } from './db';
 import { mbReleaseSeed } from './db/schema';
 import { mbGet } from './musicbrainz';
@@ -126,7 +126,10 @@ export type PreparedSeed = {
   plan: SeedPlan;
   requests: number;
   preparedAt: Date;
+  /** When this album's seed was last opened on MusicBrainz. */
   seededAt: Date | null;
+  /** The plan that was opened then. Preparing again does not replace it. */
+  seededPlan: SeedPlan | null;
 };
 
 /** Build the seed plan live. Writes only the pre-check cache, if it had to run one. */
@@ -202,21 +205,22 @@ export async function prepareReleaseSeed(
 ): Promise<PreparedSeed> {
   const { plan, requests } = await buildReleaseSeed(albumId, database);
   const preparedAt = new Date();
-  await database
+  const [row] = await database
     .insert(mbReleaseSeed)
-    .values({ spotifyAlbumId: albumId, plan, requests, preparedAt, seededAt: null })
+    .values({ spotifyAlbumId: albumId, plan, requests, preparedAt })
     .onConflictDoUpdate({
       target: mbReleaseSeed.spotifyAlbumId,
-      set: { plan, requests, preparedAt, seededAt: null },
-    });
-  return { plan, requests, preparedAt, seededAt: null };
+      set: { plan, requests, preparedAt },
+    })
+    .returning({ seededAt: mbReleaseSeed.seededAt, seededPlan: mbReleaseSeed.seededPlan });
+  return { plan, requests, preparedAt, seededAt: row.seededAt, seededPlan: row.seededPlan };
 }
 
-/** The person opened the seed on MusicBrainz. */
+/** The person opened the seed on MusicBrainz: keep the plan they opened. */
 export async function markReleaseSeeded(albumId: string, database: DatabaseExecutor = db) {
   await database
     .update(mbReleaseSeed)
-    .set({ seededAt: new Date() })
+    .set({ seededAt: new Date(), seededPlan: sql`${mbReleaseSeed.plan}` })
     .where(eq(mbReleaseSeed.spotifyAlbumId, albumId));
 }
 
@@ -238,6 +242,9 @@ export async function cachedReleaseSeeds(
         requests: row.requests,
         preparedAt: row.preparedAt,
         seededAt: row.seededAt,
+        seededPlan: row.seededPlan
+          ? { ...row.seededPlan, notes: row.seededPlan.notes ?? [] }
+          : null,
       },
     ]),
   );

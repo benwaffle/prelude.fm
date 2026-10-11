@@ -34,6 +34,7 @@ import {
   type ContestedIsrcJudgement,
 } from '@/lib/musicbrainz-contributions';
 import {
+  DAILY_EDIT_CAP,
   editsSpentToday,
   MusicBrainzBotError,
   runBarcodeBot,
@@ -117,7 +118,6 @@ export type BotStatus = {
   configured: boolean;
   spentToday: number;
   dailyCap: number;
-  error: string | null;
 };
 
 /** Whether the bot can submit, and how much of today's allowance is left. */
@@ -125,9 +125,8 @@ export async function getBotStatus(): Promise<BotStatus> {
   await checkAuth();
   return {
     configured: botCredentials() !== null,
-    spentToday: await editsSpentToday().catch(() => 0),
-    dailyCap: 1000,
-    error: null,
+    spentToday: await editsSpentToday(),
+    dailyCap: DAILY_EDIT_CAP,
   };
 }
 

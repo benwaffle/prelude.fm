@@ -468,31 +468,37 @@ export async function getMusicBrainzCatalogRecordings(
     projectMusicBrainzLibrary(await loadMusicBrainzLibraryFacts(trackIds)),
     liked,
   );
-  return works
-    .filter((card) => card.workId === workMbid)
-    .map((card): CatalogRecording => {
-      const played = card.movements.filter((movement) => !movement.missing);
-      const durationMs = played.reduce((sum, movement) => sum + (movement.durationMs ?? 0), 0);
-      return {
-        id: card.recordingId ?? card.id,
-        album: card.album,
-        albumId: card.albumId ?? card.id,
-        cover: card.cover,
-        year: card.year,
-        performer: card.performer,
-        ensemble: card.ensemble,
-        duration: played.length === 0 ? null : formatDuration(durationMs),
-        // Spotify popularity is a track's, and nothing has aggregated it per
-        // MusicBrainz recording. The screen already says unranked.
-        popularity: null,
-        tint: card.tint,
-        liked: played.filter((movement) => movement.liked).length,
-        firstTrackUri: played[0]?.uri ?? null,
-        unmatched: false,
-      };
-    })
-    .sort(
-      (left, right) =>
-        right.liked - left.liked || (right.duration ?? '').localeCompare(left.duration ?? ''),
-    );
+  return (
+    works
+      .filter((card) => card.workId === workMbid)
+      .map((card) => {
+        const played = card.movements.filter((movement) => !movement.missing);
+        const durationMs = played.reduce((sum, movement) => sum + (movement.durationMs ?? 0), 0);
+        const recording: CatalogRecording = {
+          id: card.recordingId ?? card.id,
+          album: card.album,
+          albumId: card.albumId ?? card.id,
+          cover: card.cover,
+          year: card.year,
+          performer: card.performer,
+          ensemble: card.ensemble,
+          duration: played.length === 0 ? null : formatDuration(durationMs),
+          // Spotify popularity is a track's, and nothing has aggregated it per
+          // MusicBrainz recording. The screen already says unranked.
+          popularity: null,
+          tint: card.tint,
+          liked: played.filter((movement) => movement.liked).length,
+          firstTrackUri: played[0]?.uri ?? null,
+          unmatched: false,
+        };
+        return { recording, durationMs };
+      })
+      // Compare milliseconds, not the formatted "m:ss" text: as strings "9:59"
+      // sorts above "10:00".
+      .sort(
+        (left, right) =>
+          right.recording.liked - left.recording.liked || right.durationMs - left.durationMs,
+      )
+      .map(({ recording }) => recording)
+  );
 }

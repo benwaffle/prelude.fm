@@ -64,7 +64,9 @@ const userAgent = `PreludeFM/0.1 ( ${contact} )`;
  * ISRCs and each is an edit. The gateway's own bot cap limits requests, which
  * is a different and much weaker constraint.
  */
-const DAILY_EDIT_CAP = 1_000;
+export const DAILY_EDIT_CAP = 1_000;
+
+const BOT_SUBMITTER = 'bot:prelude_fm_bot';
 
 /**
  * A ceiling on one album, not a batch size.
@@ -122,6 +124,25 @@ export type BarcodeBotRun = {
   editNote: string;
   payload: string;
 };
+
+/**
+ * Record edits MusicBrainz just accepted, in one statement.
+ *
+ * One multi-row insert rather than a row at a time: MusicBrainz has already
+ * taken the edits, so a failure part-way through would leave edits we made
+ * but never recorded. The daily cap is counted from these rows, and an
+ * unrecorded gap would be offered (and submitted) again.
+ */
+async function recordBotEdits(
+  drafts: Omit<typeof mbSubmission.$inferInsert, 'submittedBy' | 'note'>[],
+  editNote: string,
+) {
+  if (drafts.length === 0) return;
+  await db
+    .insert(mbSubmission)
+    .values(drafts.map((draft) => ({ ...draft, submittedBy: BOT_SUBMITTER, note: editNote })))
+    .onConflictDoNothing();
+}
 
 /** Edits already made today, from the ledger rather than a counter. */
 export async function editsSpentToday(now = new Date()): Promise<number> {
@@ -229,27 +250,23 @@ export async function runIsrcBot(
     );
   }
 
-  for (const gap of gaps) {
-    await db
-      .insert(mbSubmission)
-      .values({
-        kind: 'isrc',
-        targetMbid: gap.recordingMbid,
-        subject: gap.spotifyTrackId,
-        value: normalizeIsrc(gap.isrc),
-        evidence: {
-          releaseMbid: gap.releaseMbid,
-          barcode: gap.barcode,
-          medium: gap.medium,
-          position: gap.position,
-          durationDeltaMs: gap.durationDeltaMs,
-          matchedBy: gap.matchedBy,
-        },
-        submittedBy: 'bot:prelude_fm_bot',
-        note: editNote,
-      })
-      .onConflictDoNothing();
-  }
+  await recordBotEdits(
+    gaps.map((gap) => ({
+      kind: 'isrc' as const,
+      targetMbid: gap.recordingMbid,
+      subject: gap.spotifyTrackId,
+      value: normalizeIsrc(gap.isrc),
+      evidence: {
+        releaseMbid: gap.releaseMbid,
+        barcode: gap.barcode,
+        medium: gap.medium,
+        position: gap.position,
+        durationDeltaMs: gap.durationDeltaMs,
+        matchedBy: gap.matchedBy,
+      },
+    })),
+    editNote,
+  );
 
   return {
     releaseMbid: releaseMbid ?? null,
@@ -334,17 +351,7 @@ export async function runBarcodeBot(
     );
   }
 
-  for (const gap of gaps) {
-    const draft = barcodeSubmissionDraft(gap);
-    await db
-      .insert(mbSubmission)
-      .values({
-        ...draft,
-        submittedBy: 'bot:prelude_fm_bot',
-        note: editNote,
-      })
-      .onConflictDoNothing();
-  }
+  await recordBotEdits(gaps.map(barcodeSubmissionDraft), editNote);
 
   return {
     items,

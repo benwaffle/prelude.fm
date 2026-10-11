@@ -845,9 +845,9 @@ export const mbReleaseCorrection = sqliteTable(
 /**
  * The release-editor seed we prepared for a missing album: the plan (track
  * by track, which recording is pre-filled and why) from which the form is
- * built. `seededAt` is set when the person opened it on MusicBrainz; from
- * then on the correction record compares against this seed rather than the
- * Spotify album.
+ * built. `seededAt` is set when the person opened it on MusicBrainz, and
+ * `seededPlan` keeps the plan they opened: the correction record compares
+ * against that, even if the seed is prepared again afterwards.
  */
 export const mbReleaseSeed = sqliteTable('mb_release_seed', {
   spotifyAlbumId: text('spotify_album_id')
@@ -860,6 +860,7 @@ export const mbReleaseSeed = sqliteTable('mb_release_seed', {
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
   seededAt: integer('seeded_at', { mode: 'timestamp_ms' }),
+  seededPlan: text('seeded_plan', { mode: 'json' }).$type<SeedPlan>(),
 });
 
 /**

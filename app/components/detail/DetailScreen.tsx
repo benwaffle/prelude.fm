@@ -34,7 +34,8 @@ export function DetailScreen({
   const { likedTrackIds, registerWorks, toggleLike } = useLibrary();
   const { currentTrack, play } = useSpotifyPlayer();
   const [detail, setDetail] = useState<WorkDetail | null>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'missing' | 'failed'>('loading');
+  const [failure, setFailure] = useState<string | null>(null);
   const [parent, setParent] = useState<WorkParent | null>(null);
 
   useEffect(() => {
@@ -58,7 +59,8 @@ export function DetailScreen({
         console.error('Failed to load recording:', err);
         if (!cancelled) {
           setParent(null);
-          setStatus('missing');
+          setFailure(err instanceof Error ? err.message : String(err));
+          setStatus('failed');
         }
       });
     return () => {
@@ -83,12 +85,18 @@ export function DetailScreen({
     );
   }
 
-  if (status === 'missing' || !detail) {
+  if (status === 'missing' || status === 'failed' || !detail) {
     return (
       <main className="mx-auto max-w-[1280px] px-6 pt-16 pb-[180px] max-[900px]:px-4">
-        <p className="font-display text-[15px] text-muted italic">
-          We hold no recording of that work.
-        </p>
+        {status === 'failed' ? (
+          <p className="font-display text-[15px] text-accent italic">
+            We couldn’t load this recording: {failure}
+          </p>
+        ) : (
+          <p className="font-display text-[15px] text-muted italic">
+            We hold no recording of that work.
+          </p>
+        )}
         <Link
           href="/catalog"
           className="mt-4 inline-flex items-center gap-[7px] font-meta text-[10px] tracking-[0.18em] text-muted uppercase no-underline hover:text-ink"
