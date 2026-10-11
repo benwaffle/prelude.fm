@@ -13,7 +13,7 @@
  * `track_work_link`, the works it reads into `mb_*`, and the classification of
  * the tracks it links. Submits nothing to MusicBrainz.
  */
-import { inArray, sql } from 'drizzle-orm';
+import { and, inArray, isNull, sql } from 'drizzle-orm';
 import { loadDerivedMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
 import { db } from './db';
 import { trackClassification, trackWorkLink } from './db/schema';
@@ -144,6 +144,12 @@ const CATALOGUE_SYSTEMS: Record<string, string[]> = {
  * credited on the track. Costs no request: the cache already holds every
  * work any library recording performs.
  */
+/**
+ * Rows read before the composer filter. "Op. 9" alone matches many composers'
+ * works, so a small cap can cut off the credited composer's.
+ */
+const CATALOGUE_ROWS = 500;
+
 async function cachedCatalogueWorks(title: string, artistNames: string[]): Promise<string[]> {
   const conditions = [...numberRefs(title)].flatMap(([system, numbers]) =>
     (CATALOGUE_SYSTEMS[system] ?? []).flatMap((normalized) =>
@@ -160,7 +166,7 @@ async function cachedCatalogueWorks(title: string, artistNames: string[]): Promi
     join mb_work w on w.mbid = c.work_mbid
     left join mb_artist a on a.mbid = w.composer_mbid
     where ${sql.join(conditions, sql` or `)}
-    limit 12
+    limit ${CATALOGUE_ROWS}
   `);
   const credited = artistNames.map((name) => normalizeTitle(name).split(/[^a-z]+/));
   return rows
@@ -423,6 +429,24 @@ export async function checkedTracks(spotifyTrackIds: string[]): Promise<Set<stri
     for (const row of rows) checked.add(row.spotifyTrackId);
   }
   return checked;
+}
+
+/** Of these tracks, those checked and left without a link. */
+export async function unlinkedTracks(spotifyTrackIds: string[]): Promise<Set<string>> {
+  const unlinked = new Set<string>();
+  for (let start = 0; start < spotifyTrackIds.length; start += 400) {
+    const rows = await db
+      .select({ spotifyTrackId: trackWorkLink.spotifyTrackId })
+      .from(trackWorkLink)
+      .where(
+        and(
+          inArray(trackWorkLink.spotifyTrackId, spotifyTrackIds.slice(start, start + 400)),
+          isNull(trackWorkLink.workMbid),
+        ),
+      );
+    for (const row of rows) unlinked.add(row.spotifyTrackId);
+  }
+  return unlinked;
 }
 
 export async function allTrackIds(): Promise<string[]> {
