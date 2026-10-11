@@ -22,7 +22,8 @@ interface NowPlayingSheetProps {
   onTogglePlay: () => void;
   onPrevious: () => void;
   onNext: () => void;
-  onScrub: (e: React.MouseEvent<HTMLElement>) => void;
+  /** Pointer handlers that tap or drag to seek. */
+  scrub: React.HTMLAttributes<HTMLElement>;
   onPlayFrom: (index: number) => void;
   onToggleLike: (trackId: string) => void;
   onChooseDevice: () => void;
@@ -50,7 +51,7 @@ export function NowPlayingSheet({
   onTogglePlay,
   onPrevious,
   onNext,
-  onScrub,
+  scrub,
   onPlayFrom,
   onToggleLike,
   onChooseDevice,
@@ -161,8 +162,8 @@ export function NowPlayingSheet({
         {/* Work-scoped progress, one seam per movement, like the desktop bar. */}
         <div className="mt-6">
           <div
-            onClick={onScrub}
-            className="relative h-[5px] cursor-pointer rounded-[3px] bg-white/20 before:absolute before:-inset-y-4 before:inset-x-0 before:content-['']"
+            {...scrub}
+            className="relative h-[5px] cursor-pointer touch-none rounded-[3px] bg-white/20 before:absolute before:-inset-y-4 before:inset-x-0 before:content-['']"
           >
             <div
               data-progress="fill"

@@ -200,8 +200,9 @@ function Masthead({
   const composers = new Set(works.map((w) => w.composerFull)).size;
 
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-6 pt-[26px] pb-1 max-[900px]:pt-[18px] max-[900px]:pb-1">
-      <div className="flex items-center gap-3 text-muted">
+    <div className="flex flex-wrap items-baseline justify-between gap-6 pt-[26px] pb-1 max-[900px]:pt-3 max-[900px]:pb-0">
+      {/* On phones the Library tab already says where you are. */}
+      <div className="flex items-center gap-3 text-muted max-[900px]:hidden">
         <span className="text-[10.5px] font-semibold tracking-[0.18em] uppercase">
           Your library
         </span>
