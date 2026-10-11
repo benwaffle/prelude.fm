@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import {
@@ -128,12 +128,17 @@ export function PlayerBar() {
   // Drive every progress readout imperatively — the bar's, the phone mini
   // player's and the full-screen sheet's, marked with data-progress — since
   // re-rendering on every frame would be wasteful.
+  // While a finger or mouse drags along a bar, every readout follows it.
+  const dragRatioRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (!work || totalMs === 0) return;
     let frame = 0;
     const tick = () => {
       const progress = getProgress();
-      const elapsed = Math.min(totalMs, beforeMs + progress.position);
+      const dragged = dragRatioRef.current;
+      const elapsed =
+        dragged !== null ? dragged * totalMs : Math.min(totalMs, beforeMs + progress.position);
       const pct = `${(elapsed / totalMs) * 100}%`;
       document.querySelectorAll<HTMLElement>('[data-progress]').forEach((el) => {
         const part = el.dataset.progress;
@@ -149,14 +154,12 @@ export function PlayerBar() {
   }, [getProgress, work, totalMs, beforeMs]);
 
   /**
-   * Clicking the bar seeks within the work: inside the current movement it is
-   * a plain seek, elsewhere it starts that movement at the matching offset.
+   * Seeking is within the work: inside the current movement it is a plain
+   * seek, elsewhere it starts that movement at the matching offset.
    */
-  const handleScrub = useCallback(
-    (e: React.MouseEvent<HTMLElement>) => {
+  const seekToRatio = useCallback(
+    (ratio: number) => {
       if (!work || totalMs === 0) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       const targetMs = ratio * totalMs;
 
       let acc = 0;
@@ -177,6 +180,80 @@ export function PlayerBar() {
     },
     [work, heard, totalMs, index, seek, play],
   );
+
+  /*
+   * Lock screen, notification shade and headphone buttons: say what's
+   * playing and route their controls here. Only the in-browser player needs
+   * this; a Connect device shows its own.
+   */
+  const localPlayback = !outputDevice || outputDevice.isThisBrowser;
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !localPlayback || !work || !movement) return;
+    const session = navigator.mediaSession;
+    session.metadata = new MediaMetadata({
+      title: [numeralPrefix(movement.roman), movement.name].filter(Boolean).join(' '),
+      artist: work.composerFull ?? '',
+      album: work.title ?? work.album,
+      artwork: work.cover ? [{ src: work.cover, sizes: '640x640', type: 'image/jpeg' }] : [],
+    });
+    const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
+      ['play', () => void togglePlay()],
+      ['pause', () => void togglePlay()],
+      ['previoustrack', () => void previousTrack()],
+      ['nexttrack', () => void nextTrack()],
+    ];
+    for (const [action, handler] of handlers) {
+      try {
+        session.setActionHandler(action, handler);
+      } catch {
+        // Not every browser knows every action.
+      }
+    }
+    return () => {
+      for (const [action] of handlers) {
+        try {
+          session.setActionHandler(action, null);
+        } catch {
+          // As above.
+        }
+      }
+    };
+  }, [localPlayback, work, movement, togglePlay, previousTrack, nextTrack]);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator && localPlayback && work) {
+      navigator.mediaSession.playbackState = isPaused ? 'paused' : 'playing';
+    }
+  }, [localPlayback, work, isPaused]);
+
+  /** Tap or drag along a progress bar; the seek happens on release. */
+  const scrub = useMemo(() => {
+    const ratioAt = (e: React.PointerEvent<HTMLElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    };
+    return {
+      onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        dragRatioRef.current = ratioAt(e);
+      },
+      onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
+        if (dragRatioRef.current !== null) dragRatioRef.current = ratioAt(e);
+      },
+      onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
+        if (dragRatioRef.current === null) return;
+        const ratio = ratioAt(e);
+        seekToRatio(ratio);
+        // Hold the playhead where it was dropped until Spotify catches up.
+        setTimeout(() => {
+          if (dragRatioRef.current === ratio) dragRatioRef.current = null;
+        }, 800);
+      },
+      onPointerCancel: () => {
+        dragRatioRef.current = null;
+      },
+    };
+  }, [seekToRatio]);
 
   const handleVolume = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -298,7 +375,7 @@ export function PlayerBar() {
               onTogglePlay={togglePlay}
               onPrevious={previousTrack}
               onNext={nextTrack}
-              onScrub={handleScrub}
+              scrub={scrub}
               onPlayFrom={playFrom}
               onToggleLike={toggleLike}
               onChooseDevice={() => {
@@ -435,8 +512,8 @@ export function PlayerBar() {
               </div>
 
               <div
-                onClick={handleScrub}
-                className="relative h-1 cursor-pointer rounded-[2px] bg-white/15 before:absolute before:-inset-y-3 before:inset-x-0 before:content-['']"
+                {...scrub}
+                className="relative h-1 cursor-pointer touch-none rounded-[2px] bg-white/15 before:absolute before:-inset-y-3 before:inset-x-0 before:content-['']"
               >
                 <div
                   data-progress="fill"

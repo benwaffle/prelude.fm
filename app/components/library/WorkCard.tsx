@@ -11,6 +11,7 @@ import {
   type Movement,
 } from '@/lib/prelude';
 import type { MusicBrainzGapCode } from '@/lib/musicbrainz-library';
+import { GAP_REASONS } from '@/lib/gap-reasons';
 
 /** Movements beyond this fold behind a "+ n more" link into the detail view. */
 const CAP = 8;
@@ -339,8 +340,14 @@ function Missing({ children }: { children: ReactNode }) {
 function Gaps({ codes }: { codes: MusicBrainzGapCode[] }) {
   if (codes.length === 0) return null;
   return (
-    <p className="mt-[6px] font-meta text-[10px] tracking-[0.12em] text-muted uppercase">
-      Incomplete in MusicBrainz: {codes.join(', ')}
+    <p
+      title={codes.join(', ')}
+      className="mt-[6px] font-display text-[13px] leading-snug text-muted italic max-[900px]:text-[12.5px]"
+    >
+      <span className="mr-[6px] font-meta text-[9px] tracking-[0.16em] uppercase not-italic">
+        Gaps
+      </span>
+      {codes.map((code) => GAP_REASONS[code]).join(' · ')}
     </p>
   );
 }

@@ -146,13 +146,35 @@ export function CatalogScreen() {
     if (window.matchMedia('(max-width: 900px)').matches) window.scrollTo(0, 0);
   }, [level]);
 
+  /*
+   * On a phone each level is its own screen, so the back gesture should step
+   * up a level rather than leave the catalogue. Going deeper adds a history
+   * entry for the same URL (keeping Next's own state alongside), and
+   * popping one restores the level it recorded.
+   */
+  const descend = (next: number) => {
+    if (window.matchMedia('(max-width: 900px)').matches && next > level) {
+      window.history.pushState({ ...window.history.state, catalogLevel: next }, '');
+    }
+    setLevel(next);
+  };
+  const ascend = () => {
+    if (typeof window.history.state?.catalogLevel === 'number') window.history.back();
+    else setLevel(Math.max(0, level - 1));
+  };
+  useEffect(() => {
+    const onPop = () => setLevel(window.history.state?.catalogLevel ?? 0);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   const pickComposer = (c: CatalogComposer) => {
     setComposerId(c.id);
-    setLevel(1);
+    descend(1);
   };
   const pickWork = (w: CatalogWork) => {
     setWorkId(w.id);
-    setLevel(2);
+    descend(2);
   };
 
   return (
@@ -162,7 +184,7 @@ export function CatalogScreen() {
         {level > 0 ? (
           <button
             type="button"
-            onClick={() => setLevel(level - 1)}
+            onClick={ascend}
             className="inline-flex cursor-pointer items-center gap-[6px] text-ink-2"
           >
             <Icon name="back" size={12} />
@@ -186,7 +208,7 @@ export function CatalogScreen() {
           onPick={(hit) => {
             setComposerId(hit.composerId);
             setWorkId(hit.workId);
-            setLevel(2);
+            descend(2);
           }}
         />
       )}
