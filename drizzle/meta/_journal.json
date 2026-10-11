@@ -176,6 +176,13 @@
       "when": 1790574797738,
       "tag": "0024_release_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791677450318,
+      "tag": "0025_work_proposals",
+      "breakpoints": true
     }
   ]
 }

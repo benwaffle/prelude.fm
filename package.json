@@ -17,6 +17,7 @@
     "metadata:readiness": "tsx scripts/catalogue-readiness.ts",
     "metadata:release-precheck": "tsx scripts/release-precheck.ts",
     "metadata:release-seed": "tsx scripts/release-seed.ts",
+    "metadata:work-proposals": "tsx scripts/work-proposals.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test 'tests/**/*.test.{ts,tsx}'",
     "db:generate": "drizzle-kit generate",

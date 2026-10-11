@@ -17,6 +17,7 @@ import { InboxRow } from './InboxRow';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
+import { WorkProposalsPanel } from './WorkProposalsPanel';
 
 export function WorkRelationshipsSection({
   rows,
@@ -86,6 +87,7 @@ export function WorkRelationshipsSection({
       pending={pending}
       description="Candidates come from sibling recordings on the same cached MusicBrainz release. They are possibilities, not inferred relationships."
     >
+      <WorkProposalsPanel onRecorded={onReload} />
       {rows.map((gap) => {
         const inHand = gap.ledger.filter((row) => row.active);
         const history = gap.ledger.filter((row) => !row.active);

@@ -10,6 +10,7 @@ import {
 import type { ReleasePrecheck } from '../release-precheck';
 import type { ReleaseCorrectionRecord } from '../release-corrections';
 import type { SeedPlan } from '../release-seeding';
+import type { WorkProposal } from '../work-proposals';
 
 /*
  * Better Auth
@@ -859,3 +860,33 @@ export const mbReleaseSeed = sqliteTable('mb_release_seed', {
     .notNull(),
   seededAt: integer('seeded_at', { mode: 'timestamp_ms' }),
 });
+
+/**
+ * A work we propose for a recording that MusicBrainz links to none, and what
+ * the person decided about it.
+ *
+ * A proposal is never a relationship: approving one records only that the
+ * person agrees and will make the edit on MusicBrainz. The ledger
+ * (`mb_submission`) still records the edit once they say it is made, and
+ * the cache only learns the link when a recheck reads it back. `proposal` is
+ * null when the run looked and found nothing worth offering, so that gap
+ * stays visible as "no proposal" rather than disappearing.
+ */
+export const mbWorkProposal = sqliteTable(
+  'mb_work_proposal',
+  {
+    recordingMbid: text('recording_mbid').primaryKey(),
+    releaseMbid: text('release_mbid'),
+    proposal: text('proposal', { mode: 'json' }).$type<WorkProposal>(),
+    status: text('status', { enum: ['proposed', 'approved', 'dismissed'] })
+      .default('proposed')
+      .notNull(),
+    /** MusicBrainz requests spent on this recording's proposal. */
+    requests: integer('requests').notNull(),
+    checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    decidedAt: integer('decided_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [index('mb_work_proposal_status_idx').on(table.status)],
+);

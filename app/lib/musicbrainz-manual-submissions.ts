@@ -132,7 +132,8 @@ export type WorkCandidateEvidence =
   | 'existing_mb_part_link'
   | 'existing_mb_work_link'
   | 'catalogue_match'
-  | 'same_release_recording';
+  | 'same_release_recording'
+  | 'work_link_proposal';
 
 export type WorkRelationshipSubmission = {
   recordingMbid: string;
