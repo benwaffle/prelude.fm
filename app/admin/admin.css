@@ -38,7 +38,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .desk:not([data-desk='light']) {
+  .desk {
     --board: #131614;
     --slip: #1b1f1c;
     --slip-2: #222722;
@@ -51,20 +51,6 @@
     --gall-wash: #cb7f521f;
     --viridian: #74b39c;
   }
-}
-
-.desk[data-desk='dark'] {
-  --board: #131614;
-  --slip: #1b1f1c;
-  --slip-2: #222722;
-  --ink: #e6eae2;
-  --ink-2: #a8b0a5;
-  --faint: #6e776c;
-  --rule: #2b312b;
-  --rule-strong: #3d443d;
-  --gall: #cb7f52;
-  --gall-wash: #cb7f521f;
-  --viridian: #74b39c;
 }
 
 /* ---------------------------------------------------------- type --- */
@@ -112,9 +98,6 @@
   border: 1px solid var(--rule);
 }
 
-.desk .rule-t {
-  border-top: 1px solid var(--rule);
-}
 .desk .rule-b {
   border-bottom: 1px solid var(--rule);
 }
@@ -132,53 +115,6 @@
   height: 44px;
   background: var(--slip);
   border-bottom: 1px solid var(--rule-strong);
-}
-
-/* -------------------------------------------------------- what's open --- */
-
-/* The catalogue's open questions, stated as sentences. This is the first
-   thing on the page because it is the page's whole purpose: the counts
-   people need are the ones that say what is still unknown. */
-.desk .gap {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--slip);
-  border: 1px solid var(--rule);
-  border-left: 2px solid var(--gall);
-  text-align: left;
-  width: 100%;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease;
-}
-
-.desk .gap:hover:not(:disabled) {
-  background: var(--slip-2);
-  border-left-color: var(--gall);
-  cursor: pointer;
-}
-
-.desk .gap[data-settled='true'] {
-  border-left-color: var(--viridian);
-  opacity: 0.72;
-}
-
-.desk .gap-n {
-  font-family: var(--font-fragment), ui-monospace, monospace;
-  font-size: 19px;
-  line-height: 1;
-  color: var(--gall);
-}
-
-.desk .gap[data-settled='true'] .gap-n {
-  color: var(--viridian);
-}
-
-.desk .gap-label {
-  color: var(--ink-2);
-  font-size: 12px;
 }
 
 /* ------------------------------------------------------- lists --- */
@@ -200,36 +136,7 @@
   background: var(--slip-2);
 }
 
-/* --------------------------------------------------- conflicts --- */
-
-/* Two sources hold different values for one field. Both are labelled, because
-   which source a value came from is the only thing that decides the question,
-   and a reader should never have to work that out from position alone. */
-.desk .conflict {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 16px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--rule);
-}
-
-.desk .conflict:last-child {
-  border-bottom: 0;
-}
-
-.desk .conflict:hover {
-  background: var(--slip-2);
-}
-
-.desk .conflict-head {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  color: var(--faint);
-  font-size: 11px;
-}
+/* ------------------------------------------------------- tags --- */
 
 .desk .tag {
   font-family: var(--font-archivo-narrow), system-ui, sans-serif;
@@ -241,34 +148,6 @@
   border: 1px solid var(--rule);
   padding: 1px 5px;
   white-space: nowrap;
-}
-
-.desk .conflict-values {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 12px;
-  align-items: baseline;
-  min-width: 0;
-}
-
-.desk .conflict-values dt {
-  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.desk .conflict-values dd {
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
-.desk .conflict-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
 }
 
 /* ------------------------------------------------------ controls --- */
@@ -593,19 +472,8 @@
   font-style: italic;
 }
 
-/* Narrow screens: the two readings and the buttons each get their own line.
-   Side by side inside 375px, a value that has wrapped mid-phrase is harder to
-   judge than no value at all. */
+/* Narrow screens: a row's evidence gets its own line. */
 @media (max-width: 639px) {
-  .desk .conflict {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .desk .conflict-actions {
-    justify-content: flex-start;
-    margin-top: 4px;
-  }
-
   .desk .row {
     flex-wrap: wrap;
   }
