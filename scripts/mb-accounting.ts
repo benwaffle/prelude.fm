@@ -34,7 +34,7 @@ defineScript(
     const [{ db }, schema, adapter, projection] = await Promise.all([
       import('@/lib/db'),
       import('@/lib/db/schema'),
-      import('@/app/actions/library-musicbrainz'),
+      import('@/lib/musicbrainz-library-read'),
       import('@/lib/musicbrainz-library'),
     ]);
 

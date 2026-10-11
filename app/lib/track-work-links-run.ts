@@ -14,11 +14,11 @@
  * the tracks it links. Submits nothing to MusicBrainz.
  */
 import { and, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
-import { loadDerivedMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
 import { db, type DatabaseExecutor } from './db';
 import { mbWorkProposal, trackClassification, trackWorkLink } from './db/schema';
 import { cataloguesOf, childPartsOf, composerOf, parentPartOf, type MbWork } from './musicbrainz';
 import { createMbSession } from './musicbrainz-session';
+import { classifyTracks } from './musicbrainz-track-classification';
 import { classificationMayBeReplaced } from './track-classification';
 import {
   asTrackWorkMatch,
@@ -351,7 +351,7 @@ export async function storeLinks(outcomes: LinkOutcome[]): Promise<number> {
  * Re-derive the stored classification of these tracks: after a link gives
  * them a work, or after the classical rule changes.
  *
- * The same reading the album pipeline makes, through the same facts loader,
+ * The same reading the album pipeline makes, through the same classifier,
  * and under the same precedence: a hand decision is never replaced, and like
  * the pipeline this never writes one (the film-score exclusion is applied as
  * tracks are read, not stored). Each chunk is written in one statement.
@@ -364,14 +364,14 @@ export async function reclassify(
   let changed = 0;
   for (let start = 0; start < spotifyTrackIds.length; start += 500) {
     const chunk = spotifyTrackIds.slice(start, start + 500);
-    const facts = await loadDerivedMusicBrainzLibraryFacts(chunk, database);
+    const classifications = await classifyTracks(chunk, { preferStored: false }, database);
     const existingRows = await database
       .select()
       .from(trackClassification)
       .where(inArray(trackClassification.spotifyTrackId, chunk));
     const existing = new Map(existingRows.map((row) => [row.spotifyTrackId, row]));
     const decidedAt = new Date();
-    const rows = facts.classifications.flatMap((classification) => {
+    const rows = classifications.flatMap((classification) => {
       if (classification.provenance === 'manual') return [];
       const previous = existing.get(classification.spotifyTrackId);
       // A track with no stored row is classified as it is read, from the

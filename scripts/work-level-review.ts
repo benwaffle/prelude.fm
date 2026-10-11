@@ -105,7 +105,7 @@ defineScript(
 async function findDuplicates() {
   const { db } = await import('@/lib/db');
   const { spotifyTrack } = await import('@/lib/db/schema');
-  const { loadMusicBrainzLibraryFacts } = await import('@/app/actions/library-musicbrainz');
+  const { loadMusicBrainzLibraryFacts } = await import('@/lib/musicbrainz-library-read');
   const { projectMusicBrainzLibrary } = await import('@/lib/musicbrainz-library');
   const { musicBrainzLibraryView } = await import('@/lib/musicbrainz-library-view');
 

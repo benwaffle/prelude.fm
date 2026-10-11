@@ -9,7 +9,7 @@ import {
   type ReadinessSubmissions,
 } from '@/lib/catalogue-readiness';
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
-import { loadMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
+import { loadMusicBrainzLibraryFacts } from '@/lib/musicbrainz-library-read';
 
 /**
  * The readiness funnel over every Spotify track we hold, read through the
