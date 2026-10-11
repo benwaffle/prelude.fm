@@ -739,6 +739,7 @@ function projectRecordingWork(
     type: relatedWork.type,
     parentMbid: relatedWork.parentMbid,
     parentTitle: parent?.title ?? null,
+    parentType: parent?.type ?? null,
     hasChildren,
     orderingKey: relatedWork.orderingKey,
   });

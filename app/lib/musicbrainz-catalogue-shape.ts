@@ -70,6 +70,7 @@ export function shapeHeldCatalogue(
       type: related.type,
       parentMbid: related.parentMbid,
       parentTitle: parent?.title ?? null,
+      parentType: parent?.type ?? null,
       hasChildren: parents.has(related.mbid),
       orderingKey: related.orderingKey,
     });

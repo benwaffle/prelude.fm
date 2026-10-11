@@ -38,6 +38,54 @@ test('a movement belongs to a parent whose title adds a catalogue reference', ()
   assert.equal(level.reason, 'titled-as-part');
 });
 
+test('a typed number of an oratorio belongs to the oratorio', () => {
+  // MusicBrainz types the aria "Aria", and the movement carries a catalogue
+  // reference the oratorio's own title leaves out.
+  const aria = workLevelOf(
+    node({
+      title: "Gesù al Calvario, ZWV 62: Aria: S'una sol lagrima",
+      type: 'Aria',
+      parentMbid: 'oratorio',
+      parentTitle: 'Gesù al Calvario',
+      parentType: 'Oratorio',
+    }),
+  );
+  assert.equal(aria.mbid, 'oratorio');
+  const recitative = workLevelOf(
+    node({
+      title: 'Gesù al Calvario, ZWV 62: Recitative: Smanie di dolci affetti',
+      parentMbid: 'oratorio',
+      parentTitle: 'Gesù al Calvario',
+      parentType: 'Oratorio',
+    }),
+  );
+  assert.equal(recitative.mbid, 'oratorio');
+});
+
+test('a movement typed like its parent belongs to it', () => {
+  const level = workLevelOf(
+    node({
+      title: 'Sonata for Piano no. 19 in G minor, op. 49 no. 1: II. Rondo. Allegro',
+      type: 'Sonata',
+      parentMbid: 'sonata',
+      parentTitle: 'Sonata for Piano no. 19 in G minor, op. 49 no. 1',
+      parentType: 'Sonata',
+    }),
+  );
+  assert.equal(level.mbid, 'sonata');
+});
+
+test('a piece number is never dropped to match a collection', () => {
+  const level = workLevelOf(
+    node({
+      title: 'Hungarian Dances for orchestra, WoO 1, Book 1, no. 5 in G minor: Allegro - Vivace',
+      parentMbid: 'dances',
+      parentTitle: 'Hungarian Dances for orchestra',
+    }),
+  );
+  assert.equal(level.mbid, 'self');
+});
+
 test('a work with parts is the work, not one of its parts', () => {
   // "Prelude and Fugue No. 1" is untyped and sits inside the book, but it has
   // a prelude and a fugue under it, so it is the piece.
