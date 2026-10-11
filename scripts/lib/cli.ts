@@ -4,8 +4,7 @@
  *
  * Options are parsed by `node:util`'s `parseArgs` in strict mode, so a typo
  * or a missing value is an error rather than an option quietly ignored, and
- * an `integer` option must actually be one — `--albums abc` used to slice to
- * NaN, process nothing and report success.
+ * an `integer` option must actually be one.
  *
  * `main` receives the parsed options and should import anything that reads
  * the environment (the database above all) dynamically, after it is loaded.

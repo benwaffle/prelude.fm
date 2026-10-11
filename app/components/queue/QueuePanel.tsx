@@ -1,31 +1,11 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useDismiss } from '../DevicePicker';
 import { QueueList } from './QueueList';
 
 /** The queue, opened from the desktop player bar. */
 export function QueuePanel({ onClose }: { onClose: () => void }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  // As with the device picker, the bar's blur traps an overlay, so outside
-  // taps are caught on the document.
-  useEffect(() => {
-    const onPointer = (e: PointerEvent) => {
-      const target = e.target as Element;
-      if (target.closest?.('[data-queue-toggle]')) return;
-      if (panelRef.current && !panelRef.current.contains(target)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    const timer = setTimeout(() => document.addEventListener('pointerdown', onPointer));
-    document.addEventListener('keydown', onKey);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('pointerdown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
+  const panelRef = useDismiss('[data-queue-toggle]', onClose);
 
   return (
     <div

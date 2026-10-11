@@ -7,11 +7,9 @@
  * these, so the rule for "landed" exists once per kind rather than once per
  * button.
  *
- * Confirm writes the ledger and does not talk to MusicBrainz. Recheck used to
- * observe only the cache, so a landed edit stayed invisible until a later
- * ingest — which the worker skips once tracks are already anchored. Recheck
- * fetches, then observes. It never submits anything, and a missing edit ID
- * stays missing.
+ * Confirm writes the ledger and does not talk to MusicBrainz. Recheck fetches,
+ * then observes, because the worker skips ingesting tracks already anchored.
+ * It never submits anything, and a missing edit ID stays missing.
  */
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db } from './db';

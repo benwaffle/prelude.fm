@@ -53,28 +53,6 @@ export async function setChannelPaused(channel: string, paused: boolean, note?: 
   return getGatewayStatus();
 }
 
-/** Raise or lower a channel's daily cap. Null restores the built-in default. */
-export async function setChannelCap(channel: string, dailyCap: number | null) {
-  await checkAuth();
-  if (channel !== 'all' && !isMusicBrainzChannel(channel)) {
-    throw new Error(`Unknown channel: ${channel}`);
-  }
-  if (dailyCap !== null && (!Number.isInteger(dailyCap) || dailyCap < 0)) {
-    throw new Error('A daily cap must be a whole number of requests');
-  }
-
-  await db
-    .insert(mbGatewayControl)
-    .values({ channel, dailyCap, updatedAt: new Date() })
-    .onConflictDoUpdate({
-      target: mbGatewayControl.channel,
-      set: { dailyCap, updatedAt: new Date() },
-    });
-
-  invalidateMusicBrainzControls();
-  return getGatewayStatus();
-}
-
 export async function clearChannelControl(channel: string) {
   await checkAuth();
   await db.delete(mbGatewayControl).where(eq(mbGatewayControl.channel, channel));

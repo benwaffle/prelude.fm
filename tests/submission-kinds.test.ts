@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { parseEvidence } from '../app/lib/submission-evidence';
 import type { MusicBrainzSource } from '../app/lib/musicbrainz-source';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
+import { fakeSource } from './helpers/musicbrainz-fixtures';
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
@@ -28,24 +29,16 @@ const OTHER_RECORDING = '44444444-4444-4444-8444-444444444444';
 
 /** MusicBrainz that knows nothing, counting what it was asked for. */
 function emptySource(asked: string[]): MusicBrainzSource {
-  return {
-    name: 'fake',
-    releasesByBarcode: async () => [],
-    searchReleases: async () => [],
+  return fakeSource({
     releaseWithRecordings: async (mbid) => {
       asked.push(`release:${mbid}`);
       return null;
     },
-    releaseRecordingIds: async () => [],
-    recordingsByIsrc: async () => new Map(),
-    recordingWorks: async () => [],
     recordingDetail: async (mbid) => {
       asked.push(`recording:${mbid}`);
       return null;
     },
-    work: async () => null,
-    artist: async () => null,
-  };
+  });
 }
 
 async function barcodeRow(

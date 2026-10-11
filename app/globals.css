@@ -26,36 +26,9 @@
   --player-h: 120px;
 }
 
-/* Sepia — warm amber */
-[data-theme='sepia'] {
-  --paper: #f1e6cc;
-  --paper-2: #e7d9b7;
-  --paper-3: #dcc99f;
-  --ink: #2b1d10;
-  --ink-2: #4a3520;
-  --muted: #8a6e46;
-  --rule: #c4a876;
-  --accent: #8a3818;
-}
-
-/* Dark — mahogany concert hall */
-[data-theme='dark'] {
-  --paper: #141210;
-  --paper-2: #1c1a17;
-  --paper-3: #262320;
-  --ink: #f3ead5;
-  --ink-2: #d9cfb8;
-  --muted: #8a7f68;
-  --rule: #2e2a24;
-  --accent: #c9a06a; /* aged brass */
-  --elevation-soft: 0 30px 60px -30px rgba(0, 0, 0, 0.8);
-  --elevation-deep: 0 40px 80px -20px rgba(0, 0, 0, 0.9);
-}
-
-/* The prototype switched themes from a Tweaks panel; here ivory stands
-   unless the reader's OS asks for dark. */
+/* Ivory stands unless the reader's OS asks for dark — mahogany concert hall. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not([data-theme='sepia']) {
+  :root {
     --paper: #141210;
     --paper-2: #1c1a17;
     --paper-3: #262320;
@@ -63,7 +36,7 @@
     --ink-2: #d9cfb8;
     --muted: #8a7f68;
     --rule: #2e2a24;
-    --accent: #c9a06a;
+    --accent: #c9a06a; /* aged brass */
     --elevation-soft: 0 30px 60px -30px rgba(0, 0, 0, 0.8);
     --elevation-deep: 0 40px 80px -20px rgba(0, 0, 0, 0.9);
   }

@@ -23,13 +23,12 @@ import {
   barcodeReleaseSearchUrl,
   type MbPickHit,
 } from '@/lib/musicbrainz-pick';
-import { ChannelBadge } from './ChannelBadge';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
 import { PreviousSubmission } from './PreviousSubmission';
 import { PrecheckSummary, ReleasePrecheckPanel } from './ReleasePrecheckPanel';
 import { RowActionStatus } from './RowActionStatus';
-import { InboxSection } from './InboxSection';
+import { ChannelBadge, InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 import { EditIdInput, useRowForms } from './LedgerGapRow';
 

@@ -22,6 +22,7 @@
  * collections right and costs a handful of movements their grouping, which
  * is the cheaper error of the two.
  */
+import { roman } from './prelude';
 
 export type WorkNode = {
   mbid: string;
@@ -108,27 +109,6 @@ function titledAsPartOf(node: WorkNode): boolean {
   return false;
 }
 
-function toRoman(value: number): string {
-  const numerals: Array<[number, string]> = [
-    [50, 'L'],
-    [40, 'XL'],
-    [10, 'X'],
-    [9, 'IX'],
-    [5, 'V'],
-    [4, 'IV'],
-    [1, 'I'],
-  ];
-  let rest = value;
-  let out = '';
-  for (const [amount, numeral] of numerals) {
-    while (rest >= amount) {
-      out += numeral;
-      rest -= amount;
-    }
-  }
-  return out;
-}
-
 /**
  * MusicBrainz numbers a movement in its title the way it orders it among the
  * parent's parts: the fifth part ends "…: V. Allegro". A piece in a
@@ -143,7 +123,7 @@ function numberedAsPart(node: WorkNode): boolean {
   const lastColon = node.title.lastIndexOf(':');
   if (lastColon === -1) return false;
   const tail = node.title.slice(lastColon + 1).trim();
-  const numeral = `${toRoman(node.orderingKey)}.`;
+  const numeral = `${roman(node.orderingKey)}.`;
   return tail === numeral || tail.startsWith(`${numeral} `);
 }
 

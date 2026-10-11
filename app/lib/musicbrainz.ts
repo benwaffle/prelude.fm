@@ -513,16 +513,6 @@ export function spotifyArtistIdOf(artist: MbArtist): string | null {
 /** A work in a `parts` relationship, with its position in the parent. */
 export type MbWorkPart = MbWorkRef & { orderingKey: number | null };
 
-/** The parent work this one is a movement/section of, if any. */
-export function parentWorkOf(work: MbWork): MbWorkRef | null {
-  for (const relation of work.relations ?? []) {
-    if (relation.type === 'parts' && relation.direction === 'backward' && relation.work) {
-      return relation.work;
-    }
-  }
-  return null;
-}
-
 /**
  * The parent work and this work's position in it.
  *
@@ -595,113 +585,8 @@ export function cataloguesOf(work: MbWork): { seriesId: string; system: string; 
   return catalogues;
 }
 
-/**
- * MusicBrainz titles a movement with its parent's title in front —
- * "Orchestersuite Nr. 2 h-Moll, BWV 1067: IV. Bourrée I/II". We store the part
- * alone, so the prefix is removed; otherwise every movement of a work would
- * repeat that work's title.
- *
- * Only an exact "<parent>:" prefix is removed. A leaf whose title merely starts
- * with similar words is left alone, because guessing here would silently
- * truncate real titles.
- */
-export function stripParentPrefix(leafTitle: string, parentTitle: string | null): string {
-  if (!parentTitle) return leafTitle;
-  const prefix = `${parentTitle}:`;
-  if (!leafTitle.startsWith(prefix)) return leafTitle;
-  return leafTitle.slice(prefix.length).trim() || leafTitle;
-}
-
 /** MusicBrainz life-span dates are ISO-ish strings; we only keep the year. */
 export function yearOf(value: string | null | undefined): number | null {
   const match = /^(\d{4})/.exec(value ?? '');
   return match ? Number(match[1]) : null;
-}
-
-/** One of our parts, with what MusicBrainz said about it. */
-export type MatchedPart = {
-  /** The MusicBrainz work this part was recorded as. */
-  leafId: string;
-  /** That work's parent, or the work itself when it has none. */
-  parentId: string;
-  /** The MusicBrainz title, with any parent prefix already removed. */
-  title: string;
-};
-
-/**
- * Decide which MusicBrainz work corresponds to one of ours.
- *
- * MusicBrainz's hierarchy is deeper than ours and its depth varies, so "the
- * parent of whatever the recording performed" is not a reliable answer. The
- * Well-Tempered Clavier is a single MusicBrainz work whose parts are the
- * preludes and fugues; a track of a whole prelude-and-fugue therefore resolves
- * to a work whose parent is the entire book, while a track of just the prelude
- * resolves one level lower. Taking the parent in both cases files two dozen of
- * our works under the book.
- *
- * The rule is to find the level whose children are our parts:
- *
- * - If one matched work is the parent of the others, our parts are its
- *   movements and it is our work.
- * - If every matched work shares one parent, our parts are that parent's
- *   movements.
- * - A work with a single part is that piece, so long as MusicBrainz's title
- *   agrees. Where it does not — we hold one movement of something larger — the
- *   parent is the better answer.
- *
- * Returns null when the parts disagree, which usually means a match further
- * upstream is wrong; choosing between them would bury that.
- */
-export function resolveWorkLevel(
-  ourTitle: string,
-  parts: MatchedPart[],
-  titlesAgree: (a: string, b: string) => boolean,
-): string | null {
-  if (parts.length === 0) return null;
-
-  if (parts.length === 1) {
-    const [only] = parts;
-    if (titlesAgree(ourTitle, only.title)) return only.leafId;
-    return only.parentId === only.leafId ? null : only.parentId;
-  }
-
-  const leaves = new Set(parts.map((part) => part.leafId));
-  const parents = new Set(parts.map((part) => part.parentId));
-
-  // A matched work that is also the parent of other matched works sits exactly
-  // at our level: its children are the rest of our parts.
-  const ancestors = [...leaves].filter((leaf) => parents.has(leaf));
-  if (ancestors.length === 1) return ancestors[0];
-  if (ancestors.length > 1) return null;
-
-  /*
-   * Several of our parts all naming one MusicBrainz work means that work is
-   * ours and MusicBrainz simply does not divide it further. Taking its parent
-   * instead reaches for the collection above: each of Bach's eight short
-   * preludes and fugues would resolve to "8 kleine Präludien und Fugen,
-   * BWV 553-560", and all eight would look like the same piece as each other.
-   */
-  if (leaves.size === 1 && parts.length >= 2) return [...leaves][0];
-
-  if (parents.size === 1) return [...parents][0];
-
-  /*
-   * One part naming a different work than all the others is usually a bad
-   * match rather than a real disagreement: MusicBrainz carries ISRCs that
-   * labels attached to the wrong recording, and a single one of those is
-   * enough to break a work that is otherwise unanimous. Haydn's Symphony 87
-   * loses its link to a Sony ISRC sitting on Symphony 82's finale.
-   *
-   * So a clear majority wins: more than half the parts, at least two of them,
-   * and no tie. Anything less stays unresolved, because two parts pointing one
-   * way and two the other is a real question, not an outlier.
-   */
-  const votes = new Map<string, number>();
-  for (const part of parts) votes.set(part.parentId, (votes.get(part.parentId) ?? 0) + 1);
-  const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
-  const [winner, count] = ranked[0];
-  const runnerUp = ranked[1]?.[1] ?? 0;
-  if (count >= 2 && count > parts.length / 2 && count > runnerUp) return winner;
-
-  return null;
 }

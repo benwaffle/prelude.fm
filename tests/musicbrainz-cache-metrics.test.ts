@@ -8,14 +8,12 @@ let schema: typeof import('@/lib/db/schema');
 let worksNeedingDetail: typeof import('../app/lib/musicbrainz-cache').worksNeedingDetail;
 let releaseIsCached: typeof import('../app/lib/musicbrainz-cache').releaseIsCached;
 let recordAnonymousImportRun: typeof import('../app/lib/musicbrainz-cache-metrics').recordAnonymousImportRun;
-let marginalRequestPercentiles: typeof import('../app/lib/musicbrainz-cache-metrics').marginalRequestPercentiles;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
   ({ worksNeedingDetail, releaseIsCached } = await import('../app/lib/musicbrainz-cache'));
-  ({ recordAnonymousImportRun, marginalRequestPercentiles } =
-    await import('../app/lib/musicbrainz-cache-metrics'));
+  ({ recordAnonymousImportRun } = await import('../app/lib/musicbrainz-cache-metrics'));
 });
 
 beforeEach(async () => {
@@ -64,29 +62,6 @@ test('recordAnonymousImportRun persists anonymous aggregates', async () => {
   assert.equal(row?.inputTrackCount, 12);
   assert.equal(row?.requestsCaused, 17);
   assert.equal(row?.albumsAlreadyCached, 1);
-});
-
-test('marginalRequestPercentiles computes rolling percentiles', async () => {
-  for (const requestsCaused of [5, 10, 20, 40, 100]) {
-    await db.insert(schema.mbImportRun).values({
-      startedAt: new Date(),
-      completedAt: new Date(),
-      inputTrackCount: 1,
-      classicalCount: 0,
-      uncertainCount: 0,
-      notClassicalCount: 0,
-      unreviewedCount: 1,
-      albumsAlreadyCached: 0,
-      albumsNew: 1,
-      requestsCaused,
-    });
-  }
-
-  const stats = await marginalRequestPercentiles(30);
-  assert.equal(stats.runs, 5);
-  assert.equal(stats.p50, 20);
-  assert.equal(stats.p90, 100);
-  assert.equal(stats.mean, 35);
 });
 
 test('request operation metrics can be read by day and channel', async () => {

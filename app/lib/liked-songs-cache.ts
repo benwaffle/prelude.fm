@@ -92,14 +92,3 @@ export async function setCachedLikedSongs(userId: string, tracks: SavedTrack[]):
     console.error('Failed to cache liked songs:', e);
   }
 }
-
-export async function clearLikedSongsCache(userId: string): Promise<void> {
-  try {
-    const db = await openDB(userId);
-    const tx = db.transaction([STORE_NAME, META_STORE], 'readwrite');
-    tx.objectStore(STORE_NAME).clear();
-    tx.objectStore(META_STORE).delete('lastFetch');
-  } catch (e) {
-    console.error('Failed to clear cache:', e);
-  }
-}

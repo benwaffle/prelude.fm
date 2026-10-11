@@ -306,7 +306,8 @@ test('a track related only to the whole work is not doubled by a missing part', 
   );
 });
 
-test('two performances of one work stay two cards', async () => {
+/** A second album holding the sonata's first movement in another performance. */
+async function seedOtherPerformance() {
   await db.insert(schema.spotifyAlbum).values({
     spotifyId: 'album-2',
     title: 'Another Mozart Recital',
@@ -344,6 +345,10 @@ test('two performances of one work stay two cards', async () => {
     recordingMbid: 'rec-other-i',
     workMbid: 'part-i',
   });
+}
+
+test('two performances of one work stay two cards', async () => {
+  await seedOtherPerformance();
 
   const { works } = await view(['track-i', 'track-ii', 'track-other-i']);
   assert.equal(works.length, 2);
@@ -378,43 +383,7 @@ test('every held track is on a card or in the gap list, exactly once', async () 
 });
 
 test('the detail of a work gathers every issue of it we can play', async () => {
-  await db.insert(schema.spotifyAlbum).values({
-    spotifyId: 'album-2',
-    title: 'Another Mozart Recital',
-    year: 2015,
-    popularity: 10,
-    images: null,
-    upc: null,
-    mbReleaseId: null,
-    mbReleaseCandidates: null,
-    mbCheckedAt: null,
-  });
-  await db.insert(schema.spotifyTrack).values({
-    spotifyId: 'track-other-i',
-    title: 'Sonata 16: Allegro',
-    trackNumber: 1,
-    discNumber: 1,
-    durationMs: 250_000,
-    popularity: 9,
-    spotifyAlbumId: 'album-2',
-    isrc: 'GBAAA0000021',
-  });
-  await db.insert(schema.trackRecording).values({
-    spotifyTrackId: 'track-other-i',
-    recordingMbid: 'rec-other-i',
-    isrc: 'GBAAA0000021',
-    matchedBy: 'isrc',
-  });
-  await db.insert(schema.mbRecording).values({
-    mbid: 'rec-other-i',
-    title: 'Allegro',
-    length: 250_000,
-    detail: 'full',
-  });
-  await db.insert(schema.mbRecordingWork).values({
-    recordingMbid: 'rec-other-i',
-    workMbid: 'part-i',
-  });
+  await seedOtherPerformance();
 
   const { getMusicBrainzWorkDetail } = await import('@/lib/musicbrainz-work-page');
   const detail = await getMusicBrainzWorkDetail('sonata', null, ['track-i']);

@@ -33,9 +33,9 @@ const RELEASE = '11111111-1111-4111-8111-111111111111';
 const RECORDING = '22222222-2222-4222-8222-222222222222';
 const ISRC = 'GBAYE0601498';
 
-/** One album, one track, matched by barcode to a one-track release that lacks the ISRC. */
-async function seedIsrcGap() {
-  await db.insert(schema.mbRelease).values({ mbid: RELEASE, title: 'Album', barcode: '724356' });
+/** One album and one track on a one-track release with `barcode`. */
+async function seedOneTrackRelease(barcode: string | null, isrc: string | null) {
+  await db.insert(schema.mbRelease).values({ mbid: RELEASE, title: 'Album', barcode });
   await db
     .insert(schema.mbRecording)
     .values({ mbid: RECORDING, title: 'Sonata', length: 300_000, detail: 'full' });
@@ -57,8 +57,13 @@ async function seedIsrcGap() {
     discNumber: 1,
     durationMs: 300_500,
     spotifyAlbumId: 'album-1',
-    isrc: ISRC,
+    isrc,
   });
+}
+
+/** One album, one track, matched by barcode to a one-track release that lacks the ISRC. */
+async function seedIsrcGap() {
+  await seedOneTrackRelease('724356', ISRC);
   await db.insert(schema.trackRecording).values({
     spotifyTrackId: 'track-1',
     recordingMbid: RECORDING,
@@ -180,29 +185,7 @@ test('a withdrawn ISRC goes back into the batch like a fresh one', async () => {
 
 /** A release with no barcode that Spotify's album matches by title and duration. */
 async function seedBarcodeGap() {
-  await db.insert(schema.mbRelease).values({ mbid: RELEASE, title: 'Album', barcode: null });
-  await db
-    .insert(schema.mbRecording)
-    .values({ mbid: RECORDING, title: 'Sonata', length: 300_000, detail: 'full' });
-  await db.insert(schema.mbReleaseTrack).values({
-    releaseMbid: RELEASE,
-    medium: 1,
-    position: 1,
-    recordingMbid: RECORDING,
-    title: 'Sonata',
-    length: 300_000,
-  });
-  await db
-    .insert(schema.spotifyAlbum)
-    .values({ spotifyId: 'album-1', title: 'Album', upc: '0724356', mbReleaseId: RELEASE });
-  await db.insert(schema.spotifyTrack).values({
-    spotifyId: 'track-1',
-    title: 'Sonata',
-    trackNumber: 1,
-    discNumber: 1,
-    durationMs: 300_500,
-    spotifyAlbumId: 'album-1',
-  });
+  await seedOneTrackRelease(null, null);
 }
 
 test('a rejected barcode returns, but only its own row resubmits it', async () => {

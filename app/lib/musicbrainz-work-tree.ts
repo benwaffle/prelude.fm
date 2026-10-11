@@ -28,12 +28,3 @@ export function ancestry<T extends WorkTreeNode>(workMbid: string, byMbid: Map<s
   }
   return chain;
 }
-
-/** The nearest work at or above `workMbid` that answers the question. */
-export function nearestAncestorWith<T extends WorkTreeNode>(
-  workMbid: string,
-  byMbid: Map<string, T>,
-  answers: (node: T) => boolean,
-): T | null {
-  return ancestry(workMbid, byMbid).find(answers) ?? null;
-}

@@ -1,8 +1,8 @@
 'use server';
 
-import { eq, isNull, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { spotifyAlbum, spotifyTrack } from '@/lib/db/schema';
+import { spotifyTrack } from '@/lib/db/schema';
 import { musicBrainzApi } from '@/lib/musicbrainz';
 import { anchorTracksByIsrc } from '@/lib/musicbrainz-ingest';
 import { isrcEligibleGaps, isrcGapReleases } from '@/lib/gaps/isrc';
@@ -94,14 +94,4 @@ export async function recheckAlbum(
     .where(eq(spotifyTrack.spotifyAlbumId, albumId));
 
   return { resolved, ...totals };
-}
-
-/** Albums never checked against MusicBrainz, newest first — the backfill's queue. */
-export async function countUnchecked(): Promise<number> {
-  await checkAuth();
-  const [row] = await db
-    .select({ n: sql<number>`count(*)` })
-    .from(spotifyAlbum)
-    .where(isNull(spotifyAlbum.mbCheckedAt));
-  return row.n;
 }

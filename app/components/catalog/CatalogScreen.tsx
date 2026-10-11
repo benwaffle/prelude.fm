@@ -9,13 +9,13 @@ import type {
   CatalogWork,
   CatalogWorkHeader,
 } from '@/lib/library-types';
-import type { WorkSearchHit } from '@/lib/work-search-hit';
 import {
   getMusicBrainzCatalogComposers,
   getMusicBrainzCatalogRecordings,
   getMusicBrainzCatalogWorkHeader,
   getMusicBrainzCatalogWorks,
   searchMusicBrainzWorks,
+  type WorkSearchHit,
 } from '@/app/actions/catalog-mb';
 import { useLibrary } from '@/lib/library-context';
 import { useServerQuery, type ServerQuery } from '@/lib/use-server-query';

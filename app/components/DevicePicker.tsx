@@ -1,9 +1,38 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { usePlayer, usePlayerActions, type PlaybackDevice } from '@/lib/spotify-player-context';
 import { useServerQuery } from '@/lib/use-server-query';
 import { Icon } from './Icon';
+
+/**
+ * Close a panel opened from the player bar on an outside tap or Escape. The
+ * bar's backdrop blur traps fixed-position children inside it, so an overlay
+ * can't catch outside taps; this listens on the document instead. A tap on
+ * `toggle` is left to the button that toggles the panel.
+ */
+export function useDismiss(toggle: string, onClose: () => void): RefObject<HTMLDivElement | null> {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onPointer = (e: PointerEvent) => {
+      const target = e.target as Element;
+      if (target.closest?.(toggle)) return;
+      if (panelRef.current && !panelRef.current.contains(target)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    // Defer so the tap that opened the panel doesn't immediately close it.
+    const timer = setTimeout(() => document.addEventListener('pointerdown', onPointer));
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [toggle, onClose]);
+  return panelRef;
+}
 
 interface DevicePickerProps {
   onClose: () => void;
@@ -20,29 +49,7 @@ export function DevicePicker({ onClose }: DevicePickerProps) {
   // Refresh asks again; the list itself lives in the player.
   const [scan, setScan] = useState(0);
   const loading = useServerQuery(refreshDevices, [refreshDevices, scan]).status === 'loading';
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  // The player bar's backdrop blur traps fixed-position children inside it, so
-  // an overlay can't catch outside taps; listen on the document instead.
-  useEffect(() => {
-    const onPointer = (e: PointerEvent) => {
-      const target = e.target as Element;
-      // The player's device button toggles the picker itself.
-      if (target.closest?.('[data-device-toggle]')) return;
-      if (panelRef.current && !panelRef.current.contains(target)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    // Defer so the tap that opened the picker doesn't immediately close it.
-    const timer = setTimeout(() => document.addEventListener('pointerdown', onPointer));
-    document.addEventListener('keydown', onKey);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('pointerdown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
+  const panelRef = useDismiss('[data-device-toggle]', onClose);
 
   const pick = (device: PlaybackDevice) => {
     chooseDevice(device);
