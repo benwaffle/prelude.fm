@@ -14,9 +14,10 @@
  * So a track can be confidently anchored and still not be evidence enough to
  * submit.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql, type SQLWrapper } from 'drizzle-orm';
 import { pageSlice } from './contribution-list';
 import { db } from './db';
+import { filmScoreExclusions } from './film-score-exclusions';
 import { releaseIsCached } from './musicbrainz-cache';
 import {
   mbReleasePickHit,
@@ -82,6 +83,14 @@ export {
   releaseEditLink,
   workCreateLink,
 } from './musicbrainz-edit-links';
+
+/**
+ * Film scores are not part of the catalogue, so nothing about them is a
+ * contribution we are waiting to make (see `film-scores`).
+ */
+function without(column: SQLWrapper, ids: string[]) {
+  return ids.length === 0 ? undefined : notInArray(column as never, ids);
+}
 
 /**
  * Recordings we can name an ISRC for that MusicBrainz does not have one for.
@@ -171,6 +180,7 @@ async function verifiedIsrcGaps(candidates: IsrcGap[], limit: number): Promise<I
 }
 
 async function isrcGapRows(scope: 'all' | 'eligible' | 'batch'): Promise<IsrcGap[]> {
+  const film = await filmScoreExclusions();
   const delta = sql<number>`abs(coalesce(${mbReleaseTrack.length}, ${mbRecording.length}) - ${spotifyTrack.durationMs})`;
 
   return db
@@ -204,6 +214,7 @@ async function isrcGapRows(scope: 'all' | 'eligible' | 'batch'): Promise<IsrcGap
     )
     .where(
       and(
+        without(spotifyTrack.spotifyId, film.trackIds),
         sql`${spotifyTrack.isrc} is not null`,
         // The barcode must be the release's own, ignoring the zero padding
         // that distinguishes a UPC-12 from the same EAN-13.
@@ -355,6 +366,7 @@ export async function workRelationshipGaps(
   limit = 100,
   offset = 0,
 ): Promise<WorkRelationshipGap[]> {
+  const film = await filmScoreExclusions();
   const gaps = await db
     .select({
       recordingMbid: trackRecording.recordingMbid,
@@ -370,10 +382,13 @@ export async function workRelationshipGaps(
     .innerJoin(mbRecording, eq(mbRecording.mbid, trackRecording.recordingMbid))
     .leftJoin(mbRelease, eq(mbRelease.mbid, spotifyAlbum.mbReleaseId))
     .where(
-      sql`not exists (
-        select 1 from mb_recording_work
-        where mb_recording_work.recording_mbid = ${trackRecording.recordingMbid}
-      )`,
+      and(
+        without(spotifyTrack.spotifyId, film.trackIds),
+        sql`not exists (
+          select 1 from mb_recording_work
+          where mb_recording_work.recording_mbid = ${trackRecording.recordingMbid}
+        )`,
+      ),
     )
     .groupBy(trackRecording.recordingMbid)
     .orderBy(sql`count(*) desc`, trackRecording.recordingMbid)
@@ -459,6 +474,7 @@ export type ContestedIsrc = {
 };
 
 export async function contestedIsrcs(limit = 100, offset = 0): Promise<ContestedIsrc[]> {
+  const film = await filmScoreExclusions();
   const groups = await db
     .select({
       isrc: mbRecordingIsrc.isrc,
@@ -468,6 +484,7 @@ export async function contestedIsrcs(limit = 100, offset = 0): Promise<Contested
     })
     .from(mbRecordingIsrc)
     .innerJoin(mbRecording, eq(mbRecording.mbid, mbRecordingIsrc.recordingMbid))
+    .where(without(mbRecordingIsrc.isrc, film.isrcs))
     .groupBy(mbRecordingIsrc.isrc)
     .having(sql`count(*) > 1`)
     .orderBy(mbRecordingIsrc.isrc)
@@ -506,6 +523,7 @@ export type MissingRelease = {
 };
 
 export async function missingReleases(limit = 60, offset = 0): Promise<MissingRelease[]> {
+  const film = await filmScoreExclusions();
   return db
     .select({
       albumId: spotifyAlbum.spotifyId,
@@ -524,7 +542,13 @@ export async function missingReleases(limit = 60, offset = 0): Promise<MissingRe
     })
     .from(spotifyAlbum)
     .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyAlbumId, spotifyAlbum.spotifyId))
-    .where(sql`${spotifyAlbum.mbReleaseId} is null`)
+    .where(
+      and(
+        sql`${spotifyAlbum.mbReleaseId} is null`,
+        without(spotifyAlbum.spotifyId, film.albumIds),
+        without(spotifyTrack.spotifyId, film.trackIds),
+      ),
+    )
     .groupBy(spotifyAlbum.spotifyId)
     .orderBy(sql`count(distinct ${spotifyTrack.spotifyId}) desc`, spotifyAlbum.spotifyId)
     .limit(limit)
@@ -691,6 +715,7 @@ export type BarcodeGap = {
 };
 
 export async function barcodeGaps(limit = 50, offset = 0): Promise<BarcodeGap[]> {
+  const film = await filmScoreExclusions();
   const candidates = await db
     .select({
       releaseMbid: mbRelease.mbid,
@@ -702,6 +727,7 @@ export async function barcodeGaps(limit = 50, offset = 0): Promise<BarcodeGap[]>
     .innerJoin(mbRelease, eq(mbRelease.mbid, spotifyAlbum.mbReleaseId))
     .where(
       and(
+        without(spotifyAlbum.spotifyId, film.albumIds),
         sql`${mbRelease.barcode} is null or ${mbRelease.barcode} = ''`,
         sql`${spotifyAlbum.upc} is not null and ${spotifyAlbum.upc} <> ''`,
       ),
@@ -889,6 +915,7 @@ export async function observeSpotifyFreeStreamingUrlState(
 }
 
 export async function streamingUrlGaps(limit = 50, offset = 0): Promise<StreamingUrlGap[]> {
+  const film = await filmScoreExclusions();
   const candidates = await db
     .select({
       releaseMbid: mbRelease.mbid,
@@ -899,7 +926,12 @@ export async function streamingUrlGaps(limit = 50, offset = 0): Promise<Streamin
     })
     .from(spotifyAlbum)
     .innerJoin(mbRelease, eq(mbRelease.mbid, spotifyAlbum.mbReleaseId))
-    .where(sql`mb_release.url_relations_fetched_at is not null`);
+    .where(
+      and(
+        sql`mb_release.url_relations_fetched_at is not null`,
+        without(spotifyAlbum.spotifyId, film.albumIds),
+      ),
+    );
   if (candidates.length === 0) return [];
 
   const relations = await cachedReleaseUrlRelations([
@@ -969,6 +1001,7 @@ export type MisalignedAlbum = {
 };
 
 export async function misalignedAlbums(limit = 40, offset = 0): Promise<MisalignedAlbum[]> {
+  const film = await filmScoreExclusions();
   const albums = await db
     .select({
       albumId: spotifyAlbum.spotifyId,
@@ -978,6 +1011,7 @@ export async function misalignedAlbums(limit = 40, offset = 0): Promise<Misalign
     .from(spotifyAlbum)
     .where(
       and(
+        without(spotifyAlbum.spotifyId, film.albumIds),
         sql`${spotifyAlbum.mbReleaseId} is not null`,
         sql`exists (select 1 from ${mbReleaseTrack} where ${mbReleaseTrack.releaseMbid} = ${spotifyAlbum.mbReleaseId})`,
       ),

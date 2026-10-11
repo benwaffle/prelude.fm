@@ -13,6 +13,7 @@
  */
 import { inArray, sql } from 'drizzle-orm';
 import { db } from './db';
+import { filmScoreExclusions } from './film-score-exclusions';
 import { mbWorkProposal } from './db/schema';
 import { composerOf, mbGet, type MbRelation, type MbWork } from './musicbrainz';
 import type { MusicBrainzChannel } from './musicbrainz-gateway';
@@ -49,6 +50,15 @@ export type Counter = { requests: number };
 
 /** Library recordings with no work relationship, one row per recording. */
 export async function loadProposalGaps(): Promise<ProposalGap[]> {
+  // Film scores are not part of the catalogue (see `film-scores`).
+  const film = await filmScoreExclusions();
+  const notFilm =
+    film.trackIds.length === 0
+      ? sql``
+      : sql`and t.spotify_id not in (${sql.join(
+          film.trackIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`;
   const rows = await db.all<{
     recording_mbid: string;
     title: string;
@@ -66,6 +76,7 @@ export async function loadProposalGaps(): Promise<ProposalGap[]> {
       where not exists (
         select 1 from mb_recording_work w where w.recording_mbid = tr.recording_mbid
       )
+      ${notFilm}
       group by tr.recording_mbid
     ),
     gap as (
