@@ -58,27 +58,12 @@ function isOneOf<T extends string>(values: readonly T[], value: string | null): 
   return values.includes(value as T);
 }
 
-/**
- * Links from before the home page replaced the tabs (`?tab=inbox&class=…`,
- * `?tab=albums`, `?tab=health`, `?tab=details&filter=…`) still land on the
- * page that now holds what they pointed at.
- */
-function legacyPage(search: SearchReader): AdminPage | null {
-  const requestedClass = search.get('class');
-  if (isOneOf(INBOX_CLASSES, requestedClass)) return requestedClass;
-  const tab = search.get('tab');
-  if (tab === 'albums') return 'albums';
-  if (tab === 'health') return 'checks';
-  if (tab === 'details' && search.get('filter')) return 'albums';
-  return null;
-}
-
 export function parseAdminUrl(search: SearchReader): AdminUrlState {
   const requestedPage = search.get('page');
   const page: AdminPage | null =
     isOneOf<AdminPage>(INBOX_CLASSES, requestedPage) || isOneOf(TOOL_PAGES, requestedPage)
       ? requestedPage
-      : legacyPage(search);
+      : null;
   const requestedFilter = search.get('filter');
   const albumFilter = isOneOf(ALBUM_STATES, requestedFilter) ? requestedFilter : undefined;
   const album = search.get('album')?.trim();

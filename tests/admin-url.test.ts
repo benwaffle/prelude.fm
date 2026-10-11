@@ -24,17 +24,6 @@ test('admin URL state ignores unknown values', () => {
   assert.equal(parseAdminUrl(new URLSearchParams('page=toString')).page, null);
 });
 
-test('links from the old tabs land on the page that holds what they pointed at', () => {
-  const pageOf = (query: string) => parseAdminUrl(new URLSearchParams(query)).page;
-  assert.equal(pageOf('tab=inbox&class=missing&album=a'), 'missing');
-  assert.equal(pageOf('tab=inbox'), null);
-  assert.equal(pageOf('tab=overview'), null);
-  assert.equal(pageOf('tab=albums'), 'albums');
-  assert.equal(pageOf('tab=health'), 'checks');
-  assert.equal(pageOf('tab=details'), null);
-  assert.equal(pageOf('tab=details&filter=unchecked'), 'albums');
-});
-
 test('admin hrefs carry the page, focus, and album filter', () => {
   assert.equal(adminHref(null), '/admin');
   assert.equal(
