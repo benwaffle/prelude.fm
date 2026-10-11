@@ -148,8 +148,8 @@ export function WorkProposalsPanel({ onRecorded }: { onRecorded: () => Promise<v
       {pending && <p className="album-meta">{pending}</p>}
       <p className="album-meta mb-2">
         Approving only records that you agree. Enter approved links in the album&apos;s MusicBrainz
-        relationship editor (paste each work link into “Add relationship”), submit there, then
-        record them as entered here.
+        relationship editor: copy a work link here, paste it into that track&apos;s “Add
+        relationship” search, submit there, then record them as entered here.
         {counts.unchecked > 0 && ' Run pnpm metadata:work-proposals to check the rest.'}
       </p>
 
@@ -191,6 +191,20 @@ export function WorkProposalsPanel({ onRecorded }: { onRecorded: () => Promise<v
                   onClick={() => select(rows)}
                 >
                   Select all
+                </button>
+                <button
+                  className="act"
+                  disabled={approved === 0}
+                  onClick={() =>
+                    navigator.clipboard.writeText(
+                      rows
+                        .filter((row) => row.state === 'approved' && row.proposal)
+                        .map((row) => workUrl(row.proposal!.workMbid))
+                        .join('\n'),
+                    )
+                  }
+                >
+                  Copy {approved} approved work links
                 </button>
                 <button
                   className="act"
@@ -275,6 +289,17 @@ function ProposalRow({
         {proposal && (
           <span className="album-meta">
             {STATE_LABEL[row.state]}
+            {row.state === 'approved' && (
+              <>
+                {' · '}
+                <button
+                  className="act"
+                  onClick={() => navigator.clipboard.writeText(workUrl(proposal.workMbid))}
+                >
+                  Copy link
+                </button>
+              </>
+            )}
             {(row.state === 'approved' || row.state === 'dismissed') && (
               <>
                 {' · '}
