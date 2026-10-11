@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { programmeMovementName } from '../app/components/detail/programme-title';
+import { programmeMovementName } from '../app/lib/prelude';
 
 const work = 'Concerto for Piano and Orchestra no. 2 in B-flat major, op. 83';
 

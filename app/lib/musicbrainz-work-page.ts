@@ -97,6 +97,7 @@ async function worksByComposer(
     movements: card.movements.map((movement) => ({
       roman: movement.roman,
       name: movement.name,
+      unnamed: movement.unnamed,
       duration: movement.duration,
       missing: movement.missing,
     })),

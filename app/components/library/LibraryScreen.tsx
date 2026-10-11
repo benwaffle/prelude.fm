@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSpotifyPlayer } from '@/lib/spotify-player-context';
+import { usePlayer, usePlayerActions } from '@/lib/spotify-player-context';
+import { LoadFailure } from '../LoadFailure';
 import { useLibrary } from '@/lib/library-context';
 import { useNavSearch } from '../AppShell';
 import { ERAS, playable, queueFrom, type LibraryWork, type Movement } from '@/lib/prelude';
@@ -20,9 +21,10 @@ const SORTS: [Sort, string][] = [
 
 /** The library: every work you hold at least one liked movement of. */
 export function LibraryScreen() {
-  const { works, gapTracks, loading, refreshing, matching, error, matchError, toggleLike } =
+  const { works, gapTracks, loading, refreshing, matching, error, matchFailure, toggleLike } =
     useLibrary();
-  const { currentTrack, play } = useSpotifyPlayer();
+  const { currentTrack } = usePlayer();
+  const { play } = usePlayerActions();
   const { query, setQuery } = useNavSearch();
   const [sort, setSort] = useState<Sort>('added');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -133,13 +135,16 @@ export function LibraryScreen() {
         </p>
       )}
 
-      {!error && matchError && (
-        <p className="py-10 font-display text-[15px] text-accent italic">
-          We couldn’t match your liked songs to works: {matchError}
-        </p>
+      {!error && matchFailure && (
+        <LoadFailure
+          className="py-10 font-display text-[15px] text-accent italic"
+          what="the works your liked songs belong to"
+          error={matchFailure.message}
+          onRetry={matchFailure.retry}
+        />
       )}
 
-      {!error && !matchError && likedWorks.length === 0 && (
+      {!error && !matchFailure && likedWorks.length === 0 && (
         <p className="py-16 font-display text-[15px] text-muted italic">
           {loading || matching
             ? 'Reading your liked songs…'

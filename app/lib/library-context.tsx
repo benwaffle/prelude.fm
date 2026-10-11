@@ -1,25 +1,25 @@
 'use client';
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { createSpotifySdk } from '@/lib/spotify-sdk';
 import { useLikedSongs } from '@/lib/use-liked-songs';
+import { useServerQuery } from '@/lib/use-server-query';
+import { usePlayer } from '@/lib/spotify-player-context';
+import type { NowPlayingTrack } from '@/lib/spotify/now-playing-track';
 import { getMusicBrainzLibrary } from '@/app/actions/library-mb';
 import type { UnresolvedLibraryTrack } from '@/lib/musicbrainz-library';
-import type { LibraryWork, Movement } from '@/lib/prelude';
+import type { MusicBrainzLibrary } from '@/lib/musicbrainz-library-view';
+import { withLiveLikes, type LibraryWork, type Movement } from '@/lib/prelude';
 
 const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? '';
 
+interface Placement {
+  work: LibraryWork;
+  movement: Movement;
+}
+
 interface LibraryContextValue {
-  /** Works with at least one saved movement, plus any registered by a page. */
+  /** Works with at least one saved movement. */
   works: LibraryWork[];
   /**
    * Held tracks the MusicBrainz reader cannot put on a card, each with what
@@ -36,13 +36,16 @@ interface LibraryContextValue {
   /** Spotify would not hand over the liked songs. */
   error: string | null;
   /** We hold the liked songs but could not match them to works. */
-  matchError: string | null;
+  matchFailure: { message: string; retry: () => void } | null;
   totalSaved: number;
   toggleLike: (trackId: string) => void;
-  /** Lets the detail screen contribute a recording the library doesn't hold. */
-  registerWorks: (works: LibraryWork[]) => void;
-  /** Which work and movement a playing track belongs to, if we know. */
-  locate: (trackId: string | null | undefined) => { work: LibraryWork; movement: Movement } | null;
+  /**
+   * A recording a page is showing that the library may not hold, so the
+   * player can still say which work it is playing. Never shown in the library.
+   */
+  rememberWork: (work: LibraryWork) => void;
+  /** Which work and movement each track belongs to, as far as we know. */
+  placements: Map<string, Placement>;
 }
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -57,97 +60,69 @@ export function LibraryProvider({
   children: ReactNode;
 }) {
   const { tracks, loading, refreshing, error, total } = useLikedSongs(accessToken, userId);
-  const [works, setWorks] = useState<LibraryWork[]>([]);
-  const [gapTracks, setGapTracks] = useState<UnresolvedLibraryTrack[]>([]);
-  const [matchError, setMatchError] = useState<string | null>(null);
-  const [extra, setExtra] = useState<LibraryWork[]>([]);
+  const [known, setKnown] = useState<Map<string, LibraryWork>>(new Map());
   // Optimistic overrides so a heart responds before Spotify confirms.
   const [pendingLikes, setPendingLikes] = useState<Map<string, boolean>>(new Map());
-  const requestedFor = useRef<string>('');
-  const [resolvedFor, setResolvedFor] = useState('');
-
-  const savedIds = useMemo(() => new Set(tracks.map((t) => t.track.id)), [tracks]);
-
-  /** Identifies one snapshot of the saved library, so we resolve it once. */
-  const signature = useMemo(() => {
-    if (tracks.length === 0) return '';
-    return `${tracks.length}:${tracks[0].track.id}:${tracks[tracks.length - 1].track.id}`;
-  }, [tracks]);
-
-  const matching = !loading && tracks.length > 0 && resolvedFor !== signature;
 
   const likedTrackIds = useMemo(() => {
-    const next = new Set(savedIds);
+    const next = new Set(tracks.map((t) => t.track.id));
     for (const [trackId, liked] of pendingLikes) {
       if (liked) next.add(trackId);
       else next.delete(trackId);
     }
     return next;
-  }, [savedIds, pendingLikes]);
+  }, [tracks, pendingLikes]);
 
-  /* Resolve saved tracks into works as soon as we hold a whole library —
-     a stale cache included, so an hour-old page still shows its works while
-     Spotify is re-read. Gated on `loading` only to avoid firing once per page
-     of a first, progressive load. */
-  useEffect(() => {
-    const key = signature;
-    if (loading || signature === '' || requestedFor.current === key) return;
-    requestedFor.current = key;
-
-    let cancelled = false;
-    const ids = tracks.map((t) => t.track.id);
-    const resolving = getMusicBrainzLibrary(
-      ids,
-      tracks.map((t) => [t.track.id, t.added_at] as [string, string]),
-    );
-
-    resolving
-      .then((resolved) => {
-        if (cancelled) return;
-        setWorks(resolved.works);
-        setGapTracks(resolved.unresolvedTracks);
-        setMatchError(null);
-      })
-      .catch((err: unknown) => {
-        console.error('Failed to resolve library works:', err);
-        // Say so, rather than leave an empty library that reads as "no likes".
-        if (!cancelled) setMatchError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        // Either way this snapshot has been dealt with; stop showing a spinner.
-        if (!cancelled) setResolvedFor(signature);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tracks, loading, signature]);
-
-  const addedAtByTrack = useMemo(
-    () => new Map(tracks.map((t) => [t.track.id, t.added_at])),
-    [tracks],
+  /* Resolve saved tracks into works as soon as we hold a whole library — a
+     stale cache included, so an hour-old page still shows its works while
+     Spotify is re-read. Keyed on `loading` so a first, progressive load is
+     resolved once, not once per page; keyed on one snapshot of the library
+     (its size and its ends) so each snapshot is resolved once. */
+  const snapshot =
+    loading || tracks.length === 0
+      ? ''
+      : `${tracks.length}:${tracks[0].track.id}:${tracks[tracks.length - 1].track.id}`;
+  const match = useServerQuery(
+    snapshot
+      ? () =>
+          getMusicBrainzLibrary(
+            tracks.map((t) => t.track.id),
+            tracks.map((t) => [t.track.id, t.added_at] as [string, string]),
+          )
+      : null,
+    [snapshot],
   );
 
-  // Re-read `liked` off the live set so hearts stay in sync after a toggle,
-  // and date each work by the most recently saved movement in it.
-  const decorated = useMemo(() => {
-    const merged = [...works];
-    const seen = new Set(works.map((w) => w.id));
-    for (const w of extra) if (!seen.has(w.id)) merged.push(w);
+  // Keep showing the last matched library while a newer snapshot is matched.
+  const [matched, setMatched] = useState<MusicBrainzLibrary | null>(null);
+  if (match.status === 'ready' && match.data !== matched) setMatched(match.data);
 
-    return merged.map((w) => {
-      const movements = w.movements.map((m) => ({
-        ...m,
-        liked: m.trackId !== null && likedTrackIds.has(m.trackId),
-      }));
-      let addedAt: string | null = null;
-      for (const m of movements) {
-        if (!m.liked || m.trackId === null) continue;
-        const at = addedAtByTrack.get(m.trackId);
-        if (at && (addedAt === null || at > addedAt)) addedAt = at;
+  const works = useMemo(
+    () =>
+      (matched?.works ?? []).map((w) => ({
+        ...w,
+        movements: withLiveLikes(w.movements, likedTrackIds),
+      })),
+    [matched, likedTrackIds],
+  );
+
+  /** Built once per library, not searched on every render of the player. */
+  const placements = useMemo(() => {
+    const byTrack = new Map<string, Placement>();
+    const place = (work: LibraryWork) => {
+      for (const movement of work.movements) {
+        if (movement.trackId && !byTrack.has(movement.trackId)) {
+          byTrack.set(movement.trackId, { work, movement });
+        }
       }
-      return { ...w, movements, addedAt };
-    });
-  }, [works, extra, likedTrackIds, addedAtByTrack]);
+    };
+    // The library's own card wins over a page's copy of the same recording.
+    works.forEach(place);
+    for (const work of known.values()) {
+      place({ ...work, movements: withLiveLikes(work.movements, likedTrackIds) });
+    }
+    return byTrack;
+  }, [works, known, likedTrackIds]);
 
   const toggleLike = useCallback(
     (trackId: string) => {
@@ -172,40 +147,48 @@ export function LibraryProvider({
     [accessToken, likedTrackIds],
   );
 
-  const registerWorks = useCallback((incoming: LibraryWork[]) => {
-    setExtra((prev) => {
-      const known = new Set(prev.map((w) => w.id));
-      const additions = incoming.filter((w) => !known.has(w.id));
-      return additions.length === 0 ? prev : [...prev, ...additions];
-    });
+  const rememberWork = useCallback((work: LibraryWork) => {
+    setKnown((prev) => (prev.has(work.id) ? prev : new Map(prev).set(work.id, work)));
   }, []);
 
-  const locate = useCallback(
-    (trackId: string | null | undefined) => {
-      if (!trackId) return null;
-      for (const work of decorated) {
-        const movement = work.movements.find((m) => m.trackId === trackId);
-        if (movement) return { work, movement };
-      }
-      return null;
-    },
-    [decorated],
+  const failedWith = match.status === 'error' ? match.message : null;
+  const retryMatch = match.status === 'error' ? match.retry : null;
+  const matchFailure = useMemo(
+    () => (failedWith !== null && retryMatch ? { message: failedWith, retry: retryMatch } : null),
+    [failedWith, retryMatch],
   );
 
-  const value: LibraryContextValue = {
-    works: decorated,
-    gapTracks,
-    likedTrackIds,
-    loading,
-    refreshing,
-    matching,
-    error,
-    matchError,
-    totalSaved: total,
-    toggleLike,
-    registerWorks,
-    locate,
-  };
+  const value = useMemo<LibraryContextValue>(
+    () => ({
+      works,
+      gapTracks: matched?.unresolvedTracks ?? [],
+      likedTrackIds,
+      loading,
+      refreshing,
+      matching: snapshot !== '' && match.status === 'loading',
+      error,
+      matchFailure,
+      totalSaved: total,
+      toggleLike,
+      rememberWork,
+      placements,
+    }),
+    [
+      works,
+      matched,
+      likedTrackIds,
+      loading,
+      refreshing,
+      snapshot,
+      match.status,
+      error,
+      matchFailure,
+      total,
+      toggleLike,
+      rememberWork,
+      placements,
+    ],
+  );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }
@@ -214,4 +197,24 @@ export function useLibrary(): LibraryContextValue {
   const ctx = useContext(LibraryContext);
   if (!ctx) throw new Error('useLibrary must be used inside a LibraryProvider');
   return ctx;
+}
+
+/**
+ * What is playing, placed in its work when we know the work: the library's
+ * cards first, then any recording a page has shown. A track we can't place
+ * is still playing, and is said to be unplaced rather than dressed as a work.
+ */
+export type NowPlaying =
+  | { kind: 'placed'; work: LibraryWork; movement: Movement }
+  | { kind: 'unplaced'; track: NowPlayingTrack }
+  | null;
+
+export function useNowPlaying(): NowPlaying {
+  const { currentTrack } = usePlayer();
+  const { placements } = useLibrary();
+  return useMemo(() => {
+    if (!currentTrack) return null;
+    const placed = currentTrack.id ? placements.get(currentTrack.id) : undefined;
+    return placed ? { kind: 'placed', ...placed } : { kind: 'unplaced', track: currentTrack };
+  }, [currentTrack, placements]);
 }
