@@ -23,6 +23,42 @@ interface MediaSessionOptions {
   subscribeToProgress: (callback: () => void) => () => void;
 }
 
+/**
+ * What the lock-screen wiring is doing, for checking it on a real phone:
+ * visiting /?media-debug=1 shows it in the full-screen player, =0 hides it.
+ */
+export interface MediaSessionDiagnostics {
+  silentLoop: string;
+  metadataTitle: string | null;
+  playbackState: string;
+  handlers: string[];
+  events: string[];
+}
+
+export const mediaDiagnostics: MediaSessionDiagnostics = {
+  silentLoop: 'not started',
+  metadataTitle: null,
+  playbackState: 'none',
+  handlers: [],
+  events: [],
+};
+
+function note(event: string) {
+  const time = new Date().toLocaleTimeString([], { hour12: false });
+  mediaDiagnostics.events = [`${time} ${event}`, ...mediaDiagnostics.events].slice(0, 8);
+}
+
+export function mediaDebugEnabled(): boolean {
+  try {
+    const flag = new URLSearchParams(window.location.search).get('media-debug');
+    if (flag === '1') localStorage.setItem('media-debug', '1');
+    if (flag === '0') localStorage.removeItem('media-debug');
+    return localStorage.getItem('media-debug') === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** iPhones and iPads give one page one playing sound at a time. */
 function isAppleTouch(): boolean {
   return (
@@ -57,20 +93,39 @@ export function useMediaSession({
   const supported = typeof navigator !== 'undefined' && 'mediaSession' in navigator;
   const on = supported && active && track !== null;
 
+  // Pick up ?media-debug=1 on whichever page it was visited.
+  useEffect(() => {
+    mediaDebugEnabled();
+  }, []);
+
   // The silent loop follows Spotify's playing and pausing.
   useEffect(() => {
     if (!on || isAppleTouch()) return;
     if (!silenceRef.current) {
-      const audio = new Audio('/silence.mp3');
+      // In the document, like any other player on the page.
+      const audio = document.createElement('audio');
+      audio.src = '/silence.mp3';
       audio.loop = true;
       audio.preload = 'auto';
+      audio.hidden = true;
+      document.body.appendChild(audio);
+      for (const event of ['playing', 'pause', 'error', 'stalled', 'loadedmetadata']) {
+        audio.addEventListener(event, () => {
+          mediaDiagnostics.silentLoop =
+            event === 'error' ? `error ${audio.error?.code ?? ''}` : event;
+          note(`silent loop ${event}${event === 'loadedmetadata' ? ` ${audio.duration}s` : ''}`);
+        });
+      }
       silenceRef.current = audio;
     }
     const audio = silenceRef.current;
     if (isPaused) audio.pause();
     else
-      audio.play().catch(() => {
+      audio.play().catch((err: unknown) => {
         // Refused before any tap on the page; the next play after one works.
+        const name = err instanceof Error ? err.name : String(err);
+        mediaDiagnostics.silentLoop = `refused: ${name}`;
+        note(`silent loop refused: ${name}`);
       });
   }, [on, isPaused]);
 
@@ -85,6 +140,8 @@ export function useMediaSession({
   const cover = track?.cover;
   useEffect(() => {
     if (!on || title === undefined) return;
+    mediaDiagnostics.metadataTitle = title;
+    note('track info set');
     navigator.mediaSession.metadata = new MediaMetadata({
       title,
       artist,
@@ -94,7 +151,9 @@ export function useMediaSession({
   }, [on, title, artist, album, cover]);
 
   useEffect(() => {
-    if (on) navigator.mediaSession.playbackState = isPaused ? 'paused' : 'playing';
+    if (!on) return;
+    navigator.mediaSession.playbackState = isPaused ? 'paused' : 'playing';
+    mediaDiagnostics.playbackState = navigator.mediaSession.playbackState;
   }, [on, isPaused]);
 
   // Handlers read the latest callbacks through a ref so they are set once.
@@ -133,9 +192,11 @@ export function useMediaSession({
         },
       ],
     ];
+    mediaDiagnostics.handlers = [];
     for (const [action, handler] of handlers) {
       try {
         session.setActionHandler(action, handler);
+        mediaDiagnostics.handlers.push(action);
       } catch {
         // Not every browser knows every action.
       }

@@ -7,6 +7,7 @@ import type { PlaybackDevice } from '@/lib/spotify-player-context';
 import { hexToRgba, numeralPrefix, type LibraryWork, type Movement } from '@/lib/prelude';
 import { Icon, Waveform } from './Icon';
 import { QueueList } from './queue/QueueList';
+import { MediaDebug } from './MediaDebug';
 
 interface NowPlayingSheetProps {
   work: LibraryWork;
@@ -275,6 +276,11 @@ export function NowPlayingSheet({
         <div className="mt-8">
           <QueueList />
         </div>
+
+        <MediaDebug
+          output={outputDevice ? outputDevice.name : 'nowhere yet'}
+          spotifyPaused={isPaused}
+        />
       </div>
     </div>,
     document.body,
