@@ -6,4 +6,6 @@ The production match worker runs through `/api/cron/match-queue`. A queued album
 
 The admin Inbox presents gaps and evidence. It never auto-submits to MusicBrainz. The ISRC bot runs only after an explicit action. Releases, works, and relationships require human editing and confirmation. Recheck reads MusicBrainz to see whether a submitted edit has landed.
 
+`pnpm metadata:work-proposals` proposes a work for each library recording MusicBrainz links to none: parts of works the album's other tracks already perform, then a MusicBrainz work search by title and composer. Each proposal carries a confidence and plain reasons; titles that disagree on a stated number, key or movement are ruled out rather than scored low, and a recording with no candidate is stored as "no proposal". It writes only `mb_work_proposal`. In the Inbox's work section, approving a proposal records only that the person agrees; they enter the links in the album's MusicBrainz relationship editor, then record them as entered, which writes the usual ledger rows for Recheck.
+
 Production application deploys occur by pushing commits to `master` and letting GitHub/Vercel deploy. The database migration is applied separately through `pnpm db:migrate`.
