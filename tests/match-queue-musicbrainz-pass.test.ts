@@ -44,7 +44,7 @@ beforeEach(async () => {
       spotifyId,
       spotifyAlbumId: 'album-1',
       submittedBy: 'test',
-      status: 'processing',
+      status: 'processing' as const,
       attempts: 1,
       lastAttemptAt: new Date('2026-09-21T00:00:00Z'),
       claimOwnerId: OWNER,

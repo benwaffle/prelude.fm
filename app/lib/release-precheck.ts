@@ -27,6 +27,16 @@ export type LookupState<T> =
   | { state: 'failed'; error: string }
   | { state: 'skipped'; reason: string };
 
+/** A lookup's value, or `empty` when it failed or was skipped. */
+export function doneOr<T>(lookup: LookupState<T>, empty: T): T {
+  return lookup.state === 'done' ? lookup.value : empty;
+}
+
+/** Recordings the ISRC lookup found; none when it did not run to completion. */
+export function precheckHits(isrcs: LookupState<PrecheckIsrcs>): PrecheckIsrcHit[] {
+  return isrcs.state === 'done' ? isrcs.value.hits : [];
+}
+
 export type PrecheckReleaseHit = {
   mbid: string;
   title: string;
@@ -275,6 +285,17 @@ export function candidateGroups(
   return [...out.values()].sort((a, b) => rank[a.via] - rank[b.via]);
 }
 
+/** The pre-check's strong release-group candidates (shared performer or recordings). */
+export function strongGroupsOf(precheck: ReleasePrecheck): GroupCandidate[] {
+  return candidateGroups(
+    precheck.seed,
+    doneOr(precheck.releases, []),
+    doneOr(precheck.groups, []),
+    precheckHits(precheck.isrcs),
+    precheck.artists,
+  ).filter(strongCandidate);
+}
+
 /* ---------------------------------------------------------------- verdict */
 
 function failures(parts: [string, LookupState<unknown>][]): string[] {
@@ -317,9 +338,9 @@ export function existingVerdict(
   isrcs: LookupState<PrecheckIsrcs>,
   artists: ArtistSuggestion[],
 ): ReleasePrecheck['existing'] {
-  const releaseHits = releases.state === 'done' ? releases.value : [];
-  const groupHits = groups.state === 'done' ? groups.value : [];
-  const isrcHits = isrcs.state === 'done' ? isrcs.value.hits : [];
+  const releaseHits = doneOr(releases, []);
+  const groupHits = doneOr(groups, []);
+  const isrcHits = precheckHits(isrcs);
 
   const duplicates = possibleDuplicates(seed, releaseHits, artists);
   if (duplicates.length > 0) {

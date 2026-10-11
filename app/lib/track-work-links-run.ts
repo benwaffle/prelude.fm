@@ -13,19 +13,12 @@
  * `track_work_link`, the works it reads into `mb_*`, and the classification of
  * the tracks it links. Submits nothing to MusicBrainz.
  */
-import { and, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 import { loadDerivedMusicBrainzLibraryFacts } from '@/app/actions/library-musicbrainz';
-import { db } from './db';
-import { trackClassification, trackWorkLink } from './db/schema';
-import {
-  cataloguesOf,
-  composerOf,
-  musicBrainzApi,
-  parentPartOf,
-  type MbRelation,
-  type MbWork,
-} from './musicbrainz';
-import { ingestWorkTree, readAndCacheWork } from './musicbrainz-cache';
+import { db, type DatabaseExecutor } from './db';
+import { mbWorkProposal, trackClassification, trackWorkLink } from './db/schema';
+import { cataloguesOf, childPartsOf, composerOf, parentPartOf, type MbWork } from './musicbrainz';
+import { createMbSession } from './musicbrainz-session';
 import { classificationMayBeReplaced } from './track-classification';
 import {
   asTrackWorkMatch,
@@ -35,11 +28,13 @@ import {
   unlinkSharedMatches,
   type TrackWorkMatch,
 } from './track-work-links';
-import { searchCandidates, type Counter } from './work-proposals-run';
+import { searchCandidates } from './work-proposals-run';
 import {
-  normalizeTitle,
+  dice,
+  nameWords,
   numberRefs,
   proposeWork,
+  surnameOf,
   titleTokens,
   type AlbumSibling,
   type ProposalCandidate,
@@ -93,12 +88,6 @@ export async function loadLinkGaps(): Promise<LinkGap[]> {
   }));
 }
 
-export function groupByAlbum(gaps: LinkGap[]): LinkGap[][] {
-  const groups = new Map<string, LinkGap[]>();
-  for (const gap of gaps) groups.set(gap.albumId, [...(groups.get(gap.albumId) ?? []), gap]);
-  return [...groups.values()];
-}
-
 export type LinkOutcome = {
   spotifyTrackId: string;
   title: string;
@@ -106,20 +95,6 @@ export type LinkOutcome = {
   match: TrackWorkMatch | null;
   requests: number;
 };
-
-function childParts(relations: MbRelation[] | undefined) {
-  return (relations ?? []).flatMap((relation) =>
-    relation.type === 'parts' && relation.direction === 'forward' && relation.work
-      ? [
-          {
-            id: relation.work.id,
-            title: relation.work.title,
-            orderingKey: relation['ordering-key'] ?? null,
-          },
-        ]
-      : [],
-  );
-}
 
 /** Catalogue systems a title's `numberRefs` key can be filed under in `mb_work_catalogue`. */
 const CATALOGUE_SYSTEMS: Record<string, string[]> = {
@@ -168,26 +143,14 @@ async function cachedCatalogueWorks(title: string, artistNames: string[]): Promi
     where ${sql.join(conditions, sql` or `)}
     limit ${CATALOGUE_ROWS}
   `);
-  const credited = artistNames.map((name) => normalizeTitle(name).split(/[^a-z]+/));
+  const credited = artistNames.map(nameWords);
   return rows
     .filter((row) => {
-      const surname = row.composer
-        ? normalizeTitle(row.composer)
-            .split(/[^a-z]+/)
-            .filter(Boolean)
-            .at(-1)
-        : undefined;
-      return surname !== undefined && credited.some((words) => words.includes(surname));
+      const surname = row.composer ? surnameOf(row.composer) : null;
+      return surname !== null && credited.some((words) => words.includes(surname));
     })
     .map((row) => row.work_mbid)
     .slice(0, 3);
-}
-
-function dice(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let shared = 0;
-  for (const token of a) if (b.has(token)) shared++;
-  return (2 * shared) / (a.size + b.size);
 }
 
 /** Search hits worth reading when nothing scored: the closest titles, composer or not. */
@@ -196,28 +159,27 @@ const PROMISING_TITLE_SCORE = 0.6;
 
 /** Links for every gap on one Spotify album. */
 export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
-  const source = musicBrainzApi('backfill');
+  const mb = createMbSession('backfill');
   const family: ProposalCandidate[] = [];
   const read = new Map<string, MbWork | null>();
   const opened = new Set<string>();
   const siblings: AlbumSibling[] = [];
   const outcomes: LinkOutcome[] = [];
 
-  const readWork = async (counter: Counter, mbid: string) => {
+  const readWork = async (mbid: string) => {
     if (read.has(mbid)) return read.get(mbid) ?? null;
-    counter.requests++;
-    const work = await readAndCacheWork(source, mbid);
+    const work = await mb.readAndCacheWork(mbid);
     read.set(mbid, work);
     return work;
   };
 
   /** Read a work and offer its parts to this and the following tracks. */
-  const openWork = async (counter: Counter, mbid: string) => {
-    const work = await readWork(counter, mbid);
+  const openWork = async (mbid: string) => {
+    const work = await readWork(mbid);
     if (!work || opened.has(work.id)) return work;
     opened.add(work.id);
     const composer = composerOf(work)?.name ?? null;
-    for (const part of childParts(work.relations)) {
+    for (const part of childPartsOf(work)) {
       family.push({
         workMbid: part.id,
         title: part.title,
@@ -236,24 +198,22 @@ export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
    * Read a work, open its parent (or the work itself when it has none), and
    * cache the rest of its ancestry. Returns the work's place in its parent.
    */
-  const expand = async (counter: Counter, mbid: string) => {
-    const work = await readWork(counter, mbid);
+  const expand = async (mbid: string) => {
+    const work = await readWork(mbid);
     if (!work) return null;
     const parent = parentPartOf(work);
     if (!parent) {
-      await openWork(counter, work.id);
+      await openWork(work.id);
       return null;
     }
-    const parentWork = await openWork(counter, parent.id);
+    const parentWork = await openWork(parent.id);
     const grandparent = parentWork ? parentPartOf(parentWork) : null;
-    if (grandparent && !read.has(grandparent.id)) {
-      counter.requests += (await ingestWorkTree(source, grandparent.id)).requests;
-    }
+    if (grandparent && !read.has(grandparent.id)) await mb.ingestWorkTree(grandparent.id);
     return parent;
   };
 
   for (const gap of gaps) {
-    const counter: Counter = { requests: 0 };
+    const before = mb.requests;
     const title = cleanTrackTitle(gap.title, gap.artistNames);
     const target: ProposalTarget = {
       recordingMbid: gap.spotifyTrackId,
@@ -293,12 +253,12 @@ export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
       const unread = (await cachedCatalogueWorks(title, gap.artistNames)).filter(
         (mbid) => !read.has(mbid),
       );
-      for (const mbid of unread) await openWork(counter, mbid);
+      for (const mbid of unread) await openWork(mbid);
       if (unread.length > 0) match = confirmed() ?? match;
     }
     let found: ProposalCandidate[] = [];
     if (!match?.linked) {
-      found = await searchCandidates(counter, title, gap.artistNames);
+      found = await searchCandidates(mb, title, gap.artistNames);
       match = propose([...family, ...found]) ?? match;
     }
     if (!match?.linked && found.length > 0) {
@@ -312,13 +272,13 @@ export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
         .filter(({ score }) => score >= PROMISING_TITLE_SCORE)
         .sort((a, b) => b.score - a.score)
         .slice(0, PROMISING_SEARCH_HITS);
-      for (const { candidate } of promising) await expand(counter, candidate.workMbid);
+      for (const { candidate } of promising) await expand(candidate.workMbid);
       if (promising.length > 0) {
         match = confirmed() ?? propose([...family, ...found]) ?? match;
       }
     }
     if (match?.linked) {
-      const parent = await expand(counter, match.workMbid);
+      const parent = await expand(match.workMbid);
       // "Piano Sonata No. 11: Rondo: Alla turca" is one movement. A whole
       // sonata is the right piece but the wrong level, and the card would
       // show the sonata as if this track were all of it.
@@ -343,28 +303,48 @@ export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
       title,
       albumTitle: gap.albumTitle,
       match,
-      requests: counter.requests,
+      requests: mb.requests - before,
     });
   }
   unlinkSharedMatches(outcomes);
   return outcomes;
 }
 
-/** Store outcomes, replacing whatever an earlier run stored for these tracks. */
-export async function storeLinks(outcomes: LinkOutcome[]): Promise<void> {
-  for (const outcome of outcomes) {
-    const row = {
-      spotifyTrackId: outcome.spotifyTrackId,
-      workMbid: outcome.match?.linked ? outcome.match.workMbid : null,
-      match: outcome.match,
-      requests: outcome.requests,
-      checkedAt: new Date(),
-    };
-    await db
+/**
+ * Store outcomes, replacing whatever an earlier run stored for these tracks,
+ * and re-derive the classification of the tracks they link — in one
+ * transaction, so a failure cannot leave links stored under a stale
+ * classification. Returns how many classifications changed.
+ */
+export async function storeLinks(outcomes: LinkOutcome[]): Promise<number> {
+  if (outcomes.length === 0) return 0;
+  const checkedAt = new Date();
+  return db.transaction(async (tx) => {
+    await tx
       .insert(trackWorkLink)
-      .values(row)
-      .onConflictDoUpdate({ target: trackWorkLink.spotifyTrackId, set: row });
-  }
+      .values(
+        outcomes.map((outcome) => ({
+          spotifyTrackId: outcome.spotifyTrackId,
+          workMbid: outcome.match?.linked ? outcome.match.workMbid : null,
+          match: outcome.match,
+          requests: outcome.requests,
+          checkedAt,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: trackWorkLink.spotifyTrackId,
+        set: {
+          workMbid: sql`excluded.work_mbid`,
+          match: sql`excluded.match`,
+          requests: sql`excluded.requests`,
+          checkedAt: sql`excluded.checked_at`,
+        },
+      });
+    return reclassify(
+      outcomes.filter((outcome) => outcome.match?.linked).map((outcome) => outcome.spotifyTrackId),
+      tx,
+    );
+  });
 }
 
 /**
@@ -374,61 +354,64 @@ export async function storeLinks(outcomes: LinkOutcome[]): Promise<void> {
  * The same reading the album pipeline makes, through the same facts loader,
  * and under the same precedence: a hand decision is never replaced, and like
  * the pipeline this never writes one (the film-score exclusion is applied as
- * tracks are read, not stored). Returns how many rows changed.
+ * tracks are read, not stored). Each chunk is written in one statement.
+ * Returns how many rows changed.
  */
-export async function reclassify(spotifyTrackIds: string[]): Promise<number> {
+export async function reclassify(
+  spotifyTrackIds: string[],
+  database: DatabaseExecutor = db,
+): Promise<number> {
   let changed = 0;
   for (let start = 0; start < spotifyTrackIds.length; start += 500) {
     const chunk = spotifyTrackIds.slice(start, start + 500);
-    const facts = await loadDerivedMusicBrainzLibraryFacts(chunk);
-    const existingRows = await db
+    const facts = await loadDerivedMusicBrainzLibraryFacts(chunk, database);
+    const existingRows = await database
       .select()
       .from(trackClassification)
       .where(inArray(trackClassification.spotifyTrackId, chunk));
     const existing = new Map(existingRows.map((row) => [row.spotifyTrackId, row]));
     const decidedAt = new Date();
-    for (const classification of facts.classifications) {
-      if (classification.provenance === 'manual') continue;
+    const rows = facts.classifications.flatMap((classification) => {
+      if (classification.provenance === 'manual') return [];
       const previous = existing.get(classification.spotifyTrackId);
       // A track with no stored row is classified as it is read, from the
       // same evidence, so there is nothing stale to replace.
-      if (!previous || !classificationMayBeReplaced(previous, classification)) continue;
+      if (!previous || !classificationMayBeReplaced(previous, classification)) return [];
       if (
-        previous?.state === classification.state &&
+        previous.state === classification.state &&
         previous.provenance === classification.provenance &&
         previous.reason === classification.reason
       ) {
-        continue;
+        return [];
       }
-      const row = {
-        spotifyTrackId: classification.spotifyTrackId,
-        state: classification.state,
-        provenance: classification.provenance,
-        reason: classification.reason,
-        evidenceMbid: null,
-        decidedAt,
-      };
-      await db
-        .insert(trackClassification)
-        .values(row)
-        .onConflictDoUpdate({ target: trackClassification.spotifyTrackId, set: row });
-      changed++;
-    }
+      return [
+        {
+          spotifyTrackId: classification.spotifyTrackId,
+          state: classification.state,
+          provenance: classification.provenance,
+          reason: classification.reason,
+          evidenceMbid: null,
+          decidedAt,
+        },
+      ];
+    });
+    if (rows.length === 0) continue;
+    await database
+      .insert(trackClassification)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: trackClassification.spotifyTrackId,
+        set: {
+          state: sql`excluded.state`,
+          provenance: sql`excluded.provenance`,
+          reason: sql`excluded.reason`,
+          evidenceMbid: sql`excluded.evidence_mbid`,
+          decidedAt: sql`excluded.decided_at`,
+        },
+      });
+    changed += rows.length;
   }
   return changed;
-}
-
-/** Tracks that already have a stored link or a stored "nothing found". */
-export async function checkedTracks(spotifyTrackIds: string[]): Promise<Set<string>> {
-  const checked = new Set<string>();
-  for (let start = 0; start < spotifyTrackIds.length; start += 400) {
-    const rows = await db
-      .select({ spotifyTrackId: trackWorkLink.spotifyTrackId })
-      .from(trackWorkLink)
-      .where(inArray(trackWorkLink.spotifyTrackId, spotifyTrackIds.slice(start, start + 400)));
-    for (const row of rows) checked.add(row.spotifyTrackId);
-  }
-  return checked;
 }
 
 /** Of these tracks, those checked (before `before`, when given) and left without a link. */
@@ -453,23 +436,16 @@ export async function unlinkedTracks(
   return unlinked;
 }
 
-export async function allTrackIds(): Promise<string[]> {
-  const rows = await db.all<{ spotify_id: string }>(sql`select spotify_id from spotify_track`);
-  return rows.map((row) => row.spotify_id);
-}
-
 /**
  * Read into the cache every work a suggested work link names, so the player
  * can show it under its composer and parent. Works already read cost nothing.
  */
 export async function cacheProposedWorks(): Promise<{ works: number; requests: number }> {
-  const rows = await db.all<{ work_mbid: string }>(sql`
-    select distinct json_extract(proposal, '$.workMbid') as work_mbid
-    from mb_work_proposal
-    where status <> 'dismissed' and json_extract(proposal, '$.workMbid') is not null
-  `);
-  const source = musicBrainzApi('backfill');
-  let requests = 0;
-  for (const row of rows) requests += (await ingestWorkTree(source, row.work_mbid)).requests;
-  return { works: rows.length, requests };
+  const rows = await db
+    .selectDistinct({ workMbid: mbWorkProposal.workMbid })
+    .from(mbWorkProposal)
+    .where(and(ne(mbWorkProposal.status, 'dismissed'), isNotNull(mbWorkProposal.workMbid)));
+  const mb = createMbSession('backfill');
+  for (const row of rows) await mb.ingestWorkTree(row.workMbid!);
+  return { works: rows.length, requests: mb.requests };
 }

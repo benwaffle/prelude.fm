@@ -24,13 +24,7 @@ import { persistMusicBrainzTrackOutcomes } from '@/lib/musicbrainz-pipeline-stat
  * only says no worker is holding the row and no worker should pick it up
  * until MusicBrainz has been given something new to say.
  */
-export type MatchQueueStatus =
-  | 'pending'
-  | 'processing'
-  | 'matched'
-  | 'failed'
-  | 'not_classical'
-  | 'unresolved';
+export type MatchQueueStatus = (typeof matchQueue.$inferSelect)['status'];
 
 export interface EnqueueResult {
   submitted: number;
@@ -179,7 +173,7 @@ async function enqueueAlbumTracks(albumId: string, submittedBy: string) {
         spotifyId: trackId,
         spotifyAlbumId: album.id,
         submittedBy,
-        status: 'pending',
+        status: 'pending' as const,
       })),
     );
   }

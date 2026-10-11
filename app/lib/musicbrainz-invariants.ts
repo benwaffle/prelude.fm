@@ -17,15 +17,17 @@
 import { sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbInvariantResult } from './db/schema';
+import {
+  invariantHealth,
+  type InvariantHealth,
+  type InvariantSeverity,
+} from './musicbrainz-invariant-health';
 
-/**
- * - `hard`: our cache is inconsistent with itself. Our bug, and it fails.
- * - `upstream`: MusicBrainz contradicts itself. Their bug, and we report it
- *   so it can be contributed back rather than repaired locally.
- * - `review`: the evidence points two ways and neither side is obviously
- *   wrong. Nothing to fix automatically; somebody has to look.
- */
-export type InvariantSeverity = 'hard' | 'upstream' | 'review';
+export {
+  INVARIANT_STALE_AFTER_HOURS,
+  type InvariantHealth,
+  type InvariantSeverity,
+} from './musicbrainz-invariant-health';
 
 export type Invariant = {
   name: string;
@@ -176,9 +178,6 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
   },
 ];
 
-import { invariantHealth, type InvariantHealth } from './musicbrainz-invariant-health';
-export { INVARIANT_STALE_AFTER_HOURS, type InvariantHealth } from './musicbrainz-invariant-health';
-
 export type InvariantResult = {
   name: string;
   severity: InvariantSeverity;
@@ -205,18 +204,25 @@ export async function runMusicBrainzInvariants(
     ? MUSICBRAINZ_INVARIANTS.filter((check) => check.cheap)
     : MUSICBRAINZ_INVARIANTS;
 
-  const results: InvariantResult[] = [];
-  for (const check of checks) {
-    const rows = await db.all<{ id: string; detail: string | null }>(check.query);
-    results.push({
-      name: check.name,
-      severity: check.severity,
-      describes: check.describes,
-      violations: rows.length,
-      samples: rows.slice(0, sampleSize),
-    });
-  }
-  return results;
+  // Each check is counted, and only a sample of its rows read: a check with
+  // thousands of violations should not ship them all just to be counted.
+  return Promise.all(
+    checks.map(async (check): Promise<InvariantResult> => {
+      const [counted, samples] = await Promise.all([
+        db.get<{ n: number }>(sql`select count(*) as n from (${check.query})`),
+        db.all<{ id: string; detail: string | null }>(
+          sql`select * from (${check.query}) limit ${sampleSize}`,
+        ),
+      ]);
+      return {
+        name: check.name,
+        severity: check.severity,
+        describes: check.describes,
+        violations: counted?.n ?? 0,
+        samples,
+      };
+    }),
+  );
 }
 
 /** The hard violations only, for a caller that has to decide whether to proceed. */
@@ -224,21 +230,30 @@ export function hardViolations(results: InvariantResult[]): InvariantResult[] {
   return results.filter((result) => result.severity === 'hard' && result.violations > 0);
 }
 
-/** Store the latest result of each check, so admin can show it as a page. */
+/** Store the latest result of each check, in one statement, so admin can show it as a page. */
 export async function recordInvariantResults(results: InvariantResult[]) {
-  for (const result of results) {
-    const row = {
-      name: result.name,
-      severity: result.severity,
-      violations: result.violations,
-      samples: result.samples,
-      checkedAt: new Date(),
-    };
-    await db
-      .insert(mbInvariantResult)
-      .values(row)
-      .onConflictDoUpdate({ target: mbInvariantResult.name, set: row });
-  }
+  if (results.length === 0) return;
+  const checkedAt = new Date();
+  await db
+    .insert(mbInvariantResult)
+    .values(
+      results.map((result) => ({
+        name: result.name,
+        severity: result.severity,
+        violations: result.violations,
+        samples: result.samples,
+        checkedAt,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: mbInvariantResult.name,
+      set: {
+        severity: sql`excluded.severity`,
+        violations: sql`excluded.violations`,
+        samples: sql`excluded.samples`,
+        checkedAt: sql`excluded.checked_at`,
+      },
+    });
 }
 
 /** The stored results, for the admin page. */

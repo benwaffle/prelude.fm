@@ -59,6 +59,9 @@ const DEFAULT_CHANNEL: MusicBrainzChannel = 'backfill';
 
 export class MusicBrainzError extends Error {}
 
+/** Told of every request actually sent, retries included, for a caller that counts them. */
+export type OnMbAttempt = () => void;
+
 /**
  * GET a web-service path. Returns null for 404 (the entity is genuinely absent),
  * throws for anything we could not resolve after retrying.
@@ -68,15 +71,18 @@ export class MusicBrainzError extends Error {}
  * needlessly, so it is retried with a backoff. Each attempt is a fresh trip
  * through the gateway, so retries queue like anything else and are counted
  * against the day's budget — a retry is a request the server had to serve.
+ * `onAttempt` hears about each of them for the same reason.
  */
 export async function mbGet<T>(
   path: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
 ): Promise<T | null> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const response = await scheduleMusicBrainzRequest(channel, () =>
       fetch(`${BASE}${path}`, { headers: { 'User-Agent': userAgent, Accept: 'application/json' } }),
     );
+    onAttempt?.();
 
     if (response.status === 404) return null;
 
@@ -107,7 +113,20 @@ export async function mbGet<T>(
 /* ------------------------------------------------------------- lookups --- */
 
 /**
- * Resolve many ISRCs at once.
+ * A value as one quoted Lucene term. Quotes and backslashes are the only
+ * characters that end or escape a phrase, so they become spaces; null when
+ * nothing is left to search for.
+ */
+export function luceneQuote(value: string): string | null {
+  const cleaned = value.replace(/["\\]/g, ' ').trim();
+  return cleaned ? `"${cleaned}"` : null;
+}
+
+/** One ISRC we asked for, and a recording the search index says carries it. */
+export type MbIsrcHit = { isrc: string; recording: MbRecordingSearchHit };
+
+/**
+ * Every recording carrying any of these ISRCs, in one search.
  *
  * The per-ISRC endpoint would need one request each, which is hours for a
  * library of this size. The search index accepts a Lucene OR over ISRCs and
@@ -115,27 +134,39 @@ export async function mbGet<T>(
  * ISRCs that produced it.
  *
  * Only ISRCs we asked for are returned; a recording carrying extra ISRCs does
- * not cause those to be claimed.
+ * not cause those to be claimed. An ISRC on several recordings is a hit for
+ * each.
  */
-export async function findRecordingsByIsrcs(
+export async function searchRecordingsByIsrcs(
   isrcs: string[],
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
-): Promise<Map<string, string>> {
-  const found = new Map<string, string>();
-  if (isrcs.length === 0) return found;
-
+  onAttempt?: OnMbAttempt,
+): Promise<MbIsrcHit[]> {
+  if (isrcs.length === 0) return [];
   const wanted = new Set(isrcs.map((isrc) => normalizeIsrc(isrc)));
   const query = isrcs.map((isrc) => `isrc:${isrc}`).join(' OR ');
   const result = await mbGet<{ recordings?: MbRecordingSearchHit[] }>(
     `/recording?query=${encodeURIComponent(query)}&fmt=json&limit=100`,
     channel,
+    onAttempt,
   );
-
-  for (const recording of result?.recordings ?? []) {
-    for (const reported of recording.isrcs ?? []) {
+  return (result?.recordings ?? []).flatMap((recording) =>
+    (recording.isrcs ?? []).flatMap((reported) => {
       const isrc = normalizeIsrc(reported);
-      if (wanted.has(isrc) && !found.has(isrc)) found.set(isrc, recording.id);
-    }
+      return wanted.has(isrc) ? [{ isrc, recording }] : [];
+    }),
+  );
+}
+
+/** Each ISRC's first recording, for a caller that needs one answer per ISRC. */
+export async function findRecordingsByIsrcs(
+  isrcs: string[],
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
+): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  for (const { isrc, recording } of await searchRecordingsByIsrcs(isrcs, channel, onAttempt)) {
+    if (!found.has(isrc)) found.set(isrc, recording.id);
   }
   return found;
 }
@@ -151,6 +182,7 @@ export async function findRecordingsByIsrcs(
 export async function findReleasesByBarcode(
   barcode: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
 ): Promise<string[]> {
   const normalise = (value: string | null | undefined) => (value ?? '').trim().replace(/^0+/, '');
   const wanted = normalise(barcode);
@@ -159,6 +191,7 @@ export async function findReleasesByBarcode(
   const result = await mbGet<{ releases?: { id: string; barcode?: string | null }[] }>(
     `/release?query=barcode:${encodeURIComponent(wanted)}&fmt=json&limit=25`,
     channel,
+    onAttempt,
   );
   return (result?.releases ?? [])
     .filter((release) => normalise(release.barcode) === wanted)
@@ -177,13 +210,15 @@ export async function searchReleasesByTitle(
   title: string,
   trackCount: number,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
 ): Promise<string[]> {
-  const cleaned = title.replace(/["\\]/g, ' ').trim();
-  if (!cleaned) return [];
-  const query = `release:"${cleaned}" AND tracks:${trackCount}`;
+  const quoted = luceneQuote(title);
+  if (!quoted) return [];
+  const query = `release:${quoted} AND tracks:${trackCount}`;
   const result = await mbGet<{ releases?: { id: string; score?: number }[] }>(
     `/release?query=${encodeURIComponent(query)}&fmt=json&limit=10`,
     channel,
+    onAttempt,
   );
   return (result?.releases ?? []).map((release) => release.id);
 }
@@ -199,10 +234,11 @@ export async function searchReleasesByTitle(
 export async function getReleaseRecordingIds(
   releaseId: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
 ): Promise<string[]> {
   const release = await mbGet<{
     media?: { tracks?: { recording?: { id: string } }[] }[];
-  }>(`/release/${releaseId}?inc=recordings&fmt=json`, channel);
+  }>(`/release/${releaseId}?inc=recordings&fmt=json`, channel, onAttempt);
   const ids: string[] = [];
   for (const medium of release?.media ?? []) {
     for (const track of medium.tracks ?? []) {
@@ -216,10 +252,12 @@ export async function getReleaseRecordingIds(
 export async function getRecordingWorks(
   recordingId: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
 ): Promise<MbWorkRef[]> {
   const recording = await mbGet<{ relations?: MbRelation[] }>(
     `/recording/${recordingId}?inc=work-rels&fmt=json`,
     channel,
+    onAttempt,
   );
   const works: MbWorkRef[] = [];
   for (const relation of recording?.relations ?? []) {
@@ -231,15 +269,21 @@ export async function getRecordingWorks(
 export async function getWork(
   workId: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
 ): Promise<MbWork | null> {
-  return mbGet<MbWork>(`/work/${workId}?inc=work-rels+artist-rels+series-rels&fmt=json`, channel);
+  return mbGet<MbWork>(
+    `/work/${workId}?inc=work-rels+artist-rels+series-rels&fmt=json`,
+    channel,
+    onAttempt,
+  );
 }
 
 export async function getArtist(
   artistId: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
 ): Promise<MbArtist | null> {
-  return mbGet<MbArtist>(`/artist/${artistId}?fmt=json`, channel);
+  return mbGet<MbArtist>(`/artist/${artistId}?fmt=json`, channel, onAttempt);
 }
 
 /* --------------------------------------------------- the release read --- */
@@ -248,13 +292,35 @@ export async function getArtist(
  * Everything one release can tell us, in one request.
  *
  * This single `inc` list returns the tracklist, each track's recording, its
- * ISRCs, the works those recordings perform, and the artists credited on them
- * with their roles. Asking per recording instead would cost one request each
- * — dozens for an album — and the difference between those two shapes is what
- * decides whether the rate-limited web service is usable at all.
+ * ISRCs, the works those recordings perform, the artists credited on them
+ * with their roles, and the release's group. Asking per recording instead
+ * would cost one request each — dozens for an album — and the difference
+ * between those two shapes is what decides whether the rate-limited web
+ * service is usable at all.
  */
 const RELEASE_INC =
-  'recordings+recording-level-rels+work-rels+artist-rels+artist-credits+isrcs+url-rels';
+  'recordings+recording-level-rels+work-rels+artist-rels+artist-credits+isrcs+url-rels+release-groups';
+
+/** An `artist-credit` list as the web service returns it. */
+export type MbArtistCreditJson = { name?: string; artist?: { id: string; name: string } }[];
+
+/** The artists of a credit, under the names the credit prints. */
+export function artistCreditOf(
+  credit: MbArtistCreditJson | undefined,
+): { artistId: string; name: string }[] {
+  return (credit ?? []).flatMap((part) =>
+    part.artist ? [{ artistId: part.artist.id, name: part.name || part.artist.name }] : [],
+  );
+}
+
+type RawRecording = {
+  id: string;
+  title?: string;
+  length?: number | null;
+  isrcs?: string[];
+  relations?: MbRelation[];
+  'artist-credit'?: MbArtistCreditJson;
+};
 
 type RawRelease = {
   id: string;
@@ -263,6 +329,8 @@ type RawRelease = {
   date?: string | null;
   country?: string | null;
   relations?: MbRelation[];
+  'artist-credit'?: MbArtistCreditJson;
+  'release-group'?: { id: string; title: string };
   media?: {
     position?: number;
     tracks?: {
@@ -270,14 +338,8 @@ type RawRelease = {
       number?: string;
       title?: string;
       length?: number | null;
-      recording?: {
-        id: string;
-        title?: string;
-        length?: number | null;
-        isrcs?: string[];
-        relations?: MbRelation[];
-        'artist-credit'?: { name?: string; artist?: { id: string; name: string } }[];
-      };
+      'artist-credit'?: MbArtistCreditJson;
+      recording?: RawRecording;
     }[];
   }[];
 };
@@ -324,68 +386,7 @@ function creditsFromRelations(relations: MbRelation[] | undefined): MbCredit[] {
   return credits;
 }
 
-export async function getReleaseWithRecordings(
-  releaseId: string,
-  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
-): Promise<MbRelease | null> {
-  const raw = await mbGet<RawRelease>(`/release/${releaseId}?inc=${RELEASE_INC}&fmt=json`, channel);
-  if (!raw) return null;
-
-  const tracks: MbReleaseTrack[] = [];
-  raw.media?.forEach((medium, mediumIndex) => {
-    medium.tracks?.forEach((track, trackIndex) => {
-      const recording = track.recording;
-      if (!recording) return;
-      tracks.push({
-        medium: medium.position ?? mediumIndex + 1,
-        position: track.position ?? trackIndex + 1,
-        title: track.title ?? recording.title ?? '',
-        length: track.length ?? null,
-        recording: {
-          id: recording.id,
-          title: recording.title ?? '',
-          length: recording.length ?? null,
-          isrcs: recording.isrcs ?? [],
-          works: (recording.relations ?? [])
-            .filter((relation) => relation.type === 'performance' && relation.work)
-            .map((relation) => relation.work as MbWorkRef),
-          credits: creditsFromRelations(recording.relations),
-          artistCredit: (recording['artist-credit'] ?? []).flatMap((credit) =>
-            credit.artist?.id && credit.name
-              ? [{ artistId: credit.artist.id, name: credit.name }]
-              : [],
-          ),
-        },
-      });
-    });
-  });
-
-  return {
-    id: raw.id,
-    title: raw.title ?? '',
-    barcode: raw.barcode ?? null,
-    date: raw.date ?? null,
-    country: raw.country ?? null,
-    urlRelations: releaseUrlRelations(raw.relations),
-    tracks,
-  };
-}
-
-/** One recording, with the works it performs and who played on it. */
-export async function getRecordingDetail(
-  recordingId: string,
-  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
-): Promise<MbReleaseRecording | null> {
-  const raw = await mbGet<{
-    id: string;
-    title?: string;
-    length?: number | null;
-    isrcs?: string[];
-    relations?: MbRelation[];
-    'artist-credit'?: { name?: string; artist?: { id: string; name: string } }[];
-  }>(`/recording/${recordingId}?inc=work-rels+artist-rels+artist-credits+isrcs&fmt=json`, channel);
-  if (!raw) return null;
-
+function recordingOf(raw: RawRecording): MbReleaseRecording {
   return {
     id: raw.id,
     title: raw.title ?? '',
@@ -395,10 +396,76 @@ export async function getRecordingDetail(
       .filter((relation) => relation.type === 'performance' && relation.work)
       .map((relation) => relation.work as MbWorkRef),
     credits: creditsFromRelations(raw.relations),
-    artistCredit: (raw['artist-credit'] ?? []).flatMap((credit) =>
-      credit.artist?.id && credit.name ? [{ artistId: credit.artist.id, name: credit.name }] : [],
-    ),
+    artistCredit: artistCreditOf(raw['artist-credit']),
   };
+}
+
+/** A release with the credits `MbRelease` leaves out: its own, its group's and each track's. */
+export type MbReleaseDetail = Omit<MbRelease, 'tracks'> & {
+  artistCredit: { artistId: string; name: string }[];
+  releaseGroup: { id: string; title: string } | null;
+  /** How many media (discs) the release has, including any without tracks. */
+  media: number;
+  tracks: (MbReleaseTrack & { artistCredit: { artistId: string; name: string }[] })[];
+};
+
+export async function getReleaseWithRecordings(
+  releaseId: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
+): Promise<MbReleaseDetail | null> {
+  const raw = await mbGet<RawRelease>(
+    `/release/${releaseId}?inc=${RELEASE_INC}&fmt=json`,
+    channel,
+    onAttempt,
+  );
+  if (!raw) return null;
+
+  const tracks = (raw.media ?? []).flatMap((medium, mediumIndex) =>
+    (medium.tracks ?? []).flatMap((track, trackIndex) => {
+      const recording = track.recording;
+      if (!recording) return [];
+      return [
+        {
+          medium: medium.position ?? mediumIndex + 1,
+          position: track.position ?? trackIndex + 1,
+          title: track.title ?? recording.title ?? '',
+          length: track.length ?? null,
+          artistCredit: artistCreditOf(track['artist-credit']),
+          recording: recordingOf(recording),
+        },
+      ];
+    }),
+  );
+
+  return {
+    id: raw.id,
+    title: raw.title ?? '',
+    barcode: raw.barcode ?? null,
+    date: raw.date ?? null,
+    country: raw.country ?? null,
+    urlRelations: releaseUrlRelations(raw.relations),
+    artistCredit: artistCreditOf(raw['artist-credit']),
+    releaseGroup: raw['release-group']
+      ? { id: raw['release-group'].id, title: raw['release-group'].title }
+      : null,
+    media: raw.media?.length ?? 0,
+    tracks,
+  };
+}
+
+/** One recording, with the works it performs and who played on it. */
+export async function getRecordingDetail(
+  recordingId: string,
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
+): Promise<MbReleaseRecording | null> {
+  const raw = await mbGet<RawRecording>(
+    `/recording/${recordingId}?inc=work-rels+artist-rels+artist-credits+isrcs&fmt=json`,
+    channel,
+    onAttempt,
+  );
+  return raw ? recordingOf(raw) : null;
 }
 
 /* ------------------------------------------------------------- source --- */
@@ -410,22 +477,29 @@ export async function getRecordingDetail(
  * says once what it is doing — serving a signup, sweeping the cache — and
  * every read it makes inherits the right priority.
  */
-export function musicBrainzApi(channel: MusicBrainzChannel = DEFAULT_CHANNEL): MusicBrainzSource {
+export function musicBrainzApi(
+  channel: MusicBrainzChannel = DEFAULT_CHANNEL,
+  onAttempt?: OnMbAttempt,
+): MusicBrainzSource {
   return {
     name: `musicbrainz-api:${channel}`,
-    releasesByBarcode: (barcode) => findReleasesByBarcode(barcode, channel),
-    searchReleases: (title, trackCount) => searchReleasesByTitle(title, trackCount, channel),
-    releaseWithRecordings: (releaseId) => getReleaseWithRecordings(releaseId, channel),
-    releaseRecordingIds: (releaseId) => getReleaseRecordingIds(releaseId, channel),
-    recordingsByIsrc: (isrcs) => findRecordingsByIsrcs(isrcs, channel),
-    recordingWorks: (recordingId) => getRecordingWorks(recordingId, channel),
-    recordingDetail: (recordingId) => getRecordingDetail(recordingId, channel),
-    work: (workId) => getWork(workId, channel),
-    artist: (artistId) => getArtist(artistId, channel),
+    releasesByBarcode: (barcode) => findReleasesByBarcode(barcode, channel, onAttempt),
+    searchReleases: (title, trackCount) =>
+      searchReleasesByTitle(title, trackCount, channel, onAttempt),
+    releaseWithRecordings: (releaseId) => getReleaseWithRecordings(releaseId, channel, onAttempt),
+    releaseRecordingIds: (releaseId) => getReleaseRecordingIds(releaseId, channel, onAttempt),
+    recordingsByIsrc: (isrcs) => findRecordingsByIsrcs(isrcs, channel, onAttempt),
+    recordingWorks: (recordingId) => getRecordingWorks(recordingId, channel, onAttempt),
+    recordingDetail: (recordingId) => getRecordingDetail(recordingId, channel, onAttempt),
+    work: (workId) => getWork(workId, channel, onAttempt),
+    artist: (artistId) => getArtist(artistId, channel, onAttempt),
   };
 }
 
 /* ------------------------------------------------------ relation readers --- */
+
+/** A work in a `parts` relationship, with its position in the parent. */
+export type MbWorkPart = MbWorkRef & { orderingKey: number | null };
 
 /** The parent work this one is a movement/section of, if any. */
 export function parentWorkOf(work: MbWork): MbWorkRef | null {
@@ -444,9 +518,7 @@ export function parentWorkOf(work: MbWork): MbWorkRef | null {
  * so a child fetch answers both questions at once and the parent never has to
  * be fetched just to learn what order its parts come in.
  */
-export function parentPartOf(
-  work: MbWork,
-): { id: string; title: string; orderingKey: number | null } | null {
+export function parentPartOf(work: MbWork): MbWorkPart | null {
   for (const relation of work.relations ?? []) {
     if (relation.type === 'parts' && relation.direction === 'backward' && relation.work) {
       return {
@@ -459,12 +531,16 @@ export function parentPartOf(
   return null;
 }
 
-/** Child parts, in the order MusicBrainz returned them. */
-export function childPartsOf(work: MbWork): MbWorkRef[] {
-  const parts: MbWorkRef[] = [];
+/** Child parts with their positions, in the order MusicBrainz returned them. */
+export function childPartsOf(work: MbWork): MbWorkPart[] {
+  const parts: MbWorkPart[] = [];
   for (const relation of work.relations ?? []) {
     if (relation.type === 'parts' && relation.direction === 'forward' && relation.work) {
-      parts.push(relation.work);
+      parts.push({
+        id: relation.work.id,
+        title: relation.work.title,
+        orderingKey: relation['ordering-key'] ?? null,
+      });
     }
   }
   return parts;
