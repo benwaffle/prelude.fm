@@ -24,7 +24,7 @@ export function fakeSource(answers: Partial<MusicBrainzSource>): MusicBrainzSour
  * tests: two tracks whose ISRCs a barcode-matched release carries, and the
  * work tree and artists those recordings reach.
  */
-export const ALBUM = {
+const ALBUM = {
   id: 'album-1',
   name: 'Mozart: Piano Sonatas',
   uri: 'spotify:album:album-1',
@@ -33,7 +33,7 @@ export const ALBUM = {
   images: [{ url: 'https://example.test/cover.jpg', width: 640, height: 640 }],
 };
 
-export function spotifyTrack(index: number): Track {
+function spotifyTrack(index: number): Track {
   return {
     id: `track-${index}`,
     name: `Piano Sonata no. 16: movement ${index}`,
@@ -47,7 +47,7 @@ export function spotifyTrack(index: number): Track {
   } as unknown as Track;
 }
 
-export const SPOTIFY_ALBUM = { album: ALBUM, tracks: [spotifyTrack(1), spotifyTrack(2)] };
+const SPOTIFY_ALBUM = { album: ALBUM, tracks: [spotifyTrack(1), spotifyTrack(2)] };
 export const readAlbum = async () => SPOTIFY_ALBUM;
 
 /** A release whose recordings carry the ISRCs Spotify gave us. */
