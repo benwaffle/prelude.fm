@@ -157,6 +157,13 @@ export function isSoundtrackAlbum(album: { spotifyAlbumId: string; title: string
   return album.spotifyAlbumId in SOUNDTRACK_ALBUMS || SOUNDTRACK_TITLE.test(album.title);
 }
 
+/** Every film-score reason starts with this, so a reader can tell them apart. */
+export const FILM_SCORE_REASON = 'film score, left out of the catalogue';
+
+export function isFilmScoreReason(reason: string | null | undefined): boolean {
+  return reason?.startsWith(FILM_SCORE_REASON) ?? false;
+}
+
 export type FilmScoreWork = ClassicalEvidenceWork & { composerMbid: string | null };
 
 export type FilmScoreTrack = {
@@ -176,20 +183,20 @@ export function filmScoreReason(
     for (const work of ancestry(workMbid, workByMbid)) {
       const composer = work.composerMbid && FILM_COMPOSER_BY_MBID.get(work.composerMbid);
       if (composer) {
-        return `film score, left out of the catalogue: MusicBrainz credits ${composer.name}, who writes for film and TV`;
+        return `${FILM_SCORE_REASON}: MusicBrainz credits ${composer.name}, who writes for film and TV`;
       }
     }
   }
   for (const artistId of track.spotifyArtistIds) {
     const composer = FILM_COMPOSER_BY_SPOTIFY_ID.get(artistId);
     if (composer) {
-      return `film score, left out of the catalogue: Spotify credits ${composer.name}, who writes for film and TV`;
+      return `${FILM_SCORE_REASON}: Spotify credits ${composer.name}, who writes for film and TV`;
     }
   }
   if (track.album && isSoundtrackAlbum(track.album)) {
     const evidence = classicalEvidenceFor(track.workMbids, workByMbid, catalogedWorkMbids);
     if (evidence.state !== 'classical') {
-      return `film score, left out of the catalogue: on the soundtrack album "${track.album.title}" and ${evidence.reason}`;
+      return `${FILM_SCORE_REASON}: on the soundtrack album "${track.album.title}" and ${evidence.reason}`;
     }
   }
   return null;
