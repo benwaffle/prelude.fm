@@ -31,7 +31,7 @@ import {
 } from './db/schema';
 import { bumpCacheLookup, recordMusicBrainzRequest } from './musicbrainz-cache-metrics';
 import { normalizeIsrc } from './isrc';
-import { cataloguesOf, composerOf, parentPartOf, yearOf } from './musicbrainz';
+import { cataloguesOf, composerOf, parentPartOf, spotifyArtistIdOf, yearOf } from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
 import type {
   MbArtist,
@@ -67,18 +67,6 @@ export async function releaseIsCached(releaseMbid: string): Promise<boolean> {
 }
 
 /* ------------------------------------------------------------ entities --- */
-
-/** The Spotify artist a MusicBrainz artist links to, if it links to one. */
-export function spotifyArtistIdOf(artist: MbArtist): string | null {
-  for (const relation of artist.relations ?? []) {
-    if (relation.ended || !relation.url) continue;
-    const match = /^https?:\/\/open\.spotify\.com\/artist\/([A-Za-z0-9]+)\/?$/.exec(
-      relation.url.resource,
-    );
-    if (match) return match[1];
-  }
-  return null;
-}
 
 async function cacheArtist(artist: MbArtist) {
   const now = new Date();

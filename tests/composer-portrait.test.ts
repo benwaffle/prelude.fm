@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { spotifyArtistIdOf } from '../app/lib/musicbrainz-cache';
+import { spotifyArtistIdOf } from '../app/lib/musicbrainz';
 import { portraitOf } from '../app/lib/prelude';
 
 const PROKOFIEV = '0e43fe9d-c472-4b62-be9e-55f971a023e1';
