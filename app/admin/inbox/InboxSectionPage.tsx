@@ -10,7 +10,10 @@ import { getBotStatus, type BotStatus } from '../actions/bot';
 import { getContributions, type ContributionView } from '../actions/inbox-view';
 import { Spinner } from '../components/Spinner';
 import { afterAdminBurst } from '../components/admin-action-queue';
-import { adminFailureMessage, LoadFailure, useAdminFailure } from '../components/AdminFailure';
+import { failureMessage } from '@/lib/use-server-query';
+import { LoadFailure } from '@/app/components/LoadFailure';
+import { noticeClassName } from '../components/Notice';
+import { useAdminFailure } from '../components/AdminFailure';
 import type { InboxClass } from '../lib/admin-url';
 import type { InboxFocus } from '../lib/inbox-focus';
 import { BarcodesSection } from './BarcodesSection';
@@ -69,7 +72,7 @@ export function InboxSectionPage({
         setLoadError(null);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setLoadError(adminFailureMessage(error));
+        if (!cancelled) setLoadError(failureMessage(error));
       });
     return () => {
       cancelled = true;
@@ -81,7 +84,7 @@ export function InboxSectionPage({
     if (!usesBot) return;
     getBotStatus()
       .then(setBot)
-      .catch((error: unknown) => setBotError(adminFailureMessage(error)));
+      .catch((error: unknown) => setBotError(failureMessage(error)));
   }, [usesBot]);
 
   useEffect(() => {
@@ -108,6 +111,7 @@ export function InboxSectionPage({
 
   const failure = loadError !== null && (
     <LoadFailure
+      className={noticeClassName('error')}
       what="this list"
       error={loadError}
       onRetry={() => {

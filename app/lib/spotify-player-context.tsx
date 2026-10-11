@@ -2,86 +2,80 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
-  useCallback,
   type ReactNode,
 } from 'react';
 import type { Track } from '@spotify/web-api-ts-sdk';
+import type { QueueEntry } from './prelude';
+import {
+  describeFailure,
+  listDevices,
+  localDevice,
+  readPlaybackState,
+  spotifyApi,
+  toDevice,
+  type PlaybackDevice,
+  type SpotifyApiPlaybackState,
+} from './spotify/web-api';
+import {
+  fromSdkTrack,
+  fromWebApiTrack,
+  sameTrack,
+  trackUris,
+  type NowPlayingTrack,
+} from './spotify/now-playing-track';
+import { createProgressStore, positionAt, type PlaybackProgress } from './spotify/progress';
+import {
+  EMPTY_QUEUE,
+  handedUris,
+  queueReducer,
+  restOfCurrent,
+  type QueueAction,
+  type Segment,
+} from './spotify/playback-queue';
+import {
+  connectTransport,
+  localTransport,
+  type PlaybackTransport,
+  type Send,
+} from './spotify/transport';
+import { useLocalPlayer, type LocalPlayer } from './spotify/use-local-player';
 
-interface PlaybackProgress {
-  position: number;
-  duration: number;
-  timestamp: number;
-  paused: boolean;
-}
+export type { PlaybackDevice } from './spotify/web-api';
+export type { LocalPlayer } from './spotify/use-local-player';
 
-/** Somewhere Spotify can play: this browser, or a Spotify Connect device. */
-export interface PlaybackDevice {
-  id: string;
-  name: string;
-  /** Spotify's device type: Computer, Smartphone, Speaker, … */
-  type: string;
-  /** The browser tab's own Web Playback SDK player. */
-  isThisBrowser: boolean;
-  /** Spotify refuses remote control of restricted devices. */
-  isRestricted: boolean;
-  supportsVolume: boolean;
-}
-
-/**
- * Whether this browser can play audio itself through Spotify's Web Playback
- * SDK. When it can't (an unsupported browser, no Premium), playback can still
- * go to the Spotify app or a speaker through Spotify Connect.
- */
-export type LocalPlayerStatus = 'connecting' | 'ready' | 'unavailable';
-
-/** A recording waiting to play after what's playing now. */
-export interface QueueEntry {
-  id: string;
-  uris: string[];
-  title: string;
-  subtitle: string | null;
-  cover: string | null;
-}
-
-/**
- * What Spotify was last given to play, in the pieces it came from: what the
- * listener started, then each queued recording. Spotify plays the list through
- * on its own, so queued recordings follow on with no gap even with the screen
- * off; the pieces let us tell which queued recording has started.
- */
-interface Segment {
-  entryId: string | null;
-  uris: string[];
-}
-
-interface SpotifyPlayerContextValue {
+/** What is playing, where, and what is waiting. Changes as playback does. */
+export interface PlayerState {
   /** True when there is a device to send playback to. */
   isReady: boolean;
   isPaused: boolean;
-  currentTrack: Track | null;
-  deviceId: string | null;
+  currentTrack: NowPlayingTrack | null;
   volume: number;
   /** Where playback goes: this browser, or a Connect device. */
   outputDevice: PlaybackDevice | null;
   /** Devices from the last refresh. */
   devices: PlaybackDevice[];
-  localStatus: LocalPlayerStatus;
-  /** Why this browser can't play, in plain words, when it can't. */
-  localProblem: string | null;
+  /** Whether this browser can play, and why not when it can't. */
+  local: LocalPlayer;
   /** The last thing Spotify refused, in plain words. */
   playbackError: string | null;
   /** Set when something was asked to play with nowhere to play it. */
   needsDevice: boolean;
+  queue: QueueEntry[];
+}
+
+/** The controls. Stable for the life of the player, so holding them re-renders nothing. */
+export interface PlayerActions {
   dismissDevicePrompt: () => void;
   refreshDevices: () => Promise<void>;
   chooseDevice: (device: PlaybackDevice) => Promise<void>;
   /** Play these tracks, then whatever is queued. */
   play: (uris: string[]) => Promise<void>;
-  queue: QueueEntry[];
   addToQueue: (entry: Omit<QueueEntry, 'id'>) => void;
   removeFromQueue: (id: string) => void;
   clearQueue: () => void;
@@ -94,264 +88,191 @@ interface SpotifyPlayerContextValue {
   previousTrack: () => Promise<void>;
   nextTrack: () => Promise<void>;
   setVolume: (volume: number) => Promise<void>;
+  /** Where playback is now, extrapolated since Spotify last said. */
   getProgress: () => PlaybackProgress;
+  /** Hear of every progress report, from any source. */
   subscribeToProgress: (callback: (progress: PlaybackProgress) => void) => () => void;
 }
 
-const SpotifyPlayerContext = createContext<SpotifyPlayerContextValue | null>(null);
+const PlayerStateContext = createContext<PlayerState | null>(null);
+const PlayerActionsContext = createContext<PlayerActions | null>(null);
 
-/** How long the SDK gets to come up before we treat this browser as unable to play. */
-const LOCAL_PLAYER_TIMEOUT_MS = 10_000;
 /** How often a Connect device is asked what it is playing. */
 const REMOTE_POLL_MS = 3_000;
-
-const LOCAL_PLAYER_NAME = 'prelude.fm';
-
-const NO_LOCAL_PLAYBACK = 'Spotify’s player didn’t start in this browser.';
-
+/** Connect devices take a moment to act on a command before they're re-read. */
+const CONNECT_SETTLE_MS = 600;
 /** Queue edits made in quick succession go to Spotify as one. */
 const QUEUE_SYNC_DELAY_MS = 400;
 
 let nextQueueId = 0;
 
-/** Spotify may play a relinked copy of the track we asked for. */
-function trackUris(track: Track | null): string[] {
-  if (!track) return [];
-  const linked = (track as Track & { linked_from?: { uri?: string } }).linked_from?.uri;
-  return linked ? [track.uri, linked] : [track.uri];
-}
-
-interface SpotifyApiDevice {
-  id: string | null;
-  name: string;
-  type: string;
-  is_active: boolean;
-  is_restricted: boolean;
-  supports_volume?: boolean;
-  volume_percent: number | null;
-}
-
-interface SpotifyApiPlaybackState {
-  device: SpotifyApiDevice;
-  progress_ms: number | null;
-  is_playing: boolean;
-  item: (Track & { type: 'track' }) | { type: 'episode' } | null;
-}
-
-class SpotifyApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
+interface Playback {
+  isPaused: boolean;
+  currentTrack: NowPlayingTrack | null;
+  volume: number;
 }
 
 /**
- * The Web API's player endpoints answer most commands with an empty 204, which
- * the typed SDK tries to parse as JSON, so these go through fetch directly.
+ * State that callbacks read the moment it is set, not a render later. The
+ * player's callbacks outlive renders (SDK listeners, timers, polls), so each
+ * reads through the getter; components read the value.
  */
-async function spotifyApi(
-  token: string,
-  path: string,
-  init: { method?: string; body?: unknown } = {},
-): Promise<Response> {
-  const res = await fetch(`https://api.spotify.com/v1${path}`, {
-    method: init.method ?? 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(init.body !== undefined && { 'Content-Type': 'application/json' }),
-    },
-    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-  });
-  if (!res.ok) {
-    let reason = res.statusText;
-    try {
-      const json = await res.json();
-      reason = json?.error?.message ?? reason;
-    } catch {
-      // Not every error carries a body.
-    }
-    throw new SpotifyApiError(res.status, reason);
-  }
-  return res;
+function useCurrentState<T>(initial: T): [T, () => T, (next: T) => void] {
+  const [value, setValue] = useState(initial);
+  const ref = useRef(initial);
+  const get = useCallback(() => ref.current, []);
+  const set = useCallback((next: T) => {
+    ref.current = next;
+    setValue(next);
+  }, []);
+  return [value, get, set];
 }
 
-/** Spotify's refusals, said the way a listener would want to hear them. */
-function describeFailure(err: unknown, device: PlaybackDevice | null): string {
-  if (err instanceof SpotifyApiError) {
-    if (err.status === 404) {
-      return device && !device.isThisBrowser
-        ? `Spotify can’t reach ${device.name}. Open Spotify on it, then choose it again.`
-        : 'Spotify can’t find a device to play on.';
-    }
-    if (err.status === 403) return `Spotify refused: ${err.message}`;
-    if (err.status === 401) return 'Spotify’s sign-in expired. Reload to sign in again.';
-    return `Spotify returned an error: ${err.message}`;
-  }
-  return err instanceof Error ? err.message : 'Spotify didn’t respond.';
-}
-
-function toDevice(d: SpotifyApiDevice, localId: string | null): PlaybackDevice | null {
-  if (!d.id) return null;
-  return {
-    id: d.id,
-    name: d.name,
-    type: d.type,
-    isThisBrowser: d.id === localId,
-    isRestricted: d.is_restricted,
-    supportsVolume: d.supports_volume ?? d.volume_percent !== null,
-  };
-}
-
-interface SpotifyPlayerProviderProps {
+export function SpotifyPlayerProvider({
+  accessToken,
+  children,
+}: {
   accessToken: string;
   children: ReactNode;
-}
+}) {
+  const tokenRef = useRef(accessToken);
+  useEffect(() => {
+    tokenRef.current = accessToken;
+  }, [accessToken]);
+  const getToken = useCallback(() => tokenRef.current, []);
 
-export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerProviderProps) {
-  const [state, setState] = useState({
+  const [progress] = useState(createProgressStore);
+  const [playback, getPlayback, setPlayback] = useCurrentState<Playback>({
     isPaused: true,
-    currentTrack: null as Track | null,
+    currentTrack: null,
     volume: 1,
   });
-  const [localDeviceId, setLocalDeviceId] = useState<string | null>(null);
-  const [localStatus, setLocalStatus] = useState<LocalPlayerStatus>('connecting');
-  const [localProblem, setLocalProblem] = useState<string | null>(null);
-  const [outputDevice, setOutputDevice] = useState<PlaybackDevice | null>(null);
+  const [outputDevice, getOutput, setOutput] = useCurrentState<PlaybackDevice | null>(null);
+  const [pendingUris, getPendingUris, setPendingUris] = useCurrentState<string[] | null>(null);
+  const [queueState, getQueue, setQueueState] = useCurrentState(EMPTY_QUEUE);
   const [devices, setDevices] = useState<PlaybackDevice[]>([]);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
-  const [pendingUris, setPendingUris] = useState<string[] | null>(null);
-  const [queue, setQueue] = useState<QueueEntry[]>([]);
-
-  const playerRef = useRef<Spotify.Player | null>(null);
-  const accessTokenRef = useRef(accessToken);
-  const outputRef = useRef<PlaybackDevice | null>(null);
-  const localDeviceIdRef = useRef<string | null>(null);
   /** Set once the listener picks a device, so a late browser player doesn't take over. */
   const userChoseRef = useRef(false);
-  const progressRef = useRef<PlaybackProgress>({
-    position: 0,
-    duration: 0,
-    timestamp: 0,
-    paused: true,
-  });
-  const progressSubscribersRef = useRef<Set<(progress: PlaybackProgress) => void>>(new Set());
-  const queueRef = useRef<QueueEntry[]>([]);
-  const segmentsRef = useRef<Segment[]>([]);
-  /** Which segment is playing; segments before it are done. */
-  const segmentIndexRef = useRef(0);
-  /** Set when the queue changed and Spotify hasn't been told yet. */
-  const queueDirtyRef = useRef(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentTrackRef = useRef<Track | null>(null);
 
-  // Keep the refs in sync with the latest values for the SDK's callbacks.
-  useEffect(() => {
-    accessTokenRef.current = accessToken;
-  }, [accessToken]);
-  useEffect(() => {
-    outputRef.current = outputDevice;
-  }, [outputDevice]);
-  useEffect(() => {
-    localDeviceIdRef.current = localDeviceId;
-  }, [localDeviceId]);
-  useEffect(() => {
-    currentTrackRef.current = state.currentTrack;
-  }, [state.currentTrack]);
-
-  const updateQueue = useCallback((next: QueueEntry[]) => {
-    queueRef.current = next;
-    setQueue(next);
-  }, []);
-
-  // When a queued recording starts, it leaves the queue (and so do any the
-  // listener skipped past to get to it).
-  useEffect(() => {
-    const uris = trackUris(state.currentTrack);
-    if (uris.length === 0) return;
-    const segments = segmentsRef.current;
-    for (let i = segmentIndexRef.current; i < segments.length; i++) {
-      if (!segments[i].uris.some((u) => uris.includes(u))) continue;
-      segmentIndexRef.current = i;
-      const startedId = segments[i].entryId;
-      if (startedId !== null) {
-        const at = queueRef.current.findIndex((e) => e.id === startedId);
-        if (at >= 0) updateQueue(queueRef.current.slice(at + 1));
-      }
-      return;
-    }
-  }, [state.currentTrack, updateQueue]);
-
-  const notifyProgressSubscribers = useCallback(() => {
-    const progress = progressRef.current;
-    progressSubscribersRef.current.forEach((cb) => cb(progress));
-  }, []);
-
-  const localDevice = useCallback(
-    (id: string): PlaybackDevice => ({
-      id,
-      name: 'This browser',
-      type: 'Computer',
-      isThisBrowser: true,
-      isRestricted: false,
-      supportsVolume: true,
-    }),
-    [],
+  const dispatch = useCallback(
+    (action: QueueAction) => {
+      const next = queueReducer(getQueue(), action);
+      if (next !== getQueue()) setQueueState(next);
+    },
+    [getQueue, setQueueState],
   );
 
+  /** Take on a report of what's playing; unchanged reports change nothing. */
+  const report = useCallback(
+    (next: Partial<Playback>) => {
+      const now = getPlayback();
+      const track =
+        next.currentTrack === undefined || sameTrack(next.currentTrack, now.currentTrack)
+          ? now.currentTrack
+          : next.currentTrack;
+      const isPaused = next.isPaused ?? now.isPaused;
+      const volume = next.volume ?? now.volume;
+      if (track !== now.currentTrack || isPaused !== now.isPaused || volume !== now.volume) {
+        setPlayback({ currentTrack: track, isPaused, volume });
+      }
+      // A queued recording that has started leaves the queue.
+      if (next.currentTrack) dispatch({ type: 'trackStarted', uris: trackUris(next.currentTrack) });
+    },
+    [getPlayback, setPlayback, dispatch],
+  );
+
+  const {
+    local,
+    player,
+    deviceId: localDeviceId,
+  } = useLocalPlayer(getToken, {
+    onReady: (deviceId) => {
+      setDevices((ds) => [localDevice(deviceId), ...ds.filter((d) => !d.isThisBrowser)]);
+      // Play here unless the listener already chose somewhere else. A device
+      // picked up only because this player was slow to start gives way.
+      const current = getOutput();
+      setOutput(current && userChoseRef.current ? current : localDevice(deviceId));
+    },
+    onNotReady: (deviceId) => {
+      if (getOutput()?.id === deviceId) setOutput(null);
+    },
+    onStateChange: (state) => {
+      // While a Connect device is playing, this browser's player is idle and
+      // its state says nothing about what the listener is hearing.
+      const output = getOutput();
+      if (output && !output.isThisBrowser) return;
+      if (!state) {
+        report({ currentTrack: null, isPaused: true });
+        return;
+      }
+      progress.set({
+        position: state.position,
+        duration: state.duration,
+        timestamp: Date.now(),
+        paused: state.paused,
+      });
+      report({
+        isPaused: state.paused,
+        currentTrack: fromSdkTrack(state.track_window.current_track),
+      });
+    },
+  });
+
   /** Take on what a Connect device reports it is playing. */
-  const applyRemoteState = useCallback((remote: SpotifyApiPlaybackState | null) => {
-    if (!remote) {
-      progressRef.current = { position: 0, duration: 0, timestamp: Date.now(), paused: true };
-      setState((s) => ({ ...s, isPaused: true, currentTrack: null }));
-      return;
-    }
-    const track = remote.item?.type === 'track' ? (remote.item as Track) : null;
-    progressRef.current = {
-      position: remote.progress_ms ?? 0,
-      duration: track?.duration_ms ?? 0,
-      timestamp: Date.now(),
-      paused: !remote.is_playing,
-    };
-    setState((s) => ({
-      ...s,
-      isPaused: !remote.is_playing,
-      currentTrack: track,
-      volume: remote.device.volume_percent !== null ? remote.device.volume_percent / 100 : s.volume,
-    }));
-  }, []);
+  const applyRemoteState = useCallback(
+    (remote: SpotifyApiPlaybackState | null) => {
+      if (!remote) {
+        progress.set({ position: 0, duration: 0, timestamp: Date.now(), paused: true });
+        report({ isPaused: true, currentTrack: null });
+        return;
+      }
+      const track = remote.item?.type === 'track' ? fromWebApiTrack(remote.item as Track) : null;
+      progress.set({
+        position: remote.progress_ms ?? 0,
+        duration: track?.durationMs ?? 0,
+        timestamp: Date.now(),
+        paused: !remote.is_playing,
+      });
+      report({
+        isPaused: !remote.is_playing,
+        currentTrack: track,
+        ...(remote.device.volume_percent !== null && {
+          volume: remote.device.volume_percent / 100,
+        }),
+      });
+    },
+    [progress, report],
+  );
 
   /** Ask Spotify what is playing where, for a Connect device. */
   const pollRemote = useCallback(async () => {
-    const output = outputRef.current;
+    const output = getOutput();
     if (!output || output.isThisBrowser) return;
     try {
-      const res = await spotifyApi(accessTokenRef.current, '/me/player');
-      if (res.status === 204) {
+      const remote = await readPlaybackState(getToken());
+      if (!remote) {
         applyRemoteState(null);
         return;
       }
-      const remote = (await res.json()) as SpotifyApiPlaybackState;
       // Playback moved — someone picked another device in the Spotify app.
       // Follow it rather than keep showing a device that has gone quiet.
-      const moved = toDevice(remote.device, localDeviceIdRef.current);
+      const moved = toDevice(remote.device, localDeviceId());
       if (moved && moved.id !== output.id) {
-        setOutputDevice(moved.isThisBrowser ? localDevice(moved.id) : moved);
+        setOutput(moved.isThisBrowser ? localDevice(moved.id) : moved);
         if (moved.isThisBrowser) return;
       }
       applyRemoteState(remote);
     } catch (err) {
       console.error('Error reading playback state:', err);
     }
-  }, [applyRemoteState, localDevice]);
+  }, [getOutput, setOutput, getToken, localDeviceId, applyRemoteState]);
 
   const refreshDevices = useCallback(async () => {
     try {
-      const res = await spotifyApi(accessTokenRef.current, '/me/player/devices');
-      const json = (await res.json()) as { devices: SpotifyApiDevice[] };
-      const local = localDeviceIdRef.current;
-      const found = json.devices
+      const local = localDeviceId();
+      const found = (await listDevices(getToken()))
         .map((d) => toDevice(d, local))
         .filter((d): d is PlaybackDevice => d !== null && !d.isThisBrowser);
       setDevices(local ? [localDevice(local), ...found] : found);
@@ -359,120 +280,26 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
       console.error('Error listing devices:', err);
       setPlaybackError(describeFailure(err, null));
     }
-  }, [localDevice]);
-
-  // --- This browser's player ---
-
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://sdk.scdn.co/spotify-player.js';
-    script.async = true;
-    document.body.appendChild(script);
-
-    let ready = false;
-    const giveUp = (problem: string) => {
-      if (ready) return;
-      setLocalStatus('unavailable');
-      setLocalProblem(problem);
-    };
-    const timeout = setTimeout(() => giveUp(NO_LOCAL_PLAYBACK), LOCAL_PLAYER_TIMEOUT_MS);
-
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      const player = new window.Spotify.Player({
-        name: LOCAL_PLAYER_NAME,
-        getOAuthToken: (cb) => cb(accessTokenRef.current),
-        volume: 1,
-      });
-
-      player.addListener('ready', ({ device_id }) => {
-        ready = true;
-        clearTimeout(timeout);
-        setLocalDeviceId(device_id);
-        setLocalStatus('ready');
-        setLocalProblem(null);
-        setDevices((ds) => [localDevice(device_id), ...ds.filter((d) => !d.isThisBrowser)]);
-        // Play here unless the listener already chose somewhere else. A device
-        // picked up only because this player was slow to start gives way.
-        setOutputDevice((current) =>
-          current && userChoseRef.current ? current : localDevice(device_id),
-        );
-      });
-
-      player.addListener('not_ready', ({ device_id }) => {
-        console.log('Device ID has gone offline', device_id);
-        setLocalStatus('connecting');
-        setOutputDevice((current) => (current?.id === device_id ? null : current));
-      });
-
-      player.addListener('initialization_error', ({ message }) => {
-        console.error('Spotify player initialization error:', message);
-        giveUp(NO_LOCAL_PLAYBACK);
-      });
-      player.addListener('account_error', ({ message }) => {
-        console.error('Spotify player account error:', message);
-        clearTimeout(timeout);
-        giveUp('Playing in the browser needs Spotify Premium.');
-      });
-      player.addListener('authentication_error', ({ message }) => {
-        console.error('Spotify player authentication error:', message);
-        clearTimeout(timeout);
-        giveUp('Spotify didn’t accept the sign-in for playing in the browser.');
-      });
-
-      player.addListener('player_state_changed', (sdkState) => {
-        // While a Connect device is playing, this browser's player is idle and
-        // its state says nothing about what the listener is hearing.
-        if (outputRef.current && !outputRef.current.isThisBrowser) return;
-        if (!sdkState) {
-          setState((s) => ({ ...s, currentTrack: null, isPaused: true }));
-          return;
-        }
-
-        progressRef.current = {
-          position: sdkState.position,
-          duration: sdkState.duration,
-          timestamp: Date.now(),
-          paused: sdkState.paused,
-        };
-        notifyProgressSubscribers();
-
-        // SDK track type differs from Web API Track type, cast as needed.
-        setState((s) => ({
-          ...s,
-          isPaused: sdkState.paused,
-          currentTrack: sdkState.track_window.current_track as unknown as Track,
-        }));
-      });
-
-      player.connect();
-      playerRef.current = player;
-    };
-
-    return () => {
-      clearTimeout(timeout);
-      playerRef.current?.disconnect();
-    };
-  }, [notifyProgressSubscribers, localDevice]);
+  }, [getToken, localDeviceId]);
 
   // When this browser can't play, pick up whatever the account is already
   // playing on, so the bar shows what the Spotify app or speaker is doing.
   useEffect(() => {
-    if (localStatus !== 'unavailable' || outputRef.current) return;
+    if (local.status !== 'unavailable' || getOutput()) return;
     let cancelled = false;
-    spotifyApi(accessTokenRef.current, '/me/player')
-      .then(async (res) => {
-        if (cancelled || res.status === 204) return;
-        const remote = (await res.json()) as SpotifyApiPlaybackState;
+    readPlaybackState(getToken())
+      .then((remote) => {
+        if (cancelled || !remote) return;
         const device = toDevice(remote.device, null);
-        if (!device || device.isRestricted || outputRef.current) return;
-        setOutputDevice(device);
+        if (!device || device.isRestricted || getOutput()) return;
+        setOutput(device);
         applyRemoteState(remote);
       })
       .catch((err) => console.error('Error reading playback state:', err));
     return () => {
       cancelled = true;
     };
-  }, [localStatus, applyRemoteState]);
+  }, [local.status, getOutput, setOutput, getToken, applyRemoteState]);
 
   // Follow a Connect device while it is the output and the page is in view.
   useEffect(() => {
@@ -498,48 +325,26 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
 
   // --- Actions ---
 
-  /** Run a Web API command against the output device, then re-read its state. */
-  const remoteCommand = useCallback(
-    async (method: string, path: string, body?: unknown) => {
-      const output = outputRef.current;
-      if (!output) return;
-      const sep = path.includes('?') ? '&' : '?';
+  const send: Send = useCallback(
+    async (device, what, request) => {
       try {
-        await spotifyApi(
-          accessTokenRef.current,
-          `${path}${sep}device_id=${encodeURIComponent(output.id)}`,
-          { method, body },
-        );
+        await request(getToken());
         setPlaybackError(null);
       } catch (err) {
-        console.error(`Spotify ${method} ${path} failed:`, err);
-        setPlaybackError(describeFailure(err, output));
-      }
-      // Connect devices take a moment to act on a command.
-      if (!output.isThisBrowser) setTimeout(pollRemote, 600);
-    },
-    [pollRemote],
-  );
-
-  const playOn = useCallback(
-    async (device: PlaybackDevice, uris: string[], positionMs?: number) => {
-      try {
-        await spotifyApi(
-          accessTokenRef.current,
-          `/me/player/play?device_id=${encodeURIComponent(device.id)}`,
-          {
-            method: 'PUT',
-            body: positionMs ? { uris, position_ms: Math.round(positionMs) } : { uris },
-          },
-        );
-        setPlaybackError(null);
-      } catch (err) {
-        console.error('Error starting playback:', err);
+        console.error(`${what} failed:`, err);
         setPlaybackError(describeFailure(err, device));
       }
-      if (!device.isThisBrowser) setTimeout(pollRemote, 600);
+      if (!device.isThisBrowser) setTimeout(pollRemote, CONNECT_SETTLE_MS);
     },
-    [pollRemote],
+    [getToken, pollRemote],
+  );
+
+  const transportFor = useCallback(
+    (device: PlaybackDevice | null): PlaybackTransport =>
+      device?.isThisBrowser
+        ? localTransport(player(), device, send)
+        : connectTransport(device, send, progress, (isPaused) => report({ isPaused })),
+    [player, send, progress, report],
   );
 
   /**
@@ -549,21 +354,18 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
   const playWithQueue = useCallback(
     async (start: Segment, positionMs?: number) => {
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-      queueDirtyRef.current = false;
-      const segments = [start, ...queueRef.current.map((e) => ({ entryId: e.id, uris: e.uris }))];
-      segmentsRef.current = segments;
-      segmentIndexRef.current = 0;
-      const uris = segments.flatMap((s) => s.uris);
-      const output = outputRef.current;
+      dispatch({ type: 'handedOver', start });
+      const uris = handedUris(getQueue());
+      const output = getOutput();
       if (!output) {
         // Nowhere to play yet: hold the request and ask where.
         setPendingUris(uris);
         refreshDevices();
         return;
       }
-      await playOn(output, uris, positionMs);
+      await transportFor(output).play(uris, positionMs);
     },
-    [playOn, refreshDevices],
+    [dispatch, getQueue, getOutput, setPendingUris, refreshDevices, transportFor],
   );
 
   const play = useCallback(
@@ -578,209 +380,182 @@ export function SpotifyPlayerProvider({ accessToken, children }: SpotifyPlayerPr
    * paused and happens on resume instead.
    */
   const syncQueue = useCallback(async () => {
-    const track = currentTrackRef.current;
+    const track = getPlayback().currentTrack;
     if (!track) return;
-    const uris = trackUris(track);
-    const segment = segmentsRef.current[segmentIndexRef.current];
-    const at = segment ? segment.uris.findIndex((u) => uris.includes(u)) : -1;
-    // Something we didn't start (from the Spotify app, say): keep the track.
-    const rest = at >= 0 ? segment.uris.slice(at) : [track.uri];
-    await playWithQueue({ entryId: null, uris: rest }, getPosition(progressRef.current));
-  }, [playWithQueue]);
+    const rest = restOfCurrent(getQueue(), { uris: trackUris(track), uri: track.uri });
+    await playWithQueue({ entryId: null, uris: rest }, positionAt(progress.get(), Date.now()));
+  }, [getPlayback, getQueue, playWithQueue, progress]);
 
   const queueChanged = useCallback(() => {
-    if (!currentTrackRef.current) return;
-    queueDirtyRef.current = true;
-    if (progressRef.current.paused) return;
+    if (!getPlayback().currentTrack) return;
+    dispatch({ type: 'changed' });
+    if (progress.get().paused) return;
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => void syncQueue(), QUEUE_SYNC_DELAY_MS);
-  }, [syncQueue]);
+  }, [getPlayback, dispatch, progress, syncQueue]);
 
   const addToQueue = useCallback(
     (entry: Omit<QueueEntry, 'id'>) => {
       if (entry.uris.length === 0) return;
-      updateQueue([...queueRef.current, { ...entry, id: `q${++nextQueueId}` }]);
+      dispatch({ type: 'add', entry: { ...entry, id: `q${++nextQueueId}` } });
       queueChanged();
     },
-    [updateQueue, queueChanged],
+    [dispatch, queueChanged],
   );
 
   const removeFromQueue = useCallback(
     (id: string) => {
-      updateQueue(queueRef.current.filter((e) => e.id !== id));
+      dispatch({ type: 'remove', id });
       queueChanged();
     },
-    [updateQueue, queueChanged],
+    [dispatch, queueChanged],
   );
 
   const clearQueue = useCallback(() => {
-    if (queueRef.current.length === 0) return;
-    updateQueue([]);
+    if (getQueue().queue.length === 0) return;
+    dispatch({ type: 'clear' });
     queueChanged();
-  }, [updateQueue, queueChanged]);
+  }, [getQueue, dispatch, queueChanged]);
 
   const playQueue = useCallback(async () => {
-    const [first, ...rest] = queueRef.current;
+    const first = getQueue().queue[0];
     if (!first) return;
-    updateQueue(rest);
+    dispatch({ type: 'takeFirst' });
     await playWithQueue({ entryId: null, uris: first.uris });
-  }, [updateQueue, playWithQueue]);
+  }, [getQueue, dispatch, playWithQueue]);
 
   const chooseDevice = useCallback(
     async (device: PlaybackDevice) => {
-      const previous = outputRef.current;
+      const previous = getOutput();
       userChoseRef.current = true;
-      outputRef.current = device;
-      setOutputDevice(device);
+      setOutput(device);
       setPlaybackError(null);
 
-      if (pendingUris) {
+      const pending = getPendingUris();
+      if (pending) {
         setPendingUris(null);
-        await playOn(device, pendingUris);
+        await transportFor(device).play(pending);
         return;
       }
       // With nothing loaded there is nothing to carry over; the device simply
       // becomes where the next play goes.
-      if (previous?.id === device.id || progressRef.current.duration === 0) return;
+      if (previous?.id === device.id || progress.get().duration === 0) return;
       // Carry on whatever was playing, on the new device.
-      try {
-        await spotifyApi(accessTokenRef.current, '/me/player', {
+      await send(device, 'Moving playback', (token) =>
+        spotifyApi(token, '/me/player', {
           method: 'PUT',
-          body: { device_ids: [device.id], play: !progressRef.current.paused },
-        });
-      } catch (err) {
-        console.error('Error moving playback:', err);
-        setPlaybackError(describeFailure(err, device));
-      }
-      if (!device.isThisBrowser) setTimeout(pollRemote, 600);
+          body: { device_ids: [device.id], play: !progress.get().paused },
+        }),
+      );
     },
-    [pendingUris, playOn, pollRemote],
+    [getOutput, setOutput, getPendingUris, setPendingUris, transportFor, progress, send],
   );
 
-  const dismissDevicePrompt = useCallback(() => setPendingUris(null), []);
+  const dismissDevicePrompt = useCallback(() => setPendingUris(null), [setPendingUris]);
 
-  const isLocal = () => outputRef.current?.isThisBrowser ?? false;
+  const transport = useCallback(() => transportFor(getOutput()), [transportFor, getOutput]);
 
-  const pause = useCallback(async () => {
-    if (isLocal()) await playerRef.current?.pause();
-    else await remoteCommand('PUT', '/me/player/pause');
-  }, [remoteCommand]);
+  const pause = useCallback(() => transport().pause(), [transport]);
 
   const resume = useCallback(async () => {
-    if (queueDirtyRef.current) await syncQueue();
-    else if (isLocal()) await playerRef.current?.resume();
-    else await remoteCommand('PUT', '/me/player/play');
-  }, [remoteCommand, syncQueue]);
+    if (getQueue().dirty) await syncQueue();
+    else await transport().resume();
+  }, [getQueue, syncQueue, transport]);
 
   const togglePlay = useCallback(async () => {
-    if (queueDirtyRef.current && progressRef.current.paused) {
-      await syncQueue();
-      return;
-    }
-    if (isLocal()) {
-      await playerRef.current?.togglePlay();
-      return;
-    }
-    const paused = progressRef.current.paused;
-    // Answer the tap at once; the next poll corrects it if Spotify disagrees.
-    progressRef.current = {
-      ...progressRef.current,
-      position: getPosition(progressRef.current),
-      timestamp: Date.now(),
-      paused: !paused,
-    };
-    setState((s) => ({ ...s, isPaused: !paused }));
-    await remoteCommand('PUT', paused ? '/me/player/play' : '/me/player/pause');
-  }, [remoteCommand, syncQueue]);
+    if (getQueue().dirty && progress.get().paused) await syncQueue();
+    else await transport().toggle();
+  }, [getQueue, progress, syncQueue, transport]);
 
-  const seek = useCallback(
-    async (positionMs: number) => {
-      if (isLocal()) {
-        await playerRef.current?.seek(positionMs);
-        return;
-      }
-      progressRef.current = { ...progressRef.current, position: positionMs, timestamp: Date.now() };
-      await remoteCommand('PUT', `/me/player/seek?position_ms=${Math.round(positionMs)}`);
-    },
-    [remoteCommand],
-  );
-
-  const previousTrack = useCallback(async () => {
-    if (isLocal()) await playerRef.current?.previousTrack();
-    else await remoteCommand('POST', '/me/player/previous');
-  }, [remoteCommand]);
-
-  const nextTrack = useCallback(async () => {
-    if (isLocal()) await playerRef.current?.nextTrack();
-    else await remoteCommand('POST', '/me/player/next');
-  }, [remoteCommand]);
+  const seek = useCallback((positionMs: number) => transport().seek(positionMs), [transport]);
+  const previousTrack = useCallback(() => transport().previous(), [transport]);
+  const nextTrack = useCallback(() => transport().next(), [transport]);
 
   const setVolume = useCallback(
     async (volume: number) => {
-      if (isLocal()) await playerRef.current?.setVolume(volume);
-      else
-        await remoteCommand('PUT', `/me/player/volume?volume_percent=${Math.round(volume * 100)}`);
-      setState((s) => ({ ...s, volume }));
+      await transport().setVolume(volume);
+      report({ volume });
     },
-    [remoteCommand],
+    [transport, report],
   );
 
   const getProgress = useCallback((): PlaybackProgress => {
-    const p = progressRef.current;
-    return { ...p, position: getPosition(p) };
-  }, []);
+    const p = progress.get();
+    return { ...p, position: positionAt(p, Date.now()) };
+  }, [progress]);
 
-  const subscribeToProgress = useCallback((callback: (progress: PlaybackProgress) => void) => {
-    progressSubscribersRef.current.add(callback);
-    return () => {
-      progressSubscribersRef.current.delete(callback);
-    };
-  }, []);
+  const state = useMemo<PlayerState>(
+    () => ({
+      ...playback,
+      isReady: outputDevice !== null,
+      outputDevice,
+      devices,
+      local,
+      playbackError,
+      needsDevice: pendingUris !== null,
+      queue: queueState.queue,
+    }),
+    [playback, outputDevice, devices, local, playbackError, pendingUris, queueState.queue],
+  );
 
-  const value: SpotifyPlayerContextValue = {
-    ...state,
-    isReady: outputDevice !== null,
-    deviceId: outputDevice?.id ?? null,
-    outputDevice,
-    devices,
-    localStatus,
-    localProblem,
-    playbackError,
-    needsDevice: pendingUris !== null,
-    dismissDevicePrompt,
-    refreshDevices,
-    chooseDevice,
-    play,
-    queue,
-    addToQueue,
-    removeFromQueue,
-    clearQueue,
-    playQueue,
-    pause,
-    resume,
-    togglePlay,
-    seek,
-    previousTrack,
-    nextTrack,
-    setVolume,
-    getProgress,
-    subscribeToProgress,
-  };
+  const actions = useMemo<PlayerActions>(
+    () => ({
+      dismissDevicePrompt,
+      refreshDevices,
+      chooseDevice,
+      play,
+      addToQueue,
+      removeFromQueue,
+      clearQueue,
+      playQueue,
+      pause,
+      resume,
+      togglePlay,
+      seek,
+      previousTrack,
+      nextTrack,
+      setVolume,
+      getProgress,
+      subscribeToProgress: progress.subscribe,
+    }),
+    [
+      dismissDevicePrompt,
+      refreshDevices,
+      chooseDevice,
+      play,
+      addToQueue,
+      removeFromQueue,
+      clearQueue,
+      playQueue,
+      pause,
+      resume,
+      togglePlay,
+      seek,
+      previousTrack,
+      nextTrack,
+      setVolume,
+      getProgress,
+      progress,
+    ],
+  );
 
-  return <SpotifyPlayerContext.Provider value={value}>{children}</SpotifyPlayerContext.Provider>;
+  return (
+    <PlayerActionsContext.Provider value={actions}>
+      <PlayerStateContext.Provider value={state}>{children}</PlayerStateContext.Provider>
+    </PlayerActionsContext.Provider>
+  );
 }
 
-/** Where playback is now, counting the time since Spotify last reported it. */
-function getPosition(p: PlaybackProgress): number {
-  if (p.paused) return p.position;
-  const elapsed = Date.now() - p.timestamp;
-  return p.duration > 0 ? Math.min(p.position + elapsed, p.duration) : p.position + elapsed;
+/** What is playing, where. Re-renders whenever playback changes. */
+export function usePlayer(): PlayerState {
+  const context = useContext(PlayerStateContext);
+  if (!context) throw new Error('usePlayer must be used within SpotifyPlayerProvider');
+  return context;
 }
 
-export function useSpotifyPlayer(): SpotifyPlayerContextValue {
-  const context = useContext(SpotifyPlayerContext);
-  if (!context) {
-    throw new Error('useSpotifyPlayer must be used within SpotifyPlayerProvider');
-  }
+/** The player's controls, which never change identity. */
+export function usePlayerActions(): PlayerActions {
+  const context = useContext(PlayerActionsContext);
+  if (!context) throw new Error('usePlayerActions must be used within SpotifyPlayerProvider');
   return context;
 }

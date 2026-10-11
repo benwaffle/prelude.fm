@@ -214,22 +214,37 @@ export interface Movement {
 }
 
 /** What an unnamed movement's marker says is shown in place of a title. */
-export function unnamedMovementNote(movement: Movement): string {
+export function unnamedMovementNote(movement: Pick<Movement, 'name'>): string {
   return movement.name
     ? 'No MusicBrainz title — showing the Spotify track title'
     : 'No MusicBrainz title';
 }
 
+/** A movement this recording carries: it has audio, so it can be played. */
+export type PlayableMovement = Movement & { missing: false; trackId: string; uri: string };
+
+function isPlayable(movement: Movement): movement is PlayableMovement {
+  return !movement.missing && movement.uri !== null && movement.trackId !== null;
+}
+
 /** The movements a recording actually carries, in programme order. */
-export function playable(movements: Movement[]): Movement[] {
-  return movements.filter((m) => !m.missing && m.uri !== null);
+export function playable(movements: Movement[]): PlayableMovement[] {
+  return movements.filter(isPlayable);
 }
 
 /** URIs to queue when starting from one movement: it and everything after. */
 export function queueFrom(movements: Movement[], from: Movement): string[] {
   return playable(movements)
     .filter((m) => m.position >= from.position)
-    .map((m) => m.uri as string);
+    .map((m) => m.uri);
+}
+
+/** Hearts read off the live liked set, which runs ahead of any server snapshot. */
+export function withLiveLikes(movements: Movement[], likedTrackIds: Set<string>): Movement[] {
+  return movements.map((m) => ({
+    ...m,
+    liked: m.trackId !== null && likedTrackIds.has(m.trackId),
+  }));
 }
 
 export interface LibraryWork {
@@ -238,12 +253,9 @@ export interface LibraryWork {
   /**
    * Opaque MusicBrainz identifiers, never numbers to do arithmetic on.
    * Screens compare them or put them in a URL.
-   *
-   * Null where there is no work to navigate to — something playing that we
-   * cannot place. That used to be spelled -1, which reads like an id.
    */
-  workId: string | null;
-  recordingId: string | null;
+  workId: string;
+  recordingId: string;
   /** Null where the reader has no composer for the work, not "Unknown". */
   composer: string | null;
   composerFull: string | null;
@@ -297,25 +309,59 @@ export function stripCollectionPrefix(title: string, parentTitle: string): strin
   return title.slice(prefix.length).trim() || title;
 }
 
+/** The detail page for this recording of the work. */
+export function workHref(work: Pick<LibraryWork, 'workId' | 'recordingId'>): string {
+  return `/work/${work.workId}?rec=${work.recordingId}`;
+}
+
+/** Composer and performer, as one line of text (a queue row, the lock screen). */
+export function workByline(work: Pick<LibraryWork, 'composerFull' | 'performer'>): string | null {
+  return [work.composerFull, work.performer].filter(Boolean).join(' · ') || null;
+}
+
+/** A recording waiting to play after what's playing now. */
+export interface QueueEntry {
+  id: string;
+  uris: string[];
+  title: string;
+  subtitle: string | null;
+  cover: string | null;
+}
+
 /**
  * A recording as a queue entry: its playable movements in order, titled the
  * way the library titles it. A work MusicBrainz leaves untitled goes by its
  * album, which is real, rather than a made-up name.
  */
-export function queueEntryFor(work: LibraryWork): {
-  uris: string[];
-  title: string;
-  subtitle: string | null;
-  cover: string | null;
-} {
+export function queueEntryFor(work: LibraryWork): Omit<QueueEntry, 'id'> {
   const title = work.title
     ? `${work.title}${work.nickname ? ` “${work.nickname}”` : ''}`
     : work.album;
   return {
-    uris: playable(work.movements).map((m) => m.uri as string),
+    uris: playable(work.movements).map((m) => m.uri),
     title,
-    subtitle:
-      [work.composer ?? work.composerFull, work.performer].filter(Boolean).join(' · ') || null,
+    subtitle: workByline(work),
     cover: work.cover,
   };
+}
+
+/**
+ * A movement's name in a programme headed by its work: the work heading and
+ * the numeral column already say those parts of a MusicBrainz movement
+ * title. Anything else is kept as given.
+ */
+export function programmeMovementName(
+  title: string,
+  workTitle: string | null,
+  roman: string,
+): string {
+  const name = workTitle ? stripCollectionPrefix(title, workTitle) : title;
+  const numeral = `${roman}.`;
+  if (
+    roman &&
+    (name === numeral || (name.startsWith(numeral) && /^\s/.test(name.slice(numeral.length))))
+  ) {
+    return name.slice(numeral.length).trimStart();
+  }
+  return name;
 }

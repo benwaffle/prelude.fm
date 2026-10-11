@@ -16,7 +16,9 @@ import {
 } from '../lib/album-state';
 import { inboxFocusForAlbum, type InboxFocus } from '../lib/inbox-focus';
 import { Spinner } from '../components/Spinner';
-import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
+import { failureMessage } from '@/lib/use-server-query';
+import { LoadFailure } from '@/app/components/LoadFailure';
+import { noticeClassName } from '../components/Notice';
 import { useAdminAction } from '../components/useAdminAction';
 
 /**
@@ -118,7 +120,7 @@ export function AlbumsTab({
         if (!cancelled) setSubmissionLinks(fetched);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setAlbumsError(adminFailureMessage(error));
+        if (!cancelled) setAlbumsError(failureMessage(error));
       });
     return () => {
       cancelled = true;
@@ -157,7 +159,7 @@ export function AlbumsTab({
         const rows = await getAlbumTracks(albumId);
         setTracks((current) => ({ ...current, [albumId]: rows }));
       } catch (error) {
-        setTrackErrors((current) => ({ ...current, [albumId]: adminFailureMessage(error) }));
+        setTrackErrors((current) => ({ ...current, [albumId]: failureMessage(error) }));
       }
     }
   }
@@ -198,7 +200,9 @@ export function AlbumsTab({
         </div>
       </div>
 
-      {albumsError !== null && <LoadFailure what="albums" error={albumsError} />}
+      {albumsError !== null && (
+        <LoadFailure className={noticeClassName('error')} what="albums" error={albumsError} />
+      )}
       {!albums ? (
         albumsError === null && (
           <div className="flex items-center gap-2 py-10 text-[var(--faint)]">
@@ -283,7 +287,11 @@ export function AlbumsTab({
                 {isOpen && (
                   <div className="px-4 pb-3">
                     {trackErrors[album.id] !== undefined ? (
-                      <LoadFailure what="this album's tracks" error={trackErrors[album.id]} />
+                      <LoadFailure
+                        className={noticeClassName('error')}
+                        what="this album's tracks"
+                        error={trackErrors[album.id]}
+                      />
                     ) : !tracks[album.id] ? (
                       <Spinner className="h-3 w-3" />
                     ) : (

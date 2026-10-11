@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getCacheHealth, type CacheHealth } from '../actions/cache-health';
+import { getCacheHealth } from '../actions/cache-health';
 import { Spinner } from '../components/Spinner';
-import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
+import { useServerQuery } from '@/lib/use-server-query';
+import { LoadFailure } from '@/app/components/LoadFailure';
+import { noticeClassName } from '../components/Notice';
 
 type DeployHealth = {
   commit: string | null;
@@ -16,34 +17,28 @@ type DeployHealth = {
   invariants: { state: string; failing: string[]; stale: string[]; neverRun: string[] };
 };
 
+async function readDeployHealth(): Promise<DeployHealth> {
+  const response = await fetch('/api/health');
+  if (!response.ok) throw new Error(`${response.status}`);
+  return (await response.json()) as DeployHealth;
+}
+
 /** Deployment facts, unsettled-tree samples, and cache checks for the MusicBrainz reader. */
 export function HealthTab() {
-  const [health, setHealth] = useState<CacheHealth | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
-  const [deploy, setDeploy] = useState<DeployHealth | null>(null);
-  const [deployError, setDeployError] = useState<string | null>(null);
+  const healthQuery = useServerQuery(getCacheHealth, []);
+  const deploy = useServerQuery(readDeployHealth, []);
 
-  useEffect(() => {
-    getCacheHealth()
-      .then(setHealth)
-      .catch((error: unknown) => setHealthError(adminFailureMessage(error)));
-    fetch('/api/health')
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`${response.status}`);
-        return response.json() as Promise<DeployHealth>;
-      })
-      .then((json) => {
-        setDeploy(json);
-        setDeployError(null);
-      })
-      .catch((error: unknown) => {
-        setDeploy(null);
-        setDeployError(adminFailureMessage(error));
-      });
-  }, []);
-
-  if (!health) {
-    if (healthError !== null) return <LoadFailure what="cache health" error={healthError} />;
+  if (healthQuery.status === 'error') {
+    return (
+      <LoadFailure
+        className={noticeClassName('error')}
+        what="cache health"
+        error={healthQuery.message}
+        onRetry={healthQuery.retry}
+      />
+    );
+  }
+  if (healthQuery.status === 'loading') {
     return (
       <div className="flex items-center gap-2 py-16 text-[var(--faint)]">
         <Spinner className="h-3 w-3" />
@@ -51,29 +46,34 @@ export function HealthTab() {
       </div>
     );
   }
+  const health = healthQuery.data;
 
   return (
     <div className="flex flex-col gap-8 pb-16">
       <section>
         <p className="eyebrow mb-2">Deployment</p>
         <div className="slip px-4 py-4">
-          {deploy ? (
+          {deploy.status === 'ready' ? (
             <dl className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
-              <Fact label="Reader" value={deploy.reader} />
-              <Fact label="Pipeline" value={deploy.pipeline} />
-              <Fact label="Environment" value={deploy.environment} />
-              <Fact label="Commit" value={deploy.commit?.slice(0, 7) ?? '—'} mono />
-              <Fact label="Branch" value={deploy.branch ?? '—'} />
+              <Fact label="Reader" value={deploy.data.reader} />
+              <Fact label="Pipeline" value={deploy.data.pipeline} />
+              <Fact label="Environment" value={deploy.data.environment} />
+              <Fact label="Commit" value={deploy.data.commit?.slice(0, 7) ?? '—'} mono />
+              <Fact label="Branch" value={deploy.data.branch ?? '—'} />
               <Fact
                 label="Migrations"
-                value={deploy.migrations.count === null ? '—' : String(deploy.migrations.count)}
+                value={
+                  deploy.data.migrations.count === null ? '—' : String(deploy.data.migrations.count)
+                }
               />
-              <Fact label="Invariant sweep" value={deploy.invariants.state} />
+              <Fact label="Invariant sweep" value={deploy.data.invariants.state} />
             </dl>
-          ) : (
+          ) : deploy.status === 'error' ? (
             <p className="text-[var(--ink-2)]">
-              Could not read deployment facts ({deployError ?? 'unknown'}).
+              Could not read deployment facts ({deploy.message}).
             </p>
+          ) : (
+            <p className="text-[var(--ink-2)]">Reading deployment facts…</p>
           )}
           <p className="mt-3 text-[var(--ink-2)]">
             Full JSON at{' '}

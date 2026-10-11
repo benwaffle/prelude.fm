@@ -1,6 +1,6 @@
 'use client';
 
-import { useSpotifyPlayer } from '@/lib/spotify-player-context';
+import { usePlayer, usePlayerActions } from '@/lib/spotify-player-context';
 import { Icon } from '../Icon';
 
 /**
@@ -9,7 +9,8 @@ import { Icon } from '../Icon';
  * alike.
  */
 export function QueueList({ onPlayQueue }: { onPlayQueue?: () => void }) {
-  const { queue, removeFromQueue, clearQueue } = useSpotifyPlayer();
+  const { queue } = usePlayer();
+  const { removeFromQueue, clearQueue } = usePlayerActions();
 
   return (
     <div>

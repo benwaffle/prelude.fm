@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BotSubmissionResult } from '../app/admin/actions/bot';
-import { LoadFailure } from '../app/admin/components/AdminFailure';
+import { LoadFailure } from '../app/components/LoadFailure';
 import { afterAdminBurst } from '../app/admin/components/admin-action-queue';
 import {
   pendingSummary,

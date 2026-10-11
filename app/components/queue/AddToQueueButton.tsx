@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSpotifyPlayer } from '@/lib/spotify-player-context';
+import { usePlayerActions } from '@/lib/spotify-player-context';
 import { playable, queueEntryFor, type LibraryWork } from '@/lib/prelude';
 import { Icon } from '../Icon';
 
@@ -13,7 +13,7 @@ export function AddToQueueButton({
   work: LibraryWork;
   className?: string;
 }) {
-  const { addToQueue } = useSpotifyPlayer();
+  const { addToQueue } = usePlayerActions();
   const [added, setAdded] = useState(false);
 
   useEffect(() => {

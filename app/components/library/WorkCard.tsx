@@ -1,18 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { memo, useRef, useState, type ReactNode } from 'react';
-import { Icon, Waveform } from '../Icon';
-import {
-  initialsOf,
-  numeralPrefix,
-  unnamedMovementNote,
-  type LibraryWork,
-  type Movement,
-} from '@/lib/prelude';
-import type { MusicBrainzGapCode } from '@/lib/musicbrainz-library';
-import { GAP_REASONS } from '@/lib/gap-reasons';
+import { memo } from 'react';
+import { Icon } from '../Icon';
+import { workHref, type LibraryWork, type Movement } from '@/lib/prelude';
 import { AddToQueueButton } from '../queue/AddToQueueButton';
+import { CoverArt, WorkPlate } from '../work/CoverArt';
+import { MovementList } from '../work/MovementList';
+import { GapNotes, Missing, WorkTitle } from '../work/WorkText';
 
 /** Movements beyond this fold behind a "+ n more" link into the detail view. */
 const CAP = 8;
@@ -45,7 +40,11 @@ export const WorkCard = memo(function WorkCard({
 }: WorkCardProps) {
   const shown = work.movements.slice(0, CAP);
   const extra = work.movements.length - shown.length;
-  const href = `/work/${work.workId}?rec=${work.recordingId}`;
+  const href = workHref(work);
+  const selectedPrefix = `${work.id}-`;
+  const selectedN = selectedId?.startsWith(selectedPrefix)
+    ? Number(selectedId.slice(selectedPrefix.length))
+    : null;
 
   return (
     /* Off screen, a card skips layout and paint until it scrolls near: the
@@ -68,7 +67,13 @@ export const WorkCard = memo(function WorkCard({
           className="relative block self-start no-underline"
         >
           <span className="relative block aspect-square overflow-hidden shadow-soft">
-            <CoverArt work={work} />
+            <CoverArt
+              src={work.cover}
+              alt={work.album}
+              className="block h-full w-full object-cover transition-transform duration-[600ms] ease-[cubic-bezier(.2,.7,.2,1)] group-hover:scale-[1.03]"
+            >
+              <WorkPlate work={work} size="card" />
+            </CoverArt>
             <span className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" />
           </span>
         </Link>
@@ -106,12 +111,7 @@ export const WorkCard = memo(function WorkCard({
               href={href}
               className="border-b border-transparent no-underline transition-colors duration-150 hover:border-rule"
             >
-              {work.title ?? <Missing>title</Missing>}
-              {work.nickname && (
-                <>
-                  , <span className="text-accent italic">“{work.nickname}”</span>
-                </>
-              )}
+              <WorkTitle work={work} />
             </Link>
           </h2>
 
@@ -132,12 +132,7 @@ export const WorkCard = memo(function WorkCard({
             />
           </div>
 
-          {work.ownLink && (
-            <p className="mt-[6px] font-meta text-[10px] tracking-[0.12em] text-accent uppercase">
-              Work matched by prelude.fm, not MusicBrainz ({work.ownLink} confidence)
-            </p>
-          )}
-          <Gaps codes={work.gaps} />
+          <GapNotes work={work} />
 
           <div className="mt-2 text-[12.5px] text-ink-2 max-[900px]:mt-[6px] max-[900px]:text-[12px]">
             <Link
@@ -165,18 +160,16 @@ export const WorkCard = memo(function WorkCard({
         {/* The left rule is the only line this column needs: the rows inside
           are set by rhythm, not ruled off one from the next. */}
         <div className="flex min-w-0 flex-col border-l border-rule pl-[18px] max-[900px]:col-span-full max-[900px]:mt-1 max-[900px]:border-t max-[900px]:border-l-0 max-[900px]:pt-1 max-[900px]:pl-0">
-          {shown.map((m) => (
-            <MovementRow
-              key={m.n}
-              work={work}
-              movement={m}
-              isPlaying={m.trackId !== null && playingTrackId === m.trackId}
-              isSelected={selectedId === `${work.id}-${m.n}`}
-              onSelect={() => onSelect(`${work.id}-${m.n}`)}
-              onPlay={() => onPlayMovement(work, m)}
-              onToggleLike={() => m.trackId && onToggleLike(m.trackId)}
-            />
-          ))}
+          <MovementList
+            variant="card"
+            movements={shown}
+            workTitle={work.title}
+            playingTrackId={playingTrackId}
+            selectedN={selectedN}
+            onSelect={(m) => onSelect(`${selectedPrefix}${m.n}`)}
+            onPlay={(m) => onPlayMovement(work, m)}
+            onToggleLike={onToggleLike}
+          />
           {extra > 0 && (
             <Link
               prefetch={false}
@@ -191,185 +184,3 @@ export const WorkCard = memo(function WorkCard({
     </div>
   );
 });
-
-function MovementRow({
-  work,
-  movement,
-  isPlaying,
-  isSelected,
-  onSelect,
-  onPlay,
-  onToggleLike,
-}: {
-  work: LibraryWork;
-  movement: Movement;
-  isPlaying: boolean;
-  isSelected: boolean;
-  onSelect: () => void;
-  onPlay: () => void;
-  onToggleLike: () => void;
-}) {
-  const liked = movement.liked;
-  const tappedRef = useRef(false);
-
-  // A part of the work this recording doesn't carry: present so the programme
-  // reads whole, but greyed out and inert — nothing to play, nothing to like.
-  if (movement.missing) {
-    return (
-      <div
-        title="This recording doesn't include this movement"
-        className="grid grid-cols-[15px_22px_minmax(0,1fr)_auto] items-baseline gap-3 py-[3px] pr-[2px] opacity-40 select-none"
-      >
-        <span aria-hidden />
-        <span className="onum text-right font-display text-[13px] text-muted italic">
-          {numeralPrefix(movement.roman)}
-        </span>
-        <div className="flex min-w-0 items-baseline gap-[9px] font-display text-[14px] leading-[1.3] text-muted">
-          <span className="truncate line-through decoration-rule">{movement.name}</span>
-        </div>
-        <span className="font-meta text-[10.5px] text-muted tabular-nums">—</span>
-        <span className="sr-only">{work.title ?? 'This work'} — not on this recording</span>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      title={`${movement.name} — double-click to play`}
-      // A finger has no double-click worth asking for: a tap plays.
-      onPointerDown={(e) => {
-        tappedRef.current = e.pointerType !== 'mouse';
-      }}
-      onClick={() => (tappedRef.current ? onPlay() : onSelect())}
-      onDoubleClick={onPlay}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') onPlay();
-      }}
-      className={`relative grid cursor-pointer grid-cols-[15px_22px_minmax(0,1fr)_auto] items-baseline gap-3 rounded-[2px] py-[3px] pr-[2px] select-none hover:bg-paper-2 max-[900px]:py-[9px] focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-ink-2 ${
-        isSelected ? 'bg-paper-3 shadow-[inset_0_0_0_1px_var(--rule)]' : ''
-      }`}
-    >
-      {isPlaying && (
-        <span className="absolute -left-[14px] top-1/2 h-[calc(100%-10px)] w-[2px] -translate-y-1/2 bg-accent" />
-      )}
-      <button
-        type="button"
-        title={liked ? 'Remove from liked' : 'Like this movement'}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleLike();
-        }}
-        className={`flex w-4 translate-y-px cursor-pointer items-center justify-start transition-all duration-150 before:absolute before:-inset-3 before:content-[''] relative ${
-          liked
-            ? 'text-accent hover:scale-110'
-            : 'text-rule group-hover:text-muted hover:text-muted'
-        }`}
-      >
-        <Icon name={liked ? 'heartFill' : 'heartOutline'} size={11} />
-      </button>
-
-      <span
-        className={`onum text-right font-display text-[13px] ${
-          liked ? 'font-bold text-accent not-italic' : 'text-muted italic opacity-55'
-        }`}
-      >
-        {numeralPrefix(movement.roman)}
-      </span>
-
-      <div
-        className={`flex min-w-0 items-baseline gap-[9px] font-display text-[14px] leading-[1.3] ${
-          isPlaying ? 'text-accent' : liked ? 'font-medium text-ink' : 'text-muted opacity-[0.62]'
-        }`}
-      >
-        <span className="truncate">{movement.name}</span>
-        {movement.unnamed && (
-          <span
-            title={unnamedMovementNote(movement)}
-            className="shrink-0 font-meta text-[8px] tracking-[0.18em] text-muted uppercase not-italic"
-          >
-            unparsed
-          </span>
-        )}
-        {isPlaying && <Waveform />}
-      </div>
-
-      <span
-        className={`font-meta text-[10.5px] tabular-nums ${
-          liked ? 'text-ink-2' : 'text-muted opacity-55'
-        }`}
-      >
-        {movement.duration}
-      </span>
-      <span className="sr-only">{work.title ?? 'Untitled in MusicBrainz'}</span>
-    </div>
-  );
-}
-
-/** Album art, falling back to a typographic plate when the image fails. */
-function CoverArt({ work }: { work: LibraryWork }) {
-  const [failed, setFailed] = useState(false);
-
-  if (failed || !work.cover) {
-    return (
-      <span
-        className="absolute inset-0 flex flex-col items-center justify-center gap-[6px] bg-paper-2 p-3 text-center"
-        style={{ ['--tint' as string]: work.tint }}
-      >
-        <span
-          className="absolute inset-0 opacity-[0.16]"
-          style={{ background: work.tint }}
-          aria-hidden
-        />
-        {work.composerFull && (
-          <span className="relative font-display text-[40px] leading-none font-medium text-ink-2 max-[900px]:text-[26px]">
-            {initialsOf(work.composerFull)}
-          </span>
-        )}
-        <span className="relative font-meta text-[9px] tracking-[0.18em] text-muted uppercase max-[900px]:text-[7.5px]">
-          {work.catalog ?? work.era ?? work.album}
-        </span>
-      </span>
-    );
-  }
-
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- Spotify serves already-sized art
-    <img
-      src={work.cover}
-      alt={work.album}
-      onError={() => setFailed(true)}
-      className="block h-full w-full object-cover transition-transform duration-[600ms] ease-[cubic-bezier(.2,.7,.2,1)] group-hover:scale-[1.03]"
-    />
-  );
-}
-
-/**
- * A field MusicBrainz has not filled. Shown rather than left blank, because
- * a blank reads as "nothing to say" and this is "nobody has said it yet" —
- * the difference is the whole point of the gap vocabulary.
- */
-function Missing({ children }: { children: ReactNode }) {
-  return (
-    <span className="font-meta text-[0.62em] tracking-[0.14em] text-muted uppercase italic">
-      no {children} in MusicBrainz
-    </span>
-  );
-}
-
-/** What this card cannot show, listed plainly under it. */
-function Gaps({ codes }: { codes: MusicBrainzGapCode[] }) {
-  if (codes.length === 0) return null;
-  return (
-    <p
-      title={codes.join(', ')}
-      className="mt-[6px] font-display text-[13px] leading-snug text-muted italic max-[900px]:text-[12.5px]"
-    >
-      <span className="mr-[6px] font-meta text-[9px] tracking-[0.16em] uppercase not-italic">
-        Gaps
-      </span>
-      {codes.map((code) => GAP_REASONS[code]).join(' · ')}
-    </p>
-  );
-}

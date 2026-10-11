@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { SpotifyPlayerProvider } from '@/lib/spotify-player-context';
@@ -52,6 +52,7 @@ export function AppShell({ children }: AppShellProps) {
   const [tokenUserId, setTokenUserId] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const navSearch = useMemo(() => ({ query, setQuery }), [query]);
 
   // A library search means nothing on the catalogue and vice versa, so the box
   // empties when you cross between them. Moving within a section — library to a
@@ -118,7 +119,7 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <SpotifyPlayerProvider accessToken={accessToken}>
       <LibraryProvider key={session.user.id} accessToken={accessToken} userId={session.user.id}>
-        <NavSearchContext.Provider value={{ query, setQuery }}>
+        <NavSearchContext.Provider value={navSearch}>
           <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
             <div className="absolute -top-[30%] -right-[15%] h-[80vw] w-[80vw] opacity-55 blur-[20px] transition-[background] duration-700 [background:radial-gradient(closest-side,var(--room),transparent_70%)]" />
           </div>

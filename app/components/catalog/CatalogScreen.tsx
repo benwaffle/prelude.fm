@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
   CatalogComposer,
   CatalogRecording,
@@ -17,117 +18,62 @@ import {
   searchMusicBrainzWorks,
 } from '@/app/actions/catalog-mb';
 import { useLibrary } from '@/lib/library-context';
+import { useServerQuery, type ServerQuery } from '@/lib/use-server-query';
 import { useNavSearch } from '../AppShell';
 import { initialsOf } from '@/lib/prelude';
 import { Icon } from '../Icon';
+import { LoadFailure } from '../LoadFailure';
+import { Badge, RecordingTile } from '../work/RecordingTile';
+import { Missing } from '../work/WorkText';
+import { catalogHref, parseCatalogUrl } from './catalog-url';
 
-type WorkHeader = CatalogWorkHeader | null;
+/** How long typing has to pause before the catalogue is searched. */
+const SEARCH_DELAY_MS = 180;
 
 /**
  * The catalogue: composers → works → recordings. Three columns on the desk,
- * one pane at a time on a phone with a back trail above it.
+ * one pane at a time on a phone with a back trail above it. Where you are is
+ * in the URL, so the back gesture steps back up a level.
  */
 export function CatalogScreen() {
   const { likedTrackIds } = useLibrary();
   const { query } = useNavSearch();
+  const router = useRouter();
+  const url = parseCatalogUrl(useSearchParams());
+  const { level } = url;
 
-  const [composers, setComposers] = useState<CatalogComposer[]>([]);
-  const [composerId, setComposerId] = useState<string | null>(null);
-  const [works, setWorks] = useState<CatalogWork[]>([]);
-  const [workId, setWorkId] = useState<string | null>(null);
-  const [header, setHeader] = useState<WorkHeader>(null);
-  const [recordings, setRecordings] = useState<CatalogRecording[]>([]);
-  const [worksLoading, setWorksLoading] = useState(false);
-  // A load that failed is said out loud, not shown as an empty pane.
-  const [failure, setFailure] = useState<string | null>(null);
-  // Mobile drill-down depth: 0 composers, 1 works, 2 recordings.
-  const [level, setLevel] = useState(0);
-  const [isNarrow, setIsNarrow] = useState(false);
+  const composers = useServerQuery(getMusicBrainzCatalogComposers, []);
+  const composerData = composers.status === 'ready' ? composers.data : null;
+  const composerList = useMemo(() => composerData ?? [], [composerData]);
+  // The desk shows the first composer until one is chosen.
+  const composerId = url.composerId ?? composerList[0]?.id ?? null;
 
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 900px)');
-    const sync = () => setIsNarrow(mq.matches);
-    sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
-  }, []);
+  const works = useServerQuery(composerId ? () => getMusicBrainzCatalogWorks(composerId) : null, [
+    composerId,
+  ]);
+  const workList = works.status === 'ready' ? works.data : [];
+  const workId = url.workId ?? workList[0]?.id ?? null;
 
-  useEffect(() => {
-    getMusicBrainzCatalogComposers()
-      .then((list) => {
-        setComposers(list);
-        setComposerId((current) => current ?? list[0]?.id ?? null);
-      })
-      .catch((err: unknown) => setFailure(`the composers: ${messageOf(err)}`));
-  }, []);
-
-  useEffect(() => {
-    if (composerId === null) return;
-    let cancelled = false;
-    // Clear the last composer's works so they never sit under this one's name.
-    setWorks([]);
-    setWorksLoading(true);
-    setFailure(null);
-    getMusicBrainzCatalogWorks(composerId)
-      .then((list) => {
-        if (cancelled) return;
-        setWorks(list);
-        // A search hit picks its own work; keep it if it belongs here.
-        setWorkId((current) =>
-          current && list.some((w) => w.id === current) ? current : (list[0]?.id ?? null),
-        );
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setWorkId(null);
-        setFailure(`this composer's works: ${messageOf(err)}`);
-      })
-      .finally(() => {
-        if (!cancelled) setWorksLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [composerId]);
-
-  useEffect(() => {
-    if (workId === null) {
-      setHeader(null);
-      setRecordings([]);
-      return;
-    }
-    let cancelled = false;
-    const liked = Array.from(likedTrackIds);
-    Promise.all([
-      getMusicBrainzCatalogWorkHeader(workId),
-      getMusicBrainzCatalogRecordings(workId, liked),
-    ])
-      .then(([head, recs]) => {
-        if (cancelled) return;
-        setHeader(head);
-        setRecordings(recs);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setHeader(null);
-        setRecordings([]);
-        setFailure(`this work's recordings: ${messageOf(err)}`);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // The liked set only changes the badges; refetching on every heart would
-    // be wasteful, so it's read when the work changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workId]);
+  const recordings = useServerQuery(
+    workId
+      ? () =>
+          // The liked set only changes the badges; refetching on every heart
+          // would be wasteful, so it's read when the work changes.
+          Promise.all([
+            getMusicBrainzCatalogWorkHeader(workId),
+            getMusicBrainzCatalogRecordings(workId, Array.from(likedTrackIds)),
+          ])
+      : null,
+    [workId],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return composers;
-    return composers.filter(
+    if (!q) return composerList;
+    return composerList.filter(
       (c) => c.name.toLowerCase().includes(q) || (c.era ?? '').toLowerCase().includes(q),
     );
-  }, [composers, query]);
+  }, [composerList, query]);
 
   /*
    * Works are searched on the server rather than filtered here, because a
@@ -135,89 +81,37 @@ export function CatalogScreen() {
    * one of them is loaded with the card. A reader who knows a Scarlatti
    * sonata as L 413 should find it even though its card says Kk. 9.
    */
-  const [hits, setHits] = useState<WorkSearchHit[]>([]);
-  const [searchFailure, setSearchFailure] = useState<string | null>(null);
   const trimmed = query.trim();
+  const searched = useSettled(trimmed, SEARCH_DELAY_MS);
+  const hits = useServerQuery(
+    searched.length >= 2 ? () => searchMusicBrainzWorks(searched) : null,
+    [searched],
+  );
 
-  useEffect(() => {
-    if (trimmed.length < 2) {
-      setHits([]);
-      setSearchFailure(null);
-      return;
-    }
-    let live = true;
-    const timer = setTimeout(() => {
-      searchMusicBrainzWorks(trimmed)
-        .then((found) => {
-          if (!live) return;
-          setHits(found);
-          setSearchFailure(null);
-        })
-        .catch((err: unknown) => {
-          if (!live) return;
-          setHits([]);
-          setSearchFailure(messageOf(err));
-        });
-    }, 180);
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [trimmed]);
-
-  const composer = composers.find((c) => c.id === composerId) ?? null;
-  const work = works.find((w) => w.id === workId) ?? null;
+  const composer = composerList.find((c) => c.id === composerId) ?? null;
+  const work = workList.find((w) => w.id === workId) ?? null;
 
   // On phones each level replaces the last as one long page; start the new
   // one at its top rather than wherever the previous list was scrolled to.
   useEffect(() => {
-    if (window.matchMedia('(max-width: 900px)').matches) window.scrollTo(0, 0);
+    window.scrollTo(0, 0);
   }, [level]);
 
-  /*
-   * On a phone each level is its own screen, so the back gesture should step
-   * up a level rather than leave the catalogue. Going deeper adds a history
-   * entry for the same URL (keeping Next's own state alongside), and
-   * popping one restores the level it recorded.
-   */
-  const descend = (next: number) => {
-    if (window.matchMedia('(max-width: 900px)').matches && next > level) {
-      window.history.pushState({ ...window.history.state, catalogLevel: next }, '');
-    }
-    setLevel(next);
-  };
-  const ascend = () => {
-    if (typeof window.history.state?.catalogLevel === 'number') window.history.back();
-    else setLevel(Math.max(0, level - 1));
-  };
-  useEffect(() => {
-    const onPop = () => setLevel(window.history.state?.catalogLevel ?? 0);
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, []);
-
-  const pickComposer = (c: CatalogComposer) => {
-    setComposerId(c.id);
-    descend(1);
-  };
-  const pickWork = (w: CatalogWork) => {
-    setWorkId(w.id);
-    descend(2);
-  };
+  const go = (href: string) => router.push(href, { scroll: false });
 
   return (
     <div className="relative z-[1] flex min-h-screen flex-col pb-[var(--player-h)] max-[900px]:pb-[calc(var(--player-h)+24px)]">
       {/* Breadcrumb trail — mobile only */}
       <div className="hidden items-center gap-2 border-b border-rule bg-paper-2 px-5 py-[10px] font-meta text-[10px] tracking-[0.14em] text-muted uppercase max-[900px]:flex">
         {level > 0 ? (
-          <button
-            type="button"
-            onClick={ascend}
-            className="inline-flex cursor-pointer items-center gap-[6px] text-ink-2"
+          <Link
+            href={level === 1 ? catalogHref(null) : catalogHref(composerId)}
+            scroll={false}
+            className="inline-flex cursor-pointer items-center gap-[6px] text-ink-2 no-underline"
           >
             <Icon name="back" size={12} />
             {level === 1 ? 'Composers' : (composer?.short ?? 'Works')}
-          </button>
+          </Link>
         ) : (
           <span className="text-ink">Composers</span>
         )}
@@ -232,42 +126,63 @@ export function CatalogScreen() {
       {trimmed.length >= 2 && (
         <SearchResults
           query={trimmed}
-          hits={hits}
-          failure={searchFailure}
-          onPick={(hit) => {
-            setComposerId(hit.composerId);
-            setWorkId(hit.workId);
-            descend(2);
-          }}
+          hits={searched === trimmed ? hits : { status: 'loading' }}
+          onPick={(hit) => go(catalogHref(hit.composerId, hit.workId))}
         />
-      )}
-
-      {failure && (
-        <div className="border-b border-rule bg-paper-2 px-5 py-3 font-display text-[14px] text-accent italic">
-          We couldn’t load {failure}
-        </div>
       )}
 
       <div className="grid flex-1 grid-cols-[264px_340px_minmax(0,1fr)] max-[900px]:grid-cols-[minmax(0,1fr)]">
         <ComposerPane
           list={filtered}
+          failure={
+            composers.status === 'error' && (
+              <LoadFailure
+                className={PANE_FAILURE}
+                what="the composers"
+                error={composers.message}
+                onRetry={composers.retry}
+              />
+            )
+          }
           selectedId={composerId}
-          onSelect={pickComposer}
-          hidden={isNarrow && level !== 0}
+          onSelect={(c) => go(catalogHref(c.id))}
+          hidden={level !== 0}
         />
         <WorkPane
           composer={composer}
-          works={works}
-          loading={worksLoading}
+          works={workList}
+          loading={works.status === 'loading'}
+          failure={
+            works.status === 'error' && (
+              <LoadFailure
+                className={PANE_FAILURE}
+                what="this composer’s works"
+                error={works.message}
+                onRetry={works.retry}
+              />
+            )
+          }
           selectedId={workId}
-          onSelect={pickWork}
-          hidden={isNarrow && level !== 1}
+          onSelect={(w) => go(catalogHref(composerId, w.id))}
+          hidden={level !== 1}
         />
-        <RecordingPane header={header} recordings={recordings} hidden={isNarrow && level !== 2} />
+        <RecordingPane query={recordings} hidden={level !== 2} />
       </div>
     </div>
   );
 }
+
+/** `value`, once it has stayed the same for `delayMs`. */
+function useSettled<T>(value: T, delayMs: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return settled;
+}
+
+const PANE_FAILURE = 'px-[18px] py-4 font-display text-[14px] text-accent italic';
 
 /**
  * What the query found, above the three panes.
@@ -278,23 +193,24 @@ export function CatalogScreen() {
  */
 function SearchResults({
   query,
-  hits,
-  failure,
+  hits: found,
   onPick,
 }: {
   query: string;
-  hits: WorkSearchHit[];
-  failure: string | null;
+  hits: ServerQuery<WorkSearchHit[]>;
   onPick: (hit: WorkSearchHit) => void;
 }) {
+  const hits = found.status === 'ready' ? found.data : [];
   return (
     <div className="border-b border-rule bg-paper-2 px-5 py-3">
       <div className="mb-2 font-meta text-[9.5px] tracking-[0.2em] text-muted uppercase">
-        {failure
-          ? `Search failed: ${failure}`
-          : hits.length > 0
-            ? `${hits.length} work${hits.length === 1 ? '' : 's'} matching “${query}”`
-            : `Nothing matching “${query}”`}
+        {found.status === 'loading'
+          ? `Searching for “${query}”…`
+          : found.status === 'error'
+            ? `Search failed: ${found.message}`
+            : hits.length > 0
+              ? `${hits.length} work${hits.length === 1 ? '' : 's'} matching “${query}”`
+              : `Nothing matching “${query}”`}
       </div>
       <div className="flex flex-col">
         {hits.map((hit) => (
@@ -353,11 +269,13 @@ function PaneEmpty({ children }: { children: React.ReactNode }) {
 /* ---------- Column 1: composers ---------- */
 function ComposerPane({
   list,
+  failure,
   selectedId,
   onSelect,
   hidden,
 }: {
   list: CatalogComposer[];
+  failure: ReactNode;
   selectedId: string | null;
   onSelect: (c: CatalogComposer) => void;
   hidden: boolean;
@@ -379,8 +297,9 @@ function ComposerPane({
   const totalWorks = list.reduce((a, c) => a + c.workCount, 0);
 
   return (
-    <div className={`${PANE} ${hidden ? 'hidden' : ''}`}>
+    <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
       <PaneHead title="Composers" count={`${list.length} · ${totalWorks} works`} />
+      {failure}
       {groups.map((g) => (
         // Keyed by the first composer in the run, not the letter: an accented
         // surname can sort between two plain ones and split a letter in two.
@@ -424,7 +343,7 @@ function ComposerPane({
           ))}
         </Fragment>
       ))}
-      {list.length === 0 && <PaneEmpty>No composer matches that search.</PaneEmpty>}
+      {list.length === 0 && !failure && <PaneEmpty>No composer matches that search.</PaneEmpty>}
     </div>
   );
 }
@@ -450,6 +369,7 @@ function WorkPane({
   composer,
   works,
   loading,
+  failure,
   selectedId,
   onSelect,
   hidden,
@@ -457,6 +377,7 @@ function WorkPane({
   composer: CatalogComposer | null;
   works: CatalogWork[];
   loading: boolean;
+  failure: ReactNode;
   selectedId: string | null;
   onSelect: (w: CatalogWork) => void;
   hidden: boolean;
@@ -482,7 +403,7 @@ function WorkPane({
 
   if (!composer) {
     return (
-      <div className={`${PANE} ${hidden ? 'hidden' : ''}`}>
+      <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
         <PaneHead title="Works" />
         <PaneEmpty>Choose a composer to see their catalogue.</PaneEmpty>
       </div>
@@ -490,7 +411,7 @@ function WorkPane({
   }
 
   return (
-    <div className={`${PANE} ${hidden ? 'hidden' : ''}`}>
+    <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
       <PaneHead title="Works" count={String(works.length)} />
 
       <div className="relative border-b border-rule px-[18px] pt-4 pb-[14px] max-[900px]:px-4 max-[900px]:pt-[14px] max-[900px]:pb-3">
@@ -514,7 +435,8 @@ function WorkPane({
         </div>
       </div>
 
-      {works.length === 0 && (
+      {failure}
+      {works.length === 0 && !failure && (
         <PaneEmpty>
           {loading ? 'Reading the catalogue…' : 'No works are recorded for this composer yet.'}
         </PaneEmpty>
@@ -584,17 +506,29 @@ function Fact({ k, v }: { k: string; v: string }) {
 
 /* ---------- Column 3: recordings ---------- */
 function RecordingPane({
-  header,
-  recordings,
+  query,
   hidden,
 }: {
-  header: WorkHeader;
-  recordings: CatalogRecording[];
+  query: ServerQuery<[CatalogWorkHeader | null, CatalogRecording[]]>;
   hidden: boolean;
 }) {
+  if (query.status === 'error') {
+    return (
+      <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
+        <PaneHead title="Recordings" />
+        <LoadFailure
+          className={PANE_FAILURE}
+          what="this work’s recordings"
+          error={query.message}
+          onRetry={query.retry}
+        />
+      </div>
+    );
+  }
+  const [header, recordings] = query.status === 'ready' ? query.data : [null, []];
   if (!header) {
     return (
-      <div className={`${PANE} ${hidden ? 'hidden' : ''}`}>
+      <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
         <PaneHead title="Recordings" />
         <PaneEmpty>
           Pick a work and every recording of it in the catalogue appears here — the same music,
@@ -604,7 +538,7 @@ function RecordingPane({
     );
   }
 
-  const mostLiked = recordings.find((r) => r.liked > 0)?.id ?? null;
+  const mostLiked = recordings.find((r) => r.liked > 0)?.recordingId ?? null;
   const earliest = recordings.reduce<CatalogRecording | null>(
     (best, r) =>
       r.year !== null && (best === null || r.year < (best.year ?? Infinity)) ? r : best,
@@ -612,7 +546,7 @@ function RecordingPane({
   );
 
   return (
-    <div className={`${PANE} ${hidden ? 'hidden' : ''}`}>
+    <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
       <PaneHead
         title="Recordings"
         count={
@@ -624,7 +558,7 @@ function RecordingPane({
 
       <div className="relative overflow-hidden border-b border-rule px-[26px] pt-[22px] pb-[18px] max-[900px]:px-4 max-[900px]:pt-[18px] max-[900px]:pb-[14px]">
         <div className="mb-[7px] font-meta text-[9px] tracking-[0.2em] text-muted uppercase">
-          {header.composerName}
+          {header.composerName ?? <Missing>composer</Missing>}
         </div>
         <h2 className="m-0 font-display text-[34px] leading-[1.04] font-medium text-balance max-[900px]:text-[27px]">
           {header.title}
@@ -659,85 +593,24 @@ function RecordingPane({
           <PaneEmpty>No recordings are recorded for this work yet.</PaneEmpty>
         )}
         {recordings.map((r) => (
-          <Link
-            key={r.id}
-            href={`/work/${header.id}?rec=${r.id}`}
-            className="group relative grid cursor-pointer grid-cols-[64px_1fr_auto] items-center gap-[18px] border-b border-rule px-[26px] py-[14px] no-underline hover:bg-paper-2 max-[900px]:grid-cols-[56px_1fr] max-[900px]:gap-x-[14px] max-[900px]:gap-y-2 max-[900px]:px-4 max-[900px]:py-3"
-          >
-            <span
-              className="pointer-events-none absolute inset-y-0 left-0 w-[180px] opacity-[0.08] transition-opacity group-hover:opacity-[0.15] max-[900px]:w-[120px]"
-              style={{ background: `linear-gradient(90deg, ${r.tint}, transparent)` }}
-            />
-            <span className="relative h-16 w-16 shrink-0 overflow-hidden shadow-soft max-[900px]:h-14 max-[900px]:w-14">
-              {r.cover ? (
-                // eslint-disable-next-line @next/next/no-img-element -- Spotify serves already-sized art
-                <img
-                  src={r.cover}
-                  alt={r.album}
-                  className="block h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(.2,.7,.2,1)] group-hover:scale-105"
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center bg-paper-2 font-display text-[15px] text-muted">
-                  {initialsOf(r.performer ?? r.album)}
-                </span>
-              )}
-              <span className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" />
-            </span>
-
-            <span className="min-w-0">
-              {r.id === mostLiked && (
-                <span className="mb-[3px] block font-meta text-[8px] tracking-[0.2em] text-accent uppercase">
-                  Your reference
-                </span>
-              )}
-              {r.id !== mostLiked && earliest?.id === r.id && (
-                <span className="mb-[3px] block font-meta text-[8px] tracking-[0.2em] text-accent uppercase">
-                  Earliest
-                </span>
-              )}
-              {r.unmatched && (
-                <span className="mb-[3px] block font-meta text-[8px] tracking-[0.2em] text-accent uppercase">
-                  tracks not mapped
-                </span>
-              )}
-              <span className="block truncate font-display text-[18px] leading-[1.15] font-medium">
-                {r.performer ?? <span className="text-muted italic">performer not recorded</span>}
-              </span>
-              {r.ensemble && (
-                <span className="block truncate font-display text-[13.5px] text-ink-2 italic">
-                  {r.ensemble}
-                </span>
-              )}
-              <span className="mt-1 flex flex-wrap items-baseline gap-x-[9px] gap-y-1 font-meta text-[9.5px] tracking-[0.12em] text-muted uppercase">
-                <span className="truncate text-ink-2">{r.album}</span>
-              </span>
-            </span>
-
-            <span className="flex flex-col items-end gap-[5px] whitespace-nowrap max-[900px]:col-start-2 max-[900px]:flex-row max-[900px]:items-baseline max-[900px]:justify-start max-[900px]:gap-3">
-              {r.year && (
-                <span className="onum font-display text-[19px] leading-none text-ink-2 max-[900px]:text-[15px]">
-                  {r.year}
-                </span>
-              )}
-              <span className="font-meta text-[10.5px] text-muted tabular-nums">
-                {r.duration ?? '—'}
-              </span>
-              {r.liked > 0 && (
-                <span className="inline-flex items-center gap-1 font-meta text-[9.5px] tracking-[0.1em] text-accent">
-                  <Icon name="heartFill" size={9} />
-                  {r.liked} liked
-                </span>
-              )}
-            </span>
-          </Link>
+          <RecordingTile
+            key={r.recordingId}
+            workId={header.id}
+            recording={r}
+            layout="row"
+            liked={r.liked}
+            badge={
+              r.recordingId === mostLiked ? (
+                <Badge>Your reference</Badge>
+              ) : earliest?.recordingId === r.recordingId ? (
+                <Badge>Earliest</Badge>
+              ) : null
+            }
+          />
         ))}
       </div>
     </div>
   );
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** A held work the MusicBrainz cache has no row for: kept in the list, and said so. */

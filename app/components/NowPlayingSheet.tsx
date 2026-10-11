@@ -1,35 +1,19 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { PlaybackDevice } from '@/lib/spotify-player-context';
-import { hexToRgba, numeralPrefix, type LibraryWork, type Movement } from '@/lib/prelude';
-import { Icon, Waveform } from './Icon';
+import { usePlayer } from '@/lib/spotify-player-context';
+import { useLibrary } from '@/lib/library-context';
+import { hexToRgba, numeralPrefix } from '@/lib/prelude';
+import { Icon } from './Icon';
 import { QueueList } from './queue/QueueList';
 import { MediaDebug } from './MediaDebug';
-
-interface NowPlayingSheetProps {
-  work: LibraryWork;
-  movement: Movement;
-  /** The movements this recording actually plays, in order. */
-  heard: Movement[];
-  durations: number[];
-  totalMs: number;
-  isPaused: boolean;
-  isReady: boolean;
-  detailHref: string | null;
-  outputDevice: PlaybackDevice | null;
-  onClose: () => void;
-  onTogglePlay: () => void;
-  onPrevious: () => void;
-  onNext: () => void;
-  /** Pointer handlers that tap or drag to seek. */
-  scrub: React.HTMLAttributes<HTMLElement>;
-  onPlayFrom: (index: number) => void;
-  onToggleLike: (trackId: string) => void;
-  onChooseDevice: () => void;
-}
+import { Credit } from './player/Credit';
+import { MovementName } from './work/WorkText';
+import { MovementList } from './work/MovementList';
+import { useProgramme } from './player/use-programme';
+import { WorkProgress } from './player/WorkProgress';
+import { PlayerCover, TransportButtons } from './player/TransportButtons';
 
 /**
  * The phone player, full screen: the cover, the work, transport big enough
@@ -40,24 +24,15 @@ interface NowPlayingSheetProps {
  * fixed-position child inside the bar.
  */
 export function NowPlayingSheet({
-  work,
-  movement,
-  heard,
-  durations,
-  totalMs,
-  isPaused,
-  isReady,
-  detailHref,
-  outputDevice,
   onClose,
-  onTogglePlay,
-  onPrevious,
-  onNext,
-  scrub,
-  onPlayFrom,
-  onToggleLike,
   onChooseDevice,
-}: NowPlayingSheetProps) {
+}: {
+  onClose: () => void;
+  onChooseDevice: () => void;
+}) {
+  const { isPaused, outputDevice } = usePlayer();
+  const { toggleLike } = useLibrary();
+  const programme = useProgramme();
   // Slides down before it goes, the way it came up.
   const [leaving, setLeaving] = useState(false);
   const close = useCallback(() => setLeaving(true), []);
@@ -76,7 +51,10 @@ export function NowPlayingSheet({
     };
   }, [close]);
 
-  const ink = work.ink;
+  // The bar only opens the sheet while something is playing.
+  if (!programme) return null;
+
+  const { movement } = programme;
   const remote = outputDevice && !outputDevice.isThisBrowser;
 
   return createPortal(
@@ -90,8 +68,8 @@ export function NowPlayingSheet({
         leaving ? 'animate-sheet-out' : 'animate-sheet-in'
       }`}
       style={{
-        background: `linear-gradient(180deg, ${hexToRgba(work.tint, 0.97)}, ${hexToRgba(work.tint, 1)} 60%), #111`,
-        color: ink,
+        background: `linear-gradient(180deg, ${hexToRgba(programme.tint, 0.97)}, ${hexToRgba(programme.tint, 1)} 60%), #111`,
+        color: programme.ink,
       }}
     >
       <div className="flex items-center justify-between px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2">
@@ -120,17 +98,12 @@ export function NowPlayingSheet({
 
       <div className="flex flex-col px-6 pb-[calc(24px+env(safe-area-inset-bottom))]">
         <div className="mx-auto mt-2 aspect-square w-full max-w-[min(340px,38vh)] overflow-hidden rounded-[3px] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.7)]">
-          {work.cover ? (
-            // eslint-disable-next-line @next/next/no-img-element -- same raw asset as the bar
-            <img src={work.cover} alt={work.album} className="h-full w-full object-cover" />
-          ) : (
-            <div
-              className="flex h-full w-full items-center justify-center font-display text-[72px]"
-              style={{ background: hexToRgba(ink, 0.12) }}
-            >
-              {work.composer?.slice(0, 1) ?? ''}
-            </div>
-          )}
+          <PlayerCover
+            key={programme.key}
+            programme={programme}
+            className="h-full w-full object-cover"
+            fallbackClassName="h-full w-full text-[72px]"
+          />
         </div>
 
         <div className="mt-6 flex items-start gap-3">
@@ -139,29 +112,16 @@ export function NowPlayingSheet({
               {movement.roman && (
                 <span className="mr-2 italic opacity-70">{numeralPrefix(movement.roman)}</span>
               )}
-              {movement.name}
+              <MovementName movement={movement} />
             </div>
             <div className="mt-1 font-display text-[15px] italic opacity-75">
-              {work.composerFull ?? (!work.title && 'Work unmatched')}
-              {work.title && (
-                <>
-                  {work.composerFull && ' · '}
-                  {detailHref ? (
-                    <Link href={detailHref} onClick={close} className="underline-offset-2">
-                      {work.title}
-                    </Link>
-                  ) : (
-                    work.title
-                  )}
-                </>
-              )}
-              {work.nickname && <> “{work.nickname}”</>}
+              <Credit programme={programme} linked onNavigate={close} />
             </div>
           </div>
           {movement.trackId && (
             <button
               type="button"
-              onClick={() => movement.trackId && onToggleLike(movement.trackId)}
+              onClick={() => movement.trackId && toggleLike(movement.trackId)}
               aria-label={movement.liked ? 'Remove from liked' : 'Like this movement'}
               className="-mr-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center"
             >
@@ -172,104 +132,25 @@ export function NowPlayingSheet({
 
         {/* Work-scoped progress, one seam per movement, like the desktop bar. */}
         <div className="mt-6">
-          <div
-            {...scrub}
-            className="relative h-[5px] cursor-pointer touch-none rounded-[3px] bg-white/20 before:absolute before:-inset-y-4 before:inset-x-0 before:content-['']"
-          >
-            <div
-              data-progress="fill"
-              className="absolute inset-y-0 left-0 rounded-[3px] bg-current"
-            />
-            {heard.slice(0, -1).map((m, i) => {
-              const at = durations.slice(0, i + 1).reduce((a, b) => a + b, 0);
-              return (
-                <div
-                  key={m.n}
-                  className="absolute -top-[3px] -bottom-[3px] w-px bg-white/40"
-                  style={{ left: `${(at / totalMs) * 100}%` }}
-                />
-              );
-            })}
-            <div
-              data-progress="head"
-              className="absolute top-1/2 h-[13px] w-[13px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-current"
-            />
-          </div>
-          <div className="mt-2 flex justify-between font-meta text-[11px] tabular-nums opacity-70">
-            <span data-progress="elapsed">0:00</span>
-            <span data-progress="remaining" />
-          </div>
+          <WorkProgress key={programme.key} programme={programme} size="sheet" />
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-10">
-          <button
-            type="button"
-            onClick={onPrevious}
-            disabled={!isReady}
-            aria-label="Previous movement"
-            className="flex h-12 w-12 cursor-pointer items-center justify-center disabled:opacity-35"
-          >
-            <Icon name="prev" size={26} />
-          </button>
-          <button
-            type="button"
-            onClick={onTogglePlay}
-            disabled={!isReady}
-            aria-label={isPaused ? 'Play' : 'Pause'}
-            className="flex h-[68px] w-[68px] cursor-pointer items-center justify-center rounded-full bg-current transition-transform active:scale-95 disabled:opacity-35"
-          >
-            <span
-              key={isPaused ? 'play' : 'pause'}
-              className="flex animate-pop"
-              style={{ color: work.tint }}
-            >
-              <Icon name={isPaused ? 'play' : 'pause'} size={28} />
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={onNext}
-            disabled={!isReady}
-            aria-label="Next movement"
-            className="flex h-12 w-12 cursor-pointer items-center justify-center disabled:opacity-35"
-          >
-            <Icon name="next" size={26} />
-          </button>
+        <div className="mt-4">
+          <TransportButtons size="sheet" tint={programme.tint} />
         </div>
 
-        {heard.length > 1 && (
+        {programme.heard.length > 1 && (
           <div className="mt-8">
             <div className="mb-2 font-meta text-[10px] tracking-[0.2em] uppercase opacity-60">
               Movements
             </div>
-            <ol className="m-0 list-none border-t border-white/15 p-0">
-              {heard.map((m, i) => {
-                const current = m.trackId === movement.trackId;
-                return (
-                  <li key={m.n} className="border-b border-white/15">
-                    <button
-                      type="button"
-                      onClick={() => onPlayFrom(i)}
-                      className="grid w-full cursor-pointer grid-cols-[30px_minmax(0,1fr)_auto] items-baseline gap-3 py-3 text-left"
-                    >
-                      <span className="text-right font-display text-[14px] italic opacity-70">
-                        {numeralPrefix(m.roman)}
-                      </span>
-                      <span
-                        className={`flex min-w-0 items-baseline gap-2 font-display text-[16px] ${current ? '' : 'opacity-80'}`}
-                      >
-                        <span className="truncate">{m.name}</span>
-                        {current && !isPaused && <Waveform />}
-                      </span>
-                      <span className="font-meta text-[11px] tabular-nums opacity-65">
-                        {m.liked && <span className="mr-2">♥</span>}
-                        {m.duration}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
+            <MovementList
+              variant="sheet"
+              movements={programme.heard}
+              playingTrackId={movement.trackId}
+              isPaused={isPaused}
+              onPlay={programme.playFrom}
+            />
           </div>
         )}
 

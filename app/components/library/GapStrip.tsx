@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
 import { useIsAdmin } from '@/lib/use-is-admin';
@@ -8,6 +8,8 @@ import { getQueuedTrackIds, submitToMatchQueue } from '@/app/actions/spotify';
 import { adminGapHref, gapRoute } from '@/app/admin/lib/gap-route';
 import type { MusicBrainzGapCode, UnresolvedLibraryTrack } from '@/lib/musicbrainz-library';
 import { GAP_REASONS as REASONS } from '@/lib/gap-reasons';
+import { useServerQuery } from '@/lib/use-server-query';
+import { LoadFailure } from '../LoadFailure';
 
 /**
  * Held tracks the MusicBrainz reader could not put on a card, grouped by
@@ -20,28 +22,25 @@ import { GAP_REASONS as REASONS } from '@/lib/gap-reasons';
 
 export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
   const [open, setOpen] = useState(false);
-  const [queued, setQueued] = useState<Set<string>>(new Set());
+  // Sent from here this visit, on top of what the queue held when opened.
+  const [sent, setSent] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState<Set<string>>(new Set());
   const [failed, setFailed] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    if (!open || tracks.length === 0) return;
-    let cancelled = false;
-    getQueuedTrackIds(tracks.map((track) => track.spotifyTrackId))
-      .then((ids) => {
-        if (!cancelled) setQueued(new Set(ids));
-      })
-      .catch((error) => console.error('Failed to read match queue:', error));
-    return () => {
-      cancelled = true;
-    };
-  }, [open, tracks]);
+  const held = useServerQuery(
+    open && tracks.length > 0
+      ? () => getQueuedTrackIds(tracks.map((track) => track.spotifyTrackId))
+      : null,
+    [open, tracks],
+  );
+  const heldIds = held.status === 'ready' ? held.data : null;
+  const queued = useMemo(() => new Set([...(heldIds ?? []), ...sent]), [heldIds, sent]);
 
   async function send(trackId: string) {
     setSending((current) => new Set(current).add(trackId));
     setFailed((current) => without(current, trackId));
     try {
       await submitToMatchQueue([trackId]);
-      setQueued((current) => new Set(current).add(trackId));
+      setSent((current) => new Set(current).add(trackId));
     } catch (error) {
       console.error('Failed to submit track for matching:', error);
       setFailed((current) => new Set(current).add(trackId));
@@ -79,6 +78,14 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
 
       {open && (
         <div className="mt-[10px]">
+          {held.status === 'error' && (
+            <LoadFailure
+              className="py-[7px] font-display text-[12px] text-accent italic"
+              what="which of these are already queued for matching"
+              error={held.message}
+              onRetry={held.retry}
+            />
+          )}
           {groups.map(([code, group]) => (
             <div key={code ?? 'none'} className="py-[7px]">
               <div className="flex items-baseline gap-[9px]">
