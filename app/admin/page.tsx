@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { useIsAdmin } from '@/lib/use-is-admin';
 import { GatewayBar } from './components/GatewayBar';
 import { AdminFailureNotice, AdminFailureProvider } from './components/AdminFailure';
 import { Spinner } from './components/Spinner';
@@ -45,9 +46,9 @@ function AdminPageContent() {
   const searchParams = useSearchParams();
   const { page, albumFilter, focus } = parseAdminUrl(searchParams);
 
-  const isAdmin = session?.user?.name === 'benwaffle';
+  const isAdmin = useIsAdmin(session?.user?.id);
 
-  if (isPending) {
+  if (isPending || (session && isAdmin === null)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner className="h-4 w-4" />

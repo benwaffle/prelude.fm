@@ -3,6 +3,7 @@
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { createSpotifySdk } from '@/lib/spotify-sdk';
+import { isAdminUser } from '@/lib/admin';
 
 export async function checkAuth() {
   const session = await auth.api.getSession({
@@ -13,7 +14,7 @@ export async function checkAuth() {
     throw new Error('Unauthorized');
   }
 
-  if (session.user.name !== 'benwaffle') {
+  if (!(await isAdminUser(session.user.id))) {
     throw new Error('Access denied');
   }
 
