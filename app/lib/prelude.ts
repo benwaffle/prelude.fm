@@ -71,6 +71,18 @@ export function shortName(fullName: string): string {
   return `${lead} ${last}`;
 }
 
+/**
+ * The smallest of an artist's Spotify images that still fills a portrait at
+ * twice its size, or the largest when none does.
+ */
+export function portraitOf(
+  images: { url: string; width: number | null }[] | null | undefined,
+): string | null {
+  if (!images?.length) return null;
+  const bySize = [...images].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
+  return (bySize.find((image) => (image.width ?? 0) >= 240) ?? bySize.at(-1)!).url;
+}
+
 export function initialsOf(name: string): string {
   return name
     .split(/\s+/)

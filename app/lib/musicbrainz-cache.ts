@@ -31,7 +31,7 @@ import {
 } from './db/schema';
 import { bumpCacheLookup, recordMusicBrainzRequest } from './musicbrainz-cache-metrics';
 import { normalizeIsrc } from './isrc';
-import { cataloguesOf, composerOf, parentPartOf, yearOf } from './musicbrainz';
+import { cataloguesOf, composerOf, parentPartOf, spotifyArtistIdOf, yearOf } from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
 import type {
   MbArtist,
@@ -69,6 +69,7 @@ export async function releaseIsCached(releaseMbid: string): Promise<boolean> {
 /* ------------------------------------------------------------ entities --- */
 
 async function cacheArtist(artist: MbArtist) {
+  const now = new Date();
   const row = {
     mbid: artist.id,
     name: artist.name,
@@ -76,7 +77,9 @@ async function cacheArtist(artist: MbArtist) {
     type: artist.type ?? null,
     beginYear: yearOf(artist['life-span']?.begin),
     endYear: yearOf(artist['life-span']?.end),
-    fetchedAt: new Date(),
+    spotifyArtistId: spotifyArtistIdOf(artist),
+    linksReadAt: now,
+    fetchedAt: now,
   };
   // `creditedName` is deliberately absent from the update: it is the name a
   // release printed, which this lookup does not know and must not erase.
@@ -830,11 +833,12 @@ export async function refreshCachedReleases(
  * engineer's are not.
  */
 async function artistsNeedingDetail(limit: number): Promise<string[]> {
+  // A composer read before we asked for links is read again for its portrait.
   const composers = await db
     .selectDistinct({ mbid: mbArtist.mbid })
     .from(mbArtist)
     .innerJoin(mbWork, eq(mbWork.composerMbid, mbArtist.mbid))
-    .where(isNull(mbArtist.sortName))
+    .where(isNull(mbArtist.linksReadAt))
     .limit(limit);
 
   if (composers.length >= limit) return composers.map((row) => row.mbid);

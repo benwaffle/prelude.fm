@@ -283,7 +283,7 @@ export async function getArtist(
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
   onAttempt?: OnMbAttempt,
 ): Promise<MbArtist | null> {
-  return mbGet<MbArtist>(`/artist/${artistId}?fmt=json`, channel, onAttempt);
+  return mbGet<MbArtist>(`/artist/${artistId}?inc=url-rels&fmt=json`, channel, onAttempt);
 }
 
 /* --------------------------------------------------- the release read --- */
@@ -497,6 +497,18 @@ export function musicBrainzApi(
 }
 
 /* ------------------------------------------------------ relation readers --- */
+
+/** The Spotify artist a MusicBrainz artist links to, if it links to one. */
+export function spotifyArtistIdOf(artist: MbArtist): string | null {
+  for (const relation of artist.relations ?? []) {
+    if (relation.ended || !relation.url) continue;
+    const match = /^https?:\/\/open\.spotify\.com\/artist\/([A-Za-z0-9]+)\/?$/.exec(
+      relation.url.resource,
+    );
+    if (match) return match[1];
+  }
+  return null;
+}
 
 /** A work in a `parts` relationship, with its position in the parent. */
 export type MbWorkPart = MbWorkRef & { orderingKey: number | null };

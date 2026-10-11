@@ -70,6 +70,7 @@ export type ProjectedComposer = {
   type: string | null;
   beginYear: number | null;
   endYear: number | null;
+  portrait: string | null;
 };
 
 export type ProjectedWorkNode = {
@@ -650,6 +651,7 @@ function projectRecordingWork(
         type: nonBlank(artist.type),
         beginYear: artist.beginYear,
         endYear: artist.endYear,
+        portrait: artist.portrait ?? null,
       };
       if (!composer.name) {
         pushGap(gaps, gap('composer-name-missing', 'artist', resolved.composerMbid));
