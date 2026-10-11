@@ -80,6 +80,35 @@ test('reads the composer relation', () => {
   assert.equal(composerOf({ id: 'w', title: 'w', relations: [] }), null);
 });
 
+test('prefers the main composer over an additional one', () => {
+  const requiem: MbWork = {
+    id: 'requiem',
+    title: 'Requiem in D minor, K. 626',
+    relations: [
+      {
+        type: 'composer',
+        direction: 'backward',
+        attributes: ['additional'],
+        artist: { id: 'sussmayr', name: 'Franz Xaver Süßmayr' },
+      },
+      {
+        type: 'composer',
+        direction: 'backward',
+        attributes: [],
+        artist: { id: 'mozart', name: 'Wolfgang Amadeus Mozart' },
+      },
+    ],
+  };
+  assert.equal(composerOf(requiem)?.name, 'Wolfgang Amadeus Mozart');
+
+  const onlyAdditional: MbWork = {
+    id: 'w',
+    title: 'w',
+    relations: [requiem.relations![0]],
+  };
+  assert.equal(composerOf(onlyAdditional)?.name, 'Franz Xaver Süßmayr');
+});
+
 test('strips the parent title from a movement title', () => {
   assert.equal(
     stripParentPrefix(
