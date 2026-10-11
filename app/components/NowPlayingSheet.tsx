@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PlaybackDevice } from '@/lib/spotify-player-context';
 import { hexToRgba, numeralPrefix, type LibraryWork, type Movement } from '@/lib/prelude';
 import { Icon, Waveform } from './Icon';
+import { QueueList } from './queue/QueueList';
 
 interface NowPlayingSheetProps {
   work: LibraryWork;
@@ -56,19 +57,23 @@ export function NowPlayingSheet({
   onToggleLike,
   onChooseDevice,
 }: NowPlayingSheetProps) {
+  // Slides down before it goes, the way it came up.
+  const [leaving, setLeaving] = useState(false);
+  const close = useCallback(() => setLeaving(true), []);
+
   // The page underneath shouldn't scroll while the sheet covers it.
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') close();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.body.style.overflow = previous;
       document.removeEventListener('keydown', onKey);
     };
-  }, [onClose]);
+  }, [close]);
 
   const ink = work.ink;
   const remote = outputDevice && !outputDevice.isThisBrowser;
@@ -77,7 +82,12 @@ export function NowPlayingSheet({
     <div
       role="dialog"
       aria-label="Now playing"
-      className="fixed inset-0 z-[40] flex flex-col overflow-y-auto overscroll-contain select-none"
+      onAnimationEnd={(e) => {
+        if (leaving && e.target === e.currentTarget) onClose();
+      }}
+      className={`fixed inset-0 z-[40] flex flex-col overflow-y-auto overscroll-contain select-none ${
+        leaving ? 'animate-sheet-out' : 'animate-sheet-in'
+      }`}
       style={{
         background: `linear-gradient(180deg, ${hexToRgba(work.tint, 0.97)}, ${hexToRgba(work.tint, 1)} 60%), #111`,
         color: ink,
@@ -86,7 +96,7 @@ export function NowPlayingSheet({
       <div className="flex items-center justify-between px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2">
         <button
           type="button"
-          onClick={onClose}
+          onClick={close}
           aria-label="Close the player"
           className="-ml-2 flex h-11 w-11 cursor-pointer items-center justify-center opacity-85"
         >
@@ -136,7 +146,7 @@ export function NowPlayingSheet({
                 <>
                   {work.composerFull && ' · '}
                   {detailHref ? (
-                    <Link href={detailHref} onClick={onClose} className="underline-offset-2">
+                    <Link href={detailHref} onClick={close} className="underline-offset-2">
                       {work.title}
                     </Link>
                   ) : (
@@ -207,7 +217,11 @@ export function NowPlayingSheet({
             aria-label={isPaused ? 'Play' : 'Pause'}
             className="flex h-[68px] w-[68px] cursor-pointer items-center justify-center rounded-full bg-current transition-transform active:scale-95 disabled:opacity-35"
           >
-            <span className="flex" style={{ color: work.tint }}>
+            <span
+              key={isPaused ? 'play' : 'pause'}
+              className="flex animate-pop"
+              style={{ color: work.tint }}
+            >
               <Icon name={isPaused ? 'play' : 'pause'} size={28} />
             </span>
           </button>
@@ -257,6 +271,10 @@ export function NowPlayingSheet({
             </ol>
           </div>
         )}
+
+        <div className="mt-8">
+          <QueueList />
+        </div>
       </div>
     </div>,
     document.body,

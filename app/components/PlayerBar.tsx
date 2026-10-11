@@ -14,7 +14,9 @@ import {
 } from '@/lib/prelude';
 import { Icon } from './Icon';
 import { DevicePicker } from './DevicePicker';
+import { QueuePanel } from './queue/QueuePanel';
 import { NowPlayingSheet } from './NowPlayingSheet';
+import { useMediaSession } from '@/lib/use-media-session';
 
 /**
  * The player bar, present on every screen. Progress is scoped to the whole
@@ -33,6 +35,7 @@ export function PlayerBar() {
     seek,
     setVolume,
     getProgress,
+    subscribeToProgress,
     play,
     outputDevice,
     localStatus,
@@ -40,6 +43,8 @@ export function PlayerBar() {
     playbackError,
     needsDevice,
     dismissDevicePrompt,
+    queue,
+    playQueue,
   } = useSpotifyPlayer();
   const [pickerOpen, setPickerOpen] = useState(false);
   const showPicker = pickerOpen || needsDevice;
@@ -50,6 +55,8 @@ export function PlayerBar() {
   const { locate, toggleLike, likedTrackIds } = useLibrary();
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const closeQueue = useCallback(() => setQueueOpen(false), []);
 
   const located = locate(currentTrack?.id);
 
@@ -181,50 +188,26 @@ export function PlayerBar() {
     [work, heard, totalMs, index, seek, play],
   );
 
-  /*
-   * Lock screen, notification shade and headphone buttons: say what's
-   * playing and route their controls here. Only the in-browser player needs
-   * this; a Connect device shows its own.
-   */
   const localPlayback = !outputDevice || outputDevice.isThisBrowser;
-  useEffect(() => {
-    if (!('mediaSession' in navigator) || !localPlayback || !work || !movement) return;
-    const session = navigator.mediaSession;
-    session.metadata = new MediaMetadata({
-      title: [numeralPrefix(movement.roman), movement.name].filter(Boolean).join(' '),
-      artist: work.composerFull ?? '',
-      album: work.title ?? work.album,
-      artwork: work.cover ? [{ src: work.cover, sizes: '640x640', type: 'image/jpeg' }] : [],
-    });
-    const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
-      ['play', () => void togglePlay()],
-      ['pause', () => void togglePlay()],
-      ['previoustrack', () => void previousTrack()],
-      ['nexttrack', () => void nextTrack()],
-    ];
-    for (const [action, handler] of handlers) {
-      try {
-        session.setActionHandler(action, handler);
-      } catch {
-        // Not every browser knows every action.
-      }
-    }
-    return () => {
-      for (const [action] of handlers) {
-        try {
-          session.setActionHandler(action, null);
-        } catch {
-          // As above.
-        }
-      }
-    };
-  }, [localPlayback, work, movement, togglePlay, previousTrack, nextTrack]);
-
-  useEffect(() => {
-    if ('mediaSession' in navigator && localPlayback && work) {
-      navigator.mediaSession.playbackState = isPaused ? 'paused' : 'playing';
-    }
-  }, [localPlayback, work, isPaused]);
+  useMediaSession({
+    active: localPlayback,
+    track:
+      work && movement
+        ? {
+            title: [numeralPrefix(movement.roman), movement.name].filter(Boolean).join(' '),
+            artist: [work.composerFull, work.performer].filter(Boolean).join(' · '),
+            album: work.title ?? work.album,
+            cover: work.cover,
+          }
+        : null,
+    isPaused,
+    onTogglePlay: togglePlay,
+    onPrevious: previousTrack,
+    onNext: nextTrack,
+    onSeek: seek,
+    getProgress,
+    subscribeToProgress,
+  });
 
   /** Tap or drag along a progress bar; the seek happens on release. */
   const scrub = useMemo(() => {
@@ -283,6 +266,7 @@ export function PlayerBar() {
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/5 to-black/[0.12]" />
 
       {showPicker && <DevicePicker onClose={closePicker} />}
+      {queueOpen && work && <QueuePanel onClose={closeQueue} />}
 
       {playbackError && (
         <div className="absolute right-0 bottom-full left-0 z-[2] bg-accent px-7 py-[6px] text-center font-display text-[13px] text-paper italic max-[900px]:px-4">
@@ -301,6 +285,16 @@ export function PlayerBar() {
                 ? localProblem
                 : 'Connecting to Spotify…'}
           </span>
+          {isReady && queue.length > 0 && (
+            <button
+              type="button"
+              onClick={playQueue}
+              className="flex cursor-pointer items-center gap-[6px] border-b border-current pb-px font-meta text-[10px] tracking-[0.16em] not-italic uppercase opacity-85 hover:opacity-100"
+            >
+              <Icon name="play" size={10} />
+              Play queue ({queue.length})
+            </button>
+          )}
           {(isReady || localStatus === 'unavailable') && (
             <button
               type="button"
@@ -316,7 +310,7 @@ export function PlayerBar() {
       ) : (
         <>
           {/* Phones: one compact row that opens the full player. */}
-          <div className="relative z-[1] min-[901px]:hidden">
+          <div className="relative z-[1] animate-rise min-[901px]:hidden">
             <div className="absolute -top-2 right-[-12px] left-[-12px] h-[2px] bg-white/15">
               <div data-progress="fill" className="absolute inset-y-0 left-0 bg-current" />
             </div>
@@ -327,7 +321,7 @@ export function PlayerBar() {
                 aria-label="Open the player"
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
               >
-                <Cover work={work} />
+                <Cover key={work.id} work={work} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-display text-[15px] leading-[1.25]">
                     {movement.roman && (
@@ -353,7 +347,11 @@ export function PlayerBar() {
                 disabled={!isReady}
                 className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-current disabled:cursor-default disabled:opacity-35"
               >
-                <span className="flex" style={{ color: tint }}>
+                <span
+                  key={isPaused ? 'play' : 'pause'}
+                  className="flex animate-pop"
+                  style={{ color: tint }}
+                >
                   <Icon name={isPaused ? 'play' : 'pause'} size={18} />
                 </span>
               </button>
@@ -389,10 +387,10 @@ export function PlayerBar() {
           <div className="relative z-[1] grid min-w-0 grid-cols-[56px_1fr] items-center gap-[14px] max-[900px]:hidden">
             {detailHref ? (
               <Link href={detailHref} className="block shrink-0">
-                <Cover work={work} />
+                <Cover key={work.id} work={work} />
               </Link>
             ) : (
-              <Cover work={work} />
+              <Cover key={work.id} work={work} />
             )}
             <div className="min-w-0">
               <div className="flex items-baseline gap-2 font-display text-[15px] leading-[1.2] max-[900px]:text-[14px]">
@@ -448,13 +446,6 @@ export function PlayerBar() {
             <div className="flex items-center gap-[18px] max-[900px]:gap-[22px]">
               <button
                 type="button"
-                title="Shuffle"
-                className="cursor-pointer opacity-85 hover:opacity-100"
-              >
-                <Icon name="shuffle" size={16} />
-              </button>
-              <button
-                type="button"
                 title="Previous movement"
                 onClick={previousTrack}
                 disabled={!isReady}
@@ -469,7 +460,11 @@ export function PlayerBar() {
                 disabled={!isReady}
                 className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-current transition-transform duration-150 hover:scale-105 disabled:cursor-default disabled:opacity-35"
               >
-                <span className="flex" style={{ color: tint }}>
+                <span
+                  key={isPaused ? 'play' : 'pause'}
+                  className="flex animate-pop"
+                  style={{ color: tint }}
+                >
                   <Icon name={isPaused ? 'play' : 'pause'} size={18} />
                 </span>
               </button>
@@ -481,13 +476,6 @@ export function PlayerBar() {
                 className="cursor-pointer opacity-85 hover:opacity-100 disabled:cursor-default disabled:opacity-35"
               >
                 <Icon name="next" size={20} />
-              </button>
-              <button
-                type="button"
-                title="Queue"
-                className="cursor-pointer opacity-85 hover:opacity-100"
-              >
-                <Icon name="queue" size={16} />
               </button>
             </div>
 
@@ -565,9 +553,21 @@ export function PlayerBar() {
             <button
               type="button"
               title="Queue"
-              className="cursor-pointer opacity-70 hover:opacity-100 max-[900px]:hidden"
+              data-queue-toggle
+              onClick={() => setQueueOpen((open) => !open)}
+              className={`relative cursor-pointer hover:opacity-100 max-[900px]:hidden ${
+                queueOpen ? 'opacity-100' : 'opacity-70'
+              }`}
             >
               <Icon name="queue" size={16} />
+              {queue.length > 0 && (
+                <span
+                  key={queue.length}
+                  className="absolute -top-[7px] -right-[9px] flex h-[14px] min-w-[14px] animate-pop items-center justify-center rounded-full bg-current px-[3px] font-meta text-[9px] leading-none tabular-nums"
+                >
+                  <span style={{ color: tint }}>{queue.length}</span>
+                </span>
+              )}
             </button>
             {/* Some Connect devices, iPhones among them, keep volume to themselves. */}
             {outputDevice?.supportsVolume !== false && (
@@ -602,7 +602,7 @@ function Cover({ work }: { work: LibraryWork }) {
   if (!work.cover) {
     return (
       <div
-        className="flex h-14 w-14 items-center justify-center rounded-[2px] font-display text-lg max-[900px]:h-11 max-[900px]:w-11"
+        className="flex h-14 w-14 animate-rise items-center justify-center rounded-[2px] font-display text-lg max-[900px]:h-11 max-[900px]:w-11"
         style={{ background: hexToRgba(work.ink, 0.14) }}
       >
         {work.composer?.slice(0, 1) ?? ''}
@@ -614,7 +614,7 @@ function Cover({ work }: { work: LibraryWork }) {
     <img
       src={work.cover}
       alt={work.album}
-      className="h-14 w-14 rounded-[2px] object-cover shadow-[0_10px_30px_-10px_rgba(0,0,0,0.8)] max-[900px]:h-11 max-[900px]:w-11"
+      className="h-14 w-14 animate-rise rounded-[2px] object-cover shadow-[0_10px_30px_-10px_rgba(0,0,0,0.8)] max-[900px]:h-11 max-[900px]:w-11"
     />
   );
 }

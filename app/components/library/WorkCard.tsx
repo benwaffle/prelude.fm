@@ -12,6 +12,7 @@ import {
 } from '@/lib/prelude';
 import type { MusicBrainzGapCode } from '@/lib/musicbrainz-library';
 import { GAP_REASONS } from '@/lib/gap-reasons';
+import { AddToQueueButton } from '../queue/AddToQueueButton';
 
 /** Movements beyond this fold behind a "+ n more" link into the detail view. */
 const CAP = 8;
@@ -112,6 +113,10 @@ export function WorkCard({
             </Link>
           )}
           {work.year && <span>{work.year}</span>}
+          <AddToQueueButton
+            work={work}
+            className="-my-2 py-2 text-muted not-italic hover:text-ink max-[900px]:text-[9.5px]"
+          />
         </div>
 
         {work.ownLink && (

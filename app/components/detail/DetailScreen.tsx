@@ -19,6 +19,7 @@ import {
 } from '@/lib/prelude';
 import { Icon, Waveform } from '../Icon';
 import { programmeMovementName } from './programme-title';
+import { AddToQueueButton } from '../queue/AddToQueueButton';
 
 /**
  * One recording in full: the art plate and its programme of movements, then
@@ -265,16 +266,18 @@ function Hero({
   onToggleLike: (trackId: string) => void;
 }) {
   return (
-    <section className="relative grid grid-cols-[320px_1fr] gap-12 border-b border-rule pt-12 pb-14 max-[900px]:grid-cols-[minmax(0,1fr)] max-[900px]:gap-[48px] max-[900px]:pt-[26px] max-[900px]:pb-[30px]">
-      <div className="relative aspect-square self-start shadow-deep max-[900px]:max-w-[200px]">
+    // On a phone the plate shrinks beside the heading so the programme, the
+    // part you came to play, starts on the first screen.
+    <section className="relative grid animate-enter grid-cols-[320px_1fr] grid-rows-[auto_1fr] gap-x-12 gap-y-[34px] border-b border-rule pt-12 pb-14 max-[900px]:grid-cols-[96px_minmax(0,1fr)] max-[900px]:gap-x-4 max-[900px]:gap-y-5 max-[900px]:pt-5 max-[900px]:pb-[30px]">
+      <div className="relative row-span-2 aspect-square self-start shadow-deep max-[900px]:row-span-1">
         <Plate work={work} />
         <span className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),inset_0_0_40px_rgba(0,0,0,0.2)]" />
-        <div className="absolute -bottom-[30px] left-0 font-display text-[14px] text-muted italic max-[900px]:w-[calc(100vw-32px)] max-[900px]:truncate">
+        <div className="absolute -bottom-[30px] left-0 font-display text-[14px] text-muted italic max-[900px]:hidden">
           — {work.album}
         </div>
       </div>
 
-      <div className="flex flex-col gap-[14px]">
+      <div className="flex min-w-0 flex-col gap-[14px] max-[900px]:gap-[6px]">
         {work.era && (
           <div className="flex items-center gap-3 text-[10.5px] tracking-[0.22em] text-muted uppercase">
             <span className="h-px w-6 bg-muted" />
@@ -282,14 +285,18 @@ function Hero({
           </div>
         )}
 
-        <div className="mt-[2px] flex items-baseline gap-4">
-          <span className="font-display text-[32px] leading-none font-medium max-[900px]:text-2xl">
+        <div className="mt-[2px] flex flex-wrap items-baseline gap-x-4 gap-y-1 max-[900px]:gap-x-2">
+          <span className="font-display text-[32px] leading-none font-medium max-[900px]:text-[18px]">
             {work.composerFull}
           </span>
-          {work.years && <span className="font-meta text-[12px] text-muted">({work.years})</span>}
+          {work.years && (
+            <span className="font-meta text-[12px] text-muted max-[900px]:text-[10.5px]">
+              ({work.years})
+            </span>
+          )}
         </div>
 
-        <h1 className="mt-[6px] mb-1 font-display text-[54px] leading-[1.02] font-medium text-balance max-[900px]:text-[clamp(28px,8vw,40px)]">
+        <h1 className="mt-[6px] mb-1 font-display text-[54px] leading-[1.02] font-medium text-balance max-[900px]:mt-0 max-[900px]:text-[clamp(22px,6.4vw,30px)]">
           {work.title}
           {work.nickname && (
             <>
@@ -298,7 +305,7 @@ function Hero({
           )}
         </h1>
 
-        <div className="font-display text-[14px] text-muted italic">
+        <div className="font-display text-[14px] text-muted italic max-[900px]:text-[13px]">
           {work.performer}
           {work.ensemble && (
             <>
@@ -314,6 +321,10 @@ function Hero({
           )}
         </div>
 
+        <div className="truncate font-display text-[13px] text-muted italic min-[901px]:hidden">
+          — {work.album}
+        </div>
+
         {work.catalog && (
           <div className="mt-[6px] inline-flex items-center gap-[10px] self-start rounded-[2px] border border-rule bg-paper-2 px-[14px] py-2">
             <span className="font-meta text-[9.5px] tracking-[0.2em] text-muted uppercase">
@@ -322,102 +333,105 @@ function Hero({
             <span className="font-display text-[16px]">{work.catalog}</span>
           </div>
         )}
+      </div>
 
-        <div className="mt-5 flex flex-col">
-          <h2 className="mb-3 font-meta text-[10.5px] font-semibold tracking-[0.22em] text-muted uppercase">
+      <div className="flex min-w-0 flex-col max-[900px]:col-span-2">
+        <div className="mb-3 flex items-baseline gap-5">
+          <h2 className="m-0 font-meta text-[10.5px] font-semibold tracking-[0.22em] text-muted uppercase">
             Programme
           </h2>
-          {work.unmatched && (
-            <p className="mb-3 border border-rule bg-paper-2 px-3 py-2 font-display text-[13px] text-muted italic">
-              This recording’s tracks have not been mapped to movements yet.
-            </p>
-          )}
-          {/* Ruled top and bottom as one programme, not movement by
+          <AddToQueueButton work={work} className="-my-2 ml-auto py-2 text-muted hover:text-ink" />
+        </div>
+        {work.unmatched && (
+          <p className="mb-3 border border-rule bg-paper-2 px-3 py-2 font-display text-[13px] text-muted italic">
+            This recording’s tracks have not been mapped to movements yet.
+          </p>
+        )}
+        {/* Ruled top and bottom as one programme, not movement by
               movement — a rule per line buried the music in furniture. */}
-          <ol className="m-0 flex list-none flex-col border-y border-rule p-0">
-            {work.movements.map((m) => {
-              const playing = m.trackId !== null && currentTrackId === m.trackId;
+        <ol className="m-0 flex list-none flex-col border-y border-rule p-0">
+          {work.movements.map((m) => {
+            const playing = m.trackId !== null && currentTrackId === m.trackId;
 
-              /* A movement of the work that this recording doesn't carry.
+            /* A movement of the work that this recording doesn't carry.
                  Shown so the programme is the whole work, greyed out and
                  inert so it can't be mistaken for something playable. */
-              if (m.missing) {
-                return (
-                  <li key={m.n} className="relative">
-                    <div
-                      title="This recording doesn't include this movement"
-                      className="grid w-full grid-cols-[36px_1fr_auto_auto] items-baseline gap-4 py-[10px] text-left opacity-40 select-none"
-                    >
-                      <span className="onum text-right font-display text-[22px] text-muted italic">
-                        {numeralPrefix(m.roman)}
-                      </span>
-                      <span className="font-display text-[20px] font-medium text-muted line-through decoration-rule">
-                        {programmeMovementName(m.name, work.title, m.roman)}
-                      </span>
-                      <span className="font-meta text-[12px] text-muted tabular-nums">—</span>
-                      <span
-                        aria-label="Not on this recording"
-                        className="font-meta text-[8px] tracking-[0.18em] text-muted uppercase"
-                      >
-                        not here
-                      </span>
-                    </div>
-                  </li>
-                );
-              }
-
+            if (m.missing) {
               return (
                 <li key={m.n} className="relative">
-                  {playing && (
-                    <span className="absolute top-1/2 -left-3 h-1 w-1 -translate-y-1/2 rounded-full bg-accent" />
-                  )}
-                  <div className="grid w-full grid-cols-[36px_1fr_auto_auto] items-baseline gap-4 py-[10px] text-left hover:bg-paper-2">
-                    <button
-                      type="button"
-                      onClick={() => onPlay(m)}
-                      className={`onum cursor-pointer text-right font-display text-[22px] ${
-                        playing ? 'font-bold text-accent not-italic' : 'text-muted italic'
-                      }`}
-                    >
+                  <div
+                    title="This recording doesn't include this movement"
+                    className="grid w-full grid-cols-[36px_1fr_auto_auto] items-baseline gap-4 py-[10px] text-left opacity-40 select-none"
+                  >
+                    <span className="onum text-right font-display text-[22px] text-muted italic">
                       {numeralPrefix(m.roman)}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onPlay(m)}
-                      className={`cursor-pointer text-left font-display text-[20px] font-medium ${
-                        playing ? 'text-accent' : ''
-                      }`}
-                    >
-                      {programmeMovementName(m.name, work.title, m.roman)}
-                      {m.unnamed && (
-                        <span
-                          title={unnamedMovementNote(m)}
-                          className="ml-[10px] align-middle font-meta text-[8px] tracking-[0.18em] text-muted uppercase"
-                        >
-                          unparsed
-                        </span>
-                      )}
-                      {playing && <Waveform bars={5} className="ml-[10px] h-3 align-middle" />}
-                    </button>
-                    <span className="font-meta text-[12px] text-muted tabular-nums">
-                      {m.duration}
                     </span>
-                    <button
-                      type="button"
-                      title={m.liked ? 'Remove from liked' : 'Like this movement'}
-                      onClick={() => m.trackId && onToggleLike(m.trackId)}
-                      className={`flex cursor-pointer transition-all duration-150 hover:scale-110 ${
-                        m.liked ? 'text-accent' : 'text-rule hover:text-muted'
-                      }`}
+                    <span className="font-display text-[20px] font-medium text-muted line-through decoration-rule">
+                      {programmeMovementName(m.name, work.title, m.roman)}
+                    </span>
+                    <span className="font-meta text-[12px] text-muted tabular-nums">—</span>
+                    <span
+                      aria-label="Not on this recording"
+                      className="font-meta text-[8px] tracking-[0.18em] text-muted uppercase"
                     >
-                      <Icon name={m.liked ? 'heartFill' : 'heartOutline'} size={12} />
-                    </button>
+                      not here
+                    </span>
                   </div>
                 </li>
               );
-            })}
-          </ol>
-        </div>
+            }
+
+            return (
+              <li key={m.n} className="relative">
+                {playing && (
+                  <span className="absolute top-1/2 -left-3 h-1 w-1 -translate-y-1/2 rounded-full bg-accent" />
+                )}
+                <div className="grid w-full grid-cols-[36px_1fr_auto_auto] items-baseline gap-4 py-[10px] text-left hover:bg-paper-2">
+                  <button
+                    type="button"
+                    onClick={() => onPlay(m)}
+                    className={`onum cursor-pointer text-right font-display text-[22px] ${
+                      playing ? 'font-bold text-accent not-italic' : 'text-muted italic'
+                    }`}
+                  >
+                    {numeralPrefix(m.roman)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onPlay(m)}
+                    className={`cursor-pointer text-left font-display text-[20px] font-medium ${
+                      playing ? 'text-accent' : ''
+                    }`}
+                  >
+                    {programmeMovementName(m.name, work.title, m.roman)}
+                    {m.unnamed && (
+                      <span
+                        title={unnamedMovementNote(m)}
+                        className="ml-[10px] align-middle font-meta text-[8px] tracking-[0.18em] text-muted uppercase"
+                      >
+                        unparsed
+                      </span>
+                    )}
+                    {playing && <Waveform bars={5} className="ml-[10px] h-3 align-middle" />}
+                  </button>
+                  <span className="font-meta text-[12px] text-muted tabular-nums">
+                    {m.duration}
+                  </span>
+                  <button
+                    type="button"
+                    title={m.liked ? 'Remove from liked' : 'Like this movement'}
+                    onClick={() => m.trackId && onToggleLike(m.trackId)}
+                    className={`flex cursor-pointer transition-all duration-150 hover:scale-110 ${
+                      m.liked ? 'text-accent' : 'text-rule hover:text-muted'
+                    }`}
+                  >
+                    <Icon name={m.liked ? 'heartFill' : 'heartOutline'} size={12} />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
       </div>
     </section>
   );

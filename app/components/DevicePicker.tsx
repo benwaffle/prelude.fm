@@ -76,7 +76,7 @@ export function DevicePicker({ onClose }: DevicePickerProps) {
         ref={panelRef}
         role="dialog"
         aria-label="Choose where to play"
-        className="absolute right-4 bottom-full z-[20] mb-2 w-[320px] rounded-[3px] border border-rule bg-paper text-ink shadow-deep max-[900px]:right-3 max-[900px]:left-3 max-[900px]:w-auto"
+        className="absolute right-4 bottom-full z-[20] mb-2 w-[320px] animate-rise rounded-[3px] border border-rule bg-paper text-ink shadow-deep max-[900px]:right-3 max-[900px]:left-3 max-[900px]:w-auto"
       >
         <div className="flex items-baseline justify-between border-b border-rule px-4 pt-3 pb-2">
           <span className="font-meta text-[10px] tracking-[0.18em] text-muted uppercase">

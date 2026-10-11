@@ -47,10 +47,20 @@ const PATHS: Record<string, ReactElement> = {
       <path d="M3 6h14M3 12h14M3 18h10" />
     </g>
   ),
-  shuffle: (
+  queueAdd: (
     <g stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round">
-      <path d="M16 3l4 4-4 4M4 7h4l8 10h4M4 17h4l2-2.5M16 17l4-4" />
+      <path d="M3 6h12M3 12h12M3 18h7M18 14v8M14 18h8" />
     </g>
+  ),
+  check: (
+    <path
+      d="M4 12.5l5 5L20 6.5"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   ),
   heartFill: (
     <path
