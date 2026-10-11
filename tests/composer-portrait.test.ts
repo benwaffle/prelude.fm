@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { spotifyArtistIdOf } from '../app/lib/musicbrainz';
+import { spotifyArtistIdsOf } from '../app/lib/musicbrainz';
 import { portraitOf } from '../app/lib/prelude';
 
 const PROKOFIEV = '0e43fe9d-c472-4b62-be9e-55f971a023e1';
@@ -18,24 +18,26 @@ test('a composer takes the Spotify artist MusicBrainz links, and only that', () 
     relations,
   });
 
-  assert.equal(
-    spotifyArtistIdOf(
+  assert.deepEqual(
+    spotifyArtistIdsOf(
       artist(
         link('https://www.wikidata.org/wiki/Q49481'),
         link('https://open.spotify.com/artist/4kHtgiRnpmFIV5Tm4BIs8l'),
       ),
     ),
-    '4kHtgiRnpmFIV5Tm4BIs8l',
+    ['4kHtgiRnpmFIV5Tm4BIs8l'],
   );
-  assert.equal(
-    spotifyArtistIdOf(artist(link('https://open.spotify.com/artist/4kHtgiRnpmFIV5Tm4BIs8l', true))),
-    null,
+  assert.deepEqual(
+    spotifyArtistIdsOf(
+      artist(link('https://open.spotify.com/artist/4kHtgiRnpmFIV5Tm4BIs8l', true)),
+    ),
+    [],
   );
-  assert.equal(
-    spotifyArtistIdOf(artist(link('https://open.spotify.com/album/1A2GTWGtFfWp7KSQTwWOyo'))),
-    null,
+  assert.deepEqual(
+    spotifyArtistIdsOf(artist(link('https://open.spotify.com/album/1A2GTWGtFfWp7KSQTwWOyo'))),
+    [],
   );
-  assert.equal(spotifyArtistIdOf({ id: PROKOFIEV, name: 'Prokofiev' }), null);
+  assert.deepEqual(spotifyArtistIdsOf({ id: PROKOFIEV, name: 'Prokofiev' }), []);
 });
 
 test('a portrait is the smallest image that fills it, else the largest', () => {
