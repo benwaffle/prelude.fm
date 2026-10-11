@@ -1,12 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import {
-  getReleaseCorrections,
-  measureReleaseCorrections,
-  type ReleaseCorrectionsView,
-} from '../actions/release-submissions';
-import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
+import { getReleaseCorrections, measureReleaseCorrections } from '../actions/release-submissions';
+import { useServerQuery } from '@/lib/use-server-query';
+import { LoadFailure } from '@/app/components/LoadFailure';
+import { noticeClassName } from '../components/Notice';
 import { Spinner } from '../components/Spinner';
 import { useAdminAction } from '../components/useAdminAction';
 import { RowActionStatus } from '../inbox/RowActionStatus';
@@ -29,34 +26,27 @@ const BASELINE_LABEL: Record<ReleaseCorrectionRecord['baselineSource'], string> 
  * of album — the evidence for which kinds a bot could one day add alone.
  */
 export function ReleaseCorrectionsTab() {
-  const [view, setView] = useState<ReleaseCorrectionsView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const query = useServerQuery(getReleaseCorrections, []);
   const { runRow, row } = useAdminAction();
 
-  useEffect(() => {
-    let cancelled = false;
-    getReleaseCorrections()
-      .then((next) => {
-        if (!cancelled) setView(next);
-      })
-      .catch((failure: unknown) => {
-        if (!cancelled) setError(adminFailureMessage(failure));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  if (query.status === 'error') {
+    return (
+      <LoadFailure
+        className={noticeClassName('error')}
+        what="release corrections"
+        error={query.message}
+        onRetry={query.retry}
+      />
+    );
+  }
+  if (query.status === 'loading') return <Spinner className="h-3 w-3" />;
 
+  const { data: view, refresh } = query;
   async function measure(albumId: string) {
     await runRow(albumId, 'Measuring what changed…', async () => {
       await measureReleaseCorrections(albumId);
-      setView(await getReleaseCorrections());
+      await refresh();
     });
-  }
-
-  if (!view) {
-    if (error !== null) return <LoadFailure what="release corrections" error={error} />;
-    return <Spinner className="h-3 w-3" />;
   }
 
   return (

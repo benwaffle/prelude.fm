@@ -1,5 +1,5 @@
 import type { BotSubmissionResult } from '../actions/bot';
-import { adminFailureMessage } from '../components/AdminFailure';
+import { failureMessage } from '@/lib/use-server-query';
 
 export type BotSubmissionFeedback =
   | { kind: 'success' | 'empty'; message: string }
@@ -22,7 +22,7 @@ export async function botSubmissionFeedback(
   } catch (error) {
     return {
       kind: 'error',
-      message: `Submission status could not be confirmed: ${adminFailureMessage(error)}`,
+      message: `Submission status could not be confirmed: ${failureMessage(error)}`,
       httpStatus: null,
     };
   }

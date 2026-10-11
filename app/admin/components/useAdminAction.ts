@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from 'react';
 import { enqueueAdminAction } from './admin-action-queue';
-import { adminFailureMessage, useAdminFailure } from './AdminFailure';
+import { failureMessage } from '@/lib/use-server-query';
+import { useAdminFailure } from './AdminFailure';
 
 /** Fired after every admin action, so the gateway counter shows what it spent. */
 export const ADMIN_ACTION_DONE = 'admin-action-done';
@@ -126,7 +127,7 @@ export function useAdminAction({ queue = true }: { queue?: boolean } = {}) {
         action,
         {
           clearFailure: () => patchRow(key, { failure: null }),
-          showFailure: (error) => patchRow(key, { failure: adminFailureMessage(error) }),
+          showFailure: (error) => patchRow(key, { failure: failureMessage(error) }),
           setStatus: (status) => patchRow(key, { label, status }),
         },
         { queue },
