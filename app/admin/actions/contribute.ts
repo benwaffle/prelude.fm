@@ -398,12 +398,6 @@ async function rankedMissingReleases(limit: number) {
   return rankMissingReleases(rows, unblocks).slice(0, limit);
 }
 
-/** Totals for every Inbox section, without loading any section's rows. */
-export async function getContributionCounts(): Promise<ContributionView['counts']> {
-  await checkAuth();
-  return contributionCounts();
-}
-
 /**
  * The Inbox rows. With `only`, the other sections come back empty so a page
  * showing one section does not read all of them; the counts are always whole.

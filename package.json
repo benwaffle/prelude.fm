@@ -13,6 +13,7 @@
     "prepare": "husky",
     "queue:drain": "tsx scripts/drain-match-queue.ts",
     "metadata:validate": "tsx scripts/validate-metadata.ts",
+    "admin:timings": "tsx scripts/admin-timings.ts",
     "metadata:accounting": "tsx scripts/mb-accounting.ts",
     "metadata:readiness": "tsx scripts/catalogue-readiness.ts",
     "metadata:level-review": "tsx scripts/work-level-review.ts",

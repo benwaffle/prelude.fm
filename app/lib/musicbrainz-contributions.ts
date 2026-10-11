@@ -1128,29 +1128,58 @@ export async function misalignedAlbums(limit = 40, offset = 0): Promise<Misalign
       ),
     );
 
+  if (albums.length === 0) return [];
+
+  // Every album's two tracklists at once: one round trip per album was most
+  // of an Inbox load.
+  const albumIds = albums.map((album) => album.albumId);
+  const releaseMbids = [...new Set(albums.map((album) => album.releaseMbid))];
+  const [ourRows, theirRows, anchoredRows] = await Promise.all([
+    forChunks(albumIds, (chunk) =>
+      db
+        .select({
+          albumId: spotifyTrack.spotifyAlbumId,
+          medium: spotifyTrack.discNumber,
+          position: spotifyTrack.trackNumber,
+          title: spotifyTrack.title,
+          durationMs: spotifyTrack.durationMs,
+        })
+        .from(spotifyTrack)
+        .where(inArray(spotifyTrack.spotifyAlbumId, chunk))
+        .orderBy(spotifyTrack.discNumber, spotifyTrack.trackNumber),
+    ),
+    forChunks(releaseMbids, (chunk) =>
+      db
+        .select({
+          releaseMbid: mbReleaseTrack.releaseMbid,
+          medium: mbReleaseTrack.medium,
+          position: mbReleaseTrack.position,
+          title: mbReleaseTrack.title,
+          length: mbReleaseTrack.length,
+        })
+        .from(mbReleaseTrack)
+        .where(inArray(mbReleaseTrack.releaseMbid, chunk))
+        .orderBy(mbReleaseTrack.medium, mbReleaseTrack.position),
+    ),
+    forChunks(albumIds, (chunk) =>
+      db
+        .select({ albumId: spotifyTrack.spotifyAlbumId, n: sql<number>`count(*)` })
+        .from(trackRecording)
+        .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
+        .where(
+          and(inArray(spotifyTrack.spotifyAlbumId, chunk), eq(trackRecording.matchedBy, 'isrc')),
+        )
+        .groupBy(spotifyTrack.spotifyAlbumId),
+    ),
+  ]);
+  const oursByAlbum = Map.groupBy(ourRows, (row) => row.albumId);
+  const theirsByRelease = Map.groupBy(theirRows, (row) => row.releaseMbid);
+  const anchoredByAlbum = new Map(anchoredRows.map((row) => [row.albumId, row.n]));
+
   const out: MisalignedAlbum[] = [];
   for (const album of albums) {
-    const ours = await db
-      .select({
-        medium: spotifyTrack.discNumber,
-        position: spotifyTrack.trackNumber,
-        title: spotifyTrack.title,
-        durationMs: spotifyTrack.durationMs,
-      })
-      .from(spotifyTrack)
-      .where(eq(spotifyTrack.spotifyAlbumId, album.albumId))
-      .orderBy(spotifyTrack.discNumber, spotifyTrack.trackNumber);
-
-    const theirs = await db
-      .select({
-        medium: mbReleaseTrack.medium,
-        position: mbReleaseTrack.position,
-        title: mbReleaseTrack.title,
-        length: mbReleaseTrack.length,
-      })
-      .from(mbReleaseTrack)
-      .where(eq(mbReleaseTrack.releaseMbid, album.releaseMbid))
-      .orderBy(mbReleaseTrack.medium, mbReleaseTrack.position);
+    const ours = oursByAlbum.get(album.albumId) ?? [];
+    const theirs = theirsByRelease.get(album.releaseMbid) ?? [];
 
     const diagnosis = diagnoseTracklist(
       ours.map((t) => ({
@@ -1161,14 +1190,6 @@ export async function misalignedAlbums(limit = 40, offset = 0): Promise<Misalign
       theirs.map((t) => ({ medium: t.medium, position: t.position, length: t.length })),
     );
     if (diagnosis.kind === 'aligned') continue;
-
-    const [anchored] = await db
-      .select({ n: sql<number>`count(*)` })
-      .from(trackRecording)
-      .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
-      .where(
-        and(eq(spotifyTrack.spotifyAlbumId, album.albumId), eq(trackRecording.matchedBy, 'isrc')),
-      );
 
     const mismatches: MisalignedAlbum['mismatches'] = [];
     for (let i = 0; i < Math.max(ours.length, theirs.length); i++) {
@@ -1196,7 +1217,7 @@ export async function misalignedAlbums(limit = 40, offset = 0): Promise<Misalign
       mismatches,
       ourCount: ours.length,
       theirCount: theirs.length,
-      anchoredByIsrc: anchored?.n ?? 0,
+      anchoredByIsrc: anchoredByAlbum.get(album.albumId) ?? 0,
     });
   }
 

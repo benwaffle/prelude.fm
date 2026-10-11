@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { ReadinessBucket, ReadinessFunnel } from '@/lib/catalogue-readiness';
-import { getContributionCounts, type ContributionView } from '../actions/contribute';
-import { getReadinessFunnel } from '../actions/readiness';
+import type { ContributionView } from '../actions/contribute';
+import { getAdminHome } from '../actions/readiness';
 import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
 import { Spinner } from '../components/Spinner';
 import { PAGE_TITLE } from '../lib/admin-pages';
@@ -87,19 +87,18 @@ export function AdminHome() {
 
   useEffect(() => {
     let cancelled = false;
-    getReadinessFunnel()
+    getAdminHome()
       .then((next) => {
-        if (!cancelled) setFunnel(next);
+        if (cancelled) return;
+        setFunnel(next.funnel.value);
+        setFunnelError(next.funnel.error);
+        setCounts(next.counts.value);
+        setCountsError(next.counts.error);
       })
       .catch((failure: unknown) => {
-        if (!cancelled) setFunnelError(adminFailureMessage(failure));
-      });
-    getContributionCounts()
-      .then((next) => {
-        if (!cancelled) setCounts(next);
-      })
-      .catch((failure: unknown) => {
-        if (!cancelled) setCountsError(adminFailureMessage(failure));
+        if (cancelled) return;
+        setFunnelError(adminFailureMessage(failure));
+        setCountsError(adminFailureMessage(failure));
       });
     return () => {
       cancelled = true;
