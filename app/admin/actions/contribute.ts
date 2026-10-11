@@ -17,6 +17,7 @@ import {
   isrcBatchGapsByRelease,
   isrcEligibleGaps,
   isrcGapsByRelease,
+  judgeContestedIsrcs,
   magicIsrcLink,
   misalignedAlbums,
   missingReleases,
@@ -30,6 +31,7 @@ import {
   workCreateLink,
   workRelationshipGaps,
   type IsrcGap,
+  type ContestedIsrcJudgement,
 } from '@/lib/musicbrainz-contributions';
 import {
   editsSpentToday,
@@ -264,6 +266,8 @@ export type ContributionView = {
   })[];
   contested: (Awaited<ReturnType<typeof contestedIsrcs>>[number] & {
     isrcUrl: string;
+    /** Which recording the library's own evidence says the ISRC belongs to. */
+    judgement: ContestedIsrcJudgement | null;
     ledger: {
       id: number;
       outcome: string;
@@ -558,6 +562,7 @@ export async function getContributions(
       }),
   );
 
+  const contestedJudgements = await judgeContestedIsrcs(contested);
   const contestedIsrcValues = contested.map((row) => row.isrc);
   const misalignedAlbumIds = misaligned.map((album) => album.albumId);
   const errorLedgerRows =
@@ -786,6 +791,7 @@ export async function getContributions(
     contested: contested.map((row) => ({
       ...row,
       isrcUrl: `https://musicbrainz.org/isrc/${row.isrc}`,
+      judgement: contestedJudgements.get(row.isrc) ?? null,
       ledger: errorLedgerOf((entry) => entry.value === row.isrc),
       previous: errorPreviousOf((entry) => entry.value === row.isrc),
     })),
