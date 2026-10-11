@@ -305,6 +305,20 @@ export function scoreCandidate(
   target: ProposalTarget,
   candidate: ProposalCandidate,
 ): ScoredCandidate | null {
+  const signals = candidateSignals(target, candidate);
+  if (!signals) return null;
+  const confidence = confidenceOf(candidate, signals);
+  return confidence ? { candidate, signals, confidence } : null;
+}
+
+/**
+ * What agrees between the target and one candidate, or null when something
+ * contradicts it. No confidence bar: `scoreCandidate` applies that.
+ */
+export function candidateSignals(
+  target: ProposalTarget,
+  candidate: ProposalCandidate,
+): ProposalSignals | null {
   const names = candidateNames(candidate);
   const targetTokens = titleTokens(withoutMovement(target.title));
   let titleScore = 0;
@@ -384,7 +398,7 @@ export function scoreCandidate(
     }
   }
 
-  const signals: ProposalSignals = {
+  return {
     titleScore: Math.round(titleScore * 100) / 100,
     sharedNumbers,
     composerMatch: composerMatch(target, candidate.composerName),
@@ -392,8 +406,6 @@ export function scoreCandidate(
     orderFits,
     movementMatch,
   };
-  const confidence = confidenceOf(candidate, signals);
-  return confidence ? { candidate, signals, confidence } : null;
 }
 
 function confidenceOf(

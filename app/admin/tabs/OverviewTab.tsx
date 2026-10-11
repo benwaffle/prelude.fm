@@ -73,9 +73,16 @@ export function OverviewTab({ onOpenInbox }: { onOpenInbox: (inboxClass: InboxCl
         <p className="mt-3 max-w-[80ch] text-[var(--ink-2)]">
           A track is ready when it is linked to a MusicBrainz recording, the recording is linked to
           a work, the work the player files it under has a composer, and MusicBrainz marks the work
-          as classical (a catalogue number or a classical work type). Each track below is counted
-          once, at the first of those it is missing.
+          as classical (a catalogue number or a classical work type). Where MusicBrainz has no
+          recording or no work link yet, our own match to a work stands in, and the card says so.
+          Each track below is counted once, at the first of those it is missing.
         </p>
+        {funnel.readyViaOwnLinks > 0 && (
+          <p className="mt-2 text-[var(--ink-2)]">
+            {funnel.readyViaOwnLinks.toLocaleString()} of the ready tracks are filed under a work by
+            our own match, not by MusicBrainz.
+          </p>
+        )}
 
         <table className="readiness-funnel mt-4">
           <tbody>

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { db, type DatabaseExecutor } from '@/lib/db';
 import { forChunks } from '@/lib/db/chunked';
 import {
@@ -13,10 +13,12 @@ import {
   mbWork,
   mbWorkCatalogue,
   matchQueue,
+  mbWorkProposal,
   spotifyAlbum,
   spotifyTrack,
   trackClassification,
   trackRecording,
+  trackWorkLink,
 } from '@/lib/db/schema';
 import { classicalEvidenceFor } from '@/lib/musicbrainz-classical-evidence';
 import type {
@@ -29,6 +31,7 @@ import type {
   MbWorkCatalogueFact,
   MbWorkFact,
   MusicBrainzLibraryFacts,
+  OwnWorkLinkFact,
   ProviderAlbumFact,
   ProviderTrackFact,
   ReleaseResolution,
@@ -239,8 +242,23 @@ async function loadMusicBrainzFacts(
     ]);
   }
 
+  const ownWorkLinks = await loadOwnWorkLinks(
+    requestedTrackIds.filter((spotifyTrackId) => !anchorByTrackId.has(spotifyTrackId)),
+    [...recordingMbids].filter((recordingMbid) => !worksByRecording.has(recordingMbid)),
+    database,
+  );
+  const ownWorksByTrack = new Map<string, string[]>();
+  for (const link of ownWorkLinks) {
+    if (link.subject === 'track') ownWorksByTrack.set(link.spotifyTrackId, [link.workMbid]);
+    else worksByRecording.set(link.recordingMbid, [link.workMbid]);
+  }
+
   const workRows = await readWorkTree(
-    [...recordingWorkRows, ...candidateWorkRows].map((relation) => relation.workMbid),
+    [
+      ...recordingWorkRows.map((relation) => relation.workMbid),
+      ...candidateWorkRows.map((relation) => relation.workMbid),
+      ...ownWorkLinks.map((link) => link.workMbid),
+    ],
     database,
   );
   const workMbids = workRows.map((work) => work.mbid);
@@ -294,9 +312,10 @@ async function loadMusicBrainzFacts(
       const evidenceMbids = anchorByTrackId.has(spotifyTrackId)
         ? [anchorByTrackId.get(spotifyTrackId)!.recordingMbid]
         : (track?.isrc && isrcRecordings.get(track.isrc)) || [];
+      const evidenceWorks = evidenceMbids.flatMap((mbid) => worksByRecording.get(mbid) ?? []);
       const classification = classify(
         spotifyTrackId,
-        evidenceMbids.flatMap((mbid) => worksByRecording.get(mbid) ?? []),
+        evidenceWorks.length > 0 ? evidenceWorks : (ownWorksByTrack.get(spotifyTrackId) ?? []),
         workByMbid,
         catalogedWorkMbids,
         queueStatusByTrack.get(spotifyTrackId) ?? null,
@@ -394,7 +413,68 @@ async function loadMusicBrainzFacts(
         lengthMs: track.length,
       }),
     ),
+    ownWorkLinks,
   };
+}
+
+/**
+ * Our own work links for what MusicBrainz does not link: tracks with no
+ * MusicBrainz recording that `track_work_link` linked confidently, and
+ * recordings with no MusicBrainz work that `mb_work_proposal` suggests one
+ * for (every suggestion nobody dismissed, at its own confidence).
+ */
+async function loadOwnWorkLinks(
+  unanchoredTrackIds: string[],
+  worklessRecordingMbids: string[],
+  database: DatabaseExecutor,
+): Promise<OwnWorkLinkFact[]> {
+  const [trackRows, proposalRows] = await Promise.all([
+    forChunks(unanchoredTrackIds, (chunk) =>
+      database
+        .select({ spotifyTrackId: trackWorkLink.spotifyTrackId, workMbid: trackWorkLink.workMbid })
+        .from(trackWorkLink)
+        .where(
+          and(inArray(trackWorkLink.spotifyTrackId, chunk), isNotNull(trackWorkLink.workMbid)),
+        ),
+    ),
+    forChunks(worklessRecordingMbids, (chunk) =>
+      database
+        .select({
+          recordingMbid: mbWorkProposal.recordingMbid,
+          proposal: mbWorkProposal.proposal,
+        })
+        .from(mbWorkProposal)
+        .where(
+          and(
+            inArray(mbWorkProposal.recordingMbid, chunk),
+            ne(mbWorkProposal.status, 'dismissed'),
+            isNotNull(mbWorkProposal.proposal),
+          ),
+        ),
+    ),
+  ]);
+  return [
+    ...trackRows.map(
+      (row): OwnWorkLinkFact => ({
+        subject: 'track',
+        spotifyTrackId: row.spotifyTrackId,
+        workMbid: row.workMbid!,
+        confidence: 'high',
+      }),
+    ),
+    ...proposalRows.flatMap((row): OwnWorkLinkFact[] =>
+      row.proposal?.workMbid
+        ? [
+            {
+              subject: 'recording',
+              recordingMbid: row.recordingMbid,
+              workMbid: row.proposal.workMbid,
+              confidence: row.proposal.confidence,
+            },
+          ]
+        : [],
+    ),
+  ];
 }
 
 /**
@@ -501,7 +581,72 @@ function emptyFacts(requestedTrackIds: string[]): MusicBrainzLibraryFacts {
     mbRecordingCredits: [],
     mbReleases: [],
     mbReleaseTracks: [],
+    ownWorkLinks: [],
   };
+}
+
+export type OwnWorkHolding = {
+  /** A MusicBrainz recording MBID, or `track:<spotify id>` for a track with no recording. */
+  holdingKey: string;
+  workMbid: string;
+  spotifyTrackId: string;
+};
+
+/**
+ * Where our own work links stand in for MusicBrainz's, as the player uses
+ * them (see `loadOwnWorkLinks`): tracks with no MusicBrainz recording linked
+ * by `track_work_link`, and anchored recordings with no MusicBrainz work that
+ * `mb_work_proposal` suggests one for. Every one, or only those of these works.
+ */
+export async function ownWorkHoldings(
+  workMbids: string[] | null,
+  database: DatabaseExecutor = db,
+): Promise<OwnWorkHolding[]> {
+  const proposedWork = sql<string>`json_extract(${mbWorkProposal.proposal}, '$.workMbid')`;
+  const read = async (chunk: string[] | null): Promise<OwnWorkHolding[]> => {
+    const [tracks, recordings] = await Promise.all([
+      database
+        .select({ spotifyTrackId: trackWorkLink.spotifyTrackId, workMbid: trackWorkLink.workMbid })
+        .from(trackWorkLink)
+        .leftJoin(trackRecording, eq(trackRecording.spotifyTrackId, trackWorkLink.spotifyTrackId))
+        .where(
+          and(
+            isNotNull(trackWorkLink.workMbid),
+            isNull(trackRecording.spotifyTrackId),
+            chunk ? inArray(trackWorkLink.workMbid, chunk) : undefined,
+          ),
+        ),
+      database
+        .select({
+          recordingMbid: mbWorkProposal.recordingMbid,
+          workMbid: proposedWork,
+          spotifyTrackId: trackRecording.spotifyTrackId,
+        })
+        .from(mbWorkProposal)
+        .innerJoin(trackRecording, eq(trackRecording.recordingMbid, mbWorkProposal.recordingMbid))
+        .where(
+          and(
+            ne(mbWorkProposal.status, 'dismissed'),
+            isNotNull(proposedWork),
+            sql`not exists (select 1 from ${mbRecordingWork} where ${mbRecordingWork.recordingMbid} = ${mbWorkProposal.recordingMbid})`,
+            chunk ? inArray(proposedWork, chunk) : undefined,
+          ),
+        ),
+    ]);
+    return [
+      ...tracks.map((row) => ({
+        holdingKey: `track:${row.spotifyTrackId}`,
+        workMbid: row.workMbid!,
+        spotifyTrackId: row.spotifyTrackId,
+      })),
+      ...recordings.map((row) => ({
+        holdingKey: row.recordingMbid,
+        workMbid: row.workMbid,
+        spotifyTrackId: row.spotifyTrackId,
+      })),
+    ];
+  };
+  return workMbids ? forChunks(workMbids, read) : read(null);
 }
 
 /**
@@ -530,7 +675,13 @@ export async function findProviderTracksForWork(
         .from(trackRecording)
         .where(inArray(trackRecording.recordingMbid, chunk)),
   );
-  return Array.from(new Set(anchors.map((anchor) => anchor.spotifyTrackId)));
+  const own = await ownWorkHoldings(workMbids, database);
+  return Array.from(
+    new Set([
+      ...anchors.map((anchor) => anchor.spotifyTrackId),
+      ...own.map((holding) => holding.spotifyTrackId),
+    ]),
+  );
 }
 
 /** Other works by the same composer that we hold a recording of. */
@@ -625,6 +776,10 @@ export async function findHeldWorkMbids(
   for (const relation of relations) {
     if (!anchored.has(relation.recordingMbid)) continue;
     const root = rootOf.get(relation.workMbid);
+    if (root) held.add(root);
+  }
+  for (const holding of await ownWorkHoldings([...rootOf.keys()], database)) {
+    const root = rootOf.get(holding.workMbid);
     if (root) held.add(root);
   }
   return held;

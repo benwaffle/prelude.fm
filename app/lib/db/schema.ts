@@ -11,6 +11,7 @@ import type { ReleasePrecheck } from '../release-precheck';
 import type { ReleaseCorrectionRecord } from '../release-corrections';
 import type { SeedPlan } from '../release-seeding';
 import type { WorkProposal } from '../work-proposals';
+import type { TrackWorkMatch } from '../track-work-links';
 
 /*
  * Better Auth
@@ -889,4 +890,37 @@ export const mbWorkProposal = sqliteTable(
     decidedAt: integer('decided_at', { mode: 'timestamp_ms' }),
   },
   (table) => [index('mb_work_proposal_status_idx').on(table.status)],
+);
+
+/**
+ * Our own link from a Spotify track straight to a MusicBrainz work, for
+ * tracks MusicBrainz cannot link through a recording: their release is not
+ * on MusicBrainz yet, or the release does not line up.
+ *
+ * This is prelude.fm's claim, not MusicBrainz's, and it lives here so that no
+ * MusicBrainz read ever overwrites it or mistakes it for MusicBrainz data.
+ * The reader uses it only while the track has no MusicBrainz recording; once
+ * the release is added and the track is anchored, MusicBrainz's own
+ * recording-to-work link takes over and this row is ignored.
+ *
+ * `work_mbid` is set only for a confident match. A weaker best guess stays in
+ * `match` with a null `work_mbid`, so the track stays visibly unmatched while
+ * the guess is kept for whoever looks next. `match` is null when the run
+ * looked and found nothing at all.
+ */
+export const trackWorkLink = sqliteTable(
+  'track_work_link',
+  {
+    spotifyTrackId: text('spotify_track_id')
+      .primaryKey()
+      .references(() => spotifyTrack.spotifyId),
+    workMbid: text('work_mbid'),
+    match: text('match', { mode: 'json' }).$type<TrackWorkMatch>(),
+    /** MusicBrainz requests spent on this track's match. */
+    requests: integer('requests').notNull(),
+    checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [index('track_work_link_work_idx').on(table.workMbid)],
 );

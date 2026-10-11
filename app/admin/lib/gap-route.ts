@@ -68,6 +68,9 @@ export function gapRoute(
     case 'work-hierarchy-parent-missing':
     case 'work-hierarchy-cycle':
     case 'work-level-ambiguous':
+    // Our own link stands in for a MusicBrainz one; the gap that says what
+    // MusicBrainz lacks (a release, a work relation) carries the route.
+    case 'work-linked-by-us':
     case 'recording-credits-missing':
     case 'recording-credit-artist-missing':
       return null;

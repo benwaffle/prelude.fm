@@ -35,6 +35,7 @@ const EXPECTED_TAB: Record<MusicBrainzGapCode, 'inbox' | 'albums' | 'health' | n
   'work-hierarchy-parent-missing': null,
   'work-hierarchy-cycle': null,
   'work-level-ambiguous': null,
+  'work-linked-by-us': null,
   'recording-credits-missing': null,
   'recording-credit-artist-missing': null,
 };

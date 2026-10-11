@@ -118,6 +118,7 @@ function baseFacts(): MusicBrainzLibraryFacts {
         lengthMs: 180_000,
       },
     ],
+    ownWorkLinks: [],
   };
 }
 

@@ -45,7 +45,7 @@ export type ProposalGap = {
   artistNames: string[];
 };
 
-type Counter = { requests: number };
+export type Counter = { requests: number };
 
 /** Library recordings with no work relationship, one row per recording. */
 export async function loadProposalGaps(): Promise<ProposalGap[]> {
@@ -222,7 +222,7 @@ function quoted(name: string): string {
 }
 
 /** MusicBrainz works whose title words and composer fit the track. */
-async function searchCandidates(
+export async function searchCandidates(
   counter: Counter,
   title: string,
   composers: string[],

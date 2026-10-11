@@ -60,6 +60,7 @@ export function PlayerBar() {
       composerFull: null,
       composerId: null,
       gaps: [],
+      ownLink: null,
       albumId: currentTrack.album?.id ?? null,
       composerImage: null,
       era: null,

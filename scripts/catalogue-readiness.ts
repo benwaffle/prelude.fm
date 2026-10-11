@@ -36,6 +36,7 @@ async function main() {
       );
     }
     console.log(`${n(funnel.ready)}  ready`);
+    console.log(`${n(funnel.readyViaOwnLinks)}  of them filed under a work by our own match`);
     for (const step of funnel.steps.filter((candidate) => candidate.blocked > 0)) {
       console.log(`\nStopped before "${step.label}":`);
       for (const bucket of step.buckets) {
