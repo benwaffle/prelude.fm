@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, useState, type ReactNode } from 'react';
+import { memo, useRef, useState, type ReactNode } from 'react';
 import { Icon, Waveform } from '../Icon';
 import {
   initialsOf,
@@ -30,8 +30,11 @@ interface WorkCardProps {
 /**
  * One library entry: cover, work, and the movement column where liking
  * actually happens. Single click selects a movement, double click plays it.
+ *
+ * Memoised: the library holds over a thousand of these, and the player
+ * changes state several times a track.
  */
-export function WorkCard({
+export const WorkCard = memo(function WorkCard({
   work,
   playingTrackId,
   selectedId,
@@ -45,135 +48,149 @@ export function WorkCard({
   const href = `/work/${work.workId}?rec=${work.recordingId}`;
 
   return (
-    <div className="group relative grid grid-cols-[132px_minmax(0,1fr)_300px] gap-[26px] border-b border-rule py-5 max-[900px]:grid-cols-[76px_minmax(0,1fr)] max-[900px]:gap-[14px] max-[900px]:pt-4 max-[900px]:pb-[14px]">
-      {/* The album's colour, bled in from the left margin. */}
-      <div
-        className="pointer-events-none absolute inset-y-0 -left-6 w-[300px] opacity-[0.07] transition-opacity group-hover:opacity-[0.13] max-[900px]:-left-4 max-[900px]:w-[180px]"
-        style={{ background: `linear-gradient(90deg, ${work.tint}, transparent)` }}
-      />
+    /* Off screen, a card skips layout and paint until it scrolls near: the
+       library runs to over a thousand cards, and without this every change
+       anywhere on the page (the playing time, a scroll) redoes all of them.
+       The wrapper reaches into the page margin so the colour bleed isn't
+       clipped. */
+    <div className="-mx-6 px-6 [contain-intrinsic-size:auto_220px] [content-visibility:auto] max-[900px]:-mx-4 max-[900px]:px-4">
+      <div className="group relative grid grid-cols-[132px_minmax(0,1fr)_300px] gap-[26px] border-b border-rule py-5 max-[900px]:grid-cols-[76px_minmax(0,1fr)] max-[900px]:gap-[14px] max-[900px]:pt-4 max-[900px]:pb-[14px]">
+        {/* The album's colour, bled in from the left margin. */}
+        <div
+          className="pointer-events-none absolute inset-y-0 -left-6 w-[300px] opacity-[0.07] transition-opacity group-hover:opacity-[0.13] max-[900px]:-left-4 max-[900px]:w-[180px]"
+          style={{ background: `linear-gradient(90deg, ${work.tint}, transparent)` }}
+        />
 
-      <Link
-        href={href}
-        aria-label={`${work.title ?? 'Untitled in MusicBrainz'} — recording detail`}
-        className="relative block self-start no-underline"
-      >
-        <span className="relative block aspect-square overflow-hidden shadow-soft">
-          <CoverArt work={work} />
-          <span className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" />
-        </span>
-      </Link>
+        <Link
+          prefetch={false}
+          href={href}
+          aria-label={`${work.title ?? 'Untitled in MusicBrainz'} — recording detail`}
+          className="relative block self-start no-underline"
+        >
+          <span className="relative block aspect-square overflow-hidden shadow-soft">
+            <CoverArt work={work} />
+            <span className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" />
+          </span>
+        </Link>
 
-      <div className="flex min-w-0 flex-col pt-[2px]">
-        <div className="flex items-baseline gap-[9px] text-ink-2 max-[900px]:flex-wrap max-[900px]:gap-x-2 max-[900px]:gap-y-[3px]">
-          {work.era && (
-            <span className="font-meta text-[9px] tracking-[0.2em] text-muted uppercase">
-              {work.era}
-            </span>
+        <div className="flex min-w-0 flex-col pt-[2px]">
+          <div className="flex items-baseline gap-[9px] text-ink-2 max-[900px]:flex-wrap max-[900px]:gap-x-2 max-[900px]:gap-y-[3px]">
+            {work.era && (
+              <span className="font-meta text-[9px] tracking-[0.2em] text-muted uppercase">
+                {work.era}
+              </span>
+            )}
+            <Link
+              prefetch={false}
+              href="/catalog"
+              className="border-b border-transparent font-display text-[15px] font-bold no-underline transition-colors duration-150 hover:border-muted"
+            >
+              {work.composer ?? <Missing>composer</Missing>}
+            </Link>
+            {work.years && <span className="font-meta text-[10px] text-muted">{work.years}</span>}
+          </div>
+
+          <h2 className="mt-1 flex items-baseline gap-[9px] font-display text-[26px] leading-[1.1] font-medium text-balance max-[900px]:text-[19px]">
+            <button
+              type="button"
+              title={`Play ${work.title ?? 'this recording'}`}
+              onClick={() => onPlayWork(work)}
+              className="flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center self-center rounded-full border max-[900px]:h-9 max-[900px]:w-9 border-rule text-muted transition-colors duration-150 group-hover:border-muted group-hover:text-ink-2 hover:border-ink hover:bg-ink hover:text-paper focus-visible:border-ink focus-visible:bg-ink focus-visible:text-paper"
+            >
+              <span className="ml-px">
+                <Icon name="play" size={11} />
+              </span>
+            </button>
+            <Link
+              prefetch={false}
+              href={href}
+              className="border-b border-transparent no-underline transition-colors duration-150 hover:border-rule"
+            >
+              {work.title ?? <Missing>title</Missing>}
+              {work.nickname && (
+                <>
+                  , <span className="text-accent italic">“{work.nickname}”</span>
+                </>
+              )}
+            </Link>
+          </h2>
+
+          <div className="mt-[6px] flex flex-wrap items-baseline gap-x-[9px] gap-y-1 font-display text-[13px] text-muted italic max-[900px]:text-[12px]">
+            {work.catalog && (
+              <Link
+                prefetch={false}
+                href="/catalog"
+                className="border-b border-transparent font-meta text-[10px] tracking-[0.14em] text-ink-2 uppercase not-italic no-underline transition-colors duration-150 hover:border-muted"
+              >
+                {work.catalog}
+              </Link>
+            )}
+            {work.year && <span>{work.year}</span>}
+            <AddToQueueButton
+              work={work}
+              className="-my-2 py-2 text-muted not-italic hover:text-ink max-[900px]:text-[9.5px]"
+            />
+          </div>
+
+          {work.ownLink && (
+            <p className="mt-[6px] font-meta text-[10px] tracking-[0.12em] text-accent uppercase">
+              Work matched by prelude.fm, not MusicBrainz ({work.ownLink} confidence)
+            </p>
           )}
-          <Link
-            href="/catalog"
-            className="border-b border-transparent font-display text-[15px] font-bold no-underline transition-colors duration-150 hover:border-muted"
-          >
-            {work.composer ?? <Missing>composer</Missing>}
-          </Link>
-          {work.years && <span className="font-meta text-[10px] text-muted">{work.years}</span>}
-        </div>
+          <Gaps codes={work.gaps} />
 
-        <h2 className="mt-1 flex items-baseline gap-[9px] font-display text-[26px] leading-[1.1] font-medium text-balance max-[900px]:text-[19px]">
-          <button
-            type="button"
-            title={`Play ${work.title ?? 'this recording'}`}
-            onClick={() => onPlayWork(work)}
-            className="flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center self-center rounded-full border max-[900px]:h-9 max-[900px]:w-9 border-rule text-muted transition-colors duration-150 group-hover:border-muted group-hover:text-ink-2 hover:border-ink hover:bg-ink hover:text-paper focus-visible:border-ink focus-visible:bg-ink focus-visible:text-paper"
-          >
-            <span className="ml-px">
-              <Icon name="play" size={11} />
-            </span>
-          </button>
-          <Link
-            href={href}
-            className="border-b border-transparent no-underline transition-colors duration-150 hover:border-rule"
-          >
-            {work.title ?? <Missing>title</Missing>}
-            {work.nickname && (
+          <div className="mt-2 text-[12.5px] text-ink-2 max-[900px]:mt-[6px] max-[900px]:text-[12px]">
+            <Link
+              prefetch={false}
+              href="/catalog"
+              className="border-b border-transparent no-underline transition-colors duration-150 hover:border-muted"
+            >
+              {work.performer}
+            </Link>
+            {work.ensemble && (
               <>
-                , <span className="text-accent italic">“{work.nickname}”</span>
+                {' · '}
+                <Link
+                  prefetch={false}
+                  href="/catalog"
+                  className="border-b border-transparent text-muted italic no-underline transition-colors duration-150 hover:border-muted"
+                >
+                  {work.ensemble}
+                </Link>
               </>
             )}
-          </Link>
-        </h2>
+          </div>
+        </div>
 
-        <div className="mt-[6px] flex flex-wrap items-baseline gap-x-[9px] gap-y-1 font-display text-[13px] text-muted italic max-[900px]:text-[12px]">
-          {work.catalog && (
+        {/* The left rule is the only line this column needs: the rows inside
+          are set by rhythm, not ruled off one from the next. */}
+        <div className="flex min-w-0 flex-col border-l border-rule pl-[18px] max-[900px]:col-span-full max-[900px]:mt-1 max-[900px]:border-t max-[900px]:border-l-0 max-[900px]:pt-1 max-[900px]:pl-0">
+          {shown.map((m) => (
+            <MovementRow
+              key={m.n}
+              work={work}
+              movement={m}
+              isPlaying={m.trackId !== null && playingTrackId === m.trackId}
+              isSelected={selectedId === `${work.id}-${m.n}`}
+              onSelect={() => onSelect(`${work.id}-${m.n}`)}
+              onPlay={() => onPlayMovement(work, m)}
+              onToggleLike={() => m.trackId && onToggleLike(m.trackId)}
+            />
+          ))}
+          {extra > 0 && (
             <Link
-              href="/catalog"
-              className="border-b border-transparent font-meta text-[10px] tracking-[0.14em] text-ink-2 uppercase not-italic no-underline transition-colors duration-150 hover:border-muted"
+              prefetch={false}
+              href={href}
+              className="mt-[9px] inline-block self-start border-b border-transparent font-meta text-[9px] tracking-[0.16em] text-muted uppercase no-underline transition-colors duration-150 hover:border-muted"
             >
-              {work.catalog}
+              + {extra} more movement{extra !== 1 ? 's' : ''}
             </Link>
           )}
-          {work.year && <span>{work.year}</span>}
-          <AddToQueueButton
-            work={work}
-            className="-my-2 py-2 text-muted not-italic hover:text-ink max-[900px]:text-[9.5px]"
-          />
         </div>
-
-        {work.ownLink && (
-          <p className="mt-[6px] font-meta text-[10px] tracking-[0.12em] text-accent uppercase">
-            Work matched by prelude.fm, not MusicBrainz ({work.ownLink} confidence)
-          </p>
-        )}
-        <Gaps codes={work.gaps} />
-
-        <div className="mt-2 text-[12.5px] text-ink-2 max-[900px]:mt-[6px] max-[900px]:text-[12px]">
-          <Link
-            href="/catalog"
-            className="border-b border-transparent no-underline transition-colors duration-150 hover:border-muted"
-          >
-            {work.performer}
-          </Link>
-          {work.ensemble && (
-            <>
-              {' · '}
-              <Link
-                href="/catalog"
-                className="border-b border-transparent text-muted italic no-underline transition-colors duration-150 hover:border-muted"
-              >
-                {work.ensemble}
-              </Link>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* The left rule is the only line this column needs: the rows inside
-          are set by rhythm, not ruled off one from the next. */}
-      <div className="flex min-w-0 flex-col border-l border-rule pl-[18px] max-[900px]:col-span-full max-[900px]:mt-1 max-[900px]:border-t max-[900px]:border-l-0 max-[900px]:pt-1 max-[900px]:pl-0">
-        {shown.map((m) => (
-          <MovementRow
-            key={m.n}
-            work={work}
-            movement={m}
-            isPlaying={m.trackId !== null && playingTrackId === m.trackId}
-            isSelected={selectedId === `${work.id}-${m.n}`}
-            onSelect={() => onSelect(`${work.id}-${m.n}`)}
-            onPlay={() => onPlayMovement(work, m)}
-            onToggleLike={() => m.trackId && onToggleLike(m.trackId)}
-          />
-        ))}
-        {extra > 0 && (
-          <Link
-            href={href}
-            className="mt-[9px] inline-block self-start border-b border-transparent font-meta text-[9px] tracking-[0.16em] text-muted uppercase no-underline transition-colors duration-150 hover:border-muted"
-          >
-            + {extra} more movement{extra !== 1 ? 's' : ''}
-          </Link>
-        )}
       </div>
     </div>
   );
-}
+});
 
 function MovementRow({
   work,
