@@ -21,6 +21,13 @@
  * files the catalogue number and usually the type on the piece, not on its
  * movements.
  *
+ * One more thing counts, and it is about the composer rather than the piece
+ * (Ben's call, 11 Oct 2026): MusicBrainz catalogues other works by the same
+ * composer. Brahms's Hungarian Dances have no catalogue link on MusicBrainz,
+ * but his symphonies do; nobody keeps a scholarly catalogue of a pop
+ * songwriter or a film composer. Film scores are excluded before this rule is
+ * asked (`film-scores.ts`).
+ *
  * Anything else is inconclusive. Inconclusive is a visible state, not a
  * default to "no": the point is that nobody has established it yet.
  */
@@ -62,6 +69,7 @@ export type ClassicalEvidenceWork = {
   mbid: string;
   type: string | null;
   parentMbid: string | null;
+  composerMbid?: string | null;
 };
 
 export type ClassicalEvidence =
@@ -72,6 +80,8 @@ export function classicalEvidenceFor(
   workMbids: string[],
   workByMbid: Map<string, ClassicalEvidenceWork>,
   catalogedWorkMbids: Set<string>,
+  /** Composers MusicBrainz catalogues at least one work by. */
+  catalogedComposerMbids: Set<string> = new Set(),
 ): ClassicalEvidence {
   if (workMbids.length === 0) {
     return { state: 'inconclusive', reason: 'MusicBrainz relates this recording to no work' };
@@ -95,6 +105,17 @@ export function classicalEvidenceFor(
       return {
         state: 'classical',
         reason: `MusicBrainz types ${typed.mbid} as ${typed.type}`,
+      };
+    }
+  }
+  for (const workMbid of workMbids) {
+    const composed = ancestry(workMbid, workByMbid).find(
+      (work) => work.composerMbid && catalogedComposerMbids.has(work.composerMbid),
+    );
+    if (composed) {
+      return {
+        state: 'classical',
+        reason: `MusicBrainz catalogues other works by ${composed.composerMbid}, the composer of ${composed.mbid}`,
       };
     }
   }

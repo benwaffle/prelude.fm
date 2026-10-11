@@ -113,6 +113,11 @@ export function WorkCard({
           {work.year && <span>{work.year}</span>}
         </div>
 
+        {work.ownLink && (
+          <p className="mt-[6px] font-meta text-[10px] tracking-[0.12em] text-accent uppercase">
+            Work matched by prelude.fm, not MusicBrainz ({work.ownLink} confidence)
+          </p>
+        )}
         <Gaps codes={work.gaps} />
 
         <div className="mt-2 text-[12.5px] text-ink-2 max-[900px]:mt-[6px] max-[900px]:text-[12px]">

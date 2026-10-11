@@ -278,6 +278,11 @@ export interface LibraryWork {
    * fills it so a card can show a hole instead of looking complete.
    */
   gaps: MusicBrainzGapCode[];
+  /**
+   * Set when some track on the card is filed under this work by our own
+   * match rather than by MusicBrainz: the weakest such match's confidence.
+   */
+  ownLink: 'high' | 'medium' | 'low' | null;
   /** When the user saved the most recent of these movements, ISO 8601. */
   addedAt: string | null;
 }

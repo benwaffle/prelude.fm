@@ -10,6 +10,7 @@ import type {
   MbWorkCatalogueFact,
   MbWorkFact,
   MusicBrainzLibraryFacts,
+  OwnWorkLinkFact,
   ProviderAlbumFact,
   ProviderTrackFact,
   TrackAnchorFact,
@@ -55,6 +56,7 @@ export type MusicBrainzGapCode =
   | 'work-hierarchy-parent-missing'
   | 'work-hierarchy-cycle'
   | 'work-level-ambiguous'
+  | 'work-linked-by-us'
   | 'recording-credits-missing'
   | 'recording-credit-artist-missing';
 
@@ -108,8 +110,15 @@ export type ProjectedWorkNode = {
 };
 
 export type ProjectedRecordingWork = {
-  /** The work MusicBrainz relates directly to the recording. */
+  /** The work MusicBrainz (or, see `linkedBy`, we) relate directly to the recording. */
   relatedWorkMbid: string;
+  /**
+   * `musicbrainz`: MusicBrainz relates the recording to this work.
+   * `prelude`: MusicBrainz does not, and the link is our own match, at
+   * `linkConfidence`. The work itself is still read from MusicBrainz.
+   */
+  linkedBy: 'musicbrainz' | 'prelude';
+  linkConfidence: 'high' | 'medium' | 'low' | null;
   /** The conservative reader level selected by `workLevelOf`. */
   displayWorkMbid: string | null;
   workLevelReason: 'has-parts' | 'typed' | 'no-parent' | 'titled-as-part' | 'unresolved' | null;
@@ -158,7 +167,16 @@ export type ProjectedProviderOccurrence = {
 };
 
 export type ProjectedRecording = {
+  /**
+   * A MusicBrainz recording MBID, or for `source: 'track'` the key
+   * `track:<spotify id>`, which names no MusicBrainz entity.
+   */
   recordingMbid: string;
+  /**
+   * `musicbrainz`: a MusicBrainz recording. `track`: one Spotify track
+   * MusicBrainz has no recording for, which we linked to a work ourselves.
+   */
+  source: 'musicbrainz' | 'track';
   title: string | null;
   lengthMs: number | null;
   /** Null when the recording is not in the cache at all — we know nothing yet. */
@@ -278,6 +296,8 @@ type LibraryIndex = {
   creditsByRecording: Map<string, MbRecordingCreditFact[]>;
   releaseById: Map<string, MbReleaseFact>;
   releaseTrackByPosition: Map<string, MbReleaseTrackFact>;
+  ownWorkByTrack: Map<string, Extract<OwnWorkLinkFact, { subject: 'track' }>>;
+  ownWorkByRecording: Map<string, Extract<OwnWorkLinkFact, { subject: 'recording' }>>;
 };
 
 function indexFacts(facts: MusicBrainzLibraryFacts): LibraryIndex {
@@ -322,6 +342,19 @@ function indexFacts(facts: MusicBrainzLibraryFacts): LibraryIndex {
       facts.mbReleaseTracks,
       (track) => `${track.releaseMbid}:${track.medium}:${track.position}`,
     ),
+    ownWorkByTrack: oneByKey(
+      facts.ownWorkLinks.filter(
+        (link): link is Extract<OwnWorkLinkFact, { subject: 'track' }> => link.subject === 'track',
+      ),
+      (link) => link.spotifyTrackId,
+    ),
+    ownWorkByRecording: oneByKey(
+      facts.ownWorkLinks.filter(
+        (link): link is Extract<OwnWorkLinkFact, { subject: 'recording' }> =>
+          link.subject === 'recording',
+      ),
+      (link) => link.recordingMbid,
+    ),
   };
 }
 
@@ -340,6 +373,8 @@ export function projectMusicBrainzLibrary(
   const { trackById, classificationByTrack, anchorByTrack } = index;
 
   const recordingIds = new Set<string>();
+  // Tracks with no MusicBrainz recording that we linked to a work ourselves.
+  const ownTrackHoldings: string[] = [];
   // Requested tracks this projection actually accepted into a recording. A
   // track we sent to a gap bucket — unreviewed, uncertain, deliberately not
   // classical, anchor in conflict — must not be pulled back in as a held
@@ -441,6 +476,10 @@ export function projectMusicBrainzLibrary(
       continue;
     }
 
+    if (!anchor && index.ownWorkByTrack.has(spotifyTrackId)) {
+      ownTrackHoldings.push(spotifyTrackId);
+      continue;
+    }
     if (!anchor) {
       const gaps = releaseGaps(providerTrack, index, null);
       pushGap(gaps, gap('recording-unanchored', 'track', spotifyTrackId));
@@ -458,9 +497,12 @@ export function projectMusicBrainzLibrary(
     heldByRecording.set(anchor.recordingMbid, held);
   }
 
-  const projected = Array.from(recordingIds).map((recordingMbid) =>
-    projectRecording(recordingMbid, heldByRecording.get(recordingMbid) ?? new Set(), index),
-  );
+  const projected = [
+    ...Array.from(recordingIds).map((recordingMbid) =>
+      projectRecording(recordingMbid, heldByRecording.get(recordingMbid) ?? new Set(), index),
+    ),
+    ...ownTrackHoldings.map((spotifyTrackId) => projectOwnTrack(spotifyTrackId, index)),
+  ];
   const recordings = projected.map((entry) => entry.recording);
   for (const { recording, allGaps } of projected) {
     const gapCodes = Array.from(new Set(allGaps.map((item) => item.code)));
@@ -468,7 +510,7 @@ export function projectMusicBrainzLibrary(
       accountingByTrack.set(spotifyTrackId, {
         spotifyTrackId,
         status: allGaps.length === 0 ? 'ready' : 'incomplete',
-        recordingMbid: recording.recordingMbid,
+        recordingMbid: recording.source === 'musicbrainz' ? recording.recordingMbid : null,
         gapCodes,
       });
     }
@@ -521,12 +563,17 @@ function projectRecording(
   }
 
   const directWorkRelations = index.worksByRecording.get(recordingMbid) ?? [];
+  // Our own link stands in only while MusicBrainz has none of its own.
+  const ownLink =
+    directWorkRelations.length === 0 ? index.ownWorkByRecording.get(recordingMbid) : undefined;
   if (directWorkRelations.length === 0) {
     pushGap(recordingGaps, gap('recording-work-missing', 'recording', recordingMbid));
   }
-  const works = directWorkRelations
-    .map((relation) => projectRecordingWork(relation.workMbid, index))
-    .sort((left, right) => left.relatedWorkMbid.localeCompare(right.relatedWorkMbid));
+  const works = ownLink
+    ? [projectRecordingWork(ownLink.workMbid, index, ownLink.confidence)]
+    : directWorkRelations
+        .map((relation) => projectRecordingWork(relation.workMbid, index))
+        .sort((left, right) => left.relatedWorkMbid.localeCompare(right.relatedWorkMbid));
 
   const rawCredits = index.creditsByRecording.get(recordingMbid) ?? [];
   if (rawCredits.length === 0) {
@@ -582,6 +629,7 @@ function projectRecording(
     allGaps,
     recording: {
       recordingMbid,
+      source: 'musicbrainz',
       title: recording ? nonBlank(recording.title) : null,
       lengthMs: recording?.lengthMs ?? null,
       detail: recording?.detail ?? null,
@@ -595,17 +643,56 @@ function projectRecording(
   };
 }
 
+/**
+ * One Spotify track MusicBrainz has no recording for, held under the work we
+ * linked it to. There is no recording to read, so there is no recording
+ * title and no performer credit: those stay empty, and the gaps say why.
+ */
+function projectOwnTrack(
+  spotifyTrackId: string,
+  index: LibraryIndex,
+): { recording: ProjectedRecording; allGaps: MusicBrainzGap[] } {
+  const link = index.ownWorkByTrack.get(spotifyTrackId)!;
+  const track = index.trackById.get(spotifyTrackId)!;
+  const recordingGaps = [gap('recording-unanchored', 'track', spotifyTrackId)];
+  const work = projectRecordingWork(link.workMbid, index, link.confidence);
+  const occurrence = projectOccurrence(track, new Set([spotifyTrackId]), index, null);
+  return {
+    allGaps: [...recordingGaps, ...work.gaps, ...occurrence.gaps],
+    recording: {
+      recordingMbid: `track:${spotifyTrackId}`,
+      source: 'track',
+      title: null,
+      lengthMs: null,
+      detail: null,
+      heldTrackIds: [spotifyTrackId],
+      works: [work],
+      credits: [],
+      occurrences: [occurrence],
+      preferredOccurrence: occurrence,
+      gaps: recordingGaps,
+    },
+  };
+}
+
 function projectRecordingWork(
   relatedWorkMbid: string,
   index: LibraryIndex,
+  ownLinkConfidence: 'high' | 'medium' | 'low' | null = null,
 ): ProjectedRecordingWork {
   const { workById, parentWorkMbids, catalogueByWork, artistById } = index;
   const gaps: MusicBrainzGap[] = [];
+  const linkedBy = ownLinkConfidence ? ('prelude' as const) : ('musicbrainz' as const);
+  if (ownLinkConfidence) {
+    pushGap(gaps, gap('work-linked-by-us', 'work', relatedWorkMbid, ownLinkConfidence));
+  }
   const relatedWork = workById.get(relatedWorkMbid);
   if (!relatedWork) {
     pushGap(gaps, gap('work-cache-missing', 'work', relatedWorkMbid));
     return {
       relatedWorkMbid,
+      linkedBy,
+      linkConfidence: ownLinkConfidence,
       displayWorkMbid: null,
       workLevelReason: null,
       hierarchy: [],
@@ -721,6 +808,8 @@ function projectRecordingWork(
 
   return {
     relatedWorkMbid,
+    linkedBy,
+    linkConfidence: ownLinkConfidence,
     displayWorkMbid: displayWork?.mbid ?? null,
     workLevelReason: level.reason,
     hierarchy: [...hierarchyLeafFirst].reverse().map(asNode),
@@ -746,13 +835,15 @@ function describeAnchoredTrack(
   index: LibraryIndex,
 ): UnresolvedTrackMetadata {
   const recording = index.recordingById.get(recordingMbid);
+  const relations = index.worksByRecording.get(recordingMbid) ?? [];
+  const ownLink = relations.length === 0 ? index.ownWorkByRecording.get(recordingMbid) : undefined;
   return {
     recordingMbid,
     recordingTitle: recording ? nonBlank(recording.title) : null,
     detail: recording?.detail ?? null,
-    works: (index.worksByRecording.get(recordingMbid) ?? []).map((relation) =>
-      projectRecordingWork(relation.workMbid, index),
-    ),
+    works: ownLink
+      ? [projectRecordingWork(ownLink.workMbid, index, ownLink.confidence)]
+      : relations.map((relation) => projectRecordingWork(relation.workMbid, index)),
     credits: (index.creditsByRecording.get(recordingMbid) ?? []).map((credit) => {
       const artist = index.artistById.get(credit.artistMbid);
       return {
@@ -861,7 +952,7 @@ function projectOccurrence(
   track: ProviderTrackFact,
   heldTrackIds: Set<string>,
   index: LibraryIndex,
-  recordingMbid: string,
+  recordingMbid: string | null,
 ): ProjectedProviderOccurrence {
   const { albumById, releaseById, acceptedAnchorCountByAlbum } = index;
   const album = albumById.get(track.spotifyAlbumId);

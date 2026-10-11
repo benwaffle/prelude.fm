@@ -88,6 +88,19 @@ function partPosition(work: ProjectedRecordingWork, fallback: number): number {
   return leaf?.orderingKey ?? fallback;
 }
 
+const CONFIDENCE_RANK = { high: 0, medium: 1, low: 2 } as const;
+
+function weakestOwnLink(works: ProjectedRecordingWork[]): LibraryWork['ownLink'] {
+  let weakest: LibraryWork['ownLink'] = null;
+  for (const work of works) {
+    const confidence = work.linkedBy === 'prelude' ? work.linkConfidence : null;
+    if (confidence && (!weakest || CONFIDENCE_RANK[confidence] > CONFIDENCE_RANK[weakest])) {
+      weakest = confidence;
+    }
+  }
+  return weakest;
+}
+
 export function musicBrainzLibraryView(
   projection: MusicBrainzLibraryProjection,
   likedTrackIds: Set<string>,
@@ -225,6 +238,7 @@ export function musicBrainzLibraryView(
       unmatched: false,
       addedAt: addedAt ?? null,
       gaps,
+      ownLink: weakestOwnLink(ordered.map((member) => member.work)),
     });
   }
 

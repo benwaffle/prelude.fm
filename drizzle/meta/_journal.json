@@ -183,6 +183,13 @@
       "when": 1791677450318,
       "tag": "0025_work_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791682412091,
+      "tag": "0026_track_work_link",
+      "breakpoints": true
     }
   ]
 }

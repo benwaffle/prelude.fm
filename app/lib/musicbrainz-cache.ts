@@ -535,6 +535,21 @@ export async function ingestWorkTree(
   return { requests };
 }
 
+/**
+ * Read one work and cache it, returning what MusicBrainz said so a caller
+ * that also needs its parts does not have to ask twice. Null when
+ * MusicBrainz has no such work.
+ */
+export async function readAndCacheWork(
+  source: MusicBrainzSource,
+  workMbid: string,
+): Promise<MbWork | null> {
+  const work = await source.work(workMbid);
+  await recordMusicBrainzRequest(source, 'work');
+  if (work) await cacheWork(work);
+  return work;
+}
+
 export type ReleaseIngestReport = {
   releaseMbid: string;
   found: boolean;

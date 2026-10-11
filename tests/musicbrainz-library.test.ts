@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { projectMusicBrainzLibrary, type MusicBrainzGapCode } from '../app/lib/musicbrainz-library';
+import { musicBrainzLibraryView } from '../app/lib/musicbrainz-library-view';
 import type {
   MusicBrainzLibraryFacts,
   TrackClassificationState,
@@ -118,6 +119,8 @@ function baseFacts(): MusicBrainzLibraryFacts {
         lengthMs: 180_000,
       },
     ],
+    ownWorkLinks: [],
+    mbCatalogedComposerMbids: [],
   };
 }
 
@@ -570,4 +573,66 @@ test('a work with no catalogue anywhere above it still reports the gap', () => {
   const projected = projectMusicBrainzLibrary(facts).recordings[0].works[0];
   assert.deepEqual(projected.catalogues, []);
   assert.ok(projected.gaps.some((item) => item.code === 'work-catalogue-missing'));
+});
+
+test('a track with no MusicBrainz recording shows under the work we linked it to', () => {
+  const facts = baseFacts();
+  facts.anchors = [];
+  facts.mbRecordingWorks = [];
+  facts.providerAlbums[0].releaseResolution = { state: 'missing' };
+  facts.ownWorkLinks = [
+    { subject: 'track', spotifyTrackId: 'liked-1', workMbid: 'work-1', confidence: 'high' },
+  ];
+
+  const result = projectMusicBrainzLibrary(facts);
+  assert.equal(result.unresolvedTracks.length, 0);
+  const [holding] = result.recordings;
+  assert.equal(holding.source, 'track');
+  assert.equal(holding.recordingMbid, 'track:liked-1');
+  assert.equal(holding.title, null);
+  assert.deepEqual(holding.credits, []);
+  assert.equal(holding.works[0].title, 'Sonata in C major');
+  assert.equal(holding.works[0].linkedBy, 'prelude');
+  // The gaps say what MusicBrainz still lacks; our link does not hide them.
+  const [accounted] = result.accounting;
+  assert.equal(accounted.status, 'incomplete');
+  assert.equal(accounted.recordingMbid, null);
+  for (const code of ['recording-unanchored', 'work-linked-by-us', 'release-missing'] as const) {
+    assert.ok(accounted.gapCodes.includes(code), code);
+  }
+
+  const view = musicBrainzLibraryView(result, new Set(['liked-1']));
+  assert.equal(view.works.length, 1);
+  assert.equal(view.works[0].ownLink, 'high');
+  assert.equal(view.works[0].performer, null);
+});
+
+test('a suggested work stands in for a recording MusicBrainz links to no work, until it does', () => {
+  const facts = baseFacts();
+  facts.mbRecordingWorks = [];
+  facts.ownWorkLinks = [
+    { subject: 'recording', recordingMbid: 'recording-1', workMbid: 'work-1', confidence: 'low' },
+  ];
+
+  let result = projectMusicBrainzLibrary(facts);
+  assert.equal(result.recordings[0].works[0].linkedBy, 'prelude');
+  assert.equal(result.recordings[0].works[0].linkConfidence, 'low');
+  assert.ok(result.accounting[0].gapCodes.includes('recording-work-missing'));
+  assert.equal(musicBrainzLibraryView(result, new Set()).works[0].ownLink, 'low');
+
+  facts.mbRecordingWorks = [{ recordingMbid: 'recording-1', workMbid: 'work-1' }];
+  result = projectMusicBrainzLibrary(facts);
+  assert.equal(result.recordings[0].works[0].linkedBy, 'musicbrainz');
+  assert.deepEqual(result.accounting[0].gapCodes, []);
+});
+
+test('a track MusicBrainz anchors ignores our own track link', () => {
+  const facts = baseFacts();
+  facts.ownWorkLinks = [
+    { subject: 'track', spotifyTrackId: 'liked-1', workMbid: 'work-other', confidence: 'high' },
+  ];
+  const result = projectMusicBrainzLibrary(facts);
+  assert.equal(result.recordings.length, 1);
+  assert.equal(result.recordings[0].source, 'musicbrainz');
+  assert.equal(result.recordings[0].works[0].relatedWorkMbid, 'work-1');
 });

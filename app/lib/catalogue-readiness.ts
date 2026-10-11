@@ -57,6 +57,8 @@ export type ReadinessComposer = 'named' | 'missing' | 'not_read' | 'level_unclea
 export type ReadinessWork = {
   /** The work the player files the track under. */
   workMbid: string;
+  /** Whether MusicBrainz links the track to this work, or our own match does. */
+  linkedBy: 'musicbrainz' | 'prelude';
   title: string | null;
   composer: ReadinessComposer;
 };
@@ -73,12 +75,14 @@ export type ReadinessTrack = {
   link:
     | { state: 'linked'; recordingMbid: string; recordingTitle: string | null; read: boolean }
     | { state: 'contested' }
+    /** No MusicBrainz recording, but our own match links the track to a work. */
+    | { state: 'ours' }
     | { state: 'none' };
   release: 'not_checked' | 'missing' | 'ambiguous' | 'matched';
   releaseMbid: string | null;
   /** Only for a matched release; null otherwise. */
   tracklist: 'aligned' | 'misaligned' | 'not_read' | null;
-  /** Empty when MusicBrainz links the recording to no work. */
+  /** Empty when neither MusicBrainz nor our own match links the track to a work. */
   works: ReadinessWork[];
 };
 
@@ -143,11 +147,13 @@ export type ReadinessFunnel = {
   inScope: number;
   steps: ReadinessStep[];
   ready: number;
+  /** Of `ready`, tracks a card files under a work by our own match, not MusicBrainz's. */
+  readyViaOwnLinks: number;
 };
 
 const STEPS: { key: ReadinessStepKey; label: string }[] = [
-  { key: 'recording', label: 'Linked to a MusicBrainz recording' },
-  { key: 'work', label: 'Recording linked to a work' },
+  { key: 'recording', label: 'Linked to a MusicBrainz recording, or to a work by our own match' },
+  { key: 'work', label: 'Linked to a work' },
   { key: 'composer', label: 'Work has a composer' },
   { key: 'classical', label: 'Recognised as classical' },
 ];
@@ -329,8 +335,8 @@ export function placeTrack(
     }
   }
 
-  const { recordingMbid, recordingTitle, read } = track.link;
-  if (track.works.length === 0) {
+  if (track.link.state === 'linked' && track.works.length === 0) {
+    const { recordingMbid, recordingTitle, read } = track.link;
     const group = {
       id: `recording:${recordingMbid}`,
       label: recordingTitle,
@@ -401,6 +407,7 @@ export function readinessFunnel(
 ): ReadinessFunnel {
   let notClassical = 0;
   let ready = 0;
+  let readyViaOwnLinks = 0;
   const placed = new Map<
     ReadinessBucketKey,
     { tracks: number; waiting: number; groups: Map<string, ReadinessExample> }
@@ -415,6 +422,7 @@ export function readinessFunnel(
     const placement = placeTrack(track, submissions);
     if (!placement) {
       ready++;
+      if (track.works.some((work) => work.linkedBy === 'prelude')) readyViaOwnLinks++;
       continue;
     }
     const entry = placed.get(placement.bucket) ?? { tracks: 0, waiting: 0, groups: new Map() };
@@ -457,7 +465,7 @@ export function readinessFunnel(
     return { key, label, reached, blocked, buckets };
   });
 
-  return { total: tracks.length, notClassical, inScope, steps, ready };
+  return { total: tracks.length, notClassical, inScope, steps, ready, readyViaOwnLinks };
 }
 
 /**
@@ -506,8 +514,18 @@ export function readinessTracksFrom(
       relation.workMbid,
     ]);
   }
+  // Our own links count where MusicBrainz has none, exactly as the player
+  // uses them, so the funnel and the cards agree.
+  const ownWorkByTrack = new Map<string, string>();
+  for (const link of facts.ownWorkLinks) {
+    if (link.subject === 'track') ownWorkByTrack.set(link.spotifyTrackId, link.workMbid);
+    else if (!workMbidsByRecording.has(link.recordingMbid)) {
+      workMbidsByRecording.set(link.recordingMbid, [link.workMbid]);
+    }
+  }
   const workByMbid = new Map(facts.mbWorks.map((work) => [work.mbid, work]));
   const catalogued = new Set(facts.mbWorkCatalogues.map((catalogue) => catalogue.workMbid));
+  const catalogedComposers = new Set(facts.mbCatalogedComposerMbids);
 
   const worksByTrack = new Map<string, ProjectedRecordingWork[]>();
   for (const recording of projection.recordings) {
@@ -571,8 +589,13 @@ export function readinessTracksFrom(
     const anchor = anchorByTrack.get(spotifyTrackId);
     const recording =
       anchor?.state === 'accepted' ? recordingById.get(anchor.recordingMbid) : undefined;
+    const ownWork = ownWorkByTrack.get(spotifyTrackId);
     const evidenceWorks =
-      anchor?.state === 'accepted' ? (workMbidsByRecording.get(anchor.recordingMbid) ?? []) : [];
+      anchor?.state === 'accepted'
+        ? (workMbidsByRecording.get(anchor.recordingMbid) ?? [])
+        : ownWork
+          ? [ownWork]
+          : [];
 
     return [
       {
@@ -582,7 +605,8 @@ export function readinessTracksFrom(
         isrc: isrcByTrack.get(spotifyTrackId) ?? null,
         classification: classificationByTrack.get(spotifyTrackId) ?? 'unreviewed',
         musicBrainzSaysClassical:
-          classicalEvidenceFor(evidenceWorks, workByMbid, catalogued).state === 'classical',
+          classicalEvidenceFor(evidenceWorks, workByMbid, catalogued, catalogedComposers).state ===
+          'classical',
         link:
           anchor?.state === 'accepted'
             ? {
@@ -593,17 +617,21 @@ export function readinessTracksFrom(
               }
             : anchor?.state === 'conflicting'
               ? { state: 'contested' }
-              : { state: 'none' },
+              : ownWork
+                ? { state: 'ours' }
+                : { state: 'none' },
         release: resolution.state === 'misaligned' ? 'matched' : resolution.state,
         releaseMbid,
         tracklist: releaseMbid ? tracklistOf(track.spotifyAlbumId, releaseMbid) : null,
-        works: (anchor?.state === 'accepted' ? (worksByTrack.get(spotifyTrackId) ?? []) : []).map(
-          (work) => ({
-            workMbid: work.displayWorkMbid ?? work.relatedWorkMbid,
-            title: work.title,
-            composer: composerState(work),
-          }),
-        ),
+        works: (anchor?.state === 'accepted' || (!anchor && ownWork)
+          ? (worksByTrack.get(spotifyTrackId) ?? [])
+          : []
+        ).map((work) => ({
+          workMbid: work.displayWorkMbid ?? work.relatedWorkMbid,
+          linkedBy: work.linkedBy,
+          title: work.title,
+          composer: composerState(work),
+        })),
       },
     ];
   });

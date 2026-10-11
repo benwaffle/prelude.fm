@@ -129,6 +129,28 @@ export type MbReleaseTrackFact = {
   lengthMs: number | null;
 };
 
+/**
+ * A work prelude.fm links itself, where MusicBrainz has no link yet. Never a
+ * MusicBrainz fact, and never used once MusicBrainz has its own link.
+ *
+ * `track`: a Spotify track with no MusicBrainz recording, matched to a work
+ * by `track_work_link`. `recording`: a MusicBrainz recording MusicBrainz
+ * relates to no work, given the work `mb_work_proposal` suggests.
+ */
+export type OwnWorkLinkFact =
+  | {
+      subject: 'track';
+      spotifyTrackId: string;
+      workMbid: string;
+      confidence: 'high' | 'medium' | 'low';
+    }
+  | {
+      subject: 'recording';
+      recordingMbid: string;
+      workMbid: string;
+      confidence: 'high' | 'medium' | 'low';
+    };
+
 export type MusicBrainzLibraryFacts = {
   requestedTrackIds: string[];
   classifications: TrackClassification[];
@@ -143,4 +165,12 @@ export type MusicBrainzLibraryFacts = {
   mbRecordingCredits: MbRecordingCreditFact[];
   mbReleases: MbReleaseFact[];
   mbReleaseTracks: MbReleaseTrackFact[];
+  /** Our own work links, for what MusicBrainz does not link yet. */
+  ownWorkLinks: OwnWorkLinkFact[];
+  /**
+   * Of the composers of `mbWorks`, those MusicBrainz catalogues at least one
+   * work by (any work in the cache, not only these). Special-purpose artists
+   * such as [traditional] are never in it.
+   */
+  mbCatalogedComposerMbids: string[];
 };

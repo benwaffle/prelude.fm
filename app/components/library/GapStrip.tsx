@@ -48,6 +48,7 @@ const REASONS: Record<MusicBrainzGapCode, string> = {
   'work-hierarchy-parent-missing': 'The work’s parent has not been fetched',
   'work-hierarchy-cycle': 'The cached work hierarchy loops',
   'work-level-ambiguous': 'Unclear whether to show this work or the one above it',
+  'work-linked-by-us': 'We matched the work ourselves; MusicBrainz does not link it yet',
   'recording-credits-missing': 'MusicBrainz does not say who performed',
   'recording-credit-artist-missing': 'A credited artist has not been fetched',
 };

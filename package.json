@@ -18,6 +18,7 @@
     "metadata:release-precheck": "tsx scripts/release-precheck.ts",
     "metadata:release-seed": "tsx scripts/release-seed.ts",
     "metadata:work-proposals": "tsx scripts/work-proposals.ts",
+    "metadata:track-work-links": "tsx scripts/track-work-links.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test 'tests/**/*.test.{ts,tsx}'",
     "db:generate": "drizzle-kit generate",

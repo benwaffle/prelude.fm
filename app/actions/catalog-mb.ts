@@ -22,7 +22,11 @@ import {
 } from '@/lib/musicbrainz-catalogue-shape';
 import { ancestry } from '@/lib/musicbrainz-work-tree';
 import { eraFor, formatDuration, lifespan, shortName, surname } from '@/lib/prelude';
-import { findProviderTracksForWork, loadMusicBrainzLibraryFacts } from './library-musicbrainz';
+import {
+  findProviderTracksForWork,
+  loadMusicBrainzLibraryFacts,
+  ownWorkHoldings,
+} from './library-musicbrainz';
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
 import { musicBrainzLibraryView } from '@/lib/musicbrainz-library-view';
 import type {
@@ -70,9 +74,20 @@ async function heldCatalogue(seedWorkMbids?: string[]): Promise<ShapedCatalogueW
       .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
       .innerJoin(spotifyAlbum, eq(spotifyAlbum.spotifyId, spotifyTrack.spotifyAlbumId))
       .where(where);
-  const playable = scope
-    ? await forChunks(scope, (chunk) => selectRelations(inArray(mbRecordingWork.workMbid, chunk)))
-    : await selectRelations();
+  const playable = [
+    ...(scope
+      ? await forChunks(scope, (chunk) => selectRelations(inArray(mbRecordingWork.workMbid, chunk)))
+      : await selectRelations()),
+    // Our own links, where MusicBrainz has none yet: the player shows these
+    // tracks under the work, so the catalogue holds the work too.
+    ...(await ownWorkHoldings(scope ?? null)).map((holding) => ({
+      recordingMbid: holding.holdingKey,
+      workMbid: holding.workMbid,
+      spotifyTrackId: holding.spotifyTrackId,
+      spotifyAlbumId: holding.spotifyAlbumId,
+      albumTitle: holding.albumTitle,
+    })),
+  ];
   if (playable.length === 0) return [];
 
   // The related works, their ancestors and one generation of children — the

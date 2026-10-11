@@ -26,7 +26,7 @@ function readyTrack(overrides: Partial<ReadinessTrack> = {}): ReadinessTrack {
     release: 'matched',
     releaseMbid: 'release-1',
     tracklist: 'aligned',
-    works: [{ workMbid: 'work-1', title: 'Work', composer: 'named' }],
+    works: [{ workMbid: 'work-1', linkedBy: 'musicbrainz', title: 'Work', composer: 'named' }],
     ...overrides,
   };
 }
@@ -54,7 +54,7 @@ test('each blocked track is placed at its first missing step', () => {
     placeTrack(
       readyTrack({
         classification: 'uncertain',
-        works: [{ workMbid: 'w', title: 'W', composer: 'missing' }],
+        works: [{ workMbid: 'w', linkedBy: 'musicbrainz', title: 'W', composer: 'missing' }],
       }),
     )?.bucket,
     'add-composer',
@@ -84,13 +84,19 @@ test('a recording or work our cache has not read is not an edit to make', () => 
     'recording-not-read',
   );
   assert.equal(
-    placeTrack(readyTrack({ works: [{ workMbid: 'w', title: null, composer: 'not_read' }] }))
-      ?.bucket,
+    placeTrack(
+      readyTrack({
+        works: [{ workMbid: 'w', linkedBy: 'musicbrainz', title: null, composer: 'not_read' }],
+      }),
+    )?.bucket,
     'work-not-read',
   );
   assert.equal(
-    placeTrack(readyTrack({ works: [{ workMbid: 'w', title: 'W', composer: 'level_unclear' }] }))
-      ?.bucket,
+    placeTrack(
+      readyTrack({
+        works: [{ workMbid: 'w', linkedBy: 'musicbrainz', title: 'W', composer: 'level_unclear' }],
+      }),
+    )?.bucket,
     'work-level-unclear',
   );
 });
@@ -112,8 +118,8 @@ test('a medley needs a composer on every work', () => {
     placeTrack(
       readyTrack({
         works: [
-          { workMbid: 'a', title: 'A', composer: 'named' },
-          { workMbid: 'b', title: 'B', composer: 'missing' },
+          { workMbid: 'a', linkedBy: 'musicbrainz', title: 'A', composer: 'named' },
+          { workMbid: 'b', linkedBy: 'musicbrainz', title: 'B', composer: 'missing' },
         ],
       }),
     )?.bucket,
@@ -156,7 +162,9 @@ test('the funnel accounts for every track exactly once', () => {
     readyTrack({ ...unlinked, release: 'missing', spotifyAlbumId: 'album-2' }),
     readyTrack({ ...unlinked, release: 'missing', spotifyAlbumId: 'album-2' }),
     readyTrack({ works: [] }),
-    readyTrack({ works: [{ workMbid: 'w', title: 'W', composer: 'missing' }] }),
+    readyTrack({
+      works: [{ workMbid: 'w', linkedBy: 'musicbrainz', title: 'W', composer: 'missing' }],
+    }),
     readyTrack({ classification: 'uncertain', musicBrainzSaysClassical: false }),
   ];
   const funnel = readinessFunnel(tracks);
@@ -352,6 +360,8 @@ function facts(): MusicBrainzLibraryFacts {
       title: null,
       lengthMs: 100_000,
     })),
+    ownWorkLinks: [],
+    mbCatalogedComposerMbids: [],
   };
 }
 
@@ -364,7 +374,7 @@ test('rows read from the player projection agree with what the player shows', ()
   assert.equal(placeTrack(byId.get('ready')!), null);
   // The player shows the suite's composer, which is missing, not the movement's.
   assert.deepEqual(byId.get('movement')!.works, [
-    { workMbid: 'suite', title: 'Suite', composer: 'missing' },
+    { workMbid: 'suite', linkedBy: 'musicbrainz', title: 'Suite', composer: 'missing' },
   ]);
   assert.equal(placeTrack(byId.get('movement')!)?.bucket, 'add-composer');
   // Unreviewed but MusicBrainz types the work as a sonata: our stored
@@ -401,4 +411,24 @@ test('tracks blocked on a release are counted per album, the way the funnel plac
     readyTrack({ spotifyAlbumId: 'big', release: 'missing', releaseMbid: null, tracklist: null }),
   ]);
   assert.deepEqual(Object.fromEntries(counts), { big: 2, small: 1, picked: 1 });
+});
+
+test('a track our own match links to a work skips the recording step, and is counted as ours', () => {
+  const ours = readyTrack({
+    link: { state: 'ours' },
+    release: 'missing',
+    releaseMbid: null,
+    tracklist: null,
+    works: [{ workMbid: 'work-1', linkedBy: 'prelude', title: 'Work', composer: 'named' }],
+  });
+  assert.equal(placeTrack(ours), null);
+  // It still has to clear the composer and classical steps like anything else.
+  assert.equal(
+    placeTrack({ ...ours, classification: 'uncertain', musicBrainzSaysClassical: false })?.bucket,
+    'add-classical-evidence',
+  );
+
+  const funnel = readinessFunnel([ours, readyTrack()]);
+  assert.equal(funnel.ready, 2);
+  assert.equal(funnel.readyViaOwnLinks, 1);
 });
