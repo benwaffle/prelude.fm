@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Icon, Waveform } from '../Icon';
 import {
   initialsOf,
@@ -82,7 +82,7 @@ export function WorkCard({
             type="button"
             title={`Play ${work.title ?? 'this recording'}`}
             onClick={() => onPlayWork(work)}
-            className="flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center self-center rounded-full border border-rule text-muted transition-colors duration-150 group-hover:border-muted group-hover:text-ink-2 hover:border-ink hover:bg-ink hover:text-paper focus-visible:border-ink focus-visible:bg-ink focus-visible:text-paper"
+            className="flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center self-center rounded-full border max-[900px]:h-9 max-[900px]:w-9 border-rule text-muted transition-colors duration-150 group-hover:border-muted group-hover:text-ink-2 hover:border-ink hover:bg-ink hover:text-paper focus-visible:border-ink focus-visible:bg-ink focus-visible:text-paper"
           >
             <span className="ml-px">
               <Icon name="play" size={11} />
@@ -187,6 +187,7 @@ function MovementRow({
   onToggleLike: () => void;
 }) {
   const liked = movement.liked;
+  const tappedRef = useRef(false);
 
   // A part of the work this recording doesn't carry: present so the programme
   // reads whole, but greyed out and inert — nothing to play, nothing to like.
@@ -214,12 +215,16 @@ function MovementRow({
       role="button"
       tabIndex={0}
       title={`${movement.name} — double-click to play`}
-      onClick={onSelect}
+      // A finger has no double-click worth asking for: a tap plays.
+      onPointerDown={(e) => {
+        tappedRef.current = e.pointerType !== 'mouse';
+      }}
+      onClick={() => (tappedRef.current ? onPlay() : onSelect())}
       onDoubleClick={onPlay}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onPlay();
       }}
-      className={`relative grid cursor-pointer grid-cols-[15px_22px_minmax(0,1fr)_auto] items-baseline gap-3 rounded-[2px] py-[3px] pr-[2px] hover:bg-paper-2 focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-ink-2 ${
+      className={`relative grid cursor-pointer grid-cols-[15px_22px_minmax(0,1fr)_auto] items-baseline gap-3 rounded-[2px] py-[3px] pr-[2px] select-none hover:bg-paper-2 max-[900px]:py-[9px] focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-ink-2 ${
         isSelected ? 'bg-paper-3 shadow-[inset_0_0_0_1px_var(--rule)]' : ''
       }`}
     >
@@ -233,7 +238,7 @@ function MovementRow({
           e.stopPropagation();
           onToggleLike();
         }}
-        className={`flex w-4 translate-y-px cursor-pointer items-center justify-start transition-all duration-150 ${
+        className={`flex w-4 translate-y-px cursor-pointer items-center justify-start transition-all duration-150 before:absolute before:-inset-3 before:content-[''] relative ${
           liked
             ? 'text-accent hover:scale-110'
             : 'text-rule group-hover:text-muted hover:text-muted'

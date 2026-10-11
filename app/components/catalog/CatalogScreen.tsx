@@ -140,6 +140,12 @@ export function CatalogScreen() {
   const composer = composers.find((c) => c.id === composerId) ?? null;
   const work = works.find((w) => w.id === workId) ?? null;
 
+  // On phones each level replaces the last as one long page; start the new
+  // one at its top rather than wherever the previous list was scrolled to.
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 900px)').matches) window.scrollTo(0, 0);
+  }, [level]);
+
   const pickComposer = (c: CatalogComposer) => {
     setComposerId(c.id);
     setLevel(1);
