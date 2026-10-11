@@ -7,7 +7,6 @@ import { useLibrary } from '@/lib/library-context';
 import { hexToRgba, numeralPrefix } from '@/lib/prelude';
 import { Icon } from './Icon';
 import { QueueList } from './queue/QueueList';
-import { MediaDebug } from './MediaDebug';
 import { Credit } from './player/Credit';
 import { MovementName } from './work/WorkText';
 import { MovementList } from './work/MovementList';
@@ -157,11 +156,6 @@ export function NowPlayingSheet({
         <div className="mt-8">
           <QueueList />
         </div>
-
-        <MediaDebug
-          output={outputDevice ? outputDevice.name : 'nowhere yet'}
-          spotifyPaused={isPaused}
-        />
       </div>
     </div>,
     document.body,

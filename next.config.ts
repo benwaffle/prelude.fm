@@ -1,8 +1,6 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // Lets a page say which build it is, so a phone running an old copy shows.
-  env: { NEXT_PUBLIC_BUILD: process.env.VERCEL_GIT_COMMIT_SHA ?? 'local' },
   // Deployed functions only ever reach Turso over the network, so they get the
   // HTTP-only client. The default client loads libSQL's native binaries (about
   // 20 MB for glibc and musl) into every function so it can open local files,
