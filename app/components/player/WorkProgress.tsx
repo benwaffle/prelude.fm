@@ -114,10 +114,11 @@ export function WorkProgress({ programme, size }: { programme: Programme; size: 
           dragTo(ratioAt(e));
         }}
         onPointerMove={(e) => {
-          if (dragRatio.current !== null) dragTo(ratioAt(e));
+          // Only while the button or finger is down; a hover is not a drag.
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) dragTo(ratioAt(e));
         }}
         onPointerUp={(e) => {
-          if (dragRatio.current === null) return;
+          if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
           const ratio = ratioAt(e);
           seekToRatio(ratio);
           // Hold the playhead where it was dropped until Spotify catches up.
