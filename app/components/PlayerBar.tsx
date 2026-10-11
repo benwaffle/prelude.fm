@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import {
@@ -13,6 +13,7 @@ import {
   type LibraryWork,
 } from '@/lib/prelude';
 import { Icon } from './Icon';
+import { DevicePicker } from './DevicePicker';
 
 /**
  * The player bar, present on every screen. Progress is scoped to the whole
@@ -32,7 +33,19 @@ export function PlayerBar() {
     setVolume,
     getProgress,
     play,
+    outputDevice,
+    localStatus,
+    localProblem,
+    playbackError,
+    needsDevice,
+    dismissDevicePrompt,
   } = useSpotifyPlayer();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const showPicker = pickerOpen || needsDevice;
+  const closePicker = useCallback(() => {
+    setPickerOpen(false);
+    dismissDevicePrompt();
+  }, [dismissDevicePrompt]);
   const { locate, toggleLike, likedTrackIds } = useLibrary();
 
   const fillRef = useRef<HTMLDivElement>(null);
@@ -177,7 +190,7 @@ export function PlayerBar() {
 
   return (
     <div
-      className="fixed right-0 bottom-0 left-0 z-10 grid grid-cols-[360px_1fr_320px] items-center border-t border-black/20 px-7 py-[14px] backdrop-blur-[14px] max-[900px]:grid-cols-[minmax(0,1fr)_auto] max-[900px]:gap-x-3 max-[900px]:gap-y-[10px] max-[900px]:px-[14px] max-[900px]:pt-[10px] max-[900px]:pb-3"
+      className="fixed right-0 bottom-0 left-0 z-10 grid grid-cols-[360px_1fr_320px] items-center border-t border-black/20 px-7 py-[14px] backdrop-blur-[14px] max-[900px]:grid-cols-[minmax(0,1fr)_auto] max-[900px]:gap-x-3 max-[900px]:gap-y-[10px] max-[900px]:px-[14px] max-[900px]:pt-[10px] max-[900px]:pb-[calc(12px+env(safe-area-inset-bottom))]"
       style={{
         background: `linear-gradient(180deg, ${hexToRgba(tint, 0.82)}, ${hexToRgba(tint, 0.98)})`,
         color: work?.ink ?? '#f4ecd8',
@@ -185,9 +198,36 @@ export function PlayerBar() {
     >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/5 to-black/[0.12]" />
 
+      {showPicker && <DevicePicker onClose={closePicker} />}
+
+      {playbackError && (
+        <div className="absolute right-0 bottom-full left-0 z-[2] bg-accent px-7 py-[6px] text-center font-display text-[13px] text-paper italic max-[900px]:px-4">
+          {playbackError}
+        </div>
+      )}
+
       {!work || !movement ? (
-        <div className="relative z-[1] col-span-full text-center font-display text-[13px] italic opacity-75">
-          {isReady ? 'Choose a movement to begin.' : 'Connecting to Spotify…'}
+        <div className="relative z-[1] col-span-full flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center font-display text-[13px] italic">
+          <span className="opacity-75">
+            {isReady
+              ? outputDevice && !outputDevice.isThisBrowser
+                ? `Choose a movement to play on ${outputDevice.name}.`
+                : 'Choose a movement to begin.'
+              : localStatus === 'unavailable'
+                ? localProblem
+                : 'Connecting to Spotify…'}
+          </span>
+          {(isReady || localStatus === 'unavailable') && (
+            <button
+              type="button"
+              data-device-toggle
+              onClick={() => (showPicker ? closePicker() : setPickerOpen(true))}
+              className="flex cursor-pointer items-center gap-[6px] border-b border-current pb-px font-meta text-[10px] tracking-[0.16em] not-italic uppercase opacity-85 hover:opacity-100"
+            >
+              <Icon name="devices" size={13} />
+              {isReady ? 'Change device' : 'Play on another device'}
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -320,7 +360,7 @@ export function PlayerBar() {
               <div
                 ref={barRef}
                 onClick={handleScrub}
-                className="relative h-1 cursor-pointer rounded-[2px] bg-white/15"
+                className="relative h-1 cursor-pointer rounded-[2px] bg-white/15 before:absolute before:-inset-y-3 before:inset-x-0 before:content-['']"
               >
                 <div ref={fillRef} className="absolute inset-y-0 left-0 rounded-[2px] bg-current" />
                 {heard.slice(0, -1).map((m, i) => {
@@ -347,33 +387,54 @@ export function PlayerBar() {
           </div>
 
           {/* Queue + volume */}
-          <div className="relative z-[1] flex items-center justify-end gap-[14px] max-[900px]:col-start-2 max-[900px]:row-start-1">
+          <div className="relative z-[1] flex min-w-0 items-center justify-end gap-[14px] max-[900px]:col-start-2 max-[900px]:row-start-1">
+            <button
+              type="button"
+              title={outputDevice ? `Playing on ${outputDevice.name}` : 'Choose where to play'}
+              data-device-toggle
+              onClick={() => (showPicker ? closePicker() : setPickerOpen(true))}
+              className={`flex min-w-0 cursor-pointer items-center gap-[6px] hover:opacity-100 ${
+                outputDevice && !outputDevice.isThisBrowser ? 'opacity-100' : 'opacity-70'
+              }`}
+            >
+              <span className="shrink-0">
+                <Icon name="devices" size={16} />
+              </span>
+              {outputDevice && !outputDevice.isThisBrowser && (
+                <span className="max-w-[140px] truncate font-meta text-[10.5px] tracking-[0.04em] max-[900px]:max-w-[90px]">
+                  {outputDevice.name}
+                </span>
+              )}
+            </button>
             <button
               type="button"
               title="Queue"
-              className="cursor-pointer opacity-70 hover:opacity-100"
+              className="cursor-pointer opacity-70 hover:opacity-100 max-[900px]:hidden"
             >
               <Icon name="queue" size={16} />
             </button>
-            <div className="flex items-center gap-2 max-[900px]:hidden">
-              <button
-                type="button"
-                title={volume === 0 ? 'Unmute' : 'Mute'}
-                onClick={() => setVolume(volume === 0 ? 0.6 : 0)}
-                className="cursor-pointer opacity-70 hover:opacity-100"
-              >
-                <Icon name={volume === 0 ? 'mute' : 'vol'} size={16} />
-              </button>
-              <div
-                onClick={handleVolume}
-                className="relative h-1 w-[90px] cursor-pointer rounded-[2px] bg-white/15"
-              >
+            {/* Some Connect devices, iPhones among them, keep volume to themselves. */}
+            {outputDevice?.supportsVolume !== false && (
+              <div className="flex items-center gap-2 max-[900px]:hidden">
+                <button
+                  type="button"
+                  title={volume === 0 ? 'Unmute' : 'Mute'}
+                  onClick={() => setVolume(volume === 0 ? 0.6 : 0)}
+                  className="cursor-pointer opacity-70 hover:opacity-100"
+                >
+                  <Icon name={volume === 0 ? 'mute' : 'vol'} size={16} />
+                </button>
                 <div
-                  className="absolute inset-y-0 left-0 rounded-[2px] bg-current"
-                  style={{ width: `${volume * 100}%` }}
-                />
+                  onClick={handleVolume}
+                  className="relative h-1 w-[90px] cursor-pointer rounded-[2px] bg-white/15"
+                >
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-[2px] bg-current"
+                    style={{ width: `${volume * 100}%` }}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </>
       )}

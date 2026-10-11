@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f1e6" />
+    <title>prelude.fm · offline</title>
+    <style>
+      :root {
+        --paper: #f6f1e6;
+        --ink: #1a1712;
+        --muted: #7a6f58;
+        --accent: #6b2418;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #141210;
+          --ink: #f3ead5;
+          --muted: #8a7f68;
+          --accent: #c9a06a;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        padding: 0 24px;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: 'Cormorant Garamond', Georgia, serif;
+        text-align: center;
+      }
+      .mark {
+        font-size: 44px;
+        font-style: italic;
+        font-weight: 500;
+      }
+      .mark span {
+        color: var(--accent);
+      }
+      p {
+        max-width: 38ch;
+        font-size: 18px;
+        font-style: italic;
+        color: var(--muted);
+      }
+      button {
+        cursor: pointer;
+        border: 0;
+        border-radius: 2px;
+        background: var(--ink);
+        color: var(--paper);
+        padding: 12px 24px;
+        font:
+          11px system-ui,
+          sans-serif;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mark">prelude<span>.</span>fm</div>
+    <p>
+      You’re offline. Spotify streams everything, so there’s nothing to play until the connection
+      comes back.
+    </p>
+    <button type="button" onclick="location.reload()">Try again</button>
+  </body>
+</html>

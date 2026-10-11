@@ -212,11 +212,11 @@ function Hero({
   onToggleLike: (trackId: string) => void;
 }) {
   return (
-    <section className="relative grid grid-cols-[320px_1fr] gap-12 border-b border-rule pt-12 pb-14 max-[900px]:grid-cols-[minmax(0,1fr)] max-[900px]:gap-[22px] max-[900px]:pt-[26px] max-[900px]:pb-[30px]">
-      <div className="relative aspect-square self-start shadow-deep max-[900px]:max-w-[260px]">
+    <section className="relative grid grid-cols-[320px_1fr] gap-12 border-b border-rule pt-12 pb-14 max-[900px]:grid-cols-[minmax(0,1fr)] max-[900px]:gap-[48px] max-[900px]:pt-[26px] max-[900px]:pb-[30px]">
+      <div className="relative aspect-square self-start shadow-deep max-[900px]:max-w-[200px]">
         <Plate work={work} />
         <span className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),inset_0_0_40px_rgba(0,0,0,0.2)]" />
-        <div className="absolute -bottom-[30px] left-0 font-display text-[14px] text-muted italic">
+        <div className="absolute -bottom-[30px] left-0 font-display text-[14px] text-muted italic max-[900px]:w-[calc(100vw-32px)] max-[900px]:truncate">
           — {work.album}
         </div>
       </div>

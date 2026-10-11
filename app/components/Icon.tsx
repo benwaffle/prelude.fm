@@ -66,6 +66,17 @@ const PATHS: Record<string, ReactElement> = {
       strokeWidth="1.5"
     />
   ),
+  devices: (
+    <g stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinejoin="round">
+      <rect x="3" y="3" width="11" height="18" rx="1.5" />
+      <circle cx="8.5" cy="14.5" r="2.75" />
+      <circle cx="8.5" cy="7.25" r="0.6" fill="currentColor" />
+      <rect x="17" y="8" width="4.5" height="13" rx="1" />
+    </g>
+  ),
+  close: (
+    <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  ),
   back: (
     <path
       d="M15 5l-7 7 7 7"
