@@ -86,6 +86,53 @@ test('a piece number is never dropped to match a collection', () => {
   assert.equal(level.mbid, 'self');
 });
 
+test('a movement numbered as its position belongs to the parent, whatever its nickname', () => {
+  const level = workLevelOf(
+    node({
+      title: 'Concerto Grosso in G minor, op. 6 no. 8 “Christmas Concerto”: V. Allegro',
+      parentMbid: 'christmas',
+      parentTitle:
+        'Concerto Grosso in G minor, op. 6 no. 8 “Fatto per la notte di Natale” (Christmas Concerto)',
+      orderingKey: 5,
+    }),
+  );
+  assert.equal(level.mbid, 'christmas');
+});
+
+test('a numbered piece in a counted collection stays itself', () => {
+  const level = workLevelOf(
+    node({
+      title: '18 Pieces, op. 72: XVI. Valse à cinq temps',
+      parentMbid: 'pieces',
+      parentTitle: '18 Pieces for Piano, op. 72',
+      orderingKey: 16,
+    }),
+  );
+  assert.equal(level.mbid, 'self');
+});
+
+test("a number continuing its act's title belongs to the act", () => {
+  const level = workLevelOf(
+    node({
+      title: 'Messiah, HWV 56: Part II, no. 28. Chorus “He trusted in God”',
+      parentMbid: 'part-ii',
+      parentTitle: 'Messiah, HWV 56: Part II',
+    }),
+  );
+  assert.equal(level.mbid, 'part-ii');
+});
+
+test('a collection titled without a colon does not take a piece by its comma', () => {
+  const level = workLevelOf(
+    node({
+      title: 'Mazurkas, op. 33, no. 2 in D major',
+      parentMbid: 'mazurkas-33',
+      parentTitle: 'Mazurkas, op. 33',
+    }),
+  );
+  assert.equal(level.mbid, 'self');
+});
+
 test('a work with parts is the work, not one of its parts', () => {
   // "Prelude and Fugue No. 1" is untyped and sits inside the book, but it has
   // a prelude and a fugue under it, so it is the piece.

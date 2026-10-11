@@ -101,6 +101,80 @@ function weakestOwnLink(works: ProjectedRecordingWork[]): LibraryWork['ownLink']
   return weakest;
 }
 
+/**
+ * Two Spotify albums can be one MusicBrainz release — a reissue, a regional
+ * edition — and carry the very same recordings. That is one performance
+ * heard on two files, so it is listed once, by the liked file where there is
+ * one.
+ */
+function onePerRecording(members: CardMember[], likedTrackIds: Set<string>): CardMember[] {
+  const byRecording = new Map<string, CardMember>();
+  for (const member of members) {
+    const key = `${member.recording.recordingMbid}:${member.work.relatedWorkMbid}`;
+    const kept = byRecording.get(key);
+    if (
+      !kept ||
+      (!likedTrackIds.has(kept.occurrence.spotifyTrackId) &&
+        likedTrackIds.has(member.occurrence.spotifyTrackId))
+    ) {
+      byRecording.set(key, member);
+    }
+  }
+  return members.filter(
+    (member) =>
+      byRecording.get(`${member.recording.recordingMbid}:${member.work.relatedWorkMbid}`) ===
+      member,
+  );
+}
+
+/**
+ * An album can carry the same work twice — a compilation with two
+ * performances of a concerto, a box with a studio and a live symphony. Those
+ * are two performances, not one with every movement doubled. When a part
+ * repeats on one issue, the card is split into runs of consecutive tracks,
+ * since a performance sits together on the album. Two tracks of one part
+ * side by side ("Ia", "Ib") stay one performance.
+ */
+function separatePerformances(
+  cards: Map<string, CardMember[]>,
+  likedTrackIds: Set<string>,
+): Map<string, CardMember[]> {
+  const separated = new Map<string, CardMember[]>();
+  for (const [cardKey, all] of cards) {
+    const members = onePerRecording(all, likedTrackIds);
+    const parts = members.map(
+      (member) => member.work.hierarchy.at(-1)?.mbid ?? member.work.relatedWorkMbid,
+    );
+    if (new Set(parts).size === parts.length) {
+      separated.set(cardKey, members);
+      continue;
+    }
+    const byTrack = [...members].sort(
+      (left, right) =>
+        left.occurrence.discNumber - right.occurrence.discNumber ||
+        left.occurrence.trackNumber - right.occurrence.trackNumber,
+    );
+    let run: CardMember[] = [];
+    const flush = () => {
+      if (run.length === 0) return;
+      const first = run[0].occurrence;
+      separated.set(`${cardKey}:${first.discNumber}-${first.trackNumber}`, run);
+      run = [];
+    };
+    for (const member of byTrack) {
+      const previous = run.at(-1)?.occurrence;
+      const adjacent =
+        previous &&
+        previous.discNumber === member.occurrence.discNumber &&
+        member.occurrence.trackNumber - previous.trackNumber <= 1;
+      if (!adjacent) flush();
+      run.push(member);
+    }
+    flush();
+  }
+  return separated;
+}
+
 export function musicBrainzLibraryView(
   projection: MusicBrainzLibraryProjection,
   likedTrackIds: Set<string>,
@@ -129,7 +203,7 @@ export function musicBrainzLibraryView(
   }
 
   const works: LibraryWork[] = [];
-  for (const [cardKey, members] of cards) {
+  for (const [cardKey, members] of separatePerformances(cards, likedTrackIds)) {
     const ordered = [...members].sort(
       (left, right) =>
         partPosition(left.work, left.occurrence.trackNumber) -
@@ -146,18 +220,29 @@ export function musicBrainzLibraryView(
       ? creditLine(credits)
       : { performer: null, ensemble: null };
 
+    // MusicBrainz sometimes relates each movement's recording to the whole
+    // work rather than to its part. Such a track is some part of the work,
+    // but which one MusicBrainz doesn't say, so it is named by its own
+    // recording title and carries no movement numeral.
+    const onWholeWork = (member: CardMember) =>
+      member.work.parts.length > 0 && member.work.relatedWorkMbid === member.work.displayWorkMbid;
+
     const movements: Movement[] = ordered.map((member, index) => {
       const leaf = member.work.hierarchy.at(-1);
       const position = partPosition(member.work, member.occurrence.trackNumber);
+      const whole = onWholeWork(member);
+      const title = whole
+        ? (member.recording.title ?? leaf?.title)
+        : (leaf?.title ?? member.recording.title);
       return {
         n: index + 1,
         position,
-        roman: roman(position),
+        roman: whole ? '' : roman(position),
         // The MusicBrainz title of the part, or the recording's own title
         // for a work with no parts. Never the Spotify track name, which is
         // a provider label for the file, not a movement name.
-        name: leaf?.title ?? member.recording.title ?? '',
-        unnamed: (leaf?.title ?? member.recording.title) === null,
+        name: title ?? '',
+        unnamed: title == null,
         missing: false,
         durationMs: member.occurrence.durationMs,
         duration: formatDuration(member.occurrence.durationMs),
@@ -170,7 +255,10 @@ export function musicBrainzLibraryView(
     // Parts MusicBrainz says the work has and this issue does not carry.
     // Ghosts, so a partial holding reads as partial rather than as a short
     // work — and they come from MusicBrainz, not from a guess at the length.
-    for (const part of head.work.parts) {
+    // When a track is related only to the whole work, the parts it covers
+    // are unknown, so no part can be listed as missing on its account.
+    const partsKnown = !ordered.some(onWholeWork);
+    for (const part of partsKnown ? head.work.parts : []) {
       if (heldPartMbids.has(part.mbid)) continue;
       const position = part.orderingKey ?? movements.length + 1;
       movements.push({

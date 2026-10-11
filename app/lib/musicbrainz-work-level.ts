@@ -74,6 +74,18 @@ const parentTrailer = (segment: string) => /\d/.test(segment) && !segment.includ
 const childTrailer = (segment: string) => /^[A-Z]{1,4}\.? ?[A-Z]?\d[\w./–-]*$/.test(segment);
 
 /**
+ * Case, dash and quote spellings MusicBrainz editors vary between a parent
+ * and its parts ("in e minor" / "in E minor", "E‐flat" / "E-flat").
+ */
+function spelling(title: string): string {
+  return title
+    .replace(/[\u2010-\u2015]/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .toLowerCase();
+}
+
+/**
  * MusicBrainz titles a movement with its parent's title and a colon. Either
  * side may carry a catalogue reference the other leaves out ("Sinfonia in G
  * minor, op. 6 no. 6, W. C12" over "Sinfonia in G minor, op. 6 no. 6: I.
@@ -81,19 +93,77 @@ const childTrailer = (segment: string) => /^[A-Z]{1,4}\.? ?[A-Z]?\d[\w./–-]*$/
  */
 function titledAsPartOf(node: WorkNode): boolean {
   if (!node.parentTitle) return false;
+  const parentTitle = spelling(node.parentTitle);
   // Only one side may lose a reference. When both do, they may have carried
   // different ones — RV 522 is not a movement of RV 523.
-  const parentStages = shortenings(node.parentTitle, parentTrailer);
-  for (
-    let colon = node.title.indexOf(':');
-    colon !== -1;
-    colon = node.title.indexOf(':', colon + 1)
-  ) {
-    const head = node.title.slice(0, colon);
-    if (parentStages.includes(head)) return true;
-    if (shortenings(head, childTrailer).includes(node.parentTitle)) return true;
+  const parentStages = shortenings(node.parentTitle, parentTrailer).map(spelling);
+  const title = node.title;
+  for (let colon = title.indexOf(':'); colon !== -1; colon = title.indexOf(':', colon + 1)) {
+    const head = title.slice(0, colon);
+    if (parentStages.includes(spelling(head))) return true;
+    if (shortenings(head, childTrailer).some((stage) => spelling(stage) === parentTitle)) {
+      return true;
+    }
   }
   return false;
+}
+
+function toRoman(value: number): string {
+  const numerals: Array<[number, string]> = [
+    [50, 'L'],
+    [40, 'XL'],
+    [10, 'X'],
+    [9, 'IX'],
+    [5, 'V'],
+    [4, 'IV'],
+    [1, 'I'],
+  ];
+  let rest = value;
+  let out = '';
+  for (const [amount, numeral] of numerals) {
+    while (rest >= amount) {
+      out += numeral;
+      rest -= amount;
+    }
+  }
+  return out;
+}
+
+/**
+ * MusicBrainz numbers a movement in its title the way it orders it among the
+ * parent's parts: the fifth part ends "…: V. Allegro". A piece in a
+ * collection is titled by its own number ("no. 5", "op. 33 no. 2") instead,
+ * so a roman numeral that matches the part's position is a movement however
+ * the rest of the title is spelled.
+ */
+function numberedAsPart(node: WorkNode): boolean {
+  // "18 Pieces, op. 72" numbers its pieces the same way, and they are pieces.
+  if (!node.parentTitle || /^\d/.test(node.parentTitle)) return false;
+  if (!node.orderingKey || node.orderingKey < 1 || node.orderingKey > 89) return false;
+  const lastColon = node.title.lastIndexOf(':');
+  if (lastColon === -1) return false;
+  const tail = node.title.slice(lastColon + 1).trim();
+  const numeral = `${toRoman(node.orderingKey)}.`;
+  return tail === numeral || tail.startsWith(`${numeral} `);
+}
+
+/** A title without the catalogue references in it ("…, ZWV 21: Sanctus" → "…: Sanctus"). */
+function withoutCatalogues(title: string): string {
+  return title.replace(/, [A-Z]{1,4}\.? ?[A-Z]?\d[\w./–-]*(?=[:,]|$)/g, '');
+}
+
+/**
+ * A number filed under an act or section of a larger work continues that
+ * section's title: "Messiah, HWV 56: Part II, no. 28. Chorus …" under
+ * "Messiah, HWV 56: Part II", or "Missa …: Sanctus - Benedictus" under
+ * "Missa …, ZWV 21: Sanctus". Only parents that are themselves titled as a
+ * part qualify, so "Mazurkas, op. 33" never takes "Mazurkas, op. 33, no. 2".
+ */
+function continuesPartTitle(node: WorkNode): boolean {
+  if (!node.parentTitle?.includes(':')) return false;
+  const parent = spelling(withoutCatalogues(node.parentTitle));
+  const title = spelling(withoutCatalogues(node.title));
+  return title.startsWith(`${parent}, `) || title.startsWith(`${parent} - `);
 }
 
 /**
@@ -122,7 +192,7 @@ const WHOLES_OF_NUMBERS = new Set([
 function typedPartOf(node: WorkNode): boolean {
   if (!node.type || !node.parentType || node.type === 'Étude') return false;
   if (node.type !== node.parentType && !WHOLES_OF_NUMBERS.has(node.parentType)) return false;
-  return titledAsPartOf(node);
+  return titledAsPartOf(node) || continuesPartTitle(node);
 }
 
 export function workLevelOf(node: WorkNode): WorkLevel {
@@ -142,7 +212,7 @@ export function workLevelOf(node: WorkNode): WorkLevel {
 
   if (!node.parentMbid) return { mbid: node.mbid, reason: 'no-parent', needsReview: false };
 
-  if (titledAsPartOf(node)) {
+  if (titledAsPartOf(node) || numberedAsPart(node) || continuesPartTitle(node)) {
     return { mbid: node.parentMbid, reason: 'titled-as-part', needsReview: false };
   }
 

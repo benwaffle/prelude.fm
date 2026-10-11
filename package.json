@@ -15,6 +15,7 @@
     "metadata:validate": "tsx scripts/validate-metadata.ts",
     "metadata:accounting": "tsx scripts/mb-accounting.ts",
     "metadata:readiness": "tsx scripts/catalogue-readiness.ts",
+    "metadata:level-review": "tsx scripts/work-level-review.ts",
     "metadata:release-precheck": "tsx scripts/release-precheck.ts",
     "metadata:release-seed": "tsx scripts/release-seed.ts",
     "metadata:work-proposals": "tsx scripts/work-proposals.ts",
