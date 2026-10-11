@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { getBotStatus, type BotStatus, type BotSubmissionResult } from '../actions/contribute';
+import { getBotStatus, type BotStatus, type BotSubmissionResult } from '../actions/bot';
 import type { useAdminAction } from '../components/useAdminAction';
 import {
   submitThenRefresh,

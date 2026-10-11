@@ -5,7 +5,7 @@ import {
   getReleaseCorrections,
   measureReleaseCorrections,
   type ReleaseCorrectionsView,
-} from '../actions/contribute';
+} from '../actions/release-submissions';
 import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
 import { Spinner } from '../components/Spinner';
 import { useAdminAction } from '../components/useAdminAction';

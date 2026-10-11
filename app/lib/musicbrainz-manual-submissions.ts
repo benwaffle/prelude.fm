@@ -6,38 +6,30 @@
  * submitted the edit. Keeping their construction pure makes the evidence and
  * dedupe identity reviewable without a database or a MusicBrainz account.
  *
- * Two constraints shape every builder here:
- *
- * - `value` is never null, because the ledger's dedupe is a SQLite unique
- *   index over (kind, target_mbid, value) and SQLite treats nulls as
- *   distinct. A nullable column there would silently stop deduplicating, and
- *   the cross-user dedupe is the reason the index exists.
- * - `targetMbid` is null only when MusicBrainz genuinely has no entity yet. A
- *   class that has several plausible targets picks one deterministically
- *   rather than leaving the identity blank; the rest stay in the evidence.
+ * The constraints every draft keeps (a non-null `value`, a deterministic
+ * `targetMbid`) are on `SubmissionDraft`.
  */
+import type { IsrcGap } from './musicbrainz-edit-links';
+import { normalizeIsrc } from './isrc';
+import type {
+  ErrorDisposition,
+  SubmissionDraft,
+  SubmissionKind,
+  TracklistMismatch,
+  WorkCandidateEvidence,
+  WorkProposalEvidence,
+} from './submission-evidence';
 
-export type ManualSubmissionKind =
-  | 'barcode'
-  | 'streaming_url'
-  | 'release'
-  | 'work'
-  | 'work_relationship'
-  | 'error';
+export type { ErrorDisposition, WorkCandidateEvidence } from './submission-evidence';
 
-export type ManualSubmissionDraft = {
-  kind: ManualSubmissionKind;
-  targetMbid: string | null;
-  subject: string;
-  /** Always non-null so the ledger's unique identity also works in SQLite. */
-  value: string;
-  evidence: Record<string, unknown>;
-};
+/** The draft of one kind, with that kind's evidence. */
+export type DraftOf<K extends SubmissionKind> = Extract<SubmissionDraft, { kind: K }>;
 
 /** A confirmation we will not accept, with a message meant for the editor. */
 export class ManualSubmissionError extends Error {}
 
-const MBID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const MBID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const MBID_PATTERN = new RegExp(`^${MBID}$`);
 
 /**
  * An MBID out of whatever the person had on their clipboard.
@@ -52,6 +44,15 @@ export function normalizeMbid(input: string): string | null {
   const fromUrl = /musicbrainz\.org\/[a-z-]+\/([0-9a-f-]{36})/.exec(trimmed);
   const candidate = fromUrl ? fromUrl[1] : trimmed;
   return MBID_PATTERN.test(candidate) ? candidate : null;
+}
+
+/**
+ * The first MBID anywhere in the input, for pasting any link that names an
+ * entity (a prelude.fm page or a MusicBrainz one). Looser than
+ * `normalizeMbid`, so only for reads: it never decides a ledger identity.
+ */
+export function findMbid(input: string): string | null {
+  return new RegExp(MBID, 'i').exec(input)?.[0].toLowerCase() ?? null;
 }
 
 export function requireMbid(input: string, label: string): string {
@@ -92,7 +93,7 @@ export function normalizeEditId(input: string | null | undefined): string | null
 }
 
 /** The three fields the ledger's unique index dedupes on. */
-export function submissionIdentity(draft: ManualSubmissionDraft): string {
+export function submissionIdentity(draft: SubmissionDraft): string {
   return `${draft.kind}\u0000${draft.targetMbid ?? ''}\u0000${draft.value}`;
 }
 
@@ -106,7 +107,7 @@ export type BarcodeSubmissionGap = {
 };
 
 /** The exact facts retained when a person says they submitted a barcode. */
-export function barcodeSubmissionDraft(gap: BarcodeSubmissionGap): ManualSubmissionDraft {
+export function barcodeSubmissionDraft(gap: BarcodeSubmissionGap): DraftOf<'barcode'> {
   const spotifyUrl = `https://open.spotify.com/album/${gap.albumId}`;
   const musicbrainzUrl = `https://musicbrainz.org/release/${gap.releaseMbid}`;
   return {
@@ -127,13 +128,6 @@ export function barcodeSubmissionDraft(gap: BarcodeSubmissionGap): ManualSubmiss
     },
   };
 }
-
-export type WorkCandidateEvidence =
-  | 'existing_mb_part_link'
-  | 'existing_mb_work_link'
-  | 'catalogue_match'
-  | 'same_release_recording'
-  | 'work_link_proposal';
 
 export type WorkRelationshipSubmission = {
   recordingMbid: string;
@@ -166,7 +160,7 @@ export type WorkRelationshipSubmission = {
  */
 export function workRelationshipDraft(
   submission: WorkRelationshipSubmission,
-): ManualSubmissionDraft {
+): DraftOf<'work_relationship'> {
   return {
     kind: 'work_relationship',
     targetMbid: submission.recordingMbid,
@@ -219,7 +213,7 @@ export type WorkRelationshipGapInput = {
 export function workRelationshipDraftFromGap(
   gap: WorkRelationshipGapInput,
   workMbidInput: string,
-): ManualSubmissionDraft {
+): DraftOf<'work_relationship'> {
   const workMbid = requireMbid(workMbidInput, 'The work');
   const candidate = gap.candidates.find((row) => row.workMbid === workMbid);
   if (!candidate) {
@@ -319,29 +313,6 @@ export function needsExplicitResubmission(previous: { outcome: string } | null):
   return previous?.outcome === 'rejected';
 }
 
-/** The cache now holds a barcode for the release we submitted one to. */
-export function cachedBarcodeLanded(barcode: string | null | undefined): boolean {
-  return typeof barcode === 'string' && barcode.trim() !== '';
-}
-
-/** The album we submitted via Harmony now has a matched MusicBrainz release. */
-export function cachedReleaseMatchLanded(mbReleaseId: string | null | undefined): boolean {
-  return typeof mbReleaseId === 'string' && mbReleaseId.length > 0;
-}
-
-/** The recording–work link we confirmed is now in the cache. */
-export function cachedWorkRelationshipLanded(
-  linkedWorkMbids: readonly string[],
-  submittedWorkMbid: string,
-): boolean {
-  return linkedWorkMbids.includes(submittedWorkMbid);
-}
-
-/** A Spotify free-streaming URL is present in the cache, not merely submitted. */
-export function cachedStreamingUrlLanded(state: SpotifyFreeStreamingUrlState): boolean {
-  return state === 'present';
-}
-
 export type WorkCreationSubmission = {
   /** The recording the missing work was blocking, so the re-ingest has a start. */
   recordingMbid: string;
@@ -357,15 +328,7 @@ export type WorkCreationSubmission = {
    * reader can tell that the title in this row was a parser's reading and not
    * something MusicBrainz told us.
    */
-  proposal: {
-    localWorkId: number;
-    title: string;
-    type: string | null;
-    composerName: string;
-    composerMbid: string | null;
-    catalogues: { system: string; number: string }[];
-    provenance: 'legacy_proposal';
-  } | null;
+  proposal: WorkProposalEvidence | null;
 };
 
 /**
@@ -376,7 +339,7 @@ export type WorkCreationSubmission = {
  * we cannot name would be an assertion that an edit happened with no way to
  * confirm it.
  */
-export function workCreationDraft(submission: WorkCreationSubmission): ManualSubmissionDraft {
+export function workCreationDraft(submission: WorkCreationSubmission): DraftOf<'work'> {
   return {
     kind: 'work',
     targetMbid: submission.workMbid,
@@ -391,7 +354,6 @@ export function workCreationDraft(submission: WorkCreationSubmission): ManualSub
       spotifyAlbumId: submission.albumId,
       spotifyAlbumTitle: submission.albumTitle,
       spotifyUrl: `https://open.spotify.com/album/${submission.albumId}`,
-      /** Proposal, not MusicBrainz fact — see WorkCreationSubmission. */
       proposal: submission.proposal,
       confirmedBy: 'human',
     },
@@ -403,7 +365,7 @@ export type WorkCreationGapInput = {
   recordingTitle: string;
   albumId: string;
   albumTitle: string;
-  proposals?: NonNullable<WorkCreationSubmission['proposal']>[];
+  proposals?: WorkProposalEvidence[];
 };
 
 /**
@@ -418,7 +380,7 @@ export function workCreationDraftFromGap(
   gap: WorkCreationGapInput,
   workMbidInput: string,
   localWorkId?: number,
-): ManualSubmissionDraft {
+): DraftOf<'work'> {
   const workMbid = requireMbid(workMbidInput, 'The new work');
   let proposal: WorkCreationSubmission['proposal'] = null;
   if (localWorkId != null) {
@@ -446,18 +408,6 @@ export function workCreationDraftFromGap(
   };
 }
 
-/** What the cache knows about a created work after a re-ingest, not before. */
-export function createdWorkCacheState(
-  work: { detail: 'stub' | 'full' } | null,
-): 'missing' | 'stub' | 'full' {
-  return work?.detail ?? 'missing';
-}
-
-/** Only a full fetch is MusicBrainz showing the work; a stub is still a hole. */
-export function createdWorkLanded(state: 'missing' | 'stub' | 'full'): boolean {
-  return state === 'full';
-}
-
 export type ReleaseSubmission = {
   albumId: string;
   albumTitle: string;
@@ -476,7 +426,7 @@ export type ReleaseSubmission = {
   releaseMbid: string | null;
 };
 
-export function releaseSubmissionDraft(submission: ReleaseSubmission): ManualSubmissionDraft {
+export function releaseSubmissionDraft(submission: ReleaseSubmission): DraftOf<'release'> {
   const spotifyUrl = `https://open.spotify.com/album/${submission.albumId}`;
   return {
     kind: 'release',
@@ -526,7 +476,7 @@ export type MissingReleaseGapInput = {
 export function releaseSubmissionDraftFromGap(
   gap: MissingReleaseGapInput,
   releaseMbidInput?: string | null,
-): ManualSubmissionDraft {
+): DraftOf<'release'> {
   return releaseSubmissionDraft({
     albumId: gap.albumId,
     albumTitle: gap.albumTitle,
@@ -537,16 +487,6 @@ export function releaseSubmissionDraftFromGap(
     releaseMbid: optionalMbid(releaseMbidInput, 'The new release'),
   });
 }
-
-/**
- * What the person did about a contradiction, not what MusicBrainz decided.
- *
- * Both values mean an upstream action exists to be reconciled later. A
- * contradiction nobody could act on deliberately has no disposition: it stays
- * in the console as an open row, because the alternative is a ledger entry
- * that reads like a submission and closes a gap we have not closed.
- */
-export type ErrorDisposition = 'reported' | 'fixed';
 
 export type ContestedIsrcReport = {
   kind: 'contested_isrc';
@@ -567,13 +507,7 @@ export type MisalignedTracklistReport = {
   ourTrackCount: number;
   theirTrackCount: number;
   /** Both sides of each disagreeing position, never collapsed to a verdict. */
-  mismatches: {
-    position: number;
-    ourTitle: string | null;
-    ourMs: number | null;
-    theirTitle: string | null;
-    theirMs: number | null;
-  }[];
+  mismatches: TracklistMismatch[];
 };
 
 export type ErrorReport = ContestedIsrcReport | MisalignedTracklistReport;
@@ -590,7 +524,7 @@ export type ErrorReport = ContestedIsrcReport | MisalignedTracklistReport;
 export function errorReportDraft(
   report: ErrorReport,
   disposition: ErrorDisposition,
-): ManualSubmissionDraft {
+): DraftOf<'error'> {
   if (report.kind === 'contested_isrc') {
     const recordings = [...report.recordingMbids].sort();
     if (recordings.length === 0) {
@@ -638,6 +572,14 @@ export function errorReportDraft(
   };
 }
 
+/**
+ * What the person did about a contradiction, not what MusicBrainz decided.
+ *
+ * Both values mean an upstream action exists to be reconciled later. A
+ * contradiction nobody could act on deliberately has no disposition: it stays
+ * in the console as an open row, because the alternative is a ledger entry
+ * that reads like a submission and closes a gap we have not closed.
+ */
 export function requireErrorDisposition(input: string): ErrorDisposition {
   if (input === 'reported' || input === 'fixed') return input;
   throw new ManualSubmissionError('A contradiction is reported or fixed, not guessed away');
@@ -653,7 +595,7 @@ export type ContestedIsrcGapInput = {
 export function errorReportDraftFromContested(
   gap: ContestedIsrcGapInput,
   dispositionInput: string,
-): ManualSubmissionDraft {
+): DraftOf<'error'> {
   return errorReportDraft(
     {
       kind: 'contested_isrc',
@@ -679,7 +621,7 @@ export type MisalignedTracklistGapInput = {
 export function errorReportDraftFromMisaligned(
   gap: MisalignedTracklistGapInput,
   dispositionInput: string,
-): ManualSubmissionDraft {
+): DraftOf<'error'> {
   return errorReportDraft(
     {
       kind: 'misaligned_tracklist',
@@ -768,7 +710,7 @@ export type StreamingUrlSubmission = {
  * exact URL that was submitted, which is also the unique identity among
  * several albums that can share a release.
  */
-export function streamingUrlDraft(submission: StreamingUrlSubmission): ManualSubmissionDraft {
+export function streamingUrlDraft(submission: StreamingUrlSubmission): DraftOf<'streaming_url'> {
   const spotifyUrl = spotifyAlbumUrl(submission.albumId);
   return {
     kind: 'streaming_url',
@@ -791,6 +733,24 @@ export function streamingUrlDraft(submission: StreamingUrlSubmission): ManualSub
   };
 }
 
-export function streamingUrlDraftFromGap(gap: StreamingUrlSubmission): ManualSubmissionDraft {
-  return streamingUrlDraft(gap);
+/**
+ * An ISRC we hold for a recording MusicBrainz lacks it on, as the bot and a
+ * hand confirmation both record it. The evidence is where the track sits on
+ * the barcode-matched release and how closely the durations agree.
+ */
+export function isrcSubmissionDraft(gap: IsrcGap): DraftOf<'isrc'> {
+  return {
+    kind: 'isrc',
+    targetMbid: gap.recordingMbid,
+    subject: gap.spotifyTrackId,
+    value: normalizeIsrc(gap.isrc),
+    evidence: {
+      releaseMbid: gap.releaseMbid,
+      barcode: gap.barcode,
+      medium: gap.medium,
+      position: gap.position,
+      durationDeltaMs: gap.durationDeltaMs,
+      matchedBy: gap.matchedBy,
+    },
+  };
 }

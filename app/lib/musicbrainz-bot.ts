@@ -18,14 +18,10 @@
 import { and, gte, inArray, sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbSubmission } from './db/schema';
+import { barcodeEligibleGaps, type BarcodeGap } from './gaps/barcodes';
+import { isrcBatchGaps, isrcEligibleGaps } from './gaps/isrc';
 import { normalizeIsrc } from './isrc';
 import { scheduleMusicBrainzRequest } from './musicbrainz-gateway';
-import {
-  barcodeEligibleGaps,
-  isrcBatchGaps,
-  isrcEligibleGaps,
-  type BarcodeGap,
-} from './musicbrainz-contributions';
 import type { IsrcGap } from './musicbrainz-edit-links';
 import {
   buildBarcodeSubmission,
@@ -39,8 +35,11 @@ import {
   editNoteFor as isrcEditNoteFor,
   type IsrcSubmissionItem,
 } from './musicbrainz-isrc-submission';
-import { barcodeSubmissionDraft } from './musicbrainz-manual-submissions';
+import { barcodeSubmissionDraft, isrcSubmissionDraft } from './musicbrainz-manual-submissions';
 import { botAccessToken } from './musicbrainz-oauth';
+import { BOT_CONTACT } from './musicbrainz-xml';
+import type { SubmissionDraft } from './submission-evidence';
+import { insertSubmissions } from './submission-ledger';
 
 const BASE = 'https://musicbrainz.org/ws/2';
 const MAX_ERROR_BODY = 4096;
@@ -54,8 +53,7 @@ function rejectedBody(body: string): string {
 /** Identifies the submitting software, which MusicBrainz requires on a POST. */
 const CLIENT = 'preludefm-0.1';
 
-const contact = process.env.MUSICBRAINZ_CONTACT ?? 'https://prelude.fm';
-const userAgent = `PreludeFM/0.1 ( ${contact} )`;
+const userAgent = `PreludeFM/0.1 ( ${BOT_CONTACT} )`;
 
 /**
  * The MusicBrainz bot code of conduct caps a bot at 1,000 edits a day.
@@ -90,12 +88,10 @@ export class MusicBrainzBotError extends Error {
   }
 }
 
-export type IsrcBotRun = {
-  /** The release this batch belongs to; every item is from it. */
-  releaseMbid: string | null;
-  albumTitle: string | null;
+/** One batch, as shown before it is sent and as recorded after. */
+export type BotRun<Gap, Item> = {
   /** What would be, or was, submitted. */
-  items: IsrcSubmissionItem[];
+  items: Item[];
   /**
    * The evidence behind each item.
    *
@@ -105,7 +101,7 @@ export type IsrcBotRun = {
    * about what, and the two barcodes let the match be seen rather than
    * trusted.
    */
-  evidence: IsrcGap[];
+  evidence: Gap[];
   edits: number;
   /** Edits already made today, before this run. */
   spentToday: number;
@@ -114,35 +110,13 @@ export type IsrcBotRun = {
   payload: string;
 };
 
-export type BarcodeBotRun = {
-  /** What would be, or was, submitted. */
-  items: BarcodeSubmissionItem[];
-  evidence: BarcodeGap[];
-  edits: number;
-  spentToday: number;
-  submitted: boolean;
-  editNote: string;
-  payload: string;
+export type IsrcBotRun = BotRun<IsrcGap, IsrcSubmissionItem> & {
+  /** The release this batch belongs to; every item is from it. */
+  releaseMbid: string | null;
+  albumTitle: string | null;
 };
 
-/**
- * Record edits MusicBrainz just accepted, in one statement.
- *
- * One multi-row insert rather than a row at a time: MusicBrainz has already
- * taken the edits, so a failure part-way through would leave edits we made
- * but never recorded. The daily cap is counted from these rows, and an
- * unrecorded gap would be offered (and submitted) again.
- */
-async function recordBotEdits(
-  drafts: Omit<typeof mbSubmission.$inferInsert, 'submittedBy' | 'note'>[],
-  editNote: string,
-) {
-  if (drafts.length === 0) return;
-  await db
-    .insert(mbSubmission)
-    .values(drafts.map((draft) => ({ ...draft, submittedBy: BOT_SUBMITTER, note: editNote })))
-    .onConflictDoNothing();
-}
+export type BarcodeBotRun = BotRun<BarcodeGap, BarcodeSubmissionItem>;
 
 /** Edits already made today, from the ledger rather than a counter. */
 export async function editsSpentToday(now = new Date()): Promise<number> {
@@ -160,12 +134,77 @@ export async function editsSpentToday(now = new Date()): Promise<number> {
   return row?.n ?? 0;
 }
 
+/** POST one document; a refusal is an error carrying MusicBrainz's status and reply. */
+async function postBotEdits(path: 'recording' | 'release', payload: string): Promise<void> {
+  const token = await botAccessToken();
+
+  const response = await scheduleMusicBrainzRequest('bot', () =>
+    fetch(`${BASE}/${path}/?client=${encodeURIComponent(CLIENT)}`, {
+      method: 'POST',
+      headers: {
+        'User-Agent': userAgent,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: payload,
+    }),
+  );
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new MusicBrainzBotError(
+      `MusicBrainz refused the submission: ${response.status} ${rejectedBody(body)}`,
+      response.status,
+    );
+  }
+}
+
 /**
- * Submit a batch of ISRCs, or show what would be submitted.
+ * One bot batch: check today's allowance, pick the gaps, build the document,
+ * and — only when asked — send it and record what was accepted.
  *
  * `apply` defaults to false and the caller has to ask for a real submission,
  * because the failure mode here is writing to somebody else's database.
  */
+async function runBot<Gap, Item>(
+  options: { apply?: boolean; maxEdits: number },
+  kind: {
+    /** The batch, at most `allowance` edits. */
+    gaps: (allowance: number) => Promise<Gap[]>;
+    toItem: (gap: Gap) => Item;
+    editCount: (items: Item[]) => number;
+    editNote: (gaps: Gap[]) => string;
+    build: (items: Item[], editNote: string) => string;
+    toDraft: (gap: Gap) => SubmissionDraft;
+    path: 'recording' | 'release';
+  },
+): Promise<BotRun<Gap, Item>> {
+  const spentToday = await editsSpentToday();
+  const remaining = Math.max(0, DAILY_EDIT_CAP - spentToday);
+  const allowance = Math.min(options.maxEdits, remaining);
+
+  if (allowance === 0) {
+    throw new MusicBrainzBotError(
+      `the bot has made ${spentToday} of its ${DAILY_EDIT_CAP} edits today`,
+    );
+  }
+
+  const gaps = await kind.gaps(allowance);
+  const items = gaps.map(kind.toItem);
+  const edits = kind.editCount(items);
+  const editNote = kind.editNote(gaps);
+  const payload = kind.build(items, editNote);
+  const run = { items, evidence: gaps, edits, spentToday, submitted: false, editNote, payload };
+
+  if (!options.apply || edits === 0) return run;
+
+  await postBotEdits(kind.path, payload);
+  // MusicBrainz has the edits now; the daily cap is counted from these rows.
+  await insertSubmissions(gaps.map(kind.toDraft), { submittedBy: BOT_SUBMITTER, note: editNote });
+  return { ...run, submitted: true };
+}
+
+/** Submit a batch of ISRCs, or show what would be submitted. */
 export async function runIsrcBot(
   options: {
     apply?: boolean;
@@ -178,106 +217,41 @@ export async function runIsrcBot(
     resubmit?: { recordingMbid: string; isrc: string };
   } = {},
 ): Promise<IsrcBotRun> {
-  const maxEdits = options.maxEdits ?? MAX_ISRC_EDITS_PER_ALBUM;
-  const spentToday = await editsSpentToday();
-  const remaining = Math.max(0, DAILY_EDIT_CAP - spentToday);
-  const allowance = Math.min(maxEdits, remaining);
-
-  if (allowance === 0) {
-    throw new MusicBrainzBotError(
-      `the bot has made ${spentToday} of its ${DAILY_EDIT_CAP} edits today`,
-    );
-  }
-
   /*
    * One album. Which one is the caller's choice rather than the bot's,
    * because the person pressing the button is the one who has read it — and
    * a bot that picks its own target would be deciding what to submit, which
    * is the part that has not been earned yet.
    */
-  const resubmit = options.resubmit;
-  const everything = resubmit
-    ? (await isrcEligibleGaps(5_000)).filter(
-        (gap) =>
-          gap.recordingMbid === resubmit.recordingMbid &&
-          normalizeIsrc(gap.isrc) === normalizeIsrc(resubmit.isrc),
-      )
-    : await isrcBatchGaps(5_000);
-  const releaseMbid = options.releaseMbid ?? everything[0]?.releaseMbid;
-  const gaps = everything.filter((gap) => gap.releaseMbid === releaseMbid).slice(0, allowance);
-  const items: IsrcSubmissionItem[] = gaps.map((gap) => ({
-    recordingMbid: gap.recordingMbid,
-    isrc: gap.isrc,
-  }));
-
-  const edits = isrcEditCount(items);
-  const editNote = isrcEditNoteFor(gaps);
-  const payload = buildIsrcSubmission(items, editNote);
-
-  if (!options.apply || edits === 0) {
-    return {
-      releaseMbid: releaseMbid ?? null,
-      albumTitle: gaps[0]?.albumTitle ?? null,
-      items,
-      evidence: gaps,
-      edits,
-      spentToday,
-      submitted: false,
-      editNote,
-      payload,
-    };
-  }
-
-  const token = await botAccessToken();
-
-  const response = await scheduleMusicBrainzRequest('bot', () =>
-    fetch(`${BASE}/recording/?client=${encodeURIComponent(CLIENT)}`, {
-      method: 'POST',
-      headers: {
-        'User-Agent': userAgent,
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/xml; charset=utf-8',
+  let releaseMbid = options.releaseMbid;
+  const run = await runBot(
+    { apply: options.apply, maxEdits: options.maxEdits ?? MAX_ISRC_EDITS_PER_ALBUM },
+    {
+      gaps: async (allowance) => {
+        const scope = releaseMbid ? { releaseMbids: [releaseMbid] } : {};
+        const resubmit = options.resubmit;
+        const everything = resubmit
+          ? (await isrcEligibleGaps(scope)).filter(
+              (gap) =>
+                gap.recordingMbid === resubmit.recordingMbid &&
+                normalizeIsrc(gap.isrc) === normalizeIsrc(resubmit.isrc),
+            )
+          : await isrcBatchGaps(scope);
+        releaseMbid ??= everything[0]?.releaseMbid;
+        return everything.filter((gap) => gap.releaseMbid === releaseMbid).slice(0, allowance);
       },
-      body: payload,
-    }),
+      toItem: (gap) => ({ recordingMbid: gap.recordingMbid, isrc: gap.isrc }),
+      editCount: isrcEditCount,
+      editNote: isrcEditNoteFor,
+      build: buildIsrcSubmission,
+      toDraft: isrcSubmissionDraft,
+      path: 'recording',
+    },
   );
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new MusicBrainzBotError(
-      `MusicBrainz refused the submission: ${response.status} ${rejectedBody(body)}`,
-      response.status,
-    );
-  }
-
-  await recordBotEdits(
-    gaps.map((gap) => ({
-      kind: 'isrc' as const,
-      targetMbid: gap.recordingMbid,
-      subject: gap.spotifyTrackId,
-      value: normalizeIsrc(gap.isrc),
-      evidence: {
-        releaseMbid: gap.releaseMbid,
-        barcode: gap.barcode,
-        medium: gap.medium,
-        position: gap.position,
-        durationDeltaMs: gap.durationDeltaMs,
-        matchedBy: gap.matchedBy,
-      },
-    })),
-    editNote,
-  );
-
   return {
+    ...run,
     releaseMbid: releaseMbid ?? null,
-    albumTitle: gaps[0]?.albumTitle ?? null,
-    items,
-    evidence: gaps,
-    edits,
-    spentToday,
-    submitted: true,
-    editNote,
-    payload,
+    albumTitle: run.evidence[0]?.albumTitle ?? null,
   };
 }
 
@@ -290,76 +264,22 @@ export async function runIsrcBot(
 export async function runBarcodeBot(
   options: { apply?: boolean; maxEdits?: number; releaseMbid?: string } = {},
 ): Promise<BarcodeBotRun> {
-  const maxEdits = options.maxEdits ?? MAX_BARCODE_EDITS_PER_BATCH;
-  const spentToday = await editsSpentToday();
-  const remaining = Math.max(0, DAILY_EDIT_CAP - spentToday);
-  const allowance = Math.min(maxEdits, remaining);
-
-  if (allowance === 0) {
-    throw new MusicBrainzBotError(
-      `the bot has made ${spentToday} of its ${DAILY_EDIT_CAP} edits today`,
-    );
-  }
-
-  // A named release is its row's own click, so a barcode rejected before may
-  // go again; an unnamed batch leaves rejected ones out.
-  const everything = await barcodeEligibleGaps(5_000, 0, { batch: !options.releaseMbid });
-  const gaps = options.releaseMbid
-    ? everything.filter((gap) => gap.releaseMbid === options.releaseMbid).slice(0, 1)
-    : everything.slice(0, allowance);
-
-  const items: BarcodeSubmissionItem[] = gaps.map((gap) => ({
-    releaseMbid: gap.releaseMbid,
-    barcode: gap.barcode,
-  }));
-
-  const edits = barcodeEditCount(items);
-  const editNote = barcodeEditNoteFor(gaps);
-  const payload = buildBarcodeSubmission(items, editNote);
-
-  if (!options.apply || edits === 0) {
-    return {
-      items,
-      evidence: gaps,
-      edits,
-      spentToday,
-      submitted: false,
-      editNote,
-      payload,
-    };
-  }
-
-  const token = await botAccessToken();
-
-  const response = await scheduleMusicBrainzRequest('bot', () =>
-    fetch(`${BASE}/release/?client=${encodeURIComponent(CLIENT)}`, {
-      method: 'POST',
-      headers: {
-        'User-Agent': userAgent,
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/xml; charset=utf-8',
-      },
-      body: payload,
-    }),
+  const releaseMbid = options.releaseMbid;
+  return runBot(
+    { apply: options.apply, maxEdits: options.maxEdits ?? MAX_BARCODE_EDITS_PER_BATCH },
+    {
+      // A named release is its row's own click, so a barcode rejected before
+      // may go again; an unnamed batch leaves rejected ones out.
+      gaps: async (allowance) =>
+        releaseMbid
+          ? (await barcodeEligibleGaps({ releaseMbids: [releaseMbid] })).slice(0, 1)
+          : (await barcodeEligibleGaps({ batch: true })).slice(0, allowance),
+      toItem: (gap) => ({ releaseMbid: gap.releaseMbid, barcode: gap.barcode }),
+      editCount: barcodeEditCount,
+      editNote: barcodeEditNoteFor,
+      build: buildBarcodeSubmission,
+      toDraft: barcodeSubmissionDraft,
+      path: 'release',
+    },
   );
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new MusicBrainzBotError(
-      `MusicBrainz refused the submission: ${response.status} ${rejectedBody(body)}`,
-      response.status,
-    );
-  }
-
-  await recordBotEdits(gaps.map(barcodeSubmissionDraft), editNote);
-
-  return {
-    items,
-    evidence: gaps,
-    edits,
-    spentToday,
-    submitted: true,
-    editNote,
-    payload,
-  };
 }

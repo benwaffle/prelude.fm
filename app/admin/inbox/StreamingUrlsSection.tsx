@@ -1,18 +1,16 @@
 'use client';
 
-import { useState } from 'react';
-import { useAdminAction } from '../components/useAdminAction';
-import {
-  recordStreamingUrlSubmission,
-  recheckStreamingUrl,
-  type ContributionView,
-} from '../actions/contribute';
-import { ConfirmDisclosure } from './ConfirmDisclosure';
-import { InboxRow } from './InboxRow';
-import { PreviousSubmission } from './PreviousSubmission';
-import { RowActionStatus } from './RowActionStatus';
+import type { ContributionView } from '../actions/inbox-view';
+import { recheckSubmission, recordStreamingUrlSubmission } from '../actions/submissions';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
+import {
+  EditIdInput,
+  GapEvidence,
+  LedgerGapRow,
+  useRowForms,
+  useRowMutation,
+} from './LedgerGapRow';
 
 export function StreamingUrlsSection({
   rows,
@@ -25,22 +23,8 @@ export function StreamingUrlsSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, runRow, row } = useAdminAction();
-  const [forms, setForms] = useState<Record<string, { editId: string }>>({});
-
-  async function confirm(releaseMbid: string, albumId: string) {
-    await runRow(`${releaseMbid}:${albumId}`, 'Confirming submission…', async () => {
-      await recordStreamingUrlSubmission(releaseMbid, albumId, forms[albumId] ?? { editId: '' });
-      await onReload();
-    });
-  }
-
-  async function recheck(releaseMbid: string, albumId: string) {
-    await runRow(`${releaseMbid}:${albumId}`, 'Rechecking MusicBrainz…', async () => {
-      await recheckStreamingUrl(releaseMbid);
-      await onReload();
-    });
-  }
+  const { pending, busy, row, mutate } = useRowMutation(onReload);
+  const { formOf, setForm } = useRowForms({ editId: '' });
 
   return (
     <InboxSection
@@ -53,84 +37,57 @@ export function StreamingUrlsSection({
       description="Only releases whose URL relations were fetched are listed. Unfetched remains unknown, not missing."
     >
       {rows.map((gap) => {
-        const state = row(`${gap.releaseMbid}:${gap.albumId}`);
-        const evidence = (
-          <span className="min-w-0">
-            <span className="block truncate">{gap.releaseTitle}</span>
-            <span className="album-meta">{gap.albumTitle}</span>
-            <code className="mono block max-w-[60ch] truncate select-all text-[11px] text-[var(--ink-2)]">
-              {gap.spotifyUrl}
-            </code>
-            {!gap.ledger && gap.previous && <PreviousSubmission previous={gap.previous} />}
-            <RowActionStatus row={state} />
-          </span>
-        );
-        const links = (
-          <a className="act" href={gap.edit} target="_blank" rel="noreferrer">
-            MusicBrainz
-          </a>
-        );
-
-        if (gap.ledger) {
-          return (
-            <InboxRow
-              key={`${gap.releaseMbid}:${gap.albumId}`}
-              data-inbox-release={gap.releaseMbid}
-              data-inbox-album={gap.albumId}
-              evidence={
-                <>
-                  {evidence}
-                  <span className="album-meta">{gap.ledger.label}</span>
-                </>
-              }
-              links={links}
-              action={
-                <button
-                  className="act"
-                  disabled={state.busy}
-                  onClick={() => recheck(gap.releaseMbid, gap.albumId)}
-                >
-                  Recheck
-                </button>
-              }
-            />
-          );
-        }
-
-        const form = forms[gap.albumId] ?? { editId: '' };
+        const key = `${gap.releaseMbid}:${gap.albumId}`;
+        const state = row(key);
         return (
-          <ConfirmDisclosure
-            key={`${gap.releaseMbid}:${gap.albumId}`}
+          <LedgerGapRow
+            key={key}
             data-inbox-release={gap.releaseMbid}
             data-inbox-album={gap.albumId}
-            evidence={evidence}
-            links={links}
+            ledger={gap.ledger}
+            busy={state.busy}
+            onRecheck={() =>
+              mutate(key, 'Rechecking MusicBrainz…', () =>
+                recheckSubmission({ kind: 'streaming_url', releaseMbid: gap.releaseMbid }),
+              )
+            }
+            evidence={
+              <GapEvidence ledger={gap.ledger} previous={gap.previous} state={state}>
+                <span className="block truncate">{gap.releaseTitle}</span>
+                <span className="album-meta">{gap.albumTitle}</span>
+                <code className="mono block max-w-[60ch] truncate select-all text-[11px] text-[var(--ink-2)]">
+                  {gap.spotifyUrl}
+                </code>
+              </GapEvidence>
+            }
+            links={
+              <a className="act" href={gap.edit} target="_blank" rel="noreferrer">
+                MusicBrainz
+              </a>
+            }
           >
             <div className="toolbar px-0">
               <button className="act" onClick={() => navigator.clipboard.writeText(gap.spotifyUrl)}>
                 Copy Spotify URL
               </button>
-              <input
-                className="mono w-40"
-                placeholder="edit ID (optional)"
-                value={form.editId}
-                onChange={(event) =>
-                  setForms((current) => ({
-                    ...current,
-                    [gap.albumId]: { editId: event.target.value },
-                  }))
-                }
+              <EditIdInput
+                value={formOf(key).editId}
+                onChange={(editId) => setForm(key, { editId })}
               />
               <button
                 className="act"
                 data-variant="primary"
                 disabled={state.busy}
-                onClick={() => confirm(gap.releaseMbid, gap.albumId)}
+                onClick={() =>
+                  mutate(key, 'Confirming submission…', () =>
+                    recordStreamingUrlSubmission(gap.releaseMbid, gap.albumId, formOf(key)),
+                  )
+                }
               >
                 Confirm submission
               </button>
             </div>
-          </ConfirmDisclosure>
+          </LedgerGapRow>
         );
       })}
       <LoadMoreRows shown={rows.length} total={total} busy={busy} onMore={onLoadMore} />

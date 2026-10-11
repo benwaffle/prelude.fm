@@ -1,6 +1,7 @@
 'use server';
 
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { forChunks } from '@/lib/db/chunked';
 import { db } from '@/lib/db';
 import { mbSubmission, mbWorkProposal } from '@/lib/db/schema';
 import {
@@ -9,6 +10,7 @@ import {
   requireMbid,
   workRelationshipDraft,
 } from '@/lib/musicbrainz-manual-submissions';
+import { insertSubmissions } from '@/lib/submission-ledger';
 import { loadProposalGaps } from '@/lib/work-proposals-run';
 import {
   proposalAlbums,
@@ -38,16 +40,18 @@ async function loadView(): Promise<WorkProposalsView> {
             })
             .from(mbWorkProposal)
             .where(inArray(mbWorkProposal.recordingMbid, recordingMbids)),
-          db
-            .select({ recordingMbid: mbSubmission.targetMbid })
-            .from(mbSubmission)
-            .where(
-              and(
-                eq(mbSubmission.kind, 'work_relationship'),
-                isNotNull(mbSubmission.targetMbid),
-                inArray(mbSubmission.outcome, [...BLOCKING_OUTCOMES]),
+          forChunks(recordingMbids, (chunk) =>
+            db
+              .select({ recordingMbid: mbSubmission.targetMbid })
+              .from(mbSubmission)
+              .where(
+                and(
+                  eq(mbSubmission.kind, 'work_relationship'),
+                  inArray(mbSubmission.targetMbid, chunk),
+                  inArray(mbSubmission.outcome, [...BLOCKING_OUTCOMES]),
+                ),
               ),
-            ),
+          ),
         ]);
   return proposalAlbums(
     gaps,
@@ -103,31 +107,29 @@ export async function recordEnteredWorkLinks(albumId: string): Promise<WorkPropo
   if (!album || approved.length === 0) {
     throw new ManualSubmissionError('That album has no approved work links to record');
   }
-  for (const row of approved) {
-    const proposal = row.proposal!;
-    const draft = workRelationshipDraft({
-      recordingMbid: row.recordingMbid,
-      recordingTitle: row.title,
-      albumId: album.albumId,
-      albumTitle: album.albumTitle,
-      workMbid: proposal.workMbid,
-      workTitle: proposal.parentTitle
-        ? `${proposal.parentTitle}: ${proposal.title}`
-        : proposal.title,
-      workType: null,
-      composerMbid: null,
-      composerName: proposal.composerName,
-      catalogues: [],
-      candidateEvidence: ['work_link_proposal'],
-    });
-    await db
-      .insert(mbSubmission)
-      .values({
-        ...draft,
-        submittedBy: `human:${session.user.name}`,
+  await insertSubmissions(
+    approved.map((row) => {
+      const proposal = row.proposal!;
+      return {
+        ...workRelationshipDraft({
+          recordingMbid: row.recordingMbid,
+          recordingTitle: row.title,
+          albumId: album.albumId,
+          albumTitle: album.albumTitle,
+          workMbid: proposal.workMbid,
+          workTitle: proposal.parentTitle
+            ? `${proposal.parentTitle}: ${proposal.title}`
+            : proposal.title,
+          workType: null,
+          composerMbid: null,
+          composerName: proposal.composerName,
+          catalogues: [],
+          candidateEvidence: ['work_link_proposal'],
+        }),
         note: `Approved from a ${proposal.confidence}-confidence proposal: ${proposal.reasons.join(' ')}`,
-      })
-      .onConflictDoNothing();
-  }
+      };
+    }),
+    { submittedBy: `human:${session.user.name}` },
+  );
   return loadView();
 }

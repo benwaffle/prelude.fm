@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { BotSubmissionResult } from '../app/admin/actions/contribute';
+import type { BotSubmissionResult } from '../app/admin/actions/bot';
 import { LoadFailure } from '../app/admin/components/AdminFailure';
 import { afterAdminBurst } from '../app/admin/components/admin-action-queue';
 import {

@@ -1,18 +1,18 @@
 'use client';
 
-import { useState } from 'react';
-import { useAdminAction } from '../components/useAdminAction';
-import {
-  recordMisalignedTracklistReport,
-  recheckErrorReport,
-  type ContributionView,
-} from '../actions/contribute';
-import { ConfirmDisclosure } from './ConfirmDisclosure';
-import { InboxRow } from './InboxRow';
-import { PreviousSubmission } from './PreviousSubmission';
-import { RowActionStatus } from './RowActionStatus';
-import { InboxSection } from './InboxSection';
-import { LoadMoreRows } from './LoadMoreRows';
+import type { ContributionView } from '../actions/inbox-view';
+import { recordMisalignedTracklistReport } from '../actions/submissions';
+import { ErrorReportSection } from './ErrorReportSection';
+
+type MisalignedAlbum = ContributionView['misaligned'][number];
+
+function describeDiagnosis(album: MisalignedAlbum): string {
+  return album.diagnosis.kind === 'reordered'
+    ? 'same recordings, different order'
+    : album.diagnosis.kind === 'different-length'
+      ? `${album.ourCount} tracks here, ${album.theirCount} on the release`
+      : 'durations do not correspond';
+}
 
 export function MisalignedSection({
   rows,
@@ -25,180 +25,91 @@ export function MisalignedSection({
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, runRow, row } = useAdminAction();
-  const [forms, setForms] = useState<Record<string, { editId: string }>>({});
-
-  async function confirm(albumId: string, disposition: 'reported' | 'fixed') {
-    await runRow(albumId, 'Confirming submission…', async () => {
-      await recordMisalignedTracklistReport(albumId, disposition, forms[albumId] ?? { editId: '' });
-      await onReload();
-    });
-  }
-
-  async function recheck(albumId: string) {
-    await runRow(albumId, 'Rechecking MusicBrainz…', async () => {
-      await recheckErrorReport('misaligned_tracklist', albumId);
-      await onReload();
-    });
-  }
-
   return (
-    <InboxSection
+    <ErrorReportSection
       inboxClass="misaligned"
       title="Tracklists that do not line up"
-      channel="REPORT"
-      total={total}
-      shown={rows.length}
-      pending={pending}
       description="Both tracklists stay visible because the error may be in either source. Reporting records the decision; it does not alter the cached tracklist."
-    >
-      {rows.map((album) => {
-        const state = row(album.albumId);
-        const diagnosis =
-          album.diagnosis.kind === 'reordered'
-            ? 'same recordings, different order'
-            : album.diagnosis.kind === 'different-length'
-              ? `${album.ourCount} tracks here, ${album.theirCount} on the release`
-              : 'durations do not correspond';
-        const evidence = (
-          <span className="min-w-0">
-            <span className="block truncate">{album.albumTitle}</span>
-            <span className="album-meta">
-              {diagnosis}
-              {album.anchoredByIsrc > 0 && ` · ${album.anchoredByIsrc} anchored by ISRC regardless`}
-            </span>
-            {!album.ledger && album.previous && <PreviousSubmission previous={album.previous} />}
-            <RowActionStatus row={state} />
+      rows={rows}
+      total={total}
+      onReload={onReload}
+      onLoadMore={onLoadMore}
+      keyOf={(album) => album.albumId}
+      rowProps={(album) => ({ 'data-inbox-album': album.albumId })}
+      record={recordMisalignedTracklistReport}
+      evidence={(album) => (
+        <>
+          <span className="block truncate">{album.albumTitle}</span>
+          <span className="album-meta">
+            {describeDiagnosis(album)}
+            {album.anchoredByIsrc > 0 && ` · ${album.anchoredByIsrc} anchored by ISRC regardless`}
           </span>
-        );
-        const links = (
-          <>
-            <a
-              className="act"
-              href={`https://musicbrainz.org/release/${album.releaseMbid}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              MusicBrainz
-            </a>
-            <a
-              className="act"
-              href={`https://open.spotify.com/album/${album.albumId}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Spotify
-            </a>
-          </>
-        );
-
-        if (album.ledger) {
-          return (
-            <InboxRow
-              key={album.albumId}
-              data-inbox-album={album.albumId}
-              evidence={
-                <>
-                  {evidence}
-                  <span className="album-meta">
-                    {album.ledger.disposition} · {album.ledger.label}
-                  </span>
-                </>
-              }
-              links={links}
-              action={
-                <button
-                  className="act"
-                  disabled={state.busy}
-                  onClick={() => recheck(album.albumId)}
-                >
-                  Recheck
-                </button>
-              }
-            />
-          );
-        }
-
-        const form = forms[album.albumId] ?? { editId: '' };
-        return (
-          <ConfirmDisclosure
-            key={album.albumId}
-            data-inbox-album={album.albumId}
-            evidence={evidence}
-            links={links}
+        </>
+      )}
+      links={(album) => (
+        <>
+          <a
+            className="act"
+            href={`https://musicbrainz.org/release/${album.releaseMbid}`}
+            target="_blank"
+            rel="noreferrer"
           >
-            <table>
-              <thead>
-                <tr>
-                  <th>Position</th>
-                  <th>Ours</th>
-                  <th>MusicBrainz</th>
-                </tr>
-              </thead>
-              <tbody>
-                {album.mismatches.map((row) => (
-                  <tr key={row.position}>
-                    <td className="mono">{row.position}</td>
-                    <td>
-                      {row.ourTitle ?? <span className="absent">missing</span>}
-                      {row.ourMs !== null && (
-                        <span className="mono block text-[11px] text-[var(--faint)]">
-                          {row.ourMs}ms
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {row.theirTitle ?? <span className="absent">missing</span>}
-                      {row.theirMs !== null && (
-                        <span className="mono block text-[11px] text-[var(--faint)]">
-                          {row.theirMs}ms
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="toolbar px-0">
-              <a
-                className="act"
-                href={`https://musicbrainz.org/release/${album.releaseMbid}/edit`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Edit release
-              </a>
-              <input
-                className="mono w-40"
-                placeholder="edit ID (optional)"
-                value={form.editId}
-                onChange={(event) =>
-                  setForms((current) => ({
-                    ...current,
-                    [album.albumId]: { editId: event.target.value },
-                  }))
-                }
-              />
-              <button
-                className="act"
-                data-variant="primary"
-                disabled={state.busy}
-                onClick={() => confirm(album.albumId, 'reported')}
-              >
-                Confirm report
-              </button>
-              <button
-                className="act"
-                disabled={state.busy}
-                onClick={() => confirm(album.albumId, 'fixed')}
-              >
-                Confirm fix
-              </button>
-            </div>
-          </ConfirmDisclosure>
-        );
-      })}
-      <LoadMoreRows shown={rows.length} total={total} busy={busy} onMore={onLoadMore} />
-    </InboxSection>
+            MusicBrainz
+          </a>
+          <a
+            className="act"
+            href={`https://open.spotify.com/album/${album.albumId}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Spotify
+          </a>
+        </>
+      )}
+      details={(album) => (
+        <table>
+          <thead>
+            <tr>
+              <th>Position</th>
+              <th>Ours</th>
+              <th>MusicBrainz</th>
+            </tr>
+          </thead>
+          <tbody>
+            {album.mismatches.map((row) => (
+              <tr key={row.position}>
+                <td className="mono">{row.position}</td>
+                <td>
+                  {row.ourTitle ?? <span className="absent">missing</span>}
+                  {row.ourMs !== null && (
+                    <span className="mono block text-[11px] text-[var(--faint)]">
+                      {row.ourMs}ms
+                    </span>
+                  )}
+                </td>
+                <td>
+                  {row.theirTitle ?? <span className="absent">missing</span>}
+                  {row.theirMs !== null && (
+                    <span className="mono block text-[11px] text-[var(--faint)]">
+                      {row.theirMs}ms
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      tools={(album) => (
+        <a
+          className="act"
+          href={`https://musicbrainz.org/release/${album.releaseMbid}/edit`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Edit release
+        </a>
+      )}
+    />
   );
 }

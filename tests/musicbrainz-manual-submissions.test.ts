@@ -19,12 +19,6 @@ import {
   workCreationDraftFromGap,
   workRelationshipDraft,
   workRelationshipDraftFromGap,
-  createdWorkCacheState,
-  createdWorkLanded,
-  cachedBarcodeLanded,
-  cachedReleaseMatchLanded,
-  cachedStreamingUrlLanded,
-  cachedWorkRelationshipLanded,
   isSpotifyFreeStreamingRelation,
   isStreamingUrlContributionGap,
   RELEASE_SPOTIFY_STREAMING_URL_MISSING,
@@ -32,9 +26,8 @@ import {
   spotifyAlbumUrl,
   spotifyFreeStreamingUrlState,
   streamingUrlDraft,
-  streamingUrlDraftFromGap,
-  type ManualSubmissionDraft,
 } from '../app/lib/musicbrainz-manual-submissions';
+import type { SubmissionDraft } from '../app/lib/submission-evidence';
 
 const WORK_MBID = '5b2b84a0-1b1f-4b3f-9a0e-2b8d0a4e6c31';
 const OTHER_WORK_MBID = '9c1a77d2-3f42-4a0b-8f6e-1d5b9e7c2a04';
@@ -173,25 +166,6 @@ test('ledger state names a missing edit ID rather than inventing one', () => {
   );
 });
 
-test('a confirmation is applied only when the cache holds the fact', () => {
-  assert.equal(cachedBarcodeLanded(null), false);
-  assert.equal(cachedBarcodeLanded(''), false);
-  assert.equal(cachedBarcodeLanded('   '), false);
-  assert.equal(cachedBarcodeLanded('00028946813423'), true);
-
-  assert.equal(cachedReleaseMatchLanded(null), false);
-  assert.equal(cachedReleaseMatchLanded(''), false);
-  assert.equal(cachedReleaseMatchLanded(RELEASE_MBID), true);
-
-  assert.equal(cachedWorkRelationshipLanded([], WORK_MBID), false);
-  assert.equal(cachedWorkRelationshipLanded([OTHER_WORK_MBID], WORK_MBID), false);
-  assert.equal(cachedWorkRelationshipLanded([OTHER_WORK_MBID, WORK_MBID], WORK_MBID), true);
-
-  assert.equal(cachedStreamingUrlLanded('unknown'), false);
-  assert.equal(cachedStreamingUrlLanded('missing'), false);
-  assert.equal(cachedStreamingUrlLanded('present'), true);
-});
-
 test('a work relationship records what we offered, not that it was proved', () => {
   const draft = workRelationshipDraft({
     recordingMbid: RECORDING_MBID,
@@ -302,15 +276,6 @@ test('a work-creation confirmation requires a real MBID and keeps every proposal
   assert.throws(() => workCreationDraftFromGap(gap, WORK_MBID, 99), ManualSubmissionError);
 });
 
-test('a created work is only observed once MusicBrainz has been fetched in full', () => {
-  assert.equal(createdWorkCacheState(null), 'missing');
-  assert.equal(createdWorkCacheState({ detail: 'stub' }), 'stub');
-  assert.equal(createdWorkCacheState({ detail: 'full' }), 'full');
-  assert.equal(createdWorkLanded('missing'), false);
-  assert.equal(createdWorkLanded('stub'), false);
-  assert.equal(createdWorkLanded('full'), true);
-});
-
 test('a release submitted before its MBID exists is identified by the Spotify album', () => {
   const pending = releaseSubmissionDraft({
     albumId: 'spotify-1',
@@ -378,6 +343,7 @@ test('a contested ISRC report keeps every recording and still dedupes', () => {
   assert.equal(draft.kind, 'error');
   assert.equal(draft.targetMbid, [OTHER_WORK_MBID, RECORDING_MBID].sort()[0]);
   assert.equal(draft.value, 'GBAYE0601498');
+  assert.ok(draft.evidence.problem === 'contested_isrc');
   assert.deepEqual(draft.evidence.recordingMbids, [OTHER_WORK_MBID, RECORDING_MBID].sort());
   assert.equal(draft.evidence.disposition, 'reported');
 
@@ -430,6 +396,7 @@ test('a misaligned tracklist report shows both sides of every disagreement', () 
   assert.equal(draft.targetMbid, '7c4f2b10-9a8d-4e6f-b1c3-5d7e9f0a2b46');
   assert.equal(draft.value, 'spotify-1');
   assert.equal(draft.evidence.disposition, 'fixed');
+  assert.ok(draft.evidence.problem === 'misaligned_tracklist');
   assert.deepEqual(draft.evidence.mismatches, [
     { position: 21, ourTitle: 'Allegro', ourMs: 401_000, theirTitle: 'Adagio', theirMs: 220_000 },
   ]);
@@ -445,6 +412,7 @@ test('an error confirmation re-reads the contradiction and refuses a made-up dis
     'reported',
   );
   assert.equal(contested.evidence.disposition, 'reported');
+  assert.ok(contested.evidence.problem === 'contested_isrc');
   assert.deepEqual(contested.evidence.recordingMbids, [OTHER_WORK_MBID, RECORDING_MBID].sort());
   assert.equal(
     submissionIdentity(contested),
@@ -480,6 +448,7 @@ test('an error confirmation re-reads the contradiction and refuses a made-up dis
     },
     'fixed',
   );
+  assert.ok(misaligned.evidence.problem === 'misaligned_tracklist');
   assert.equal(misaligned.evidence.diagnosis, 'reordered');
   assert.equal(misaligned.evidence.ourTrackCount, 21);
   assert.equal(misaligned.evidence.theirTrackCount, 21);
@@ -489,7 +458,7 @@ test('an error confirmation re-reads the contradiction and refuses a made-up dis
 });
 
 test('every draft class carries a non-null ledger value', () => {
-  const drafts: ManualSubmissionDraft[] = [
+  const drafts: SubmissionDraft[] = [
     barcodeSubmissionDraft({
       releaseMbid: 'release-1',
       releaseTitle: 'A Release',
@@ -661,7 +630,7 @@ test('a streaming-URL draft keeps the album URL as identity and names the reader
     albumId: 'spotify-1',
     albumTitle: 'A Recital',
   };
-  const draft = streamingUrlDraftFromGap(gap);
+  const draft = streamingUrlDraft(gap);
   assert.equal(draft.kind, 'streaming_url');
   assert.equal(draft.targetMbid, RELEASE_MBID);
   assert.equal(draft.subject, 'spotify-1');

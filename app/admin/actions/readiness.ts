@@ -1,7 +1,7 @@
 'use server';
 
 import type { ReadinessFunnel } from '@/lib/catalogue-readiness';
-import { contributionCounts } from '@/lib/musicbrainz-contributions';
+import { contributionCounts } from '@/lib/gaps/counts';
 import { loadReadinessFunnel } from '../lib/catalogue-readiness-load';
 import { checkAuth } from './auth';
 

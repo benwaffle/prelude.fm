@@ -9,23 +9,22 @@
  * conduct counts each barcode as one edit.
  */
 
-import type { BarcodeGap } from './musicbrainz-contributions';
-
-const contact = process.env.MUSICBRAINZ_CONTACT ?? 'https://prelude.fm';
+import type { BarcodeGap } from './gaps/barcodes';
+import { BOT_SIGNATURE, describeDelta, escapeXml, metadataDocument } from './musicbrainz-xml';
 
 export type BarcodeSubmissionItem = {
   releaseMbid: string;
   barcode: string;
 };
 
-const escapeXml = (value: string) =>
-  value.replace(
-    /[<>&"']/g,
-    (char) =>
-      ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[char] as string,
-  );
-
-/** The XML document MusicBrainz expects for release barcodes. */
+/**
+ * The XML document MusicBrainz expects for release barcodes.
+ *
+ * The note is sent although MusicBrainz currently drops it: its barcode
+ * handler never reads <edit-note> (MBS-14476), unlike the ISRC one. Until that
+ * ships, the Inbox shows the note on the row so it can be added to the edit
+ * by hand.
+ */
 export function buildBarcodeSubmission(items: BarcodeSubmissionItem[], editNote = ''): string {
   const releases = items
     .map(
@@ -35,31 +34,12 @@ export function buildBarcodeSubmission(items: BarcodeSubmissionItem[], editNote 
         `    </release>`,
     )
     .join('\n');
-
-  /*
-   * Sent although MusicBrainz currently drops it: its barcode handler never
-   * reads <edit-note> (MBS-14476), unlike the ISRC one. Until that ships, the
-   * Inbox shows the note on the row so it can be added to the edit by hand.
-   */
-  const note = editNote.trim() ? `  <edit-note>${escapeXml(editNote.trim())}</edit-note>\n` : '';
-
-  return (
-    `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<metadata xmlns="http://musicbrainz.org/ns/mmd-2.0#">\n` +
-    `  <release-list>\n${releases}\n  </release-list>\n` +
-    note +
-    `</metadata>\n`
-  );
+  return metadataDocument('release-list', releases, editNote);
 }
 
 /** How many edits a submission costs, which is what the daily cap counts. */
 export function editCount(items: BarcodeSubmissionItem[]): number {
   return new Set(items.map((item) => `${item.releaseMbid}:${item.barcode.trim()}`)).size;
-}
-
-function describeDelta(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 /** The note attached to every barcode edit. */
@@ -74,7 +54,7 @@ export function editNoteFor(gaps: BarcodeGap[]): string {
       `Barcode ${gap.barcode} from the Spotify album matched to this release by title and duration (${gap.trackCount} tracks, worst duration difference ${describeDelta(gap.maxDurationDeltaMs)}, tolerance 5s).`,
       `Source: https://open.spotify.com/album/${gap.albumId}`,
       `Release: https://musicbrainz.org/release/${gap.releaseMbid}`,
-      `Submitted by prelude_fm_bot, operated by ${contact}. Replies to this note are read.`,
+      BOT_SIGNATURE,
     ].join('\n\n');
   }
 
@@ -86,6 +66,6 @@ export function editNoteFor(gaps: BarcodeGap[]): string {
           `- ${gap.releaseTitle}: https://open.spotify.com/album/${gap.albumId} → https://musicbrainz.org/release/${gap.releaseMbid}`,
       )
       .join('\n'),
-    `Submitted by prelude_fm_bot, operated by ${contact}. Replies to this note are read.`,
+    BOT_SIGNATURE,
   ].join('\n\n');
 }

@@ -1,4 +1,4 @@
-import type { BotSubmissionResult } from '../actions/contribute';
+import type { BotSubmissionResult } from '../actions/bot';
 import { adminFailureMessage } from '../components/AdminFailure';
 
 export type BotSubmissionFeedback =

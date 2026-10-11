@@ -5,12 +5,11 @@ import { db } from '@/lib/db';
 import { mbArtist, mbWork } from '@/lib/db/schema';
 import { composerOf, musicBrainzApi, parentPartOf } from '@/lib/musicbrainz';
 import { readAndCacheWork } from '@/lib/musicbrainz-cache';
+import { findMbid } from '@/lib/musicbrainz-manual-submissions';
 import { checkAuth } from './auth';
 
 /** Guard against a cycle in the parent chain; real trees are a few deep. */
 const MAX_DEPTH = 8;
-
-const MBID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 export type RefreshedWork = {
   mbid: string;
@@ -33,13 +32,13 @@ export type RefreshedWork = {
  */
 export async function refreshWorkFromMusicBrainz(input: string): Promise<RefreshedWork[]> {
   await checkAuth();
-  const match = MBID.exec(input);
-  if (!match) throw new Error('No work ID in that link');
+  const mbid = findMbid(input);
+  if (!mbid) throw new Error('No work ID in that link');
 
   const source = musicBrainzApi('interactive');
   const read: RefreshedWork[] = [];
   const seen = new Set<string>();
-  let next: string | null = match[0].toLowerCase();
+  let next: string | null = mbid;
   while (next && !seen.has(next) && seen.size < MAX_DEPTH) {
     seen.add(next);
     const work = await readAndCacheWork(source, next);

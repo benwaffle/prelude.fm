@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useAdminAction } from '../components/useAdminAction';
-import { reconcileSubmissions, type ContributionView } from '../actions/contribute';
+import type { ContributionView } from '../actions/inbox-view';
+import { reconcileSubmissions } from '../actions/submissions';
 import { InboxRow } from './InboxRow';
 import { InboxSection } from './InboxSection';
 
