@@ -247,6 +247,65 @@ test('an album-mate of a work with nothing liked does not make a card', async ()
   assert.deepEqual(works, []);
 });
 
+/** Another track on album-1, anchored to its own recording of `workMbid`. */
+async function seedExtraTrack(
+  id: string,
+  trackNumber: number,
+  recordingMbid: string,
+  workMbid: string,
+) {
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: id,
+    title: id,
+    trackNumber,
+    discNumber: 1,
+    durationMs: 100_000,
+    popularity: 1,
+    spotifyAlbumId: 'album-1',
+    isrc: null,
+  });
+  await db.insert(schema.trackRecording).values({
+    spotifyTrackId: id,
+    recordingMbid,
+    isrc: null,
+    matchedBy: 'isrc',
+  });
+  await db.insert(schema.mbRecording).values({
+    mbid: recordingMbid,
+    title: `${recordingMbid} title`,
+    length: 100_000,
+    detail: 'full',
+  });
+  await db.insert(schema.mbRecordingWork).values({ recordingMbid, workMbid });
+}
+
+test('a second performance of a movement on the same album is its own card', async () => {
+  await seedExtraTrack('track-i-again', 9, 'rec-i-again', 'part-i');
+  const { works } = await view(['track-i', 'track-ii', 'track-i-again']);
+
+  assert.equal(works.length, 2);
+  for (const card of works) {
+    const held = card.movements.filter((movement) => !movement.missing);
+    assert.equal(
+      new Set(held.map((movement) => movement.name)).size,
+      held.length,
+      'no movement is listed twice on a card',
+    );
+  }
+});
+
+test('a track related only to the whole work is not doubled by a missing part', async () => {
+  await seedExtraTrack('track-whole', 3, 'rec-whole', 'sonata');
+  const { works } = await view(['track-whole']);
+
+  assert.equal(works.length, 1);
+  assert.deepEqual(
+    works[0].movements.map((movement) => [movement.name, movement.missing, movement.roman]),
+    [['rec-whole title', false, '']],
+    'which part it is is unknown, so no part is listed as missing and no numeral is shown',
+  );
+});
+
 test('two performances of one work stay two cards', async () => {
   await db.insert(schema.spotifyAlbum).values({
     spotifyId: 'album-2',

@@ -7,8 +7,13 @@
  * a MusicBrainz title fix, would bring a work's movements together. Reads
  * only.
  *
- *   pnpm metadata:level-review          grouped by parent, largest first
- *   pnpm metadata:level-review --json   machine-readable
+ *   pnpm metadata:level-review               grouped by parent, largest first
+ *   pnpm metadata:level-review --json        machine-readable
+ *   pnpm metadata:level-review --duplicates  also: cards that list a movement
+ *                                            twice, across every cached track
+ *
+ * A movement listed twice is usually two tracks of one movement (a cadenza
+ * or a part split across tracks), which is real. Anything else is a bug.
  */
 import { loadEnvConfig } from '@next/env';
 import { sql } from 'drizzle-orm';
@@ -73,8 +78,10 @@ async function main() {
     }))
     .sort((left, right) => right.works.length - left.works.length);
 
+  const duplicates = process.argv.includes('--duplicates') ? await findDuplicates() : [];
+
   if (json) {
-    console.log(JSON.stringify(groups, null, 2));
+    console.log(JSON.stringify({ apart: groups, duplicates }, null, 2));
     return;
   }
   const total = groups.reduce((sum, group) => sum + group.works.length, 0);
@@ -88,6 +95,42 @@ async function main() {
     for (const work of group.works.slice(0, 3))
       console.log(`        ${work.title ?? '(untitled)'}`);
   }
+  if (process.argv.includes('--duplicates')) {
+    console.log(`\n${duplicates.length} cards list a movement more than once`);
+    for (const card of duplicates) {
+      console.log(`  ${card.title ?? '(untitled)'} — ${card.album}: ${card.repeated.join('; ')}`);
+    }
+  }
+}
+
+/** Cards, over every cached track, that list the same movement twice. */
+async function findDuplicates() {
+  const { db } = await import('@/lib/db');
+  const { spotifyTrack } = await import('@/lib/db/schema');
+  const { loadMusicBrainzLibraryFacts } = await import('@/app/actions/library-musicbrainz');
+  const { projectMusicBrainzLibrary } = await import('@/lib/musicbrainz-library');
+  const { musicBrainzLibraryView } = await import('@/lib/musicbrainz-library-view');
+
+  const ids = (await db.select({ id: spotifyTrack.spotifyId }).from(spotifyTrack)).map(
+    (row) => row.id,
+  );
+  const { works } = musicBrainzLibraryView(
+    projectMusicBrainzLibrary(await loadMusicBrainzLibraryFacts(ids)),
+    new Set(),
+  );
+  return works.flatMap((work) => {
+    const counts = new Map<string, number>();
+    for (const movement of work.movements) {
+      const key = `${movement.roman ? `${movement.roman}. ` : ''}${movement.name}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const repeated = [...counts]
+      .filter(([, count]) => count > 1)
+      .map(([name, count]) => `${name} ×${count}`);
+    return repeated.length > 0
+      ? [{ id: work.id, title: work.title, album: work.album, repeated }]
+      : [];
+  });
 }
 
 main().catch((error) => {

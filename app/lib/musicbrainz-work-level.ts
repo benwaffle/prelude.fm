@@ -147,15 +147,23 @@ function numberedAsPart(node: WorkNode): boolean {
   return tail === numeral || tail.startsWith(`${numeral} `);
 }
 
+/** A title without the catalogue references in it ("…, ZWV 21: Sanctus" → "…: Sanctus"). */
+function withoutCatalogues(title: string): string {
+  return title.replace(/, [A-Z]{1,4}\.? ?[A-Z]?\d[\w./–-]*(?=[:,]|$)/g, '');
+}
+
 /**
- * A number filed under an act or part of a larger work continues that act's
- * title with a comma: "Messiah, HWV 56: Part II, no. 28. Chorus …" under
- * "Messiah, HWV 56: Part II". Only parents that are themselves titled as a
+ * A number filed under an act or section of a larger work continues that
+ * section's title: "Messiah, HWV 56: Part II, no. 28. Chorus …" under
+ * "Messiah, HWV 56: Part II", or "Missa …: Sanctus - Benedictus" under
+ * "Missa …, ZWV 21: Sanctus". Only parents that are themselves titled as a
  * part qualify, so "Mazurkas, op. 33" never takes "Mazurkas, op. 33, no. 2".
  */
 function continuesPartTitle(node: WorkNode): boolean {
   if (!node.parentTitle?.includes(':')) return false;
-  return node.title.startsWith(`${node.parentTitle}, `);
+  const parent = spelling(withoutCatalogues(node.parentTitle));
+  const title = spelling(withoutCatalogues(node.title));
+  return title.startsWith(`${parent}, `) || title.startsWith(`${parent} - `);
 }
 
 /**
@@ -184,7 +192,7 @@ const WHOLES_OF_NUMBERS = new Set([
 function typedPartOf(node: WorkNode): boolean {
   if (!node.type || !node.parentType || node.type === 'Étude') return false;
   if (node.type !== node.parentType && !WHOLES_OF_NUMBERS.has(node.parentType)) return false;
-  return titledAsPartOf(node);
+  return titledAsPartOf(node) || continuesPartTitle(node);
 }
 
 export function workLevelOf(node: WorkNode): WorkLevel {
