@@ -8,6 +8,7 @@ import { LibraryProvider } from '@/lib/library-context';
 import { getSpotifyToken } from '@/app/actions/spotify';
 import { PreludeNav } from './PreludeNav';
 import { PlayerBar } from './PlayerBar';
+import { MobileTabs } from './MobileTabs';
 
 // Spotify tokens last an hour; refresh with room to spare.
 const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000;
@@ -128,7 +129,12 @@ export function AppShell({ children }: AppShellProps) {
             placeholder={placeholder}
           />
           <div className="relative z-[1] min-h-screen">{children}</div>
-          <PlayerBar />
+          {/* The player, and on phones the section tabs under it, share one
+              fixed footer so neither has to know the other's height. */}
+          <div className="fixed inset-x-0 bottom-0 z-10">
+            <PlayerBar />
+            <MobileTabs current={current} />
+          </div>
         </NavSearchContext.Provider>
       </LibraryProvider>
     </SpotifyPlayerProvider>

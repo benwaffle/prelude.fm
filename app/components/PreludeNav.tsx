@@ -32,14 +32,15 @@ export function PreludeNav({ current, query, setQuery, placeholder }: PreludeNav
   }, []);
 
   return (
-    <div className="sticky top-0 z-[12] flex items-center gap-[18px] border-b border-rule bg-paper px-7 py-[14px] max-[900px]:flex-wrap max-[900px]:gap-3 max-[900px]:px-4 max-[900px]:py-3">
+    <div className="sticky top-0 z-[12] flex items-center gap-[18px] border-b border-rule bg-paper px-7 py-[14px] max-[900px]:gap-3 max-[900px]:px-4 max-[900px]:py-[10px]">
       <Link href="/" className="flex shrink-0 items-baseline gap-2 no-underline">
         <span className="font-display text-2xl leading-none font-medium tracking-[-0.01em] italic">
           prelude<span className="text-accent">.</span>fm
         </span>
       </Link>
 
-      <nav className="ml-2 flex gap-[2px] max-[900px]:order-3 max-[900px]:ml-0 max-[900px]:w-full max-[900px]:overflow-x-auto max-[900px]:[scrollbar-width:none]">
+      {/* Phones get these as tabs along the bottom, within thumb reach. */}
+      <nav className="ml-2 flex gap-[2px] max-[900px]:hidden">
         {NAV_LINKS.map((link) => (
           <Link
             key={link.key}
@@ -56,7 +57,7 @@ export function PreludeNav({ current, query, setQuery, placeholder }: PreludeNav
       </nav>
 
       {setQuery && (
-        <div className="relative ml-auto w-[min(340px,40vw)] shrink-0 max-[900px]:order-2 max-[900px]:w-auto max-[900px]:flex-1">
+        <div className="relative ml-auto w-[min(340px,40vw)] shrink-0 max-[900px]:w-auto max-[900px]:flex-1">
           <span className="pointer-events-none absolute top-1/2 left-[10px] -translate-y-1/2 text-muted">
             <Icon name="search" size={13} />
           </span>

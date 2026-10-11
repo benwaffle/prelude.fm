@@ -275,7 +275,9 @@ function Toolbar({
       </button>
 
       <div className="ml-auto flex flex-wrap items-center gap-[10px] max-[900px]:ml-0 max-[900px]:w-full">
-        <span className="font-meta text-[9px] tracking-[0.2em] text-muted uppercase">Sort</span>
+        <span className="font-meta text-[9px] tracking-[0.2em] text-muted uppercase max-[900px]:hidden">
+          Sort
+        </span>
         <div className="no-bar flex gap-[2px] max-[900px]:order-3 max-[900px]:w-full max-[900px]:overflow-x-auto max-[900px]:pt-[6px]">
           {SORTS.map(([key, label]) => (
             <button

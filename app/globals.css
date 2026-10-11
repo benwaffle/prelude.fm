@@ -141,3 +141,30 @@ body {
   background: var(--rule);
   border-radius: 3px;
 }
+
+/* =========================================================
+   TOUCH — phones and tablets, where nothing hovers
+   ========================================================= */
+
+@media (hover: none), (pointer: coarse) {
+  /* An app, not a document: a long press or a quick double tap shouldn't
+     start selecting titles and buttons. Fields stay selectable. */
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+/* No grey flash on tap, and no double-tap-to-zoom delay on controls. */
+a,
+button,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}

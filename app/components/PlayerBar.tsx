@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import {
@@ -14,6 +14,7 @@ import {
 } from '@/lib/prelude';
 import { Icon } from './Icon';
 import { DevicePicker } from './DevicePicker';
+import { NowPlayingSheet } from './NowPlayingSheet';
 
 /**
  * The player bar, present on every screen. Progress is scoped to the whole
@@ -48,11 +49,7 @@ export function PlayerBar() {
   }, [dismissDevicePrompt]);
   const { locate, toggleLike, likedTrackIds } = useLibrary();
 
-  const fillRef = useRef<HTMLDivElement>(null);
-  const headRef = useRef<HTMLDivElement>(null);
-  const elapsedRef = useRef<HTMLSpanElement>(null);
-  const remainingRef = useRef<HTMLSpanElement>(null);
-  const barRef = useRef<HTMLDivElement>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const located = locate(currentTrack?.id);
 
@@ -128,19 +125,23 @@ export function PlayerBar() {
     [durations, index],
   );
 
-  // Drive the bar imperatively; re-rendering on every frame would be wasteful.
+  // Drive every progress readout imperatively — the bar's, the phone mini
+  // player's and the full-screen sheet's, marked with data-progress — since
+  // re-rendering on every frame would be wasteful.
   useEffect(() => {
     if (!work || totalMs === 0) return;
     let frame = 0;
     const tick = () => {
       const progress = getProgress();
       const elapsed = Math.min(totalMs, beforeMs + progress.position);
-      const pct = (elapsed / totalMs) * 100;
-      if (fillRef.current) fillRef.current.style.width = `${pct}%`;
-      if (headRef.current) headRef.current.style.left = `${pct}%`;
-      if (elapsedRef.current) elapsedRef.current.textContent = formatDuration(elapsed);
-      if (remainingRef.current)
-        remainingRef.current.textContent = `—${formatDuration(totalMs - elapsed)}`;
+      const pct = `${(elapsed / totalMs) * 100}%`;
+      document.querySelectorAll<HTMLElement>('[data-progress]').forEach((el) => {
+        const part = el.dataset.progress;
+        if (part === 'fill') el.style.width = pct;
+        else if (part === 'head') el.style.left = pct;
+        else if (part === 'elapsed') el.textContent = formatDuration(elapsed);
+        else if (part === 'remaining') el.textContent = `—${formatDuration(totalMs - elapsed)}`;
+      });
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -152,7 +153,7 @@ export function PlayerBar() {
    * a plain seek, elsewhere it starts that movement at the matching offset.
    */
   const handleScrub = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+    (e: React.MouseEvent<HTMLElement>) => {
       if (!work || totalMs === 0) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -185,12 +186,18 @@ export function PlayerBar() {
     [setVolume],
   );
 
+  /** Start the recording from one of its movements. */
+  const playFrom = useCallback(
+    (i: number) => play(heard.slice(i).map((m) => m.uri as string)),
+    [heard, play],
+  );
+
   const tint = work?.tint ?? '#2a1f2e';
   const detailHref = work?.workId ? `/work/${work.workId}?rec=${work.recordingId ?? ''}` : null;
 
   return (
     <div
-      className="fixed right-0 bottom-0 left-0 z-10 grid grid-cols-[360px_1fr_320px] items-center border-t border-black/20 px-7 py-[14px] backdrop-blur-[14px] max-[900px]:grid-cols-[minmax(0,1fr)_auto] max-[900px]:gap-x-3 max-[900px]:gap-y-[10px] max-[900px]:px-[14px] max-[900px]:pt-[10px] max-[900px]:pb-[calc(12px+env(safe-area-inset-bottom))]"
+      className="relative grid grid-cols-[360px_1fr_320px] items-center border-t border-black/20 px-7 py-[14px] backdrop-blur-[14px] max-[900px]:block max-[900px]:px-3 max-[900px]:py-2"
       style={{
         background: `linear-gradient(180deg, ${hexToRgba(tint, 0.82)}, ${hexToRgba(tint, 0.98)})`,
         color: work?.ink ?? '#f4ecd8',
@@ -231,8 +238,78 @@ export function PlayerBar() {
         </div>
       ) : (
         <>
+          {/* Phones: one compact row that opens the full player. */}
+          <div className="relative z-[1] min-[901px]:hidden">
+            <div className="absolute -top-2 right-[-12px] left-[-12px] h-[2px] bg-white/15">
+              <div data-progress="fill" className="absolute inset-y-0 left-0 bg-current" />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSheetOpen(true)}
+                aria-label="Open the player"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+              >
+                <Cover work={work} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-display text-[15px] leading-[1.25]">
+                    {movement.roman && (
+                      <span className="mr-[6px] italic opacity-70">
+                        {numeralPrefix(movement.roman)}
+                      </span>
+                    )}
+                    {movement.name}
+                  </span>
+                  <span className="block truncate font-display text-[12.5px] italic opacity-75">
+                    {outputDevice && !outputDevice.isThisBrowser
+                      ? `On ${outputDevice.name}`
+                      : [work.composer ?? work.composerFull, work.title]
+                          .filter(Boolean)
+                          .join(' · ') || 'Work unmatched'}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                title={isPaused ? 'Play' : 'Pause'}
+                onClick={togglePlay}
+                disabled={!isReady}
+                className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-current disabled:cursor-default disabled:opacity-35"
+              >
+                <span className="flex" style={{ color: tint }}>
+                  <Icon name={isPaused ? 'play' : 'pause'} size={18} />
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {sheetOpen && (
+            <NowPlayingSheet
+              work={work}
+              movement={movement}
+              heard={heard}
+              durations={durations}
+              totalMs={totalMs}
+              isPaused={isPaused}
+              isReady={isReady}
+              detailHref={detailHref}
+              outputDevice={outputDevice}
+              onClose={() => setSheetOpen(false)}
+              onTogglePlay={togglePlay}
+              onPrevious={previousTrack}
+              onNext={nextTrack}
+              onScrub={handleScrub}
+              onPlayFrom={playFrom}
+              onToggleLike={toggleLike}
+              onChooseDevice={() => {
+                setSheetOpen(false);
+                setPickerOpen(true);
+              }}
+            />
+          )}
+
           {/* Now playing */}
-          <div className="relative z-[1] grid min-w-0 grid-cols-[56px_1fr] items-center gap-[14px] max-[900px]:col-start-1 max-[900px]:row-start-1 max-[900px]:grid-cols-[44px_1fr]">
+          <div className="relative z-[1] grid min-w-0 grid-cols-[56px_1fr] items-center gap-[14px] max-[900px]:hidden">
             {detailHref ? (
               <Link href={detailHref} className="block shrink-0">
                 <Cover work={work} />
@@ -290,7 +367,7 @@ export function PlayerBar() {
           </div>
 
           {/* Transport + work-scoped progress */}
-          <div className="relative z-[1] flex flex-col items-center gap-2 max-[900px]:col-span-full max-[900px]:row-start-2 max-[900px]:gap-[6px]">
+          <div className="relative z-[1] flex flex-col items-center gap-2 max-[900px]:hidden">
             <div className="flex items-center gap-[18px] max-[900px]:gap-[22px]">
               <button
                 type="button"
@@ -358,11 +435,13 @@ export function PlayerBar() {
               </div>
 
               <div
-                ref={barRef}
                 onClick={handleScrub}
                 className="relative h-1 cursor-pointer rounded-[2px] bg-white/15 before:absolute before:-inset-y-3 before:inset-x-0 before:content-['']"
               >
-                <div ref={fillRef} className="absolute inset-y-0 left-0 rounded-[2px] bg-current" />
+                <div
+                  data-progress="fill"
+                  className="absolute inset-y-0 left-0 rounded-[2px] bg-current"
+                />
                 {heard.slice(0, -1).map((m, i) => {
                   const at = durations.slice(0, i + 1).reduce((a, b) => a + b, 0);
                   return (
@@ -374,20 +453,20 @@ export function PlayerBar() {
                   );
                 })}
                 <div
-                  ref={headRef}
+                  data-progress="head"
                   className="absolute top-1/2 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-current shadow-[0_0_0_3px_rgba(0,0,0,0.25)]"
                 />
               </div>
 
               <div className="flex justify-between font-meta text-[10.5px] tabular-nums opacity-70">
-                <span ref={elapsedRef}>0:00</span>
-                <span ref={remainingRef}>—{formatDuration(totalMs)}</span>
+                <span data-progress="elapsed">0:00</span>
+                <span data-progress="remaining">—{formatDuration(totalMs)}</span>
               </div>
             </div>
           </div>
 
           {/* Queue + volume */}
-          <div className="relative z-[1] flex min-w-0 items-center justify-end gap-[14px] max-[900px]:col-start-2 max-[900px]:row-start-1">
+          <div className="relative z-[1] flex min-w-0 items-center justify-end gap-[14px] max-[900px]:hidden">
             <button
               type="button"
               title={outputDevice ? `Playing on ${outputDevice.name}` : 'Choose where to play'}
