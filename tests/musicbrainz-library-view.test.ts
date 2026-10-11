@@ -733,3 +733,42 @@ test('a composer with more works than one statement can bind returns all of them
   const composers = await getMusicBrainzCatalogComposers();
   assert.equal(composers.find((entry) => entry.id === 'mozart')?.workCount, total + 1);
 });
+
+test('more by the composer finds their other works, by MusicBrainz or by our own link', async () => {
+  await db.insert(schema.mbWork).values([
+    {
+      mbid: 'fantasia',
+      title: 'Fantasia in D minor, K. 397',
+      type: 'Fantasia',
+      parentMbid: null,
+      orderingKey: null,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+  ]);
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-fantasia',
+    title: 'Fantasia in D minor',
+    trackNumber: 3,
+    discNumber: 1,
+    durationMs: 360_000,
+    popularity: 20,
+    spotifyAlbumId: 'album-1',
+    isrc: null,
+  });
+  // No MusicBrainz recording: held through our own track link.
+  await db.insert(schema.trackWorkLink).values({
+    spotifyTrackId: 'track-fantasia',
+    workMbid: 'fantasia',
+    requests: 0,
+  });
+
+  const { getMusicBrainzWorkDetail } = await import('@/lib/musicbrainz-work-page');
+  const detail = await getMusicBrainzWorkDetail('sonata', null);
+  assert.ok(detail);
+  assert.deepEqual(
+    detail.moreByComposer.map((work) => [work.workId, work.trackIds]),
+    [['fantasia', ['track-fantasia']]],
+    'the work itself is excluded; the other is found through the own link',
+  );
+});
