@@ -44,10 +44,23 @@ export type WorkLevel = {
   needsReview: boolean;
 };
 
-/** MusicBrainz titles a movement with its parent's title and a colon. */
+/**
+ * MusicBrainz titles a movement with its parent's title and a colon. The
+ * parent's title often ends in a catalogue reference its movements leave out
+ * ("Sinfonia in G minor, op. 6 no. 6, W. C12" over "Sinfonia in G minor,
+ * op. 6 no. 6: I. Allegro"), so trailing comma-separated segments carrying a
+ * number are dropped one at a time and the prefix tried again.
+ */
 function titledAsPartOf(node: WorkNode): boolean {
-  if (!node.parentTitle) return false;
-  return node.title.startsWith(`${node.parentTitle}:`);
+  let parentTitle = node.parentTitle;
+  while (parentTitle) {
+    if (node.title.startsWith(`${parentTitle}:`)) return true;
+    const cut = parentTitle.lastIndexOf(', ');
+    const segment = parentTitle.slice(cut);
+    if (cut <= 0 || !/\d/.test(segment) || segment.includes(':')) return false;
+    parentTitle = parentTitle.slice(0, cut);
+  }
+  return false;
 }
 
 export function workLevelOf(node: WorkNode): WorkLevel {
