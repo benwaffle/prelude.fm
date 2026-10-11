@@ -29,7 +29,7 @@ export type PipelineCompletion = {
   pipelineCompletedAt: Date;
 };
 
-const PROVENANCE_RANK: Record<TrackClassificationProvenance, number> = {
+export const PROVENANCE_RANK: Record<TrackClassificationProvenance, number> = {
   manual: 3,
   musicbrainz: 2,
   llm_proposal: 1,
