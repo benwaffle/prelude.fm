@@ -1,7 +1,12 @@
 import type { ReactNode } from 'react';
 import { shownOfTotalLabel } from '@/lib/contribution-list';
 import type { InboxClass } from '../lib/admin-url';
-import { ChannelBadge, type ContributionChannel } from './ChannelBadge';
+
+export type ContributionChannel = 'BOT' | 'TOOL' | 'HAND' | 'REPORT';
+
+export function ChannelBadge({ channel }: { channel: ContributionChannel }) {
+  return <span className="tag">{channel}</span>;
+}
 
 export function InboxSection({
   inboxClass,

@@ -14,8 +14,13 @@ import { ReleaseCorrectionsTab } from './tools/ReleaseCorrectionsTab';
 import { RefreshWorkTab } from './tools/RefreshWorkTab';
 import { AdminHome } from './home/AdminHome';
 import { InboxSectionPage } from './inbox/InboxSectionPage';
-import { PAGE_TITLE } from './lib/admin-pages';
-import { adminHref, INBOX_CLASSES, parseAdminUrl, type InboxClass } from './lib/admin-url';
+import {
+  adminHref,
+  INBOX_CLASSES,
+  PAGE_TITLE,
+  parseAdminUrl,
+  type InboxClass,
+} from './lib/admin-url';
 
 /*
  * A workbench for closing MusicBrainz gaps — not a second catalogue.

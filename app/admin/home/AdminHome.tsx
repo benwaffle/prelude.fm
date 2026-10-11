@@ -9,8 +9,7 @@ import { useServerQuery } from '@/lib/use-server-query';
 import { LoadFailure } from '@/app/components/LoadFailure';
 import { noticeClassName } from '../components/Notice';
 import { Spinner } from '../components/Spinner';
-import { PAGE_TITLE } from '../lib/admin-pages';
-import { adminHref, type InboxClass, type ToolPage } from '../lib/admin-url';
+import { adminHref, PAGE_TITLE, type InboxClass, type ToolPage } from '../lib/admin-url';
 
 type Counts = ContributionView['counts'];
 type AdminHomeData = Awaited<ReturnType<typeof getAdminHome>>;

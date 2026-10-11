@@ -16,12 +16,8 @@ import type { PipelineOutcome, TrackClassificationProvenance } from './track-cla
  * classification is read off MusicBrainz's own evidence rather than
  * guessed at from a track title.
  *
- * No language model is called. The previous pass used one to invent a
- * composer, a work and a movement for every track, wrote them to the
- * canonical tables, and left no way to tell an asserted value from a known
- * one. Where MusicBrainz cannot settle something now, the track keeps a
- * stated reason and stays visible — which is a worse-looking library and a
- * truer one.
+ * No language model is called. Where MusicBrainz cannot settle something, the
+ * track keeps a stated reason and stays visible.
  */
 
 export type TrackPassOutcome = {

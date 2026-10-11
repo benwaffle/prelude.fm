@@ -9,10 +9,8 @@ import type { SpotifyAlbumMetadata } from './spotify-app-client';
  *
  * Provider facts — the album, its tracks, their artists, durations, ISRCs —
  * are global and uncontroversial: they are what Spotify is for. They get
- * their own pass so that reading an album into the cache no longer requires
- * deciding anything about the music on it. The previous route into these
- * tables ran through the metadata save, which meant the only way to record
- * that a track exists was to also assert a composer and a work for it.
+ * their own pass so that reading an album into the cache never requires
+ * deciding anything about the music on it.
  *
  * No classical table is touched here. That is the point.
  */
