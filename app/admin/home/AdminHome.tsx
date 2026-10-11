@@ -31,36 +31,39 @@ function plural(count: number, noun: string): string {
 }
 
 /**
- * The lists that keep tracks out of the player come first and count those
- * tracks; the rest keep no track out and count their own rows.
+ * Each row's number counts the same rows its page lists, in the page's own
+ * unit. What a list costs the player — tracks it holds back — is said beside
+ * it, and only for the lists that can hold a track back at all.
  */
-const HOLDING_BACK: { page: InboxClass; rows: (counts: Counts) => string }[] = [
-  { page: 'missing', rows: (counts) => plural(counts.missingReleases, 'album') },
-  { page: 'misaligned', rows: (counts) => plural(counts.misaligned, 'album') },
-  { page: 'work', rows: (counts) => plural(counts.workRelationships, 'recording') },
-  { page: 'contested', rows: (counts) => plural(counts.contestedIsrcs, 'ISRC') },
-];
-
-const NOT_HOLDING_BACK: { page: InboxClass; count: (counts: Counts) => number; note: string }[] = [
+const LISTS: {
+  page: InboxClass;
+  rows: (counts: Counts) => string;
+  holdsBack: boolean;
+}[] = [
+  { page: 'missing', rows: (counts) => plural(counts.missingReleases, 'album'), holdsBack: true },
+  { page: 'misaligned', rows: (counts) => plural(counts.misaligned, 'album'), holdsBack: true },
+  {
+    page: 'work',
+    rows: (counts) => plural(counts.workRelationships, 'recording'),
+    holdsBack: true,
+  },
+  { page: 'contested', rows: (counts) => plural(counts.contestedIsrcs, 'ISRC'), holdsBack: true },
   {
     page: 'isrc',
-    count: (counts) => counts.isrc,
-    note: 'ISRCs to add. They hold back no tracks.',
+    rows: (counts) =>
+      `${plural(counts.isrc, 'track')} on ${plural(counts.isrcReleases, 'release')}`,
+    holdsBack: false,
   },
-  {
-    page: 'barcodes',
-    count: (counts) => counts.barcodes,
-    note: 'barcodes to add. They hold back no tracks.',
-  },
+  { page: 'barcodes', rows: (counts) => plural(counts.barcodes, 'release'), holdsBack: false },
   {
     page: 'streaming',
-    count: (counts) => counts.streamingUrls,
-    note: 'links to add. They hold back no tracks.',
+    rows: (counts) => plural(counts.streamingUrls, 'release'),
+    holdsBack: false,
   },
   {
     page: 'submitted',
-    count: (counts) => counts.submissions.pending ?? 0,
-    note: 'edits waiting for MusicBrainz to accept them.',
+    rows: (counts) => `${plural(counts.submissions.pending ?? 0, 'edit')} pending`,
+    holdsBack: false,
   },
 ];
 
@@ -111,8 +114,15 @@ export function AdminHome() {
   };
 
   const held = funnel ? heldBackByInboxClass(funnel) : null;
-  const heldCount = (page: InboxClass) =>
-    funnelError !== null ? '?' : held ? (held[page]?.tracks ?? 0).toLocaleString() : '…';
+  const heldNote = (page: InboxClass) => {
+    if (funnelError !== null) return 'Tracks held back: could not be counted.';
+    if (!held) return 'Counting tracks held back…';
+    const entry = held[page] ?? { tracks: 0, waiting: 0 };
+    return (
+      `${plural(entry.tracks, 'track')} held back from the player.` +
+      (entry.waiting > 0 ? ` ${entry.waiting.toLocaleString()} of them submitted, waiting.` : '')
+    );
+  };
   const elsewhere = funnel
     ? funnel.steps.flatMap((step) => step.buckets).filter((bucket) => bucket.inboxClass === null)
     : [];
@@ -128,32 +138,16 @@ export function AdminHome() {
         {countsError !== null && (
           <LoadFailure what="the lists" error={countsError} onRetry={retry} />
         )}
-        {HOLDING_BACK.map(({ page, rows }) => {
-          const waiting = held?.[page]?.waiting ?? 0;
-          return (
-            <PageRow
-              key={page}
-              href={adminHref(page)}
-              count={heldCount(page)}
-              title={PAGE_TITLE[page]}
-              note={
-                <>
-                  tracks held back from the player
-                  {counts && `, on ${rows(counts)}`}.
-                  {waiting > 0 && ` ${waiting.toLocaleString()} of them are submitted and waiting.`}
-                </>
-              }
-            />
-          );
-        })}
-        {NOT_HOLDING_BACK.map(({ page, count, note }) => (
+        {LISTS.map(({ page, rows, holdsBack }) => (
           <PageRow
             key={page}
             href={adminHref(page)}
-            count={counts ? count(counts).toLocaleString() : countsError !== null ? '?' : '…'}
+            count={counts ? rows(counts) : countsError !== null ? '?' : '…'}
             title={PAGE_TITLE[page]}
-            note={note}
-            quiet
+            note={
+              holdsBack ? heldNote(page) : page === 'submitted' ? null : 'Holds back no tracks.'
+            }
+            quiet={!holdsBack}
           />
         ))}
       </section>
@@ -192,25 +186,25 @@ function PageRow({
   href: string;
   count?: string;
   title: string;
-  note: React.ReactNode;
+  note?: React.ReactNode;
   quiet?: boolean;
 }) {
   return (
     <Link href={href} className="row items-start no-underline">
+      <span className="min-w-0 flex-1">
+        <span className="block text-[var(--ink)]">{title}</span>
+        {note && <span className="block text-[11px] text-[var(--ink-2)]">{note}</span>}
+      </span>
       {count !== undefined && (
         <span
-          className={`mono w-14 shrink-0 text-right text-[15px] ${
-            quiet || count === '0' ? 'text-[var(--ink-2)]' : 'text-[var(--gall)]'
+          className={`mono shrink-0 text-right ${
+            quiet || count.startsWith('0 ') ? 'text-[var(--ink-2)]' : 'text-[var(--gall)]'
           }`}
         >
           {count}
         </span>
       )}
-      <span className="min-w-0 flex-1">
-        <span className="block text-[var(--ink)]">{title}</span>
-        <span className="block text-[11px] text-[var(--ink-2)]">{note}</span>
-      </span>
-      <span aria-hidden="true" className="shrink-0 self-center text-[var(--faint)]">
+      <span aria-hidden="true" className="shrink-0 text-[var(--faint)]">
         →
       </span>
     </Link>
