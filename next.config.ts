@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  // Lets a page say which build it is, so a phone running an old copy shows.
+  env: { NEXT_PUBLIC_BUILD: process.env.VERCEL_GIT_COMMIT_SHA ?? 'local' },
   images: {
     remotePatterns: [
       {
