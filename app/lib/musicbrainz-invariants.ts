@@ -132,6 +132,23 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
     `,
   },
   {
+    // An album pass writes down every track Spotify lists before it decides
+    // anything. Passes from before that rule skipped tracks they judged not
+    // classical, which left the album one track short of its release and
+    // showed up in admin as a tracklist that does not line up.
+    name: 'finished-track-is-stored',
+    severity: 'hard',
+    describes:
+      'The match queue finished with a track that was never written down from Spotify, so its album reads shorter than it is.',
+    cheap: false,
+    query: sql`
+      select q.spotify_id as id, q.spotify_album_id as detail
+      from match_queue q
+      where q.status in ('matched', 'not_classical', 'unresolved')
+        and not exists (select 1 from spotify_track t where t.spotify_id = q.spotify_id)
+    `,
+  },
+  {
     name: 'isrc-disagrees-with-position',
     severity: 'review',
     describes:
