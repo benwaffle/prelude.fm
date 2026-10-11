@@ -3,19 +3,16 @@
 import { useState } from 'react';
 import { useAdminAction } from '../components/useAdminAction';
 import { reconcileSubmissions, type ContributionView } from '../actions/contribute';
-import type { InboxClass } from '../lib/admin-url';
 import { InboxRow } from './InboxRow';
 import { InboxSection } from './InboxSection';
 
 export function SubmittedSection({
   rows,
   counts,
-  activeClass,
   onReload,
 }: {
   rows: ContributionView['recent'];
   counts: ContributionView['counts']['submissions'];
-  activeClass?: InboxClass;
   onReload: () => Promise<void>;
 }) {
   const { pending, busy, run } = useAdminAction();
@@ -42,7 +39,6 @@ export function SubmittedSection({
   return (
     <InboxSection
       inboxClass="submitted"
-      activeClass={activeClass}
       title="Submitted"
       channel="REPORT"
       total={openCount}

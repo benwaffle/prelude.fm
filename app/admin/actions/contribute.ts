@@ -104,6 +104,7 @@ import {
   type ReleaseCorrectionRecord,
 } from '@/lib/release-corrections';
 import { loadTracksBlockedOnRelease } from '../lib/catalogue-readiness-load';
+import type { InboxClass } from '../lib/admin-url';
 import { checkAuth } from './auth';
 
 /**
@@ -397,11 +398,24 @@ async function rankedMissingReleases(limit: number) {
   return rankMissingReleases(rows, unblocks).slice(0, limit);
 }
 
+/** Totals for every Inbox section, without loading any section's rows. */
+export async function getContributionCounts(): Promise<ContributionView['counts']> {
+  await checkAuth();
+  return contributionCounts();
+}
+
+/**
+ * The Inbox rows. With `only`, the other sections come back empty so a page
+ * showing one section does not read all of them; the counts are always whole.
+ */
 export async function getContributions(
   limits?: Partial<ContributionListLimits>,
+  only?: InboxClass,
 ): Promise<ContributionView> {
   await checkAuth();
   const page = resolveContributionLimits(limits);
+  const load = <T>(section: InboxClass, read: () => Promise<T[]>): Promise<T[]> =>
+    only === undefined || only === section ? read() : Promise.resolve([]);
 
   const [
     counts,
@@ -415,29 +429,31 @@ export async function getContributions(
     recent,
   ] = await Promise.all([
     contributionCounts(),
-    isrcGapsByRelease(page.isrcReleases),
-    workRelationshipGaps(page.workGaps),
-    contestedIsrcs(page.contested),
-    rankedMissingReleases(page.missing),
-    barcodeGaps(page.barcodes),
-    streamingUrlGaps(page.streamingUrls),
-    misalignedAlbums(page.misaligned),
-    db
-      .select({
-        id: mbSubmission.id,
-        kind: mbSubmission.kind,
-        targetMbid: mbSubmission.targetMbid,
-        value: mbSubmission.value,
-        submittedBy: mbSubmission.submittedBy,
-        submittedAt: mbSubmission.submittedAt,
-        outcome: mbSubmission.outcome,
-        note: mbSubmission.note,
-      })
-      .from(mbSubmission)
-      // Applied edits are done; the count says how many without listing them.
-      .where(ne(mbSubmission.outcome, 'applied'))
-      .orderBy(desc(mbSubmission.submittedAt))
-      .limit(200),
+    load('isrc', () => isrcGapsByRelease(page.isrcReleases)),
+    load('work', () => workRelationshipGaps(page.workGaps)),
+    load('contested', () => contestedIsrcs(page.contested)),
+    load('missing', () => rankedMissingReleases(page.missing)),
+    load('barcodes', () => barcodeGaps(page.barcodes)),
+    load('streaming', () => streamingUrlGaps(page.streamingUrls)),
+    load('misaligned', () => misalignedAlbums(page.misaligned)),
+    load('submitted', () =>
+      db
+        .select({
+          id: mbSubmission.id,
+          kind: mbSubmission.kind,
+          targetMbid: mbSubmission.targetMbid,
+          value: mbSubmission.value,
+          submittedBy: mbSubmission.submittedBy,
+          submittedAt: mbSubmission.submittedAt,
+          outcome: mbSubmission.outcome,
+          note: mbSubmission.note,
+        })
+        .from(mbSubmission)
+        // Applied edits are done; the count says how many without listing them.
+        .where(ne(mbSubmission.outcome, 'applied'))
+        .orderBy(desc(mbSubmission.submittedAt))
+        .limit(200),
+    ),
   ]);
 
   const recordingMbids = workGaps.map((gap) => gap.recordingMbid);

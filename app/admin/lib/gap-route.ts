@@ -1,12 +1,13 @@
 import type { MusicBrainzGapCode } from '@/lib/musicbrainz-library';
 import type { AlbumState } from './album-state';
-import type { InboxClass } from './admin-url';
+import { adminHref, type AdminPage } from './admin-url';
 import type { InboxFocus } from './inbox-focus';
 
-export type AdminGapDestination =
-  | { tab: 'inbox'; inboxClass: InboxClass; focus?: InboxFocus }
-  | { tab: 'albums'; albumFilter?: AlbumState }
-  | { tab: 'health' };
+export type AdminGapDestination = {
+  page: AdminPage;
+  focus?: InboxFocus;
+  albumFilter?: AlbumState;
+};
 
 export type GapRouteContext = {
   spotifyAlbumId: string | null;
@@ -27,21 +28,21 @@ export function gapRoute(
 ): AdminGapDestination | null {
   switch (code) {
     case 'release-missing':
-      return { tab: 'inbox', inboxClass: 'missing', focus: albumFocus(context) };
+      return { page: 'missing', focus: albumFocus(context) };
     case 'release-not-checked':
-      return { tab: 'albums', albumFilter: 'unchecked' };
+      return { page: 'albums', albumFilter: 'unchecked' };
     case 'release-ambiguous':
-      return { tab: 'inbox', inboxClass: 'missing', focus: albumFocus(context) };
+      return { page: 'missing', focus: albumFocus(context) };
     case 'release-tracklist-misaligned':
-      return { tab: 'inbox', inboxClass: 'misaligned', focus: albumFocus(context) };
+      return { page: 'misaligned', focus: albumFocus(context) };
     case 'release-spotify-streaming-url-missing':
-      return { tab: 'inbox', inboxClass: 'streaming', focus: albumFocus(context) };
+      return { page: 'streaming', focus: albumFocus(context) };
     case 'release-cache-missing':
-      return { tab: 'albums' };
+      return { page: 'albums' };
     case 'recording-anchor-conflict':
-      return { tab: 'inbox', inboxClass: 'contested' };
+      return { page: 'contested' };
     case 'recording-work-missing':
-      return { tab: 'inbox', inboxClass: 'work', focus: albumFocus(context) };
+      return { page: 'work', focus: albumFocus(context) };
 
     case 'recording-unanchored':
       // This projection cannot prove the stricter ISRC contribution eligibility.
@@ -81,14 +82,5 @@ export function gapRoute(
 }
 
 export function adminGapHref(destination: AdminGapDestination): string {
-  const search = new URLSearchParams({ tab: destination.tab });
-  if (destination.tab === 'inbox') {
-    search.set('class', destination.inboxClass);
-    if (destination.focus?.kind === 'album') search.set('album', destination.focus.id);
-    if (destination.focus?.kind === 'release') search.set('release', destination.focus.id);
-  }
-  if (destination.tab === 'albums' && destination.albumFilter) {
-    search.set('filter', destination.albumFilter);
-  }
-  return `/admin?${search}`;
+  return adminHref(destination.page, destination);
 }

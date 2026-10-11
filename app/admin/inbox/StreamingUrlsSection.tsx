@@ -7,7 +7,6 @@ import {
   recheckStreamingUrl,
   type ContributionView,
 } from '../actions/contribute';
-import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
 import { PreviousSubmission } from './PreviousSubmission';
@@ -18,13 +17,11 @@ import { LoadMoreRows } from './LoadMoreRows';
 export function StreamingUrlsSection({
   rows,
   total,
-  activeClass,
   onReload,
   onLoadMore,
 }: {
   rows: ContributionView['streamingUrls'];
   total: number;
-  activeClass?: InboxClass;
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
@@ -48,7 +45,6 @@ export function StreamingUrlsSection({
   return (
     <InboxSection
       inboxClass="streaming"
-      activeClass={activeClass}
       title="Releases with no Spotify streaming URL"
       channel="TOOL"
       total={total}

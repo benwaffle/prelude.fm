@@ -1,15 +1,6 @@
 import { type AlbumState } from './album-state';
 import { type InboxFocus } from './inbox-focus';
 
-export const ADMIN_TABS = ['overview', 'inbox', 'details'] as const;
-export type AdminTab = (typeof ADMIN_TABS)[number];
-
-/** Tabs that were folded into Details, so old links still land somewhere. */
-const FOLDED_TABS = new Map<string, AdminTab>([
-  ['albums', 'details'],
-  ['health', 'details'],
-]);
-
 export const INBOX_CLASSES = [
   'missing',
   'misaligned',
@@ -22,6 +13,13 @@ export const INBOX_CLASSES = [
 ] as const;
 export type InboxClass = (typeof INBOX_CLASSES)[number];
 
+/** Pages for the tools that are not Inbox lists. */
+export const TOOL_PAGES = ['albums', 'corrections', 'refresh-work', 'checks'] as const;
+export type ToolPage = (typeof TOOL_PAGES)[number];
+
+/** Every admin page but the home page: one per Inbox section, one per tool. */
+export type AdminPage = InboxClass | ToolPage;
+
 const ALBUM_STATES: AlbumState[] = [
   'anchored',
   'partial',
@@ -32,48 +30,59 @@ const ALBUM_STATES: AlbumState[] = [
 ];
 
 export type AdminUrlState = {
-  tab: AdminTab;
-  inboxClass?: InboxClass;
+  /** Null on the home page. */
+  page: AdminPage | null;
   focus: InboxFocus | null;
   albumFilter?: AlbumState;
 };
 
 type SearchReader = Pick<URLSearchParams, 'get'>;
 
-export function parseAdminUrl(search: SearchReader): AdminUrlState {
-  const requestedTab = search.get('tab');
-  const tab = ADMIN_TABS.includes(requestedTab as AdminTab)
-    ? (requestedTab as AdminTab)
-    : (FOLDED_TABS.get(requestedTab ?? '') ?? 'overview');
+function isOneOf<T extends string>(values: readonly T[], value: string | null): value is T {
+  return values.includes(value as T);
+}
+
+/**
+ * Links from before the home page replaced the tabs (`?tab=inbox&class=…`,
+ * `?tab=albums`, `?tab=health`, `?tab=details&filter=…`) still land on the
+ * page that now holds what they pointed at.
+ */
+function legacyPage(search: SearchReader): AdminPage | null {
   const requestedClass = search.get('class');
-  const inboxClass = INBOX_CLASSES.includes(requestedClass as InboxClass)
-    ? (requestedClass as InboxClass)
-    : undefined;
+  if (isOneOf(INBOX_CLASSES, requestedClass)) return requestedClass;
+  const tab = search.get('tab');
+  if (tab === 'albums') return 'albums';
+  if (tab === 'health') return 'checks';
+  if (tab === 'details' && search.get('filter')) return 'albums';
+  return null;
+}
+
+export function parseAdminUrl(search: SearchReader): AdminUrlState {
+  const requestedPage = search.get('page');
+  const page: AdminPage | null =
+    isOneOf<AdminPage>(INBOX_CLASSES, requestedPage) || isOneOf(TOOL_PAGES, requestedPage)
+      ? requestedPage
+      : legacyPage(search);
   const requestedFilter = search.get('filter');
-  const albumFilter = ALBUM_STATES.includes(requestedFilter as AlbumState)
-    ? (requestedFilter as AlbumState)
-    : undefined;
+  const albumFilter = isOneOf(ALBUM_STATES, requestedFilter) ? requestedFilter : undefined;
   const album = search.get('album')?.trim();
   const release = search.get('release')?.trim();
 
   return {
-    tab,
-    inboxClass,
+    page,
     albumFilter,
     focus: album ? { kind: 'album', id: album } : release ? { kind: 'release', id: release } : null,
   };
 }
 
-export type AdminUrlPatch = Partial<
-  Record<'tab' | 'class' | 'album' | 'release' | 'filter', string | null>
->;
-
-export function patchAdminUrl(search: URLSearchParams, patch: AdminUrlPatch): string {
-  const next = new URLSearchParams(search);
-  for (const [key, value] of Object.entries(patch)) {
-    if (value) next.set(key, value);
-    else next.delete(key);
-  }
-  const query = next.toString();
-  return query ? `?${query}` : '';
+export function adminHref(
+  page: AdminPage | null,
+  { focus, albumFilter }: { focus?: InboxFocus | null; albumFilter?: AlbumState } = {},
+): string {
+  const search = new URLSearchParams();
+  if (page) search.set('page', page);
+  if (focus) search.set(focus.kind, focus.id);
+  if (albumFilter) search.set('filter', albumFilter);
+  const query = search.toString();
+  return query ? `/admin?${query}` : '/admin';
 }

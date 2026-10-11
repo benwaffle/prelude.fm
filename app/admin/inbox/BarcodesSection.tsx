@@ -10,7 +10,6 @@ import {
   type BotStatus,
   type ContributionView,
 } from '../actions/contribute';
-import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
 import { PreviousSubmission } from './PreviousSubmission';
@@ -52,7 +51,6 @@ export function BarcodesSection({
   rows,
   total,
   bot,
-  activeClass,
   onReload,
   onBotChange,
   onLoadMore,
@@ -60,7 +58,6 @@ export function BarcodesSection({
   rows: ContributionView['barcodes'];
   total: number;
   bot: BotStatus | null;
-  activeClass?: InboxClass;
   onReload: () => Promise<void>;
   onBotChange: (bot: BotStatus) => void;
   onLoadMore: () => void;
@@ -109,7 +106,6 @@ export function BarcodesSection({
   return (
     <InboxSection
       inboxClass="barcodes"
-      activeClass={activeClass}
       title="Releases with no barcode"
       channel="BOT"
       total={total}

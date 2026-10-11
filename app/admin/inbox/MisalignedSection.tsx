@@ -7,7 +7,6 @@ import {
   recheckErrorReport,
   type ContributionView,
 } from '../actions/contribute';
-import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
 import { PreviousSubmission } from './PreviousSubmission';
@@ -18,13 +17,11 @@ import { LoadMoreRows } from './LoadMoreRows';
 export function MisalignedSection({
   rows,
   total,
-  activeClass,
   onReload,
   onLoadMore,
 }: {
   rows: ContributionView['misaligned'];
   total: number;
-  activeClass?: InboxClass;
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
@@ -48,7 +45,6 @@ export function MisalignedSection({
   return (
     <InboxSection
       inboxClass="misaligned"
-      activeClass={activeClass}
       title="Tracklists that do not line up"
       channel="REPORT"
       total={total}

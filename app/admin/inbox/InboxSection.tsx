@@ -3,18 +3,8 @@ import { shownOfTotalLabel } from '@/lib/contribution-list';
 import type { InboxClass } from '../lib/admin-url';
 import { ChannelBadge, type ContributionChannel } from './ChannelBadge';
 
-export function InboxStage({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="inbox-stage">
-      <p className="eyebrow inbox-stage-label">{label}</p>
-      <div className="flex flex-col gap-4">{children}</div>
-    </div>
-  );
-}
-
 export function InboxSection({
   inboxClass,
-  activeClass,
   title,
   channel,
   total,
@@ -26,7 +16,6 @@ export function InboxSection({
   emptyLabel = '0 to fix',
 }: {
   inboxClass: InboxClass;
-  activeClass?: InboxClass;
   title: string;
   channel: ContributionChannel;
   total: number;
@@ -38,11 +27,7 @@ export function InboxSection({
   emptyLabel?: string;
 }) {
   return (
-    <section
-      id={`inbox-${inboxClass}`}
-      className="panel scroll-mt-28"
-      data-inbox-highlight={activeClass === inboxClass ? 'true' : undefined}
-    >
+    <section id={`inbox-${inboxClass}`} className="panel scroll-mt-28">
       <div className="panel-head">
         <ChannelBadge channel={channel} />
         <h2 className="panel-title">{title}</h2>

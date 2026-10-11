@@ -10,7 +10,6 @@ import {
   type ContributionView,
 } from '../actions/contribute';
 import { MbPicker } from '../components/MbPicker';
-import type { InboxClass } from '../lib/admin-url';
 import { mbWorkPickHit } from '@/lib/musicbrainz-pick';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxRow } from './InboxRow';
@@ -22,13 +21,11 @@ import { WorkProposalsPanel } from './WorkProposalsPanel';
 export function WorkRelationshipsSection({
   rows,
   total,
-  activeClass,
   onReload,
   onLoadMore,
 }: {
   rows: ContributionView['workGaps'];
   total: number;
-  activeClass?: InboxClass;
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
@@ -79,7 +76,6 @@ export function WorkRelationshipsSection({
   return (
     <InboxSection
       inboxClass="work"
-      activeClass={activeClass}
       title="Recordings with no work relationship"
       channel="HAND"
       total={total}

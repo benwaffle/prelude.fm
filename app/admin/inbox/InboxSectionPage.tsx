@@ -17,36 +17,31 @@ import { afterAdminBurst } from '../components/admin-action-queue';
 import { adminFailureMessage, LoadFailure, useAdminFailure } from '../components/AdminFailure';
 import type { InboxClass } from '../lib/admin-url';
 import type { InboxFocus } from '../lib/inbox-focus';
-import { BarcodesSection } from '../inbox/BarcodesSection';
-import { ContestedIsrcsSection } from '../inbox/ContestedIsrcsSection';
-import { InboxStage } from '../inbox/InboxSection';
-import { IsrcSection } from '../inbox/IsrcSection';
-import { MisalignedSection } from '../inbox/MisalignedSection';
-import { MissingReleasesSection } from '../inbox/MissingReleasesSection';
-import { StreamingUrlsSection } from '../inbox/StreamingUrlsSection';
-import { SubmittedSection } from '../inbox/SubmittedSection';
-import { blockedByInboxClass, TriageHeader } from '../inbox/TriageHeader';
-import { getReadinessFunnel } from '../actions/readiness';
-import { WorkRelationshipsSection } from '../inbox/WorkRelationshipsSection';
+import { BarcodesSection } from './BarcodesSection';
+import { ContestedIsrcsSection } from './ContestedIsrcsSection';
+import { IsrcSection } from './IsrcSection';
+import { MisalignedSection } from './MisalignedSection';
+import { MissingReleasesSection } from './MissingReleasesSection';
+import { StreamingUrlsSection } from './StreamingUrlsSection';
+import { SubmittedSection } from './SubmittedSection';
+import { WorkRelationshipsSection } from './WorkRelationshipsSection';
 
-export function ContributeTab({
+/** One Inbox section on its own page; only that section's rows are read. */
+export function InboxSectionPage({
+  section,
   focus = null,
-  inboxClass,
-  onClassChange,
 }: {
+  section: InboxClass;
   focus?: InboxFocus | null;
-  inboxClass?: InboxClass;
-  onClassChange?: (inboxClass: InboxClass) => void;
 }) {
   const [view, setView] = useState<ContributionView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const usesBot = section === 'isrc' || section === 'barcodes';
   const [bot, setBot] = useState<BotStatus | null>(null);
   const [botError, setBotError] = useState<string | null>(null);
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
-  const [blocked, setBlocked] = useState<ReturnType<typeof blockedByInboxClass>>();
-  const [blockedError, setBlockedError] = useState<string | null>(null);
-  const handledTarget = useRef<string | null>(null);
+  const handledFocus = useRef<string | null>(null);
 
   const { showFailure } = useAdminFailure();
 
@@ -61,17 +56,17 @@ export function ContributeTab({
       afterAdminBurst(
         'inbox-reload',
         async () => {
-          setView(await getContributions(limits));
+          setView(await getContributions(limits, section));
           setLoadError(null);
         },
         showFailure,
       ),
-    [limits, showFailure],
+    [limits, section, showFailure],
   );
 
   useEffect(() => {
     let cancelled = false;
-    void getContributions(limits)
+    void getContributions(limits, section)
       .then((next) => {
         if (cancelled) return;
         setView(next);
@@ -84,35 +79,29 @@ export function ContributeTab({
       cancelled = true;
     };
     // loadAttempt is only a dependency: Retry bumps it to run this load again.
-  }, [limits, loadAttempt]);
+  }, [limits, section, loadAttempt]);
 
   useEffect(() => {
-    getReadinessFunnel()
-      .then((funnel) => setBlocked(blockedByInboxClass(funnel)))
-      .catch((error: unknown) => setBlockedError(adminFailureMessage(error)));
-  }, []);
-
-  useEffect(() => {
+    if (!usesBot) return;
     getBotStatus()
       .then(setBot)
       .catch((error: unknown) => setBotError(adminFailureMessage(error)));
-  }, []);
+  }, [usesBot]);
 
   useEffect(() => {
-    if (!view) return;
-    const target = focus ? `${focus.kind}:${focus.id}` : inboxClass ? `class:${inboxClass}` : null;
-    if (!target || handledTarget.current === target) return;
-    const selector = focus
-      ? focus.kind === 'release'
+    if (!view || !focus) return;
+    const target = `${focus.kind}:${focus.id}`;
+    if (handledFocus.current === target) return;
+    const selector =
+      focus.kind === 'release'
         ? `[data-inbox-release="${CSS.escape(focus.id)}"]`
-        : `[data-inbox-album="${CSS.escape(focus.id)}"]`
-      : `#inbox-${inboxClass}`;
+        : `[data-inbox-album="${CSS.escape(focus.id)}"]`;
     const element = document.querySelector(selector);
     if (element instanceof HTMLElement) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      handledTarget.current = target;
+      handledFocus.current = target;
     }
-  }, [focus, inboxClass, view]);
+  }, [focus, view]);
 
   function loadMore(key: keyof ContributionListLimits, total: number) {
     setLimits((current) => ({
@@ -123,7 +112,7 @@ export function ContributeTab({
 
   const failure = loadError !== null && (
     <LoadFailure
-      what="the Inbox"
+      what="this list"
       error={loadError}
       onRetry={() => {
         setLoadError(null);
@@ -135,114 +124,97 @@ export function ContributeTab({
   if (!view) return failure || <Spinner className="h-4 w-4" />;
 
   return (
-    <div className="flex flex-col gap-6 pb-16">
+    <div className="flex flex-col gap-4 pb-16">
       {failure}
-      <p className="max-w-[90ch] text-[var(--ink-2)]">
-        Opening a MusicBrainz, Harmony, or MagicISRC link writes nothing. Confirming records it as
-        submitted. Recheck reads the cache.
-      </p>
+      {section !== 'submitted' && (
+        <p className="max-w-[90ch] text-[var(--ink-2)]">
+          Opening a MusicBrainz, Harmony, or MagicISRC link writes nothing. Confirming records it as
+          submitted. Recheck reads the cache.
+        </p>
+      )}
 
-      <TriageHeader
-        counts={view.counts}
-        blocked={blocked}
-        blockedError={blockedError}
-        activeClass={inboxClass}
-        onClassChange={onClassChange}
-      />
+      {usesBot && (
+        <div className="bot-cap-strip">
+          <span className="tag">BOT</span>
+          <span className="panel-title">prelude_fm_bot</span>
+          <span className="mono">
+            {bot
+              ? `${bot.spentToday} / ${bot.dailyCap} edits today`
+              : botError === null
+                ? 'Loading bot status…'
+                : `bot status unavailable: ${botError}`}
+          </span>
+          <span className="text-[var(--ink-2)]">
+            {bot ? (bot.configured ? 'configured' : 'not configured') : '—'} · ISRCs and barcodes
+            share this cap
+          </span>
+        </div>
+      )}
 
-      <div className="bot-cap-strip">
-        <span className="tag">BOT</span>
-        <span className="panel-title">prelude_fm_bot</span>
-        <span className="mono">
-          {bot
-            ? `${bot.spentToday} / ${bot.dailyCap} edits today`
-            : botError === null
-              ? 'Loading bot status…'
-              : `bot status unavailable: ${botError}`}
-        </span>
-        <span className="text-[var(--ink-2)]">
-          {bot ? (bot.configured ? 'configured' : 'not configured') : '—'} · ISRCs and barcodes
-          share this cap
-        </span>
-      </div>
-
-      <InboxStage label="Get the release">
+      {section === 'missing' && (
         <MissingReleasesSection
           rows={view.missing}
           total={view.counts.missingReleases}
-          activeClass={inboxClass}
           onReload={reload}
           onLoadMore={() => loadMore('missing', view.counts.missingReleases)}
         />
+      )}
+      {section === 'misaligned' && (
         <MisalignedSection
           rows={view.misaligned}
           total={view.counts.misaligned}
-          activeClass={inboxClass}
           onReload={reload}
           onLoadMore={() => loadMore('misaligned', view.counts.misaligned)}
         />
-      </InboxStage>
-
-      <InboxStage label="Anchor the tracks">
+      )}
+      {section === 'isrc' && (
         <IsrcSection
           rows={view.isrcReleases}
           trackTotal={view.counts.isrc}
           releaseTotal={view.counts.isrcReleases}
           bot={bot}
-          activeClass={inboxClass}
           onReload={reload}
           onBotChange={setBot}
           onLoadMore={() => loadMore('isrcReleases', view.counts.isrcReleases)}
         />
+      )}
+      {section === 'barcodes' && (
         <BarcodesSection
           rows={view.barcodes}
           total={view.counts.barcodes}
           bot={bot}
-          activeClass={inboxClass}
           onReload={reload}
           onBotChange={setBot}
           onLoadMore={() => loadMore('barcodes', view.counts.barcodes)}
         />
-      </InboxStage>
-
-      <InboxStage label="Reach the work">
+      )}
+      {section === 'work' && (
         <WorkRelationshipsSection
           rows={view.workGaps}
           total={view.counts.workRelationships}
-          activeClass={inboxClass}
           onReload={reload}
           onLoadMore={() => loadMore('workGaps', view.counts.workRelationships)}
         />
-      </InboxStage>
-
-      <InboxStage label="Hygiene">
+      )}
+      {section === 'streaming' && (
         <StreamingUrlsSection
           rows={view.streamingUrls}
           total={view.counts.streamingUrls}
-          activeClass={inboxClass}
           onReload={reload}
           onLoadMore={() => loadMore('streamingUrls', view.counts.streamingUrls)}
         />
-      </InboxStage>
-
-      <InboxStage label="Upstream errors">
+      )}
+      {section === 'contested' && (
         <ContestedIsrcsSection
           rows={view.contested}
           total={view.counts.contestedIsrcs}
-          activeClass={inboxClass}
           onReload={reload}
           onLoadMore={() => loadMore('contested', view.counts.contestedIsrcs)}
         />
-      </InboxStage>
-
-      <InboxStage label="Submitted">
-        <SubmittedSection
-          rows={view.recent}
-          counts={view.counts.submissions}
-          activeClass={inboxClass}
-          onReload={reload}
-        />
-      </InboxStage>
+      )}
+      {section === 'submitted' && (
+        <SubmittedSection rows={view.recent} counts={view.counts.submissions} onReload={reload} />
+      )}
     </div>
   );
 }
