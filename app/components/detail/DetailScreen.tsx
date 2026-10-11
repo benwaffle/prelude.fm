@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import type { OtherRecording, WorkDetail, WorkSummary } from '@/lib/library-types';
-import { getMusicBrainzWorkDetail, getMusicBrainzWorkParent } from '@/app/actions/library-mb';
+import { getMusicBrainzWorkPage } from '@/app/actions/library-mb';
 import type { WorkParent } from '@/app/actions/work-hierarchy';
 import {
   hexToRgba,
@@ -38,26 +38,12 @@ export function DetailScreen({
 
   useEffect(() => {
     let cancelled = false;
-    const asking = getMusicBrainzWorkParent(workId);
-    asking
-      .then((found) => {
-        if (!cancelled) setParent(found);
-      })
-      .catch(() => {
-        if (!cancelled) setParent(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workId]);
-
-  useEffect(() => {
-    let cancelled = false;
     setStatus('loading');
-    const loading = getMusicBrainzWorkDetail(workId, recordingId, Array.from(likedTrackIds));
+    const loading = getMusicBrainzWorkPage(workId, recordingId);
     loading
-      .then((result) => {
+      .then(({ detail: result, parent: found }) => {
         if (cancelled) return;
+        setParent(found);
         if (!result) {
           setStatus('missing');
           return;
@@ -69,12 +55,15 @@ export function DetailScreen({
       })
       .catch((err) => {
         console.error('Failed to load recording:', err);
-        if (!cancelled) setStatus('missing');
+        if (!cancelled) {
+          setParent(null);
+          setStatus('missing');
+        }
       });
     return () => {
       cancelled = true;
     };
-    // Liked state is read once for the initial paint; hearts update locally.
+    // registerWorks is the library's; it is not a reason to read the page again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workId, recordingId]);
 
