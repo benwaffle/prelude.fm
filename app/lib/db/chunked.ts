@@ -1,13 +1,18 @@
 /**
  * Reading a long list of ids without losing its tail.
  *
- * SQLite binds each element of an `IN` list as a parameter and takes about a
- * thousand of them, so any query whose list comes from the data — a
+ * SQLite binds each element of an `IN` list as a parameter and caps how many
+ * a statement takes, so any query whose list comes from the data — a
  * composer's works, a library's tracks, an album's ISRCs — has to be read in
  * pieces. Slicing the list to fit is not a guard: it answers the question
  * for part of the input and reports the answer as if it were for all of it.
+ *
+ * Turso's libSQL takes 32,766 parameters per statement (checked against prod
+ * 2026-10-11: 32,766 bind, 40,000 are refused). Each chunk is a round trip,
+ * so a chunk is sized to read a whole library at once while leaving room for
+ * a query that binds its chunk up to three times.
  */
-const PARAMETER_CHUNK = 400;
+const PARAMETER_CHUNK = 10_000;
 
 export async function forChunks<Input, Row>(
   values: Iterable<Input>,
