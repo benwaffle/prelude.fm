@@ -254,3 +254,26 @@ export function musicBrainzLibraryView(
     accounting: projection.accounting,
   };
 }
+
+/**
+ * The library is read together with the rest of each liked track's album, so
+ * a card carries every movement the album has rather than only the liked
+ * ones — the unliked movements are real tracks, playable, just not hearted.
+ * This narrows that read back to the library: cards holding at least one
+ * liked track, and the gap list and accounting for liked tracks only, since
+ * an album-mate nobody liked is not part of the library.
+ */
+export function keepLikedHoldings(
+  library: MusicBrainzLibrary,
+  likedTrackIds: Set<string>,
+): MusicBrainzLibrary {
+  return {
+    works: library.works.filter((work) =>
+      work.movements.some((movement) => movement.trackId && likedTrackIds.has(movement.trackId)),
+    ),
+    unresolvedTracks: library.unresolvedTracks.filter((track) =>
+      likedTrackIds.has(track.spotifyTrackId),
+    ),
+    accounting: library.accounting.filter((track) => likedTrackIds.has(track.spotifyTrackId)),
+  };
+}

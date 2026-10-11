@@ -1,6 +1,7 @@
 'use server';
 
 import {
+  findAlbumMateTrackIds,
   findHeldWorkMbids,
   findProviderTracksForComposer,
   findProviderTracksForWork,
@@ -12,6 +13,7 @@ import type { OtherRecording, WorkDetail, WorkSummary } from '@/lib/library-type
 import { formatDuration, stripCollectionPrefix, type LibraryWork } from '@/lib/prelude';
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
 import {
+  keepLikedHoldings,
   musicBrainzLibraryView,
   playedMovementCount,
   type MusicBrainzLibrary,
@@ -27,11 +29,13 @@ export async function getMusicBrainzLibrary(
   likedTrackIds: string[],
   addedAt: Array<[string, string]> = [],
 ): Promise<MusicBrainzLibrary> {
-  const facts = await loadMusicBrainzLibraryFacts(likedTrackIds);
-  return musicBrainzLibraryView(
-    projectMusicBrainzLibrary(facts),
-    new Set(likedTrackIds),
-    new Map(addedAt),
+  // Read the whole album behind each liked track, so the movements nobody
+  // hearted are still on the card and can be played from it.
+  const liked = new Set(likedTrackIds);
+  const facts = await loadMusicBrainzLibraryFacts(await findAlbumMateTrackIds(likedTrackIds));
+  return keepLikedHoldings(
+    musicBrainzLibraryView(projectMusicBrainzLibrary(facts), liked, new Map(addedAt)),
+    liked,
   );
 }
 

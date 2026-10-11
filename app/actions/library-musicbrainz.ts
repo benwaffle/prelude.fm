@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, ne, notLike, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNotNull, isNull, ne, notLike, or, sql } from 'drizzle-orm';
 import { db, type DatabaseExecutor } from '@/lib/db';
 import { forChunks } from '@/lib/db/chunked';
 import {
@@ -730,6 +730,57 @@ export async function ownWorkHoldings(
     ];
   };
   return workMbids ? forChunks(workMbids, read) : read(null);
+}
+
+/**
+ * Every track on the same Spotify albums as these, these included. Liking one
+ * movement still puts the whole album's performance of the work on the card,
+ * and the rest of it has to be read to be playable. Album-mates with neither a
+ * recording nor one of our work links can't land on a card, so they're not
+ * read.
+ */
+export async function findAlbumMateTrackIds(
+  spotifyTrackIds: string[],
+  database: DatabaseExecutor = db,
+): Promise<string[]> {
+  const albums = await forChunks(Array.from(new Set(spotifyTrackIds)), (chunk) =>
+    database
+      .select({ spotifyAlbumId: spotifyTrack.spotifyAlbumId })
+      .from(spotifyTrack)
+      .where(inArray(spotifyTrack.spotifyId, chunk)),
+  );
+  const mates = await forChunks(
+    Array.from(new Set(albums.map((album) => album.spotifyAlbumId))),
+    (chunk) =>
+      database
+        .select({ spotifyId: spotifyTrack.spotifyId })
+        .from(spotifyTrack)
+        .where(
+          and(
+            inArray(spotifyTrack.spotifyAlbumId, chunk),
+            or(
+              exists(
+                database
+                  .select({ one: sql`1` })
+                  .from(trackRecording)
+                  .where(eq(trackRecording.spotifyTrackId, spotifyTrack.spotifyId)),
+              ),
+              exists(
+                database
+                  .select({ one: sql`1` })
+                  .from(trackWorkLink)
+                  .where(
+                    and(
+                      eq(trackWorkLink.spotifyTrackId, spotifyTrack.spotifyId),
+                      isNotNull(trackWorkLink.workMbid),
+                    ),
+                  ),
+              ),
+            ),
+          ),
+        ),
+  );
+  return Array.from(new Set([...spotifyTrackIds, ...mates.map((mate) => mate.spotifyId)]));
 }
 
 /**
