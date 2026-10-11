@@ -21,6 +21,7 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
   const [open, setOpen] = useState(false);
   const [queued, setQueued] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState<Set<string>>(new Set());
+  const [failed, setFailed] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!open || tracks.length === 0) return;
     let cancelled = false;
@@ -36,28 +37,27 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
 
   async function send(trackId: string) {
     setSending((current) => new Set(current).add(trackId));
+    setFailed((current) => without(current, trackId));
     try {
       await submitToMatchQueue([trackId]);
       setQueued((current) => new Set(current).add(trackId));
     } catch (error) {
       console.error('Failed to submit track for matching:', error);
+      setFailed((current) => new Set(current).add(trackId));
     } finally {
-      setSending((current) => {
-        const next = new Set(current);
-        next.delete(trackId);
-        return next;
-      });
+      setSending((current) => without(current, trackId));
     }
   }
   const { data: session } = authClient.useSession();
   const isAdmin = session?.user?.name === 'benwaffle';
   if (tracks.length === 0) return null;
 
-  const byReason = new Map<MusicBrainzGapCode, UnresolvedLibraryTrack[]>();
+  // Null: the reader could not place the track but recorded no reason. Kept
+  // as its own group so the count above matches what is listed.
+  const byReason = new Map<MusicBrainzGapCode | null, UnresolvedLibraryTrack[]>();
   for (const track of tracks) {
     // The first gap is the one that stopped it; the rest follow from it.
-    const code = track.gaps[0]?.code;
-    if (!code) continue;
+    const code = track.gaps[0]?.code ?? null;
     byReason.set(code, [...(byReason.get(code) ?? []), track]);
   }
   const groups = Array.from(byReason).sort((left, right) => right[1].length - left[1].length);
@@ -79,18 +79,19 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
       {open && (
         <div className="mt-[10px]">
           {groups.map(([code, group]) => (
-            <div key={code} className="py-[7px]">
+            <div key={code ?? 'none'} className="py-[7px]">
               <div className="flex items-baseline gap-[9px]">
-                <span className="font-display text-[13px] text-ink-2">{REASONS[code]}</span>
+                <span className="font-display text-[13px] text-ink-2">
+                  {code ? REASONS[code] : 'No reason recorded'}
+                </span>
                 <span className="font-meta text-[10px] tracking-[0.14em] text-muted uppercase tabular-nums">
                   {group.length}
                 </span>
               </div>
               <ul className="mt-[3px] list-none pl-0">
                 {group.map((track) => {
-                  const destination = gapRoute(code, {
-                    spotifyAlbumId: track.spotifyAlbumId,
-                  });
+                  const destination =
+                    code && gapRoute(code, { spotifyAlbumId: track.spotifyAlbumId });
                   return (
                     <li
                       key={track.spotifyTrackId}
@@ -117,7 +118,9 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
                           ? 'Queued'
                           : sending.has(track.spotifyTrackId)
                             ? 'Sending…'
-                            : 'Send for matching'}
+                            : failed.has(track.spotifyTrackId)
+                              ? 'Sending failed, retry'
+                              : 'Send for matching'}
                       </button>
                       {isAdmin && destination && (
                         <Link
@@ -137,4 +140,10 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
       )}
     </div>
   );
+}
+
+function without(set: Set<string>, value: string): Set<string> {
+  const next = new Set(set);
+  next.delete(value);
+  return next;
 }

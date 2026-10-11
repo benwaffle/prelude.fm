@@ -255,7 +255,7 @@ export async function measureReleaseCorrection(
   // When our own seed was opened on MusicBrainz, that form is what the person
   // corrected; otherwise it is the Spotify album Harmony reads.
   const seeded = (await cachedReleaseSeeds([albumId], database)).get(albumId);
-  const usedSeed = seeded?.seededAt ? seeded.plan : null;
+  const usedSeed = seeded?.seededPlan ?? null;
   const seed = usedSeed
     ? seedPlanBaseline(usedSeed)
     : (cached?.result.seed ?? (await loadReleaseSeed(albumId, database)));

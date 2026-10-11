@@ -98,7 +98,9 @@ export function MissingReleasesSection({
     void recordMusicBrainzSeeded(albumId).then(() =>
       setSeeds((current) => {
         const seed = current[albumId] ?? rows.find((row) => row.albumId === albumId)?.seed;
-        return seed ? { ...current, [albumId]: { ...seed, seededAt: new Date() } } : current;
+        return seed
+          ? { ...current, [albumId]: { ...seed, seededAt: new Date(), seededPlan: seed.plan } }
+          : current;
       }),
     );
   }

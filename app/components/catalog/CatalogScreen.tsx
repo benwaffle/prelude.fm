@@ -37,6 +37,9 @@ export function CatalogScreen() {
   const [workId, setWorkId] = useState<string | null>(null);
   const [header, setHeader] = useState<WorkHeader>(null);
   const [recordings, setRecordings] = useState<CatalogRecording[]>([]);
+  const [worksLoading, setWorksLoading] = useState(false);
+  // A load that failed is said out loud, not shown as an empty pane.
+  const [failure, setFailure] = useState<string | null>(null);
   // Mobile drill-down depth: 0 composers, 1 works, 2 recordings.
   const [level, setLevel] = useState(0);
   const [isNarrow, setIsNarrow] = useState(false);
@@ -55,19 +58,33 @@ export function CatalogScreen() {
         setComposers(list);
         setComposerId((current) => current ?? list[0]?.id ?? null);
       })
-      .catch((err) => console.error('Failed to load the catalogue:', err));
+      .catch((err: unknown) => setFailure(`the composers: ${messageOf(err)}`));
   }, []);
 
   useEffect(() => {
     if (composerId === null) return;
     let cancelled = false;
+    // Clear the last composer's works so they never sit under this one's name.
+    setWorks([]);
+    setWorksLoading(true);
+    setFailure(null);
     getMusicBrainzCatalogWorks(composerId)
       .then((list) => {
         if (cancelled) return;
         setWorks(list);
-        setWorkId(list[0]?.id ?? null);
+        // A search hit picks its own work; keep it if it belongs here.
+        setWorkId((current) =>
+          current && list.some((w) => w.id === current) ? current : (list[0]?.id ?? null),
+        );
       })
-      .catch((err) => console.error('Failed to load works:', err));
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setWorkId(null);
+        setFailure(`this composer's works: ${messageOf(err)}`);
+      })
+      .finally(() => {
+        if (!cancelled) setWorksLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -90,7 +107,12 @@ export function CatalogScreen() {
         setHeader(head);
         setRecordings(recs);
       })
-      .catch((err) => console.error('Failed to load recordings:', err));
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setHeader(null);
+        setRecordings([]);
+        setFailure(`this work's recordings: ${messageOf(err)}`);
+      });
     return () => {
       cancelled = true;
     };
@@ -114,21 +136,27 @@ export function CatalogScreen() {
    * sonata as L 413 should find it even though its card says Kk. 9.
    */
   const [hits, setHits] = useState<WorkSearchHit[]>([]);
+  const [searchFailure, setSearchFailure] = useState<string | null>(null);
   const trimmed = query.trim();
 
   useEffect(() => {
     if (trimmed.length < 2) {
       setHits([]);
+      setSearchFailure(null);
       return;
     }
     let live = true;
     const timer = setTimeout(() => {
       searchMusicBrainzWorks(trimmed)
         .then((found) => {
-          if (live) setHits(found);
+          if (!live) return;
+          setHits(found);
+          setSearchFailure(null);
         })
-        .catch(() => {
-          if (live) setHits([]);
+        .catch((err: unknown) => {
+          if (!live) return;
+          setHits([]);
+          setSearchFailure(messageOf(err));
         });
     }, 180);
     return () => {
@@ -205,12 +233,19 @@ export function CatalogScreen() {
         <SearchResults
           query={trimmed}
           hits={hits}
+          failure={searchFailure}
           onPick={(hit) => {
             setComposerId(hit.composerId);
             setWorkId(hit.workId);
             descend(2);
           }}
         />
+      )}
+
+      {failure && (
+        <div className="border-b border-rule bg-paper-2 px-5 py-3 font-display text-[14px] text-accent italic">
+          We couldn’t load {failure}
+        </div>
       )}
 
       <div className="grid flex-1 grid-cols-[264px_340px_minmax(0,1fr)] max-[900px]:grid-cols-[minmax(0,1fr)]">
@@ -223,6 +258,7 @@ export function CatalogScreen() {
         <WorkPane
           composer={composer}
           works={works}
+          loading={worksLoading}
           selectedId={workId}
           onSelect={pickWork}
           hidden={isNarrow && level !== 1}
@@ -243,18 +279,22 @@ export function CatalogScreen() {
 function SearchResults({
   query,
   hits,
+  failure,
   onPick,
 }: {
   query: string;
   hits: WorkSearchHit[];
+  failure: string | null;
   onPick: (hit: WorkSearchHit) => void;
 }) {
   return (
     <div className="border-b border-rule bg-paper-2 px-5 py-3">
       <div className="mb-2 font-meta text-[9.5px] tracking-[0.2em] text-muted uppercase">
-        {hits.length > 0
-          ? `${hits.length} work${hits.length === 1 ? '' : 's'} matching “${query}”`
-          : `Nothing matching “${query}”`}
+        {failure
+          ? `Search failed: ${failure}`
+          : hits.length > 0
+            ? `${hits.length} work${hits.length === 1 ? '' : 's'} matching “${query}”`
+            : `Nothing matching “${query}”`}
       </div>
       <div className="flex flex-col">
         {hits.map((hit) => (
@@ -409,12 +449,14 @@ function ComposerFace({ name, image }: { name: string; image: string | null }) {
 function WorkPane({
   composer,
   works,
+  loading,
   selectedId,
   onSelect,
   hidden,
 }: {
   composer: CatalogComposer | null;
   works: CatalogWork[];
+  loading: boolean;
   selectedId: string | null;
   onSelect: (w: CatalogWork) => void;
   hidden: boolean;
@@ -472,7 +514,11 @@ function WorkPane({
         </div>
       </div>
 
-      {works.length === 0 && <PaneEmpty>No works are recorded for this composer yet.</PaneEmpty>}
+      {works.length === 0 && (
+        <PaneEmpty>
+          {loading ? 'Reading the catalogue…' : 'No works are recorded for this composer yet.'}
+        </PaneEmpty>
+      )}
       {byGenre.map(([genre, group]) => (
         <Fragment key={genre ?? '\u0000unrecorded'}>
           <div
@@ -655,7 +701,7 @@ function RecordingPane({
                 </span>
               )}
               <span className="block truncate font-display text-[18px] leading-[1.15] font-medium">
-                {r.performer}
+                {r.performer ?? <span className="text-muted italic">performer not recorded</span>}
               </span>
               {r.ensemble && (
                 <span className="block truncate font-display text-[13.5px] text-ink-2 italic">
@@ -685,12 +731,11 @@ function RecordingPane({
             </span>
           </Link>
         ))}
-        {recordings.length === 0 && (
-          <div className="px-[26px] py-[14px] font-display text-[12.5px] text-muted italic max-[900px]:px-4 max-[900px]:py-3">
-            No recordings of this work in the catalogue yet.
-          </div>
-        )}
       </div>
     </div>
   );
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

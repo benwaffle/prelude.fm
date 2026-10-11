@@ -33,7 +33,10 @@ interface LibraryContextValue {
   /** Spotify is being re-read behind a library we're already showing. */
   refreshing: boolean;
   matching: boolean;
+  /** Spotify would not hand over the liked songs. */
   error: string | null;
+  /** We hold the liked songs but could not match them to works. */
+  matchError: string | null;
   totalSaved: number;
   toggleLike: (trackId: string) => void;
   /** Lets the detail screen contribute a recording the library doesn't hold. */
@@ -56,6 +59,7 @@ export function LibraryProvider({
   const { tracks, loading, refreshing, error, total } = useLikedSongs(accessToken, userId);
   const [works, setWorks] = useState<LibraryWork[]>([]);
   const [gapTracks, setGapTracks] = useState<UnresolvedLibraryTrack[]>([]);
+  const [matchError, setMatchError] = useState<string | null>(null);
   const [extra, setExtra] = useState<LibraryWork[]>([]);
   // Optimistic overrides so a heart responds before Spotify confirms.
   const [pendingLikes, setPendingLikes] = useState<Map<string, boolean>>(new Map());
@@ -102,8 +106,13 @@ export function LibraryProvider({
         if (cancelled) return;
         setWorks(resolved.works);
         setGapTracks(resolved.unresolvedTracks);
+        setMatchError(null);
       })
-      .catch((err) => console.error('Failed to resolve library works:', err))
+      .catch((err: unknown) => {
+        console.error('Failed to resolve library works:', err);
+        // Say so, rather than leave an empty library that reads as "no likes".
+        if (!cancelled) setMatchError(err instanceof Error ? err.message : String(err));
+      })
       .finally(() => {
         // Either way this snapshot has been dealt with; stop showing a spinner.
         if (!cancelled) setResolvedFor(signature);
@@ -191,6 +200,7 @@ export function LibraryProvider({
     refreshing,
     matching,
     error,
+    matchError,
     totalSaved: total,
     toggleLike,
     registerWorks,

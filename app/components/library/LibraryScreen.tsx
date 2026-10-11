@@ -20,7 +20,8 @@ const SORTS: [Sort, string][] = [
 
 /** The library: every work you hold at least one liked movement of. */
 export function LibraryScreen() {
-  const { works, gapTracks, loading, refreshing, matching, error, toggleLike } = useLibrary();
+  const { works, gapTracks, loading, refreshing, matching, error, matchError, toggleLike } =
+    useLibrary();
   const { currentTrack, play } = useSpotifyPlayer();
   const { query, setQuery } = useNavSearch();
   const [sort, setSort] = useState<Sort>('added');
@@ -123,7 +124,13 @@ export function LibraryScreen() {
         </p>
       )}
 
-      {!error && likedWorks.length === 0 && (
+      {!error && matchError && (
+        <p className="py-10 font-display text-[15px] text-accent italic">
+          We couldn’t match your liked songs to works: {matchError}
+        </p>
+      )}
+
+      {!error && !matchError && likedWorks.length === 0 && (
         <p className="py-16 font-display text-[15px] text-muted italic">
           {loading || matching
             ? 'Reading your liked songs…'
