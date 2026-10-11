@@ -206,9 +206,10 @@ export const matchQueue = sqliteTable(
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
     submittedBy: text('submitted_by').notNull(),
-    // "pending", "processing", "matched", "failed", "not_classical", "unresolved"
-    // (MusicBrainz pass finished without placing the track; see pipeline_outcome)
-    status: text('status').notNull(),
+    /** See `MatchQueueStatus` for what each state means. */
+    status: text('status', {
+      enum: ['pending', 'processing', 'matched', 'failed', 'not_classical', 'unresolved'],
+    }).notNull(),
     attempts: integer('attempts').default(0).notNull(),
     lastAttemptAt: integer('last_attempt_at', { mode: 'timestamp_ms' }),
     processedAt: integer('processed_at', { mode: 'timestamp_ms' }),
@@ -792,76 +793,47 @@ export const mbInvariantResult = sqliteTable('mb_invariant_result', {
  */
 
 /**
- * What we could find out about a missing album before somebody adds it
- * through Harmony: whether MusicBrainz already has it in some form, which
- * MusicBrainz artists its Spotify artists are, and what Harmony will likely
- * get wrong for a classical release.
+ * What we know about a missing album at each stage of adding it, one row per
+ * album and stage. Cached because each stage costs live MusicBrainz requests,
+ * and a page load must not spend them. A stage is overwritten when it runs
+ * again.
  *
- * Cached because each check costs live MusicBrainz requests, and a page load
- * must not spend them. One row per album, overwritten when run again.
- */
-export const mbReleasePrecheck = sqliteTable('mb_release_precheck', {
-  spotifyAlbumId: text('spotify_album_id')
-    .primaryKey()
-    .references(() => spotifyAlbum.spotifyId),
-  result: text('result', { mode: 'json' }).$type<ReleasePrecheck>().notNull(),
-  /** MusicBrainz requests the check spent. */
-  requests: integer('requests').notNull(),
-  checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
-    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-    .notNull(),
-});
-
-/**
- * What the person adding a release had to change, compared with what Harmony
- * would have seeded from Spotify.
+ * - `precheck`: whether MusicBrainz already has the album in some form, which
+ *   MusicBrainz artists its Spotify artists are, and what Harmony will likely
+ *   get wrong for a classical release (`ReleasePrecheck`).
+ * - `seed`: the release-editor seed we prepared — track by track, which
+ *   recording is pre-filled and why (`SeedPlan`).
+ * - `seeded`: the seed as it was when the person opened it on MusicBrainz.
+ *   Preparing the seed again does not touch it, so the correction record
+ *   compares against the form that was actually used.
+ * - `correction`: what the person adding the release had to change, compared
+ *   with the seed (`ReleaseCorrectionRecord`). The measurement that decides
+ *   which kinds of album a bot could one day add unattended.
  *
- * The measurement that decides which kinds of album a bot could one day add
- * unattended: an album kind whose releases land with no corrections is a
- * candidate, one that always needs its credits rewritten is not.
+ * The value's type follows the stage; `missing-release-store.ts` is the only
+ * reader and writer and holds that mapping.
  */
-export const mbReleaseCorrection = sqliteTable(
-  'mb_release_correction',
+export const mbMissingRelease = sqliteTable(
+  'mb_missing_release',
   {
     spotifyAlbumId: text('spotify_album_id')
-      .primaryKey()
+      .notNull()
       .references(() => spotifyAlbum.spotifyId),
-    releaseMbid: text('release_mbid').notNull(),
-    kind: text('kind', {
-      enum: ['new-edition', 'box-set', 'compilation', 'single-composer', 'unknown'],
-    }).notNull(),
-    /** How many kinds of correction were found; 0 means none. */
-    corrections: integer('corrections').notNull(),
-    /** Some comparisons could not be made, so a 0 above is not the whole story. */
-    incomplete: integer('incomplete', { mode: 'boolean' }).notNull(),
-    record: text('record', { mode: 'json' }).$type<ReleaseCorrectionRecord>().notNull(),
-    measuredAt: integer('measured_at', { mode: 'timestamp_ms' })
+    stage: text('stage', { enum: ['precheck', 'seed', 'seeded', 'correction'] }).notNull(),
+    value: text('value', { mode: 'json' })
+      .$type<ReleasePrecheck | SeedPlan | ReleaseCorrectionRecord>()
+      .notNull(),
+    /**
+     * MusicBrainz requests the stage spent (a seed's excludes its pre-check).
+     * Null for corrections measured before they were counted.
+     */
+    requests: integer('requests'),
+    recordedAt: integer('recorded_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
   },
-  (table) => [index('mb_release_correction_kind_idx').on(table.kind)],
+  (table) => [primaryKey({ columns: [table.spotifyAlbumId, table.stage] })],
 );
-
-/**
- * The release-editor seed we prepared for a missing album: the plan (track
- * by track, which recording is pre-filled and why) from which the form is
- * built. `seededAt` is set when the person opened it on MusicBrainz, and
- * `seededPlan` keeps the plan they opened: the correction record compares
- * against that, even if the seed is prepared again afterwards.
- */
-export const mbReleaseSeed = sqliteTable('mb_release_seed', {
-  spotifyAlbumId: text('spotify_album_id')
-    .primaryKey()
-    .references(() => spotifyAlbum.spotifyId),
-  plan: text('plan', { mode: 'json' }).$type<SeedPlan>().notNull(),
-  /** MusicBrainz requests spent preparing it (the pre-check is counted separately). */
-  requests: integer('requests').notNull(),
-  preparedAt: integer('prepared_at', { mode: 'timestamp_ms' })
-    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-    .notNull(),
-  seededAt: integer('seeded_at', { mode: 'timestamp_ms' }),
-  seededPlan: text('seeded_plan', { mode: 'json' }).$type<SeedPlan>(),
-});
 
 /**
  * A work we propose for a recording that MusicBrainz links to none, and what
@@ -880,6 +852,8 @@ export const mbWorkProposal = sqliteTable(
     recordingMbid: text('recording_mbid').primaryKey(),
     releaseMbid: text('release_mbid'),
     proposal: text('proposal', { mode: 'json' }).$type<WorkProposal>(),
+    /** The proposed work: `proposal.workMbid`, kept as a column to join and compare on. */
+    workMbid: text('work_mbid'),
     status: text('status', { enum: ['proposed', 'approved', 'dismissed'] })
       .default('proposed')
       .notNull(),
@@ -890,7 +864,10 @@ export const mbWorkProposal = sqliteTable(
       .notNull(),
     decidedAt: integer('decided_at', { mode: 'timestamp_ms' }),
   },
-  (table) => [index('mb_work_proposal_status_idx').on(table.status)],
+  (table) => [
+    index('mb_work_proposal_status_idx').on(table.status),
+    index('mb_work_proposal_work_idx').on(table.workMbid),
+  ],
 );
 
 /**

@@ -20,16 +20,14 @@
  * the token carries whoever was logged in, and edits made with the wrong one
  * are attributed to the wrong account.
  */
-import { loadEnvConfig } from '@next/env';
+import { defineScript } from './lib/cli';
 import {
   botAuthorizationUrl,
   BOT_REDIRECT_URI,
   TOKEN_ENDPOINT,
 } from '../app/lib/musicbrainz-oauth';
 
-async function main() {
-  loadEnvConfig(process.cwd());
-
+defineScript({ options: {}, positionals: true, database: false }, async ({ positionals }) => {
   const clientId = process.env.MUSICBRAINZ_CLIENT_ID;
   const clientSecret = process.env.MUSICBRAINZ_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -38,11 +36,10 @@ async function main() {
         'Register at https://musicbrainz.org/account/applications as an\n' +
         'Installed application with callback urn:ietf:wg:oauth:2.0:oob',
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
-  const code = process.argv[2];
+  const code = positionals[0];
 
   if (!code) {
     const url = botAuthorizationUrl(clientId);
@@ -77,8 +74,7 @@ ${url}
       `MusicBrainz refused the code (${response.status}). ` +
         'Codes are single-use and short-lived — request a fresh one with `pnpm mb:authorise`.',
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
   const body = (await response.json()) as { refresh_token?: string };
@@ -87,8 +83,7 @@ ${url}
       'No refresh token came back. The authorise URL needs access_type=offline; ' +
         'run `pnpm mb:authorise` again to get a correctly formed one.',
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
   console.log(`
@@ -103,9 +98,4 @@ holding it can edit MusicBrainz as prelude_fm_bot. Check with:
 
   pnpm mb:bot --max-edits 5
 `);
-}
-
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
 });

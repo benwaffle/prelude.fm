@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { invariantHealth, type GradedInvariant } from '../app/lib/musicbrainz-invariant-health';
+import {
+  invariantHealth,
+  type GradedInvariant,
+  type InvariantSeverity,
+} from '../app/lib/musicbrainz-invariant-health';
 
 const NOW = new Date('2026-09-21T12:00:00Z');
 
 /** Stands in for the check set; the real one is SQL and needs a database. */
-const CHECKS = [
+const CHECKS: { name: string; severity: InvariantSeverity }[] = [
   { name: 'every anchor names a cached recording', severity: 'hard' },
   { name: 'every work part has a parent we hold', severity: 'hard' },
-  { name: 'recordings without credits', severity: 'soft' },
+  { name: 'recordings without credits', severity: 'review' },
 ];
 
 function recorded(overrides: Partial<GradedInvariant> = {}): GradedInvariant[] {

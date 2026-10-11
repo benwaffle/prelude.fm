@@ -61,7 +61,9 @@ export type MbRecordingSearchHit = {
   id: string;
   title: string;
   score?: number;
+  length?: number | null;
   isrcs?: string[];
+  releases?: { 'release-group'?: { id: string; title: string } }[];
 };
 
 /** A work as it appears on a recording's `performance` relationship. */

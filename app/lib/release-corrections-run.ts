@@ -8,17 +8,10 @@
  * yet — one browse each, up to `ORIGIN_BROWSE_LIMIT`.
  */
 import { eq, inArray } from 'drizzle-orm';
-import { db, type DatabaseExecutor } from './db';
-import {
-  mbRecordingWork,
-  mbReleaseCorrection,
-  mbWork,
-  spotifyAlbum,
-  trackRecording,
-  spotifyTrack,
-} from './db/schema';
-import { mbGet } from './musicbrainz';
-import type { MusicBrainzChannel } from './musicbrainz-gateway';
+import { db } from './db';
+import { mbRecordingWork, mbWork, spotifyAlbum, trackRecording, spotifyTrack } from './db/schema';
+import { createMbSession, type MbSession } from './musicbrainz-session';
+import { readMissingReleases, writeMissingRelease } from './missing-release-store';
 import {
   compareRelease,
   type LandedArtist,
@@ -26,57 +19,33 @@ import {
   type RecordingOrigin,
   type ReleaseCorrectionRecord,
 } from './release-corrections';
-import { cachedReleasePrechecks, loadReleaseSeed } from './release-precheck-run';
-import { cachedReleaseSeeds } from './release-seeding-run';
+import { precheckHits } from './release-precheck';
+import { loadReleaseSeed } from './release-precheck-run';
+import { preparedSeedOf } from './release-seeding-run';
 import { seedPlanBaseline } from './release-seeding';
 
-const CHANNEL: MusicBrainzChannel = 'interactive';
+export { correctionRecords, type CorrectionRow } from './missing-release-store';
+
 const SEARCH_CHUNK = 20;
 /** Recordings browsed one at a time when search cannot place them; the rest stay unknown. */
 export const ORIGIN_BROWSE_LIMIT = 150;
 
-type RawCredit = { name?: string; artist?: { id: string; name: string } }[];
-const artistsOf = (credit: RawCredit | undefined): LandedArtist[] =>
-  (credit ?? []).flatMap((part) =>
-    part.artist ? [{ mbid: part.artist.id, name: part.name ?? part.artist.name }] : [],
-  );
-
-type RawRelease = {
-  id: string;
-  title: string;
-  'artist-credit'?: RawCredit;
-  'release-group'?: { id: string; title: string };
-  media?: {
-    position?: number;
-    tracks?: {
-      position?: number;
-      title?: string;
-      length?: number | null;
-      'artist-credit'?: RawCredit;
-      recording?: {
-        id: string;
-        title?: string;
-        isrcs?: string[];
-        'artist-credit'?: RawCredit;
-      };
-    }[];
-  }[];
-};
+const landedArtists = (credit: { artistId: string; name: string }[]): LandedArtist[] =>
+  credit.map((part) => ({ mbid: part.artistId, name: part.name }));
 
 /** The release as it now stands on MusicBrainz, or null if it does not exist. */
-export async function fetchLandedRelease(releaseMbid: string): Promise<LandedRelease | null> {
-  const raw = await mbGet<RawRelease>(
-    `/release/${releaseMbid}?inc=recordings+artist-credits+release-groups+isrcs&fmt=json`,
-    CHANNEL,
-  );
-  if (!raw) return null;
-  const group = raw['release-group'];
+async function fetchLandedRelease(
+  mb: MbSession,
+  releaseMbid: string,
+): Promise<LandedRelease | null> {
+  const release = await mb.release(releaseMbid);
+  if (!release) return null;
+  const group = release.releaseGroup;
   let otherReleases: number | null = null;
   if (group) {
     try {
-      const browse = await mbGet<{ 'release-count'?: number }>(
+      const browse = await mb.get<{ 'release-count'?: number }>(
         `/release?release-group=${group.id}&limit=1&fmt=json`,
-        CHANNEL,
       );
       if (typeof browse?.['release-count'] === 'number') {
         otherReleases = Math.max(0, browse['release-count'] - 1);
@@ -86,32 +55,24 @@ export async function fetchLandedRelease(releaseMbid: string): Promise<LandedRel
     }
   }
   return {
-    mbid: raw.id,
-    title: raw.title,
-    artists: artistsOf(raw['artist-credit']),
+    mbid: release.id,
+    title: release.title,
+    artists: landedArtists(release.artistCredit),
     releaseGroup: { mbid: group?.id ?? '', title: group?.title ?? '', otherReleases },
-    media: raw.media?.length ?? 0,
-    tracks: (raw.media ?? []).flatMap((medium, mediumIndex) =>
-      (medium.tracks ?? []).flatMap((track, trackIndex) =>
-        track.recording
-          ? [
-              {
-                medium: medium.position ?? mediumIndex + 1,
-                position: track.position ?? trackIndex + 1,
-                title: track.title ?? track.recording.title ?? '',
-                lengthMs: track.length ?? null,
-                artists: artistsOf(track['artist-credit']),
-                recording: {
-                  mbid: track.recording.id,
-                  title: track.recording.title ?? '',
-                  artists: artistsOf(track.recording['artist-credit']),
-                  isrcs: track.recording.isrcs ?? [],
-                },
-              },
-            ]
-          : [],
-      ),
-    ),
+    media: release.media,
+    tracks: release.tracks.map((track) => ({
+      medium: track.medium,
+      position: track.position,
+      title: track.title,
+      lengthMs: track.length,
+      artists: landedArtists(track.artistCredit),
+      recording: {
+        mbid: track.recording.id,
+        title: track.recording.title,
+        artists: landedArtists(track.recording.artistCredit),
+        isrcs: track.recording.isrcs,
+      },
+    })),
   };
 }
 
@@ -124,7 +85,8 @@ export async function fetchLandedRelease(releaseMbid: string): Promise<LandedRel
  * a recording it has not indexed yet — typically one created minutes ago —
  * is browsed directly.
  */
-export async function recordingOrigins(
+async function recordingOrigins(
+  mb: MbSession,
   releaseMbid: string,
   recordingMbids: string[],
   knownBefore: Set<string>,
@@ -140,9 +102,8 @@ export async function recordingOrigins(
     const chunk = pending.slice(index, index + SEARCH_CHUNK);
     let found: { id: string; releases?: { id: string }[] }[] = [];
     try {
-      const result = await mbGet<{ recordings?: { id: string; releases?: { id: string }[] }[] }>(
+      const result = await mb.get<{ recordings?: { id: string; releases?: { id: string }[] }[] }>(
         `/recording?query=${encodeURIComponent(chunk.map((mbid) => `rid:${mbid}`).join(' OR '))}&fmt=json&limit=100`,
-        CHANNEL,
       );
       found = result?.recordings ?? [];
     } catch {
@@ -165,9 +126,8 @@ export async function recordingOrigins(
       continue;
     }
     try {
-      const browse = await mbGet<{ 'release-count'?: number }>(
+      const browse = await mb.get<{ 'release-count'?: number }>(
         `/release?recording=${mbid}&limit=1&fmt=json`,
-        CHANNEL,
       );
       const count = browse?.['release-count'];
       origins.set(
@@ -186,11 +146,7 @@ export async function recordingOrigins(
  * compose works in our cache, and composers of the works its recordings
  * perform. Null when there are none — not the same as "one".
  */
-async function composerCount(
-  albumId: string,
-  landed: LandedRelease,
-  database: DatabaseExecutor,
-): Promise<number | null> {
+async function composerCount(albumId: string, landed: LandedRelease): Promise<number | null> {
   const credited = [
     ...new Set([
       ...landed.artists.map((artist) => artist.mbid),
@@ -200,24 +156,26 @@ async function composerCount(
       ]),
     ]),
   ];
-  const composers = new Set<string>();
-  if (credited.length > 0) {
-    const rows = await database
+  const [composing, worked] = await Promise.all([
+    credited.length === 0
+      ? []
+      : db
+          .select({ mbid: mbWork.composerMbid })
+          .from(mbWork)
+          .where(inArray(mbWork.composerMbid, credited))
+          .groupBy(mbWork.composerMbid),
+    db
       .select({ mbid: mbWork.composerMbid })
-      .from(mbWork)
-      .where(inArray(mbWork.composerMbid, credited))
-      .groupBy(mbWork.composerMbid);
-    for (const row of rows) if (row.mbid) composers.add(row.mbid);
-  }
-  const worked = await database
-    .select({ mbid: mbWork.composerMbid })
-    .from(spotifyTrack)
-    .innerJoin(trackRecording, eq(trackRecording.spotifyTrackId, spotifyTrack.spotifyId))
-    .innerJoin(mbRecordingWork, eq(mbRecordingWork.recordingMbid, trackRecording.recordingMbid))
-    .innerJoin(mbWork, eq(mbWork.mbid, mbRecordingWork.workMbid))
-    .where(eq(spotifyTrack.spotifyAlbumId, albumId))
-    .groupBy(mbWork.composerMbid);
-  for (const row of worked) if (row.mbid) composers.add(row.mbid);
+      .from(spotifyTrack)
+      .innerJoin(trackRecording, eq(trackRecording.spotifyTrackId, spotifyTrack.spotifyId))
+      .innerJoin(mbRecordingWork, eq(mbRecordingWork.recordingMbid, trackRecording.recordingMbid))
+      .innerJoin(mbWork, eq(mbWork.mbid, mbRecordingWork.workMbid))
+      .where(eq(spotifyTrack.spotifyAlbumId, albumId))
+      .groupBy(mbWork.composerMbid),
+  ]);
+  const composers = new Set(
+    [...composing, ...worked].flatMap((row) => (row.mbid ? [row.mbid] : [])),
+  );
   return composers.size === 0 ? null : composers.size;
 }
 
@@ -227,9 +185,8 @@ export class CorrectionMeasureError extends Error {}
 async function releaseFor(
   albumId: string,
   confirmedReleaseMbid: string | null,
-  database: DatabaseExecutor,
 ): Promise<string | null> {
-  const [album] = await database
+  const [album] = await db
     .select({ mbReleaseId: spotifyAlbum.mbReleaseId })
     .from(spotifyAlbum)
     .where(eq(spotifyAlbum.spotifyId, albumId));
@@ -240,43 +197,43 @@ async function releaseFor(
 export async function measureReleaseCorrection(
   albumId: string,
   confirmedReleaseMbid: string | null,
-  database: DatabaseExecutor = db,
 ): Promise<ReleaseCorrectionRecord> {
-  const releaseMbid = await releaseFor(albumId, confirmedReleaseMbid, database);
+  const releaseMbid = await releaseFor(albumId, confirmedReleaseMbid);
   if (!releaseMbid) {
     throw new CorrectionMeasureError(
       'No release to measure yet: confirm with the new release MBID, or Recheck once it is found.',
     );
   }
-  const landed = await fetchLandedRelease(releaseMbid);
+  const mb = createMbSession('interactive');
+  const landed = await fetchLandedRelease(mb, releaseMbid);
   if (!landed) throw new CorrectionMeasureError(`MusicBrainz has no release ${releaseMbid}`);
 
-  const cached = (await cachedReleasePrechecks([albumId], database)).get(albumId);
+  const stored = (await readMissingReleases([albumId])).get(albumId) ?? {};
+  const precheck = stored.precheck?.value;
+  const prepared = preparedSeedOf(stored);
   // When our own seed was opened on MusicBrainz, that form is what the person
   // corrected; otherwise it is the Spotify album Harmony reads.
-  const seeded = (await cachedReleaseSeeds([albumId], database)).get(albumId);
-  const usedSeed = seeded?.seededPlan ?? null;
+  const usedSeed = prepared?.seededPlan ?? null;
   const seed = usedSeed
     ? seedPlanBaseline(usedSeed)
-    : (cached?.result.seed ?? (await loadReleaseSeed(albumId, database)));
-  const baselineSource = usedSeed ? 'prelude-seed' : cached ? 'precheck' : seed.source;
+    : (precheck?.seed ?? (await loadReleaseSeed(albumId)));
+  const baselineSource = usedSeed ? 'prelude-seed' : precheck ? 'precheck' : seed.source;
   // Recordings we found before the release existed: by ISRC, or pre-filled
   // into the seed (which only ever names existing recordings).
   const knownBefore = new Set([
-    ...(cached?.result.isrcs.state === 'done'
-      ? cached.result.isrcs.value.hits.map((hit) => hit.recordingMbid)
-      : []),
-    ...(seeded?.plan.tracks ?? []).flatMap((track) =>
+    ...(precheck ? precheckHits(precheck.isrcs) : []).map((hit) => hit.recordingMbid),
+    ...(prepared?.plan.tracks ?? []).flatMap((track) =>
       track.recording.state === 'matched' ? [track.recording.recordingMbid] : [],
     ),
   ]);
   const origins = await recordingOrigins(
+    mb,
     releaseMbid,
     landed.tracks.map((track) => track.recording.mbid),
     knownBefore,
   );
   const artistMbids = new Map(
-    (cached?.result.artists ?? []).flatMap((artist) =>
+    (precheck?.artists ?? []).flatMap((artist) =>
       artist.spotifyId && artist.match.state === 'linked'
         ? [[artist.spotifyId, artist.match.artist.mbid] as const]
         : [],
@@ -289,41 +246,9 @@ export async function measureReleaseCorrection(
     origins,
     artistMbids,
     seededReleaseGroup: usedSeed?.releaseGroupMbid ?? null,
-    composers: await composerCount(albumId, landed, database),
+    composers: await composerCount(albumId, landed),
   });
 
-  const values = {
-    releaseMbid,
-    kind: record.kind,
-    corrections: record.corrections.length,
-    incomplete: record.incomplete.length > 0,
-    record,
-    measuredAt: new Date(),
-  };
-  await database
-    .insert(mbReleaseCorrection)
-    .values({ spotifyAlbumId: albumId, ...values })
-    .onConflictDoUpdate({ target: mbReleaseCorrection.spotifyAlbumId, set: values });
+  await writeMissingRelease(albumId, 'correction', record, mb.requests);
   return record;
-}
-
-export type CorrectionRow = {
-  albumId: string;
-  albumTitle: string | null;
-  measuredAt: Date;
-  record: ReleaseCorrectionRecord;
-};
-
-/** Every stored correction record, newest first. */
-export async function correctionRecords(database: DatabaseExecutor = db): Promise<CorrectionRow[]> {
-  const rows = await database
-    .select({
-      albumId: mbReleaseCorrection.spotifyAlbumId,
-      albumTitle: spotifyAlbum.title,
-      measuredAt: mbReleaseCorrection.measuredAt,
-      record: mbReleaseCorrection.record,
-    })
-    .from(mbReleaseCorrection)
-    .leftJoin(spotifyAlbum, eq(spotifyAlbum.spotifyId, mbReleaseCorrection.spotifyAlbumId));
-  return rows.sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime());
 }

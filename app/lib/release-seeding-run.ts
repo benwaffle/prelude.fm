@@ -9,17 +9,15 @@
  * `interactive` channel: about one browse per group and one read per
  * candidate release, capped at `EDITION_LIMIT`.
  */
-import { eq, inArray, sql } from 'drizzle-orm';
-import { db, type DatabaseExecutor } from './db';
-import { mbReleaseSeed } from './db/schema';
-import { mbGet } from './musicbrainz';
-import type { MusicBrainzChannel } from './musicbrainz-gateway';
-import { candidateGroups, strongCandidate, type ReleasePrecheck } from './release-precheck';
+import { createMbSession, type MbSession } from './musicbrainz-session';
 import {
-  cachedReleasePrechecks,
-  loadReleaseSeed,
-  refreshReleasePrecheck,
-} from './release-precheck-run';
+  readMissingReleases,
+  writeMissingRelease,
+  type MissingRelease,
+} from './missing-release-store';
+import { precheckHits, strongGroupsOf } from './release-precheck';
+import { loadReleaseSeed, refreshReleasePrecheck } from './release-precheck-run';
+import type { ReleaseSeed } from './release-seed';
 import {
   editionsShapedLike,
   planSeed,
@@ -27,22 +25,16 @@ import {
   type SeedPlan,
 } from './release-seeding';
 
-const CHANNEL: MusicBrainzChannel = 'interactive';
+export { markReleaseSeeded } from './missing-release-store';
+
 /** Existing releases read for their tracklists, across all matched groups. */
 export const EDITION_LIMIT = 3;
 
-type Counter = { requests: number };
-
-async function counted<T>(counter: Counter, path: string): Promise<T | null> {
-  counter.requests++;
-  return mbGet<T>(path, CHANNEL);
-}
-
 /** Existing releases in these groups with the album's disc/track shape, with their tracklists. */
 async function loadEditions(
-  counter: Counter,
+  mb: MbSession,
   groupMbids: string[],
-  seed: Parameters<typeof editionsShapedLike>[0],
+  seed: ReleaseSeed,
 ): Promise<{ editions: EditionTracklist[]; notes: string[] }> {
   const editions: EditionTracklist[] = [];
   const notes: string[] = [];
@@ -55,13 +47,13 @@ async function loadEditions(
 
   for (const group of groupMbids) {
     if (editions.length >= EDITION_LIMIT) break;
-    const browse = await counted<{
+    const browse = await mb.get<{
       releases?: {
         id: string;
         title: string;
         media?: { position?: number; 'track-count'?: number }[];
       }[];
-    }>(counter, `/release?release-group=${group}&inc=media&limit=50&fmt=json`);
+    }>(`/release?release-group=${group}&inc=media&limit=50&fmt=json`);
     const shaped = (browse?.releases ?? []).filter(
       (release) =>
         (release.media ?? []).map((medium) => medium['track-count'] ?? 0).join(',') === ourShape,
@@ -73,58 +65,27 @@ async function loadEditions(
     }
     for (const release of shaped) {
       if (editions.length >= EDITION_LIMIT) break;
-      const raw = await counted<{
-        id: string;
-        title: string;
-        media?: {
-          position?: number;
-          tracks?: {
-            position?: number;
-            title?: string;
-            length?: number | null;
-            recording?: { id: string };
-          }[];
-        }[];
-      }>(counter, `/release/${release.id}?inc=recordings&fmt=json`);
-      if (!raw) continue;
+      const read = await mb.release(release.id);
+      if (!read) continue;
       editions.push({
-        releaseMbid: raw.id,
-        releaseTitle: raw.title,
-        tracks: (raw.media ?? []).flatMap((medium, mediumIndex) =>
-          (medium.tracks ?? []).flatMap((track, trackIndex) =>
-            track.recording
-              ? [
-                  {
-                    medium: medium.position ?? mediumIndex + 1,
-                    position: track.position ?? trackIndex + 1,
-                    title: track.title ?? '',
-                    lengthMs: track.length ?? null,
-                    recordingMbid: track.recording.id,
-                  },
-                ]
-              : [],
-          ),
-        ),
+        releaseMbid: read.id,
+        releaseTitle: read.title,
+        tracks: read.tracks.map((track) => ({
+          medium: track.medium,
+          position: track.position,
+          title: track.title,
+          lengthMs: track.length,
+          recordingMbid: track.recording.id,
+        })),
       });
     }
   }
   return { editions: editionsShapedLike(seed, editions), notes };
 }
 
-/** The pre-check's strong release-group candidates (shared performer or recordings). */
-export function strongGroupsOf(precheck: ReleasePrecheck) {
-  return candidateGroups(
-    precheck.seed,
-    precheck.releases.state === 'done' ? precheck.releases.value : [],
-    precheck.groups.state === 'done' ? precheck.groups.value : [],
-    precheck.isrcs.state === 'done' ? precheck.isrcs.value.hits : [],
-    precheck.artists,
-  ).filter(strongCandidate);
-}
-
 export type PreparedSeed = {
   plan: SeedPlan;
-  requests: number;
+  requests: number | null;
   preparedAt: Date;
   /** When this album's seed was last opened on MusicBrainz. */
   seededAt: Date | null;
@@ -135,12 +96,11 @@ export type PreparedSeed = {
 /** Build the seed plan live. Writes only the pre-check cache, if it had to run one. */
 export async function buildReleaseSeed(
   albumId: string,
-  database: DatabaseExecutor = db,
 ): Promise<{ plan: SeedPlan; requests: number }> {
-  const precheck =
-    (await cachedReleasePrechecks([albumId], database)).get(albumId)?.result ??
-    (await refreshReleasePrecheck(albumId, database));
-  const fresh = await loadReleaseSeed(albumId, database);
+  const cached = (await readMissingReleases([albumId])).get(albumId)?.precheck?.value;
+  const precheck = cached ?? (await refreshReleasePrecheck(albumId));
+  // A pre-check run just now read the album already; only a cached one is re-read.
+  const fresh = cached ? await loadReleaseSeed(albumId) : precheck.seed;
   const notes: string[] = [];
   // The pre-check's ISRC hits and artists describe its own read of the album;
   // a fresh read that disagrees on the tracks would mis-assign them.
@@ -164,13 +124,13 @@ export async function buildReleaseSeed(
     );
   }
 
-  const counter: Counter = { requests: 0 };
+  const mb = createMbSession('interactive');
   const groups = strongGroupsOf(precheck);
   let editions: EditionTracklist[] = [];
   if (groups.length > 0) {
     try {
       const loaded = await loadEditions(
-        counter,
+        mb,
         groups.map((group) => group.mbid),
         seed,
       );
@@ -186,7 +146,7 @@ export async function buildReleaseSeed(
   const planned = planSeed({
     seed,
     artists: precheck.artists,
-    isrcHits: precheck.isrcs.state === 'done' ? precheck.isrcs.value.hits : [],
+    isrcHits: precheckHits(precheck.isrcs),
     strongGroups: groups,
     editions,
   });
@@ -195,57 +155,39 @@ export async function buildReleaseSeed(
       'The ISRC lookup did not run in the pre-check, so no recording was matched by ISRC.',
     );
   }
-  return { plan: { ...planned, notes }, requests: counter.requests };
+  return { plan: { ...planned, notes }, requests: mb.requests };
 }
 
-/** Build and store the seed; returns what was stored. */
-export async function prepareReleaseSeed(
-  albumId: string,
-  database: DatabaseExecutor = db,
-): Promise<PreparedSeed> {
-  const { plan, requests } = await buildReleaseSeed(albumId, database);
-  const preparedAt = new Date();
-  const [row] = await database
-    .insert(mbReleaseSeed)
-    .values({ spotifyAlbumId: albumId, plan, requests, preparedAt })
-    .onConflictDoUpdate({
-      target: mbReleaseSeed.spotifyAlbumId,
-      set: { plan, requests, preparedAt },
-    })
-    .returning({ seededAt: mbReleaseSeed.seededAt, seededPlan: mbReleaseSeed.seededPlan });
-  return { plan, requests, preparedAt, seededAt: row.seededAt, seededPlan: row.seededPlan };
+/** Build and store the seed; returns what is now stored. */
+export async function prepareReleaseSeed(albumId: string): Promise<PreparedSeed> {
+  const { plan, requests } = await buildReleaseSeed(albumId);
+  await writeMissingRelease(albumId, 'seed', plan, requests);
+  const prepared = (await cachedReleaseSeeds([albumId])).get(albumId);
+  if (!prepared) throw new Error('The seed was prepared but not stored');
+  return prepared;
 }
 
-/** The person opened the seed on MusicBrainz: keep the plan they opened. */
-export async function markReleaseSeeded(albumId: string, database: DatabaseExecutor = db) {
-  await database
-    .update(mbReleaseSeed)
-    .set({ seededAt: new Date(), seededPlan: sql`${mbReleaseSeed.plan}` })
-    .where(eq(mbReleaseSeed.spotifyAlbumId, albumId));
+/** Plans stored before notes existed have none. */
+const withNotes = (plan: SeedPlan): SeedPlan => ({ ...plan, notes: plan.notes ?? [] });
+
+export function preparedSeedOf({ seed, seeded }: MissingRelease): PreparedSeed | null {
+  if (!seed) return null;
+  return {
+    plan: withNotes(seed.value),
+    requests: seed.requests,
+    preparedAt: seed.recordedAt,
+    seededAt: seeded?.recordedAt ?? null,
+    seededPlan: seeded ? withNotes(seeded.value) : null,
+  };
 }
 
 /** Stored seeds for these albums. Spends no requests. */
-export async function cachedReleaseSeeds(
-  albumIds: string[],
-  database: DatabaseExecutor = db,
-): Promise<Map<string, PreparedSeed>> {
-  if (albumIds.length === 0) return new Map();
-  const rows = await database
-    .select()
-    .from(mbReleaseSeed)
-    .where(inArray(mbReleaseSeed.spotifyAlbumId, albumIds));
+export async function cachedReleaseSeeds(albumIds: string[]): Promise<Map<string, PreparedSeed>> {
+  const stored = await readMissingReleases(albumIds);
   return new Map(
-    rows.map((row) => [
-      row.spotifyAlbumId,
-      {
-        plan: { ...row.plan, notes: row.plan.notes ?? [] },
-        requests: row.requests,
-        preparedAt: row.preparedAt,
-        seededAt: row.seededAt,
-        seededPlan: row.seededPlan
-          ? { ...row.seededPlan, notes: row.seededPlan.notes ?? [] }
-          : null,
-      },
-    ]),
+    [...stored].flatMap(([albumId, stages]) => {
+      const prepared = preparedSeedOf(stages);
+      return prepared ? [[albumId, prepared] as const] : [];
+    }),
   );
 }

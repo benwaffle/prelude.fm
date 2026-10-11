@@ -17,8 +17,10 @@
 import {
   candidateSignals,
   movementNumber,
+  nameWords,
   normalizeTitle,
   numberRefs,
+  surnameOf,
   type ProposalCandidate,
   type ProposalTarget,
   type WorkProposal,
@@ -51,12 +53,8 @@ export function cleanTrackTitle(title: string, artistNames: readonly string[]): 
   if (colon > 0) {
     const prefix = normalizeTitle(cleaned.slice(0, colon));
     const credited = artistNames.some((name) => {
-      const full = normalizeTitle(name);
-      const surname = full
-        .split(/[^a-z]+/)
-        .filter(Boolean)
-        .at(-1);
-      return prefix === full || (surname !== undefined && prefix === surname);
+      const surname = surnameOf(name);
+      return prefix === normalizeTitle(name) || (surname !== null && prefix === surname);
     });
     if (credited) cleaned = cleaned.slice(colon + 1).trim();
   }
@@ -143,15 +141,6 @@ export type ConfirmedWork = {
   number: string;
 };
 
-function surnameOf(name: string): string | null {
-  return (
-    normalizeTitle(name)
-      .split(/[^a-z]+/)
-      .filter(Boolean)
-      .at(-1) ?? null
-  );
-}
-
 /**
  * Whether a work read from MusicBrainz is the piece the track title names:
  * one of its catalogue numbers is in the title, under the same system, and
@@ -171,11 +160,7 @@ export function confirmWork(
   if (!work.composerName) return null;
   const surname = surnameOf(work.composerName);
   if (!surname) return null;
-  const credited = artistNames.some((name) =>
-    normalizeTitle(name)
-      .split(/[^a-z]+/)
-      .includes(surname),
-  );
+  const credited = artistNames.some((name) => nameWords(name).includes(surname));
   if (!credited) return null;
   const refs = numberRefs(trackTitle);
   for (const number of work.catalogueNumbers) {

@@ -194,7 +194,8 @@ export function titleTokens(title: string): Set<string> {
   return tokens;
 }
 
-function dice(a: Set<string>, b: Set<string>): number {
+/** Sørensen–Dice overlap of two token sets: 1 when equal, 0 when disjoint or either is empty. */
+export function dice(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
   let shared = 0;
   for (const token of a) if (b.has(token)) shared++;
@@ -245,20 +246,24 @@ function candidateNames(candidate: ProposalCandidate): string[] {
   return names;
 }
 
-function surname(name: string): string {
-  const words = normalizeTitle(name)
+/** A person's name as normalized words: "Frédéric Chopin" → `frederic`, `chopin`. */
+export function nameWords(name: string): string[] {
+  return normalizeTitle(name)
     .split(/[^a-z]+/)
     .filter(Boolean);
-  return words[words.length - 1] ?? '';
+}
+
+/** The last word of a name, which is all the composer checks compare. */
+export function surnameOf(name: string): string | null {
+  return nameWords(name).at(-1) ?? null;
 }
 
 function composerMatch(target: ProposalTarget, composer: string | null): string | null {
   if (!composer) return null;
-  const last = surname(composer);
+  const last = surnameOf(composer);
   if (!last) return null;
   for (const name of [...target.releaseComposers, ...target.artistNames]) {
-    const words = normalizeTitle(name).split(/[^a-z]+/);
-    if (words.includes(last)) return composer;
+    if (nameWords(name).includes(last)) return composer;
   }
   return null;
 }
@@ -526,17 +531,14 @@ export function proposeWork(
  * its proposal at low confidence, saying why.
  */
 export function flagSharedProposals(
-  proposals: readonly { recordingMbid: string; title: string; proposal: WorkProposal | null }[],
+  proposals: readonly { title: string; proposal: WorkProposal | null }[],
 ): void {
-  const byWork = new Map<
-    string,
-    { recordingMbid: string; title: string; proposal: WorkProposal }[]
-  >();
-  for (const row of proposals) {
-    if (!row.proposal) continue;
-    const list = byWork.get(row.proposal.workMbid) ?? [];
-    list.push(row as { recordingMbid: string; title: string; proposal: WorkProposal });
-    byWork.set(row.proposal.workMbid, list);
+  const byWork = new Map<string, { title: string; proposal: WorkProposal }[]>();
+  for (const { title, proposal } of proposals) {
+    if (!proposal) continue;
+    const list = byWork.get(proposal.workMbid) ?? [];
+    list.push({ title, proposal });
+    byWork.set(proposal.workMbid, list);
   }
   for (const rows of byWork.values()) {
     if (rows.length < 2) continue;

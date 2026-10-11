@@ -10,14 +10,9 @@
  * Exits non-zero if the funnel does not account for every track exactly
  * once, because that is a fault in the funnel rather than a gap in the data.
  */
-import { loadEnvConfig } from '@next/env';
+import { defineScript } from './lib/cli';
 
-async function main() {
-  const json = process.argv.includes('--json');
-  loadEnvConfig(process.cwd());
-  if (!process.env.TURSO_DATABASE_URL) {
-    throw new Error('TURSO_DATABASE_URL is required (put it in .env.local or export it)');
-  }
+defineScript({ options: { json: { type: 'boolean' } } }, async ({ options: { json } }) => {
   const { loadReadinessFunnel } = await import('@/app/admin/lib/catalogue-readiness-load');
   const funnel = await loadReadinessFunnel();
 
@@ -51,10 +46,5 @@ async function main() {
       `\nAccounted for ${accounted.toLocaleString('en')} of ${funnel.total.toLocaleString('en')}`,
     );
   }
-  if (accounted !== funnel.total) process.exitCode = 1;
-}
-
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack : error);
-  process.exitCode = 1;
+  return accounted === funnel.total ? 0 : 1;
 });

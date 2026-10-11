@@ -11,12 +11,12 @@
  *
  * Reads MusicBrainz and writes only `mb_work_proposal`. Submits nothing.
  */
-import { inArray, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db } from './db';
 import { filmScoreExclusions } from './film-score-exclusions';
 import { mbWorkProposal } from './db/schema';
-import { composerOf, mbGet, type MbRelation, type MbWork } from './musicbrainz';
-import type { MusicBrainzChannel } from './musicbrainz-gateway';
+import { childPartsOf, composerOf, type MbWork } from './musicbrainz';
+import { createMbSession, type MbSession } from './musicbrainz-session';
 import { titleWords } from './release-seed';
 import {
   flagSharedProposals,
@@ -27,7 +27,6 @@ import {
   type WorkProposal,
 } from './work-proposals';
 
-const CHANNEL: MusicBrainzChannel = 'backfill';
 /** Family works read per album; a large collection says so rather than spending more. */
 export const MAX_FAMILY_FETCHES = 25;
 const SEARCH_LIMIT = 8;
@@ -45,8 +44,6 @@ export type ProposalGap = {
   position: number | null;
   artistNames: string[];
 };
-
-export type Counter = { requests: number };
 
 /** Library recordings with no work relationship, one row per recording. */
 export async function loadProposalGaps(): Promise<ProposalGap[]> {
@@ -148,26 +145,6 @@ async function loadSiblings(releaseMbid: string): Promise<SiblingRow[]> {
   }));
 }
 
-type ChildPart = { id: string; title: string; orderingKey: number | null };
-
-function childParts(work: MbWork): ChildPart[] {
-  return (work.relations ?? [])
-    .filter(
-      (relation: MbRelation) =>
-        relation.type === 'parts' && relation.direction === 'forward' && relation.work,
-    )
-    .map((relation) => ({
-      id: relation.work!.id,
-      title: relation.work!.title,
-      orderingKey: relation['ordering-key'] ?? null,
-    }));
-}
-
-async function readWork(counter: Counter, mbid: string): Promise<MbWork | null> {
-  counter.requests++;
-  return mbGet<MbWork>(`/work/${mbid}?inc=work-rels+artist-rels&fmt=json`, CHANNEL);
-}
-
 /**
  * Parts of the works the album's linked tracks belong to, and of their
  * collection's other members.
@@ -177,7 +154,7 @@ async function readWork(counter: Counter, mbid: string): Promise<MbWork | null> 
  * is exactly the one that is missing.
  */
 async function familyCandidates(
-  counter: Counter,
+  mb: MbSession,
   siblings: SiblingRow[],
 ): Promise<{ candidates: ProposalCandidate[]; capped: boolean }> {
   const parents = [...new Set(siblings.flatMap((row) => (row.parentMbid ? [row.parentMbid] : [])))];
@@ -192,7 +169,7 @@ async function familyCandidates(
       capped = true;
       return null;
     }
-    const work = await readWork(counter, mbid);
+    const work = await mb.work(mbid);
     read.set(mbid, work);
     return work;
   };
@@ -201,14 +178,14 @@ async function familyCandidates(
   for (const mbid of grandparents) {
     const collection = read.get(mbid);
     if (!collection) continue;
-    for (const member of childParts(collection)) await fetch(member.id);
+    for (const member of childPartsOf(collection)) await fetch(member.id);
   }
 
   const candidates: ProposalCandidate[] = [];
   for (const [mbid, work] of read) {
     if (!work || grandparents.includes(mbid)) continue;
     const composer = composerOf(work)?.name ?? null;
-    for (const part of childParts(work)) {
+    for (const part of childPartsOf(work)) {
       if (read.has(part.id)) continue;
       candidates.push({
         workMbid: part.id,
@@ -239,7 +216,7 @@ function surnames(names: string[]): string[] {
 
 /** MusicBrainz works whose title words and composer fit the track. */
 export async function searchCandidates(
-  counter: Counter,
+  mb: MbSession,
   title: string,
   composers: string[],
 ): Promise<ProposalCandidate[]> {
@@ -250,10 +227,8 @@ export async function searchCandidates(
   const query =
     `work:(${words.join(' ')})` +
     (artists.length > 0 ? ` AND (${artists.map((name) => `artist:${name}`).join(' OR ')})` : '');
-  counter.requests++;
-  const result = await mbGet<{ works?: SearchWork[] }>(
+  const result = await mb.get<{ works?: SearchWork[] }>(
     `/work?query=${encodeURIComponent(query)}&limit=${SEARCH_LIMIT}&fmt=json`,
-    CHANNEL,
   );
   return (result?.works ?? []).map((work) => ({
     workMbid: work.id,
@@ -281,12 +256,11 @@ export type ProposalOutcome = {
 /** Proposals for every gap on one release (or for one release-less gap). */
 export async function proposeForGroup(gaps: ProposalGap[]): Promise<ProposalOutcome[]> {
   const releaseMbid = gaps[0]?.releaseMbid ?? null;
-  const shared: Counter = { requests: 0 };
+  const mb = createMbSession('backfill');
   const siblings = releaseMbid ? await loadSiblings(releaseMbid) : [];
   const { candidates: family, capped } =
-    siblings.length > 0
-      ? await familyCandidates(shared, siblings)
-      : { candidates: [], capped: false };
+    siblings.length > 0 ? await familyCandidates(mb, siblings) : { candidates: [], capped: false };
+  const shared = mb.requests;
   const releaseComposers = [
     ...new Set(siblings.flatMap((row) => (row.composerName ? [row.composerName] : []))),
   ];
@@ -305,7 +279,7 @@ export async function proposeForGroup(gaps: ProposalGap[]): Promise<ProposalOutc
 
   const outcomes: ProposalOutcome[] = [];
   for (const gap of gaps) {
-    const own: Counter = { requests: 0 };
+    const before = mb.requests;
     const target: ProposalTarget = {
       recordingMbid: gap.recordingMbid,
       title: gap.title,
@@ -318,7 +292,7 @@ export async function proposeForGroup(gaps: ProposalGap[]): Promise<ProposalOutc
     let proposal = proposeWork(target, family);
     if (proposal?.confidence !== 'high') {
       const found = await searchCandidates(
-        own,
+        mb,
         gap.title,
         releaseComposers.length > 0 ? releaseComposers : gap.artistNames,
       );
@@ -330,66 +304,50 @@ export async function proposeForGroup(gaps: ProposalGap[]): Promise<ProposalOutc
       albumTitle: gap.albumTitle,
       releaseMbid,
       proposal,
-      requests: own.requests,
+      requests: mb.requests - before,
       familyCapped: capped,
     });
   }
   flagSharedProposals(outcomes);
   // The family reads served every track on the album; charge them to the first.
-  if (outcomes[0]) outcomes[0].requests += shared.requests;
+  if (outcomes[0]) outcomes[0].requests += shared;
   return outcomes;
 }
 
-/** Gaps grouped by album release; release-less gaps stand alone. */
-export function groupGaps(gaps: ProposalGap[]): ProposalGap[][] {
-  const groups = new Map<string, ProposalGap[]>();
-  for (const gap of gaps) {
-    const key = gap.releaseMbid ?? `recording:${gap.recordingMbid}`;
-    const list = groups.get(key) ?? [];
-    list.push(gap);
-    groups.set(key, list);
-  }
-  return [...groups.values()];
-}
+/** The key gaps are grouped by: the album's release; a release-less gap stands alone. */
+export const proposalGroupKey = (gap: ProposalGap) =>
+  gap.releaseMbid ?? `recording:${gap.recordingMbid}`;
 
 /**
- * Store outcomes. A decision survives a re-run that proposes the same work;
- * a different work is a new question, so it returns to `proposed`.
+ * Store outcomes, in one statement. A decision survives a re-run that
+ * proposes the same work; a different work is a new question, so it returns
+ * to `proposed`.
  */
 export async function storeProposals(outcomes: ProposalOutcome[]): Promise<void> {
-  for (const outcome of outcomes) {
-    await db
-      .insert(mbWorkProposal)
-      .values({
+  if (outcomes.length === 0) return;
+  await db
+    .insert(mbWorkProposal)
+    .values(
+      outcomes.map((outcome) => ({
         recordingMbid: outcome.recordingMbid,
         releaseMbid: outcome.releaseMbid,
         proposal: outcome.proposal,
+        workMbid: outcome.proposal?.workMbid ?? null,
         requests: outcome.requests,
-      })
-      .onConflictDoUpdate({
-        target: mbWorkProposal.recordingMbid,
-        set: {
-          releaseMbid: outcome.releaseMbid,
-          proposal: outcome.proposal,
-          requests: outcome.requests,
-          checkedAt: new Date(),
-          status: sql`case when json_extract(${mbWorkProposal.proposal}, '$.workMbid')
-            is json_extract(excluded.proposal, '$.workMbid')
-            then ${mbWorkProposal.status} else 'proposed' end`,
-          decidedAt: sql`case when json_extract(${mbWorkProposal.proposal}, '$.workMbid')
-            is json_extract(excluded.proposal, '$.workMbid')
-            then ${mbWorkProposal.decidedAt} else null end`,
-        },
-      });
-  }
-}
-
-/** Recordings that already have a stored proposal (or a stored "nothing found"). */
-export async function proposedRecordings(recordingMbids: string[]): Promise<Set<string>> {
-  if (recordingMbids.length === 0) return new Set();
-  const rows = await db
-    .select({ recordingMbid: mbWorkProposal.recordingMbid })
-    .from(mbWorkProposal)
-    .where(inArray(mbWorkProposal.recordingMbid, recordingMbids));
-  return new Set(rows.map((row) => row.recordingMbid));
+      })),
+    )
+    .onConflictDoUpdate({
+      target: mbWorkProposal.recordingMbid,
+      set: {
+        releaseMbid: sql`excluded.release_mbid`,
+        proposal: sql`excluded.proposal`,
+        workMbid: sql`excluded.work_mbid`,
+        requests: sql`excluded.requests`,
+        checkedAt: sql`excluded.checked_at`,
+        status: sql`case when ${mbWorkProposal.workMbid} is excluded.work_mbid
+          then ${mbWorkProposal.status} else 'proposed' end`,
+        decidedAt: sql`case when ${mbWorkProposal.workMbid} is excluded.work_mbid
+          then ${mbWorkProposal.decidedAt} else null end`,
+      },
+    });
 }

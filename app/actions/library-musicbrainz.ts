@@ -704,7 +704,7 @@ export async function ownWorkHoldings(
   workMbids: string[] | null,
   database: DatabaseExecutor = db,
 ): Promise<OwnWorkHolding[]> {
-  const proposedWork = sql<string>`json_extract(${mbWorkProposal.proposal}, '$.workMbid')`;
+  const proposedWork = sql<string>`${mbWorkProposal.workMbid}`;
   const read = async (chunk: string[] | null): Promise<OwnWorkHolding[]> => {
     const [tracks, recordings] = await Promise.all([
       database

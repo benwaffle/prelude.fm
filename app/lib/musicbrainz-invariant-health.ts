@@ -6,11 +6,18 @@
  * about and it should be testable without one.
  */
 
-export type InvariantSeverityLike = 'hard' | string;
+/**
+ * - `hard`: our cache is inconsistent with itself. Our bug, and it fails.
+ * - `upstream`: MusicBrainz contradicts itself. Their bug, and we report it
+ *   so it can be contributed back rather than repaired locally.
+ * - `review`: the evidence points two ways and neither side is obviously
+ *   wrong. Nothing to fix automatically; somebody has to look.
+ */
+export type InvariantSeverity = 'hard' | 'upstream' | 'review';
 
 export type GradedInvariant = {
   name: string;
-  severity: InvariantSeverityLike;
+  severity: InvariantSeverity;
   violations: number;
   /** When the result was recorded. Null or absent means never run. */
   checkedAt?: Date | null;
@@ -43,7 +50,7 @@ export type InvariantHealth = {
  * on the strength of a check nobody has run.
  */
 export function invariantHealth(
-  expected: Array<{ name: string; severity: InvariantSeverityLike }>,
+  expected: Array<{ name: string; severity: InvariantSeverity }>,
   results: GradedInvariant[],
   now: Date = new Date(),
   staleAfterHours: number = INVARIANT_STALE_AFTER_HOURS,

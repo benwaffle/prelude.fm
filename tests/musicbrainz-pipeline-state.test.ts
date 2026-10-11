@@ -31,7 +31,7 @@ beforeEach(async () => {
       spotifyId,
       spotifyAlbumId: 'album-1',
       submittedBy: 'test',
-      status: 'processing',
+      status: 'processing' as const,
       claimOwnerId: 'worker-1',
     })),
   );

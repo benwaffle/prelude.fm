@@ -21,6 +21,8 @@
     "metadata:release-seed": "tsx scripts/release-seed.ts",
     "metadata:work-proposals": "tsx scripts/work-proposals.ts",
     "metadata:track-work-links": "tsx scripts/track-work-links.ts",
+    "metadata:cache-proposed-works": "tsx scripts/cache-proposed-works.ts",
+    "metadata:reclassify": "tsx scripts/reclassify.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test 'tests/**/*.test.{ts,tsx}'",
     "db:generate": "drizzle-kit generate",
