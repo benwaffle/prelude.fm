@@ -4,12 +4,12 @@ import { createTestDatabase, resetTestDatabase, type TestDatabase } from './help
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
-let workRelationshipGaps: typeof import('@/lib/musicbrainz-contributions').workRelationshipGaps;
+let gaps: typeof import('@/lib/gaps/work-relationships');
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ workRelationshipGaps } = await import('@/lib/musicbrainz-contributions'));
+  gaps = await import('@/lib/gaps/work-relationships');
 });
 
 test('a missing work relation keeps its row and offers only MusicBrainz works from sibling recordings', async () => {
@@ -73,10 +73,10 @@ test('a missing work relation keeps its row and offers only MusicBrainz works fr
     normalizedNumber: '1',
   });
 
-  const gaps = await workRelationshipGaps();
-  assert.equal(gaps.length, 1);
-  assert.equal(gaps[0].recordingMbid, 'recording-1');
-  assert.deepEqual(gaps[0].candidates, [
+  const rows = await gaps.withWorkCandidates(await gaps.workRelationshipGaps());
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].recordingMbid, 'recording-1');
+  assert.deepEqual(rows[0].candidates, [
     {
       workMbid: 'work',
       title: 'Known work',

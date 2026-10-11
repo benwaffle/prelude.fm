@@ -1,4 +1,4 @@
-import type { MissingRelease } from './musicbrainz-contributions';
+import type { MissingRelease } from './gaps/missing-releases';
 /**
  * How many rows an Inbox section shows at a time.
  *

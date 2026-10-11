@@ -5,7 +5,8 @@ import { db } from '@/lib/db';
 import { spotifyAlbum, spotifyTrack } from '@/lib/db/schema';
 import { musicBrainzApi } from '@/lib/musicbrainz';
 import { anchorTracksByIsrc } from '@/lib/musicbrainz-ingest';
-import { isrcEligibleGapsByRelease, magicIsrcLink } from '@/lib/musicbrainz-contributions';
+import { isrcEligibleGaps, isrcGapReleases } from '@/lib/gaps/isrc';
+import { magicIsrcLink } from '@/lib/musicbrainz-edit-links';
 import { checkAuth } from './auth';
 import type { AlbumRow, AlbumState, AlbumTrackRow } from '../lib/album-state';
 import {
@@ -45,7 +46,7 @@ export async function getIsrcSubmissionLinks(
 
   const wanted = new Set(albumIds);
   const links: Record<string, { href: string; missing: number }> = {};
-  for (const release of await isrcEligibleGapsByRelease(5_000)) {
+  for (const release of isrcGapReleases(await isrcEligibleGaps())) {
     if (!wanted.has(release.albumId)) continue;
     links[release.albumId] = {
       href: magicIsrcLink(release.releaseMbid, release.gaps),

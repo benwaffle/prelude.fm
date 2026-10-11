@@ -29,7 +29,9 @@ function pageLoads(): Record<string, Load> {
     .then((row: { id: string }) => row.id);
   auth.api.getSession = async () => ({ user: { id: await adminUser } });
 
-  const contribute = require('@/app/admin/actions/contribute');
+  const inboxView = require('@/app/admin/actions/inbox-view');
+  const bot = require('@/app/admin/actions/bot');
+  const releaseSubmissions = require('@/app/admin/actions/release-submissions');
   const readiness = require('@/app/admin/actions/readiness');
   const gateway = require('@/app/admin/actions/gateway');
   const coverage = require('@/app/admin/actions/coverage');
@@ -42,7 +44,7 @@ function pageLoads(): Record<string, Load> {
     () =>
       Promise.all([gateway.getGatewayStatus(), ...loads.map((load) => load())]);
   const list = (section: string, ...extra: Load[]) =>
-    page(() => contribute.getContributions(undefined, section), ...extra);
+    page(() => inboxView.getContributions(undefined, section), ...extra);
 
   return {
     home: page(() => readiness.getAdminHome()),
@@ -50,12 +52,12 @@ function pageLoads(): Record<string, Load> {
     misaligned: list('misaligned'),
     work: list('work', () => proposals.getWorkProposals()),
     contested: list('contested'),
-    isrc: list('isrc', () => contribute.getBotStatus()),
-    barcodes: list('barcodes', () => contribute.getBotStatus()),
+    isrc: list('isrc', () => bot.getBotStatus()),
+    barcodes: list('barcodes', () => bot.getBotStatus()),
     streaming: list('streaming'),
     submitted: list('submitted'),
     albums: page(() => coverage.getAlbums()),
-    corrections: page(() => contribute.getReleaseCorrections()),
+    corrections: page(() => releaseSubmissions.getReleaseCorrections()),
     checks: page(() => cacheHealth.getCacheHealth()),
   };
 }

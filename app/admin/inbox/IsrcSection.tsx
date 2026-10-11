@@ -1,22 +1,20 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { useAdminAction } from '../components/useAdminAction';
+import { getBotPayload, submitBotBatch, type BotStatus } from '../actions/bot';
+import type { ContributionView } from '../actions/inbox-view';
 import {
-  getBotPayload,
+  recheckSubmission,
   recordIsrcResubmission,
   recordIsrcSubmission,
-  recheckIsrcRelease,
-  submitBotBatch,
-  type BotStatus,
-  type ContributionView,
-} from '../actions/contribute';
+} from '../actions/submissions';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxSection } from './InboxSection';
 import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
 import { LoadMoreRows } from './LoadMoreRows';
 import { BotSubmissionNotice } from './BotSubmissionNotice';
+import { EditIdInput, useRowForms, useRowMutation } from './LedgerGapRow';
 import { useBotSubmission } from './useBotSubmission';
 
 type IsrcRelease = ContributionView['isrcReleases'][number];
@@ -124,8 +122,8 @@ export function IsrcSection({
   onBotChange: (bot: BotStatus) => void;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, runRow, row } = useAdminAction();
-  const [forms, setForms] = useState<Record<string, { editId: string }>>({});
+  const { pending, busy, runRow, row, mutate } = useRowMutation(onReload);
+  const { formOf, setForm } = useRowForms({ editId: '' });
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
   const {
     feedback: submissionFeedback,
@@ -134,10 +132,9 @@ export function IsrcSection({
   } = useBotSubmission({ runRow, onBotChange, onReload });
 
   async function confirmHand(releaseMbid: string) {
-    await runRow(releaseMbid, 'Confirming hand submission…', async () => {
-      await recordIsrcSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
-      await onReload();
-    });
+    await mutate(releaseMbid, 'Confirming hand submission…', () =>
+      recordIsrcSubmission(releaseMbid, formOf(releaseMbid)),
+    );
   }
 
   async function submitBot(releaseMbid: string, albumTitle: string) {
@@ -161,14 +158,13 @@ export function IsrcSection({
   }
 
   async function resubmitHand(releaseMbid: string, track: IsrcTrack) {
-    await runRow(releaseMbid, 'Confirming hand resubmission…', async () => {
-      await recordIsrcResubmission(
+    await mutate(releaseMbid, 'Confirming hand resubmission…', () =>
+      recordIsrcResubmission(
         releaseMbid,
         { recordingMbid: track.recordingMbid, isrc: track.isrc },
-        forms[releaseMbid] ?? { editId: '' },
-      );
-      await onReload();
-    });
+        formOf(releaseMbid),
+      ),
+    );
   }
 
   async function revealPayload(releaseMbid: string) {
@@ -182,10 +178,9 @@ export function IsrcSection({
   }
 
   async function recheck(releaseMbid: string) {
-    await runRow(releaseMbid, 'Rechecking MusicBrainz…', async () => {
-      await recheckIsrcRelease(releaseMbid);
-      await onReload();
-    });
+    await mutate(releaseMbid, 'Rechecking MusicBrainz…', () =>
+      recheckSubmission({ kind: 'isrc', releaseMbid }),
+    );
   }
 
   return (
@@ -272,7 +267,6 @@ export function IsrcSection({
           );
         }
 
-        const form = forms[release.releaseMbid] ?? { editId: '' };
         return (
           <ConfirmDisclosure
             key={release.releaseMbid}
@@ -329,16 +323,9 @@ export function IsrcSection({
                   </button>
                 </>
               )}
-              <input
-                className="mono w-40"
-                placeholder="edit ID (optional)"
-                value={form.editId}
-                onChange={(event) =>
-                  setForms((current) => ({
-                    ...current,
-                    [release.releaseMbid]: { editId: event.target.value },
-                  }))
-                }
+              <EditIdInput
+                value={formOf(release.releaseMbid).editId}
+                onChange={(editId) => setForm(release.releaseMbid, { editId })}
               />
               {release.batch > 0 && (
                 <button

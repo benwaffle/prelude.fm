@@ -1,24 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { useAdminAction } from '../components/useAdminAction';
-import {
-  getBarcodeBotPayload,
-  recordBarcodeSubmission,
-  recheckBarcode,
-  submitBarcodeBotBatch,
-  type BotStatus,
-  type ContributionView,
-} from '../actions/contribute';
-import { ConfirmDisclosure } from './ConfirmDisclosure';
-import { InboxRow } from './InboxRow';
-import { PreviousSubmission } from './PreviousSubmission';
-import { RowActionStatus } from './RowActionStatus';
+import { getBarcodeBotPayload, submitBarcodeBotBatch, type BotStatus } from '../actions/bot';
+import type { ContributionView } from '../actions/inbox-view';
+import { recheckSubmission, recordBarcodeSubmission } from '../actions/submissions';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
 import { BotSubmissionNotice } from './BotSubmissionNotice';
 import { Notice } from '../components/Notice';
 import { useBotSubmission } from './useBotSubmission';
+import {
+  EditIdInput,
+  GapEvidence,
+  LedgerGapRow,
+  useRowForms,
+  useRowMutation,
+} from './LedgerGapRow';
 
 /**
  * MusicBrainz drops the note on barcode edits sent through its API
@@ -62,21 +59,14 @@ export function BarcodesSection({
   onBotChange: (bot: BotStatus) => void;
   onLoadMore: () => void;
 }) {
-  const { pending, busy, runRow, row } = useAdminAction();
-  const [forms, setForms] = useState<Record<string, { editId: string }>>({});
+  const { pending, busy, runRow, row, mutate } = useRowMutation(onReload);
+  const { formOf, setForm } = useRowForms({ editId: '' });
   const [payload, setPayload] = useState<{ releaseMbid: string; xml: string } | null>(null);
   const {
     feedback: submissionFeedback,
     submit,
     dismiss: dismissFeedback,
   } = useBotSubmission({ runRow, onBotChange, onReload });
-
-  async function confirmHand(releaseMbid: string) {
-    await runRow(releaseMbid, 'Confirming hand submission…', async () => {
-      await recordBarcodeSubmission(releaseMbid, forms[releaseMbid] ?? { editId: '' });
-      await onReload();
-    });
-  }
 
   async function submitBot(releaseMbid: string, releaseTitle: string) {
     await submit(releaseMbid, submitBarcodeBotBatch, {
@@ -96,13 +86,6 @@ export function BarcodesSection({
     });
   }
 
-  async function recheck(releaseMbid: string) {
-    await runRow(releaseMbid, 'Rechecking MusicBrainz…', async () => {
-      await recheckBarcode(releaseMbid);
-      await onReload();
-    });
-  }
-
   return (
     <InboxSection
       inboxClass="barcodes"
@@ -114,68 +97,53 @@ export function BarcodesSection({
       description="These releases were matched by title and duration. The Spotify barcode is shown as evidence and stays pending until the cache holds it."
     >
       {rows.map((gap) => {
-        const state = row(gap.releaseMbid);
-        const evidence = (
-          <span className="min-w-0">
-            <span className="block truncate">{gap.releaseTitle}</span>
-            <span className="album-meta">
-              title matched · {gap.trackCount} tracks · worst duration difference{' '}
-              {gap.maxDurationDeltaMs}ms
-            </span>
-            <code className="mono block select-all text-[11px] text-[var(--ink-2)]">
-              {gap.barcode}
-            </code>
-            {!gap.ledger && gap.previous && <PreviousSubmission previous={gap.previous} />}
-            <RowActionStatus row={state} />
-          </span>
+        const key = gap.releaseMbid;
+        const state = row(key);
+        const feedback = submissionFeedback[key] && (
+          <BotSubmissionNotice
+            feedback={submissionFeedback[key]}
+            onDismiss={() => dismissFeedback(key)}
+          />
         );
-        const links = (
-          <a className="act" href={gap.edit} target="_blank" rel="noreferrer">
-            MusicBrainz
-          </a>
-        );
-
-        if (gap.ledger) {
-          return (
-            <InboxRow
-              key={gap.releaseMbid}
-              data-inbox-release={gap.releaseMbid}
-              evidence={
+        return (
+          <LedgerGapRow
+            key={key}
+            data-inbox-release={gap.releaseMbid}
+            ledger={gap.ledger}
+            busy={state.busy}
+            onRecheck={() =>
+              mutate(key, 'Rechecking MusicBrainz…', () =>
+                recheckSubmission({ kind: 'barcode', releaseMbid: gap.releaseMbid }),
+              )
+            }
+            evidence={
+              <GapEvidence ledger={gap.ledger} previous={gap.previous} state={state}>
+                <span className="block truncate">{gap.releaseTitle}</span>
+                <span className="album-meta">
+                  title matched · {gap.trackCount} tracks · worst duration difference{' '}
+                  {gap.maxDurationDeltaMs}ms
+                </span>
+                <code className="mono block select-all text-[11px] text-[var(--ink-2)]">
+                  {gap.barcode}
+                </code>
+              </GapEvidence>
+            }
+            links={
+              <a className="act" href={gap.edit} target="_blank" rel="noreferrer">
+                MusicBrainz
+              </a>
+            }
+            ledgerNote={
+              gap.ledger && (
                 <>
-                  {evidence}
                   <span className="album-meta">{gap.ledger.label}</span>
                   {gap.ledger.unsentNote && (
                     <UnsentBarcodeNote releaseMbid={gap.releaseMbid} note={gap.ledger.unsentNote} />
                   )}
-                  {submissionFeedback[gap.releaseMbid] && (
-                    <BotSubmissionNotice
-                      feedback={submissionFeedback[gap.releaseMbid]}
-                      onDismiss={() => dismissFeedback(gap.releaseMbid)}
-                    />
-                  )}
+                  {feedback}
                 </>
-              }
-              links={links}
-              action={
-                <button
-                  className="act"
-                  disabled={state.busy}
-                  onClick={() => recheck(gap.releaseMbid)}
-                >
-                  Recheck
-                </button>
-              }
-            />
-          );
-        }
-
-        const form = forms[gap.releaseMbid] ?? { editId: '' };
-        return (
-          <ConfirmDisclosure
-            key={gap.releaseMbid}
-            data-inbox-release={gap.releaseMbid}
-            evidence={evidence}
-            links={links}
+              )
+            }
           >
             <div className="toolbar px-0">
               <button
@@ -204,21 +172,18 @@ export function BarcodesSection({
                   </button>
                 </>
               )}
-              <input
-                className="mono w-40"
-                placeholder="edit ID (optional)"
-                value={form.editId}
-                onChange={(event) =>
-                  setForms((current) => ({
-                    ...current,
-                    [gap.releaseMbid]: { editId: event.target.value },
-                  }))
-                }
+              <EditIdInput
+                value={formOf(key).editId}
+                onChange={(editId) => setForm(key, { editId })}
               />
               <button
                 className="act"
                 disabled={state.busy}
-                onClick={() => confirmHand(gap.releaseMbid)}
+                onClick={() =>
+                  mutate(key, 'Confirming hand submission…', () =>
+                    recordBarcodeSubmission(gap.releaseMbid, formOf(key)),
+                  )
+                }
               >
                 Confirm hand submission
               </button>
@@ -228,13 +193,8 @@ export function BarcodesSection({
                 {payload.xml}
               </pre>
             )}
-            {submissionFeedback[gap.releaseMbid] && (
-              <BotSubmissionNotice
-                feedback={submissionFeedback[gap.releaseMbid]}
-                onDismiss={() => dismissFeedback(gap.releaseMbid)}
-              />
-            )}
-          </ConfirmDisclosure>
+            {feedback}
+          </LedgerGapRow>
         );
       })}
       <LoadMoreRows shown={rows.length} total={total} busy={busy} onMore={onLoadMore} />

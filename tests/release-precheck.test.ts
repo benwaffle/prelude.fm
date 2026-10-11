@@ -17,7 +17,7 @@ import {
 } from '../app/lib/release-precheck';
 import { seedArtists, titleLikeness, type ReleaseSeed } from '../app/lib/release-seed';
 import { rankMissingReleases } from '../app/lib/contribution-list';
-import type { MissingRelease } from '../app/lib/musicbrainz-contributions';
+import type { MissingRelease } from '../app/lib/gaps/missing-releases';
 
 const bach = { spotifyId: 'sp-bach', name: 'Johann Sebastian Bach' };
 const gould = { spotifyId: 'sp-gould', name: 'Glenn Gould' };

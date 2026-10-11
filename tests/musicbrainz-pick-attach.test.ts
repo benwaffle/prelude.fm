@@ -5,12 +5,12 @@ import { createTestDatabase, resetTestDatabase, type TestDatabase } from './help
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
-let attachPickedRelease: typeof import('../app/lib/musicbrainz-contributions').attachPickedRelease;
+let attachPickedRelease: typeof import('../app/lib/musicbrainz-submission-pull').attachPickedRelease;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  ({ attachPickedRelease } = await import('../app/lib/musicbrainz-contributions'));
+  ({ attachPickedRelease } = await import('../app/lib/musicbrainz-submission-pull'));
 });
 
 beforeEach(async () => {

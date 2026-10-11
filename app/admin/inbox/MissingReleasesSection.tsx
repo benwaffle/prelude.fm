@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { adminFailureMessage } from '../components/AdminFailure';
 import { useAdminAction } from '../components/useAdminAction';
+import { adminFailureMessage } from '../components/AdminFailure';
+import type { ContributionView } from '../actions/inbox-view';
 import {
   attachPickedReleaseToAlbum,
   lookupBarcodeReleaseHits,
@@ -10,10 +11,9 @@ import {
   prepareMusicBrainzSeed,
   recordMusicBrainzSeeded,
   recordReleaseSubmission,
-  recheckReleaseSubmission,
   runReleasePrecheck,
-  type ContributionView,
-} from '../actions/contribute';
+} from '../actions/release-submissions';
+import { recheckSubmission } from '../actions/submissions';
 import type { CachedPrecheck } from '@/lib/release-precheck-run';
 import type { PreparedSeed } from '@/lib/release-seeding-run';
 import { SeedOnMusicBrainzForm, SeedPreview } from './MusicBrainzSeed';
@@ -31,6 +31,7 @@ import { PrecheckSummary, ReleasePrecheckPanel } from './ReleasePrecheckPanel';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
 import { LoadMoreRows } from './LoadMoreRows';
+import { EditIdInput, useRowForms } from './LedgerGapRow';
 
 export function MissingReleasesSection({
   rows,
@@ -44,7 +45,7 @@ export function MissingReleasesSection({
   onLoadMore: () => void;
 }) {
   const { pending, busy, runRow, row } = useAdminAction();
-  const [forms, setForms] = useState<Record<string, { releaseMbid: string; editId: string }>>({});
+  const { formOf, setForm } = useRowForms({ releaseMbid: '', editId: '' });
   const [liveHits, setLiveHits] = useState<Record<string, MbPickHit[]>>({});
   const [lookup, setLookup] = useState<Record<string, string | 'loading'>>({});
   const [prechecks, setPrechecks] = useState<Record<string, CachedPrecheck>>({});
@@ -56,7 +57,7 @@ export function MissingReleasesSection({
    * album that still has no measurement, with a button to retry.
    */
   async function confirm(albumId: string) {
-    const form = forms[albumId] ?? { releaseMbid: '', editId: '' };
+    const form = formOf(albumId);
     await runRow(albumId, 'Confirming and attaching the release…', async () => {
       const { landed } = await recordReleaseSubmission(albumId, form);
       if (landed) await measureReleaseCorrections(albumId);
@@ -66,7 +67,7 @@ export function MissingReleasesSection({
 
   async function recheck(albumId: string) {
     await runRow(albumId, 'Rechecking MusicBrainz…', async () => {
-      const { landed } = await recheckReleaseSubmission(albumId);
+      const { landed } = await recheckSubmission({ kind: 'release', albumId });
       if (landed) await measureReleaseCorrections(albumId);
       await onReload();
     });
@@ -122,13 +123,7 @@ export function MissingReleasesSection({
   }
 
   async function pick(albumId: string, releaseMbid: string) {
-    setForms((current) => ({
-      ...current,
-      [albumId]: {
-        ...(current[albumId] ?? { releaseMbid: '', editId: '' }),
-        releaseMbid,
-      },
-    }));
+    setForm(albumId, { releaseMbid });
     await runRow(albumId, 'Attaching release…', async () => {
       const result = await attachPickedReleaseToAlbum({ albumId, releaseMbid });
       if (result.attached) {
@@ -158,7 +153,7 @@ export function MissingReleasesSection({
       description="Biggest first: the count is library tracks adding the release would unblock (the Overview's count), then the album's own size. Pre-check before Harmony — it asks MusicBrainz whether the album, its release group or its recordings already exist, and lists what Harmony will likely get wrong. Confirming with the new release MBID attaches it and measures what you corrected. Ambiguous barcodes stay a hand pick among actual MusicBrainz releases."
     >
       {rows.map((album) => {
-        const form = forms[album.albumId] ?? { releaseMbid: '', editId: '' };
+        const form = formOf(album.albumId);
         const ambiguous = album.reason === AMBIGUOUS_BARCODE_REASON;
         const hits = liveHits[album.albumId] ?? album.barcodeHits;
         const lookupState = lookup[album.albumId];
@@ -342,23 +337,11 @@ export function MissingReleasesSection({
                 className="mono min-w-52 flex-1"
                 placeholder="release MBID (optional)"
                 value={form.releaseMbid}
-                onChange={(event) =>
-                  setForms((current) => ({
-                    ...current,
-                    [album.albumId]: { ...form, releaseMbid: event.target.value },
-                  }))
-                }
+                onChange={(event) => setForm(album.albumId, { releaseMbid: event.target.value })}
               />
-              <input
-                className="mono w-40"
-                placeholder="edit ID (optional)"
+              <EditIdInput
                 value={form.editId}
-                onChange={(event) =>
-                  setForms((current) => ({
-                    ...current,
-                    [album.albumId]: { ...form, editId: event.target.value },
-                  }))
-                }
+                onChange={(editId) => setForm(album.albumId, { editId })}
               />
               <button
                 className="act"

@@ -6,12 +6,8 @@ import {
   nextListLimit,
   type ContributionListLimits,
 } from '@/lib/contribution-list';
-import {
-  getBotStatus,
-  getContributions,
-  type BotStatus,
-  type ContributionView,
-} from '../actions/contribute';
+import { getBotStatus, type BotStatus } from '../actions/bot';
+import { getContributions, type ContributionView } from '../actions/inbox-view';
 import { Spinner } from '../components/Spinner';
 import { afterAdminBurst } from '../components/admin-action-queue';
 import { adminFailureMessage, LoadFailure, useAdminFailure } from '../components/AdminFailure';

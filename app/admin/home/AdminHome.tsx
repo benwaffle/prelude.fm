@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { ReadinessBucket, ReadinessFunnel } from '@/lib/catalogue-readiness';
-import type { ContributionView } from '../actions/contribute';
+import type { ContributionView } from '../actions/inbox-view';
 import { getAdminHome } from '../actions/readiness';
 import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
 import { Spinner } from '../components/Spinner';

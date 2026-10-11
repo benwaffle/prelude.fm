@@ -11,13 +11,17 @@ import { createTestDatabase, resetTestDatabase, type TestDatabase } from './help
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
-let contributions: typeof import('../app/lib/musicbrainz-contributions');
+let contributions: typeof import('../app/lib/gaps/isrc') &
+  typeof import('../app/lib/gaps/barcodes');
 let bot: typeof import('../app/lib/musicbrainz-bot');
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
-  contributions = await import('../app/lib/musicbrainz-contributions');
+  contributions = {
+    ...(await import('../app/lib/gaps/isrc')),
+    ...(await import('../app/lib/gaps/barcodes')),
+  };
   bot = await import('../app/lib/musicbrainz-bot');
 });
 
@@ -215,7 +219,7 @@ test('a rejected barcode returns, but only its own row resubmits it', async () =
   });
 
   assert.equal((await contributions.barcodeEligibleGaps()).length, 1);
-  assert.equal((await contributions.barcodeEligibleGaps(200, 0, { batch: true })).length, 0);
+  assert.equal((await contributions.barcodeEligibleGaps({ batch: true })).length, 0);
   assert.equal((await bot.runBarcodeBot({})).edits, 0);
   assert.equal((await bot.runBarcodeBot({ releaseMbid: RELEASE })).edits, 1);
 });

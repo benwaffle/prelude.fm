@@ -34,14 +34,14 @@ defineScript(
       run,
       { writeMissingRelease },
     ] = await Promise.all([
-      import('@/lib/musicbrainz-contributions'),
+      import('@/lib/gaps/missing-releases'),
       import('@/lib/contribution-list'),
       import('@/app/admin/lib/catalogue-readiness-load'),
       import('@/lib/release-precheck-run'),
       import('@/lib/missing-release-store'),
     ]);
     const ranked = rankMissingReleases(
-      ...(await Promise.all([missingReleases(5_000), loadTracksBlockedOnRelease()])),
+      ...(await Promise.all([missingReleases(), loadTracksBlockedOnRelease()])),
     );
     const albums = only ? ranked.filter((album) => album.albumId === only) : ranked.slice(0, top);
     if (albums.length === 0)

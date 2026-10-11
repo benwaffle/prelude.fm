@@ -1,4 +1,4 @@
-import type { SubmissionHistoryView } from '../actions/contribute';
+import type { SubmissionHistoryView } from '../actions/inbox-view';
 
 /**
  * An earlier attempt that was rejected or withdrawn, shown on a gap that came
