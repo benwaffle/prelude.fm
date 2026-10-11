@@ -34,8 +34,8 @@ export type HeldWorkLink = {
 /** Narrow by the tracks asked about, or by a subquery of work MBIDs. */
 export type HeldWorkLinkScope = { tracks: Iterable<string> } | { works: SQL };
 
-/** The work a proposal suggests. Lives only inside the proposal's JSON for now. */
-const proposedWorkMbid = sql<string>`json_extract(${mbWorkProposal.proposal}, '$.workMbid')`;
+/** The work a proposal suggests (indexed). Its confidence is still read from the JSON. */
+const proposedWorkMbid = sql<string>`${mbWorkProposal.workMbid}`;
 const proposedConfidence = sql`json_extract(${mbWorkProposal.proposal}, '$.confidence')`;
 
 function inScope(

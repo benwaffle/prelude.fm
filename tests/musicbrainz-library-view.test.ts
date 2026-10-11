@@ -772,3 +772,47 @@ test('more by the composer finds their other works, by MusicBrainz or by our own
     'the work itself is excluded; the other is found through the own link',
   );
 });
+
+test('a proposal stands in for a recording MusicBrainz relates to no work, unless dismissed', async () => {
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-iii',
+    title: 'Piano Sonata No. 16: III. Rondo',
+    trackNumber: 3,
+    discNumber: 1,
+    durationMs: 100_000,
+    popularity: 10,
+    spotifyAlbumId: 'album-1',
+    isrc: 'GBAAA0000013',
+  });
+  await db.insert(schema.trackRecording).values({
+    spotifyTrackId: 'track-iii',
+    recordingMbid: 'rec-iii',
+    isrc: 'GBAAA0000013',
+    matchedBy: 'isrc',
+  });
+  await db.insert(schema.mbWorkProposal).values({
+    recordingMbid: 'rec-iii',
+    workMbid: 'part-iii',
+    proposal: { workMbid: 'part-iii', confidence: 'medium' } as never,
+    requests: 0,
+  });
+
+  const { findProviderTracksForWork } = await import('@/lib/musicbrainz-work-queries');
+  const { heldWorkLinks } = await import('@/lib/db/held-work-links');
+  assert.ok((await findProviderTracksForWork('sonata')).includes('track-iii'));
+  assert.deepEqual(await heldWorkLinks({ tracks: ['track-iii'] }), [
+    {
+      spotifyTrackId: 'track-iii',
+      recordingMbid: 'rec-iii',
+      workMbid: 'part-iii',
+      linkedBy: 'prelude',
+      confidence: 'medium',
+    },
+  ]);
+
+  await db
+    .update(schema.mbWorkProposal)
+    .set({ status: 'dismissed' })
+    .where(eq(schema.mbWorkProposal.recordingMbid, 'rec-iii'));
+  assert.ok(!(await findProviderTracksForWork('sonata')).includes('track-iii'));
+});
