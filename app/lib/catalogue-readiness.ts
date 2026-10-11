@@ -525,6 +525,7 @@ export function readinessTracksFrom(
   }
   const workByMbid = new Map(facts.mbWorks.map((work) => [work.mbid, work]));
   const catalogued = new Set(facts.mbWorkCatalogues.map((catalogue) => catalogue.workMbid));
+  const catalogedComposers = new Set(facts.mbCatalogedComposerMbids);
 
   const worksByTrack = new Map<string, ProjectedRecordingWork[]>();
   for (const recording of projection.recordings) {
@@ -604,7 +605,8 @@ export function readinessTracksFrom(
         isrc: isrcByTrack.get(spotifyTrackId) ?? null,
         classification: classificationByTrack.get(spotifyTrackId) ?? 'unreviewed',
         musicBrainzSaysClassical:
-          classicalEvidenceFor(evidenceWorks, workByMbid, catalogued).state === 'classical',
+          classicalEvidenceFor(evidenceWorks, workByMbid, catalogued, catalogedComposers).state ===
+          'classical',
         link:
           anchor?.state === 'accepted'
             ? {

@@ -361,6 +361,7 @@ function facts(): MusicBrainzLibraryFacts {
       lengthMs: 100_000,
     })),
     ownWorkLinks: [],
+    mbCatalogedComposerMbids: [],
   };
 }
 
@@ -410,4 +411,24 @@ test('tracks blocked on a release are counted per album, the way the funnel plac
     readyTrack({ spotifyAlbumId: 'big', release: 'missing', releaseMbid: null, tracklist: null }),
   ]);
   assert.deepEqual(Object.fromEntries(counts), { big: 2, small: 1, picked: 1 });
+});
+
+test('a track our own match links to a work skips the recording step, and is counted as ours', () => {
+  const ours = readyTrack({
+    link: { state: 'ours' },
+    release: 'missing',
+    releaseMbid: null,
+    tracklist: null,
+    works: [{ workMbid: 'work-1', linkedBy: 'prelude', title: 'Work', composer: 'named' }],
+  });
+  assert.equal(placeTrack(ours), null);
+  // It still has to clear the composer and classical steps like anything else.
+  assert.equal(
+    placeTrack({ ...ours, classification: 'uncertain', musicBrainzSaysClassical: false })?.bucket,
+    'add-classical-evidence',
+  );
+
+  const funnel = readinessFunnel([ours, readyTrack()]);
+  assert.equal(funnel.ready, 2);
+  assert.equal(funnel.readyViaOwnLinks, 1);
 });

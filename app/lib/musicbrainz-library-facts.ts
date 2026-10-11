@@ -167,4 +167,10 @@ export type MusicBrainzLibraryFacts = {
   mbReleaseTracks: MbReleaseTrackFact[];
   /** Our own work links, for what MusicBrainz does not link yet. */
   ownWorkLinks: OwnWorkLinkFact[];
+  /**
+   * Of the composers of `mbWorks`, those MusicBrainz catalogues at least one
+   * work by (any work in the cache, not only these). Special-purpose artists
+   * such as [traditional] are never in it.
+   */
+  mbCatalogedComposerMbids: string[];
 };

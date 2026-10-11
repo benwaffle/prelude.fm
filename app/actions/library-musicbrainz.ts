@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, notLike, sql } from 'drizzle-orm';
 import { db, type DatabaseExecutor } from '@/lib/db';
 import { forChunks } from '@/lib/db/chunked';
 import {
@@ -288,6 +288,21 @@ async function loadMusicBrainzFacts(
     ),
   ]);
 
+  const catalogedComposerMbids = new Set(
+    (
+      await forChunks(
+        workRows.map((work) => work.composerMbid).filter((mbid): mbid is string => !!mbid),
+        (chunk) =>
+          database
+            .select({ composerMbid: mbWork.composerMbid })
+            .from(mbWork)
+            .innerJoin(mbWorkCatalogue, eq(mbWorkCatalogue.workMbid, mbWork.mbid))
+            .innerJoin(mbArtist, eq(mbArtist.mbid, mbWork.composerMbid))
+            .where(and(inArray(mbWork.composerMbid, chunk), notLike(mbArtist.name, '[%'))),
+      )
+    ).map((row) => row.composerMbid!),
+  );
+
   const providerTrackById = new Map(providerTrackRows.map((track) => [track.spotifyId, track]));
   const providerAlbumById = new Map(providerAlbumRows.map((album) => [album.spotifyId, album]));
   const workByMbid = new Map(workRows.map((work) => [work.mbid, work]));
@@ -357,6 +372,7 @@ async function loadMusicBrainzFacts(
         trackWorkMbids,
         workByMbid,
         catalogedWorkMbids,
+        catalogedComposerMbids,
         queueStatusByTrack.get(spotifyTrackId) ?? null,
       );
       return [classification];
@@ -453,6 +469,7 @@ async function loadMusicBrainzFacts(
       }),
     ),
     ownWorkLinks,
+    mbCatalogedComposerMbids: [...catalogedComposerMbids],
   };
 }
 
@@ -531,11 +548,20 @@ async function loadOwnWorkLinks(
 function classify(
   spotifyTrackId: string,
   workMbids: string[],
-  workByMbid: Map<string, { mbid: string; type: string | null; parentMbid: string | null }>,
+  workByMbid: Map<
+    string,
+    { mbid: string; type: string | null; parentMbid: string | null; composerMbid: string | null }
+  >,
   catalogedWorkMbids: Set<string>,
+  catalogedComposerMbids: Set<string>,
   queueStatus: string | null,
 ): TrackClassification {
-  const evidence = classicalEvidenceFor(workMbids, workByMbid, catalogedWorkMbids);
+  const evidence = classicalEvidenceFor(
+    workMbids,
+    workByMbid,
+    catalogedWorkMbids,
+    catalogedComposerMbids,
+  );
   if (evidence.state === 'classical') {
     return {
       spotifyTrackId,
@@ -621,6 +647,7 @@ function emptyFacts(requestedTrackIds: string[]): MusicBrainzLibraryFacts {
     mbReleases: [],
     mbReleaseTracks: [],
     ownWorkLinks: [],
+    mbCatalogedComposerMbids: [],
   };
 }
 

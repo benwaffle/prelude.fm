@@ -93,3 +93,23 @@ test('one work carrying evidence is enough for a medley', () => {
   );
   assert.equal(evidence.state, 'classical');
 });
+
+test('a work by a composer MusicBrainz catalogues elsewhere is classical', () => {
+  const works = tree(
+    { mbid: 'hungarian-dance-5', type: null, parentMbid: 'hungarian-dances', composerMbid: null },
+    { mbid: 'hungarian-dances', type: null, parentMbid: null, composerMbid: 'brahms' },
+  );
+  const evidence = classicalEvidenceFor(
+    ['hungarian-dance-5'],
+    works,
+    new Set(),
+    new Set(['brahms']),
+  );
+  assert.equal(evidence.state, 'classical');
+  assert.match(evidence.reason, /catalogues other works by brahms/);
+
+  assert.equal(
+    classicalEvidenceFor(['hungarian-dance-5'], works, new Set(), new Set(['someone-else'])).state,
+    'inconclusive',
+  );
+});

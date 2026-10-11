@@ -362,40 +362,52 @@ export async function storeLinks(outcomes: LinkOutcome[]): Promise<void> {
 }
 
 /**
- * Re-derive the classification of these tracks now that some have a work.
+ * Re-derive the stored classification of these tracks: after a link gives
+ * them a work, or after the classical rule changes.
  *
  * The same reading the album pipeline makes, through the same facts loader,
- * and under the same precedence: a hand decision is never replaced.
+ * and under the same precedence: a hand decision is never replaced, and like
+ * the pipeline this never writes one (the film-score exclusion is applied as
+ * tracks are read, not stored). Returns how many rows changed.
  */
 export async function reclassify(spotifyTrackIds: string[]): Promise<number> {
-  if (spotifyTrackIds.length === 0) return 0;
-  const facts = await loadDerivedMusicBrainzLibraryFacts(spotifyTrackIds);
-  const existingRows = await db
-    .select()
-    .from(trackClassification)
-    .where(inArray(trackClassification.spotifyTrackId, spotifyTrackIds));
-  const existing = new Map(existingRows.map((row) => [row.spotifyTrackId, row]));
   let changed = 0;
-  const decidedAt = new Date();
-  for (const classification of facts.classifications) {
-    const previous = existing.get(classification.spotifyTrackId);
-    if (previous && !classificationMayBeReplaced(previous, classification)) continue;
-    if (previous?.state === classification.state && previous.reason === classification.reason) {
-      continue;
+  for (let start = 0; start < spotifyTrackIds.length; start += 500) {
+    const chunk = spotifyTrackIds.slice(start, start + 500);
+    const facts = await loadDerivedMusicBrainzLibraryFacts(chunk);
+    const existingRows = await db
+      .select()
+      .from(trackClassification)
+      .where(inArray(trackClassification.spotifyTrackId, chunk));
+    const existing = new Map(existingRows.map((row) => [row.spotifyTrackId, row]));
+    const decidedAt = new Date();
+    for (const classification of facts.classifications) {
+      if (classification.provenance === 'manual') continue;
+      const previous = existing.get(classification.spotifyTrackId);
+      // A track with no stored row is classified as it is read, from the
+      // same evidence, so there is nothing stale to replace.
+      if (!previous || !classificationMayBeReplaced(previous, classification)) continue;
+      if (
+        previous?.state === classification.state &&
+        previous.provenance === classification.provenance &&
+        previous.reason === classification.reason
+      ) {
+        continue;
+      }
+      const row = {
+        spotifyTrackId: classification.spotifyTrackId,
+        state: classification.state,
+        provenance: classification.provenance,
+        reason: classification.reason,
+        evidenceMbid: null,
+        decidedAt,
+      };
+      await db
+        .insert(trackClassification)
+        .values(row)
+        .onConflictDoUpdate({ target: trackClassification.spotifyTrackId, set: row });
+      changed++;
     }
-    const row = {
-      spotifyTrackId: classification.spotifyTrackId,
-      state: classification.state,
-      provenance: classification.provenance,
-      reason: classification.reason,
-      evidenceMbid: null,
-      decidedAt,
-    };
-    await db
-      .insert(trackClassification)
-      .values(row)
-      .onConflictDoUpdate({ target: trackClassification.spotifyTrackId, set: row });
-    changed++;
   }
   return changed;
 }
@@ -411,4 +423,25 @@ export async function checkedTracks(spotifyTrackIds: string[]): Promise<Set<stri
     for (const row of rows) checked.add(row.spotifyTrackId);
   }
   return checked;
+}
+
+export async function allTrackIds(): Promise<string[]> {
+  const rows = await db.all<{ spotify_id: string }>(sql`select spotify_id from spotify_track`);
+  return rows.map((row) => row.spotify_id);
+}
+
+/**
+ * Read into the cache every work a suggested work link names, so the player
+ * can show it under its composer and parent. Works already read cost nothing.
+ */
+export async function cacheProposedWorks(): Promise<{ works: number; requests: number }> {
+  const rows = await db.all<{ work_mbid: string }>(sql`
+    select distinct json_extract(proposal, '$.workMbid') as work_mbid
+    from mb_work_proposal
+    where status <> 'dismissed' and json_extract(proposal, '$.workMbid') is not null
+  `);
+  const source = musicBrainzApi('backfill');
+  let requests = 0;
+  for (const row of rows) requests += (await ingestWorkTree(source, row.work_mbid)).requests;
+  return { works: rows.length, requests };
 }

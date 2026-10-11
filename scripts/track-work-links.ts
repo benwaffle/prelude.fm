@@ -6,7 +6,9 @@
  *   pnpm metadata:track-work-links --refresh       every such track, again
  *   pnpm metadata:track-work-links --album <id>    one Spotify album
  *   pnpm metadata:track-work-links --albums 5      stop after five albums
- *   pnpm metadata:track-work-links --no-store      run without writing anything
+ *   pnpm metadata:track-work-links --no-store      store no links (works read are still cached)
+ *   pnpm metadata:track-work-links --works         cache the works suggested work links name
+ *   pnpm metadata:track-work-links --reclassify    re-derive every track's classification
  *   pnpm metadata:track-work-links --json
  *
  * Spends MusicBrainz requests on the backfill channel, through the gateway.
@@ -32,6 +34,18 @@ async function main() {
   const albums = option('--albums');
 
   const run = await import('@/lib/track-work-links-run');
+
+  if (process.argv.includes('--works')) {
+    const { requests, works } = await run.cacheProposedWorks();
+    console.log(`${works} suggested works read into the cache, ${requests} MusicBrainz requests.`);
+    process.exit(0);
+  }
+  if (process.argv.includes('--reclassify')) {
+    const changed = await run.reclassify(await run.allTrackIds());
+    console.log(`${changed} classifications updated.`);
+    process.exit(0);
+  }
+
   let gaps = await run.loadLinkGaps();
   if (album) gaps = gaps.filter((gap) => gap.albumId === album);
   if (!refresh) {
