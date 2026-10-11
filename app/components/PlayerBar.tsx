@@ -140,25 +140,38 @@ export function PlayerBar() {
 
   useEffect(() => {
     if (!work || totalMs === 0) return;
+    // Found once, not every frame: the library can run to tens of thousands of
+    // elements. The readouts only come and go with the work or the sheet.
+    const readouts = Array.from(document.querySelectorAll<HTMLElement>('[data-progress]'));
+    // Any change to the page costs a style and layout pass over all of it, so
+    // write only what a reader could see change: the bar by the tenth of a
+    // percent, the times by the second.
+    let last = { pct: '', elapsed: '', remaining: '' };
     let frame = 0;
     const tick = () => {
+      frame = requestAnimationFrame(tick);
       const progress = getProgress();
       const dragged = dragRatioRef.current;
-      const elapsed =
+      const ms =
         dragged !== null ? dragged * totalMs : Math.min(totalMs, beforeMs + progress.position);
-      const pct = `${(elapsed / totalMs) * 100}%`;
-      document.querySelectorAll<HTMLElement>('[data-progress]').forEach((el) => {
+      const next = {
+        pct: `${((ms / totalMs) * 100).toFixed(1)}%`,
+        elapsed: formatDuration(ms),
+        remaining: `—${formatDuration(totalMs - ms)}`,
+      };
+      for (const el of readouts) {
         const part = el.dataset.progress;
-        if (part === 'fill') el.style.width = pct;
-        else if (part === 'head') el.style.left = pct;
-        else if (part === 'elapsed') el.textContent = formatDuration(elapsed);
-        else if (part === 'remaining') el.textContent = `—${formatDuration(totalMs - elapsed)}`;
-      });
-      frame = requestAnimationFrame(tick);
+        if (part === 'fill' && next.pct !== last.pct) el.style.width = next.pct;
+        else if (part === 'head' && next.pct !== last.pct) el.style.left = next.pct;
+        else if (part === 'elapsed' && next.elapsed !== last.elapsed) el.textContent = next.elapsed;
+        else if (part === 'remaining' && next.remaining !== last.remaining)
+          el.textContent = next.remaining;
+      }
+      last = next;
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [getProgress, work, totalMs, beforeMs]);
+  }, [getProgress, work, totalMs, beforeMs, sheetOpen]);
 
   /**
    * Seeking is within the work: inside the current movement it is a plain
@@ -257,7 +270,7 @@ export function PlayerBar() {
 
   return (
     <div
-      className="relative grid grid-cols-[360px_1fr_320px] items-center border-t border-black/20 px-7 py-[14px] backdrop-blur-[14px] max-[900px]:block max-[900px]:px-3 max-[900px]:py-2"
+      className="relative grid grid-cols-[360px_minmax(0,1fr)_320px] items-center border-t border-black/20 px-7 py-[14px] backdrop-blur-[14px] max-[900px]:block max-[900px]:px-3 max-[900px]:py-2"
       style={{
         background: `linear-gradient(180deg, ${hexToRgba(tint, 0.82)}, ${hexToRgba(tint, 0.98)})`,
         color: work?.ink ?? '#f4ecd8',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSpotifyPlayer } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
 import { useNavSearch } from '../AppShell';
@@ -84,16 +84,25 @@ export function LibraryScreen() {
     return Array.from(by, ([key, group]) => ({ key, works: group }));
   }, [likedWorks, sort]);
 
-  const playFrom = (work: LibraryWork, movement: Movement) => {
-    const queue = queueFrom(work.movements, movement);
-    if (queue.length > 0) play(queue);
-  };
+  // Stable, so a card re-renders only when something on it changes.
+  const playFrom = useCallback(
+    (work: LibraryWork, movement: Movement) => {
+      const queue = queueFrom(work.movements, movement);
+      if (queue.length > 0) play(queue);
+    },
+    [play],
+  );
 
-  const playWork = (work: LibraryWork) => {
-    const here = playable(work.movements);
-    const first = here.find((m) => m.liked) ?? here[0];
-    if (first) playFrom(work, first);
-  };
+  const playWork = useCallback(
+    (work: LibraryWork) => {
+      const here = playable(work.movements);
+      const first = here.find((m) => m.liked) ?? here[0];
+      if (first) playFrom(work, first);
+    },
+    [playFrom],
+  );
+
+  const playingTrackId = currentTrack?.id ?? null;
 
   const playAll = () => {
     const first = likedWorks[0];
@@ -157,8 +166,10 @@ export function LibraryScreen() {
             <WorkCard
               key={w.id}
               work={w}
-              playingTrackId={currentTrack?.id ?? null}
-              selectedId={selectedId}
+              playingTrackId={holds(w, playingTrackId) ? playingTrackId : null}
+              selectedId={
+                w.movements.some((m) => `${w.id}-${m.n}` === selectedId) ? selectedId : null
+              }
               onSelect={setSelectedId}
               onPlayMovement={playFrom}
               onPlayWork={playWork}
@@ -174,6 +185,11 @@ export function LibraryScreen() {
       {!loading && !matching && <GapStrip tracks={gapTracks} />}
     </main>
   );
+}
+
+/** Whether this card plays the track, so only the cards it concerns re-render. */
+function holds(work: LibraryWork, trackId: string | null): boolean {
+  return trackId !== null && work.movements.some((m) => m.trackId === trackId);
 }
 
 function slug(key: string): string {
