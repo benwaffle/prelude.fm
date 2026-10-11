@@ -814,6 +814,88 @@ export async function drainWorkStubs(
 }
 
 /**
+ * Re-read works whose stored composer may be a work's second composer.
+ *
+ * Until `composerOf` learned to prefer the main composer, a work crediting
+ * several (Mozart's Requiem names Süßmayr as an additional composer) was
+ * filed under whichever MusicBrainz listed first. Nothing in the cache says
+ * how many composers a work has, so the candidates are re-read: every
+ * top-level work with a composer, and every part whose composer is not the
+ * one it would inherit. Parts that simply repeat their parent's composer are
+ * re-read only when that parent's composer changed.
+ *
+ * Resumable: works read at or after `since` are skipped, so a rerun given the
+ * first run's start time picks up where it stopped.
+ */
+export async function refreshWorkComposers(
+  source: MusicBrainzSource,
+  options: { since: Date; limit: number; onProgress?: (line: string) => void },
+): Promise<{
+  read: number;
+  changed: { mbid: string; title: string; from: string | null; to: string | null }[];
+}> {
+  const since = options.since.getTime();
+  const candidates = await db.all<{ mbid: string }>(sql`
+    with recursive up(mbid, ancestor, depth) as (
+      select mbid, parent_mbid, 1 from mb_work
+        where detail = 'full' and composer_mbid is not null and parent_mbid is not null
+      union all
+      select up.mbid, w.parent_mbid, up.depth + 1 from up
+        join mb_work w on w.mbid = up.ancestor
+        where w.composer_mbid is null and w.parent_mbid is not null and up.depth < ${MAX_TREE_DEPTH}
+    ),
+    inherited as (
+      select up.mbid, w.composer_mbid from up join mb_work w on w.mbid = up.ancestor
+        where w.composer_mbid is not null
+    )
+    select w.mbid from mb_work w
+      left join inherited i on i.mbid = w.mbid
+      where w.detail = 'full' and w.composer_mbid is not null and w.fetched_at < ${since}
+        and (w.parent_mbid is null or i.composer_mbid is null or i.composer_mbid <> w.composer_mbid)
+      order by w.parent_mbid is not null, w.mbid
+  `);
+
+  const changed: { mbid: string; title: string; from: string | null; to: string | null }[] = [];
+  let read = 0;
+
+  async function reread(mbid: string): Promise<boolean> {
+    const [before] = await db
+      .select({ composerMbid: mbWork.composerMbid })
+      .from(mbWork)
+      .where(eq(mbWork.mbid, mbid));
+    const work = await readAndCacheWork(source, mbid);
+    read++;
+    if (read % 50 === 0) options.onProgress?.(`  ${read} read, ${changed.length} changed`);
+    const after = work ? (composerOf(work)?.id ?? null) : (before?.composerMbid ?? null);
+    if (!work || after === (before?.composerMbid ?? null)) return false;
+    changed.push({ mbid, title: work.title, from: before?.composerMbid ?? null, to: after });
+    return true;
+  }
+
+  const queue = candidates.map((row) => row.mbid);
+  options.onProgress?.(`${queue.length} candidate works`);
+  while (queue.length > 0 && read < options.limit) {
+    const mbid = queue.shift()!;
+    if (!(await reread(mbid))) continue;
+    // Its parts that repeated the old composer would now disagree with it.
+    const parts = await db.all<{ mbid: string }>(sql`
+      with recursive down(mbid, depth) as (
+        select mbid, 1 from mb_work where parent_mbid = ${mbid}
+        union all
+        select w.mbid, down.depth + 1 from mb_work w join down on w.parent_mbid = down.mbid
+          where down.depth < ${MAX_TREE_DEPTH}
+      )
+      select distinct w.mbid from mb_work w join down on down.mbid = w.mbid
+        where w.detail = 'full' and w.composer_mbid is not null and w.fetched_at < ${since}
+    `);
+    const queued = new Set(queue);
+    queue.unshift(...parts.map((part) => part.mbid).filter((part) => !queued.has(part)));
+  }
+
+  return { read, changed };
+}
+
+/**
  * Re-read releases already cached, to pick up fields a later version of the
  * reader learned to ask for.
  *

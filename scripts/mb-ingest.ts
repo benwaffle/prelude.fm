@@ -17,6 +17,7 @@
   pnpm mb:ingest works [--limit n]   read works a recording named but nobody has
   pnpm mb:ingest artists [--limit n] read artist stubs, composers first
   pnpm mb:ingest refresh [--limit n] re-read cached releases for newly stored fields
+  pnpm mb:ingest composers [--since iso] [--limit n] re-read works that may credit several composers
   pnpm mb:ingest check               run the cache invariants
  *
  * The same `ingestAlbum` runs in the worker; this is for bulk backfill and for
@@ -24,7 +25,7 @@
  */
 import { loadEnvConfig } from '@next/env';
 
-type Options = { step: string; limit: number; albumId?: string; all: boolean };
+type Options = { step: string; limit: number; albumId?: string; all: boolean; since?: string };
 
 function parseOptions(argv: string[]): Options {
   const options: Options = {
@@ -36,6 +37,7 @@ function parseOptions(argv: string[]): Options {
     if (argv[i] === '--limit') options.limit = Number(argv[++i]);
     else if (argv[i] === '--all') options.all = true;
     else if (argv[i] === '--album') options.albumId = argv[++i];
+    else if (argv[i] === '--since') options.since = argv[++i];
     else throw new Error(`Unknown option: ${argv[i]}`);
   }
   return options;
@@ -142,6 +144,28 @@ async function main() {
     );
     console.log(`re-read ${result.releases} releases in ${result.requests} requests`);
     await report();
+    return;
+  }
+
+  if (options.step === 'composers') {
+    const since = options.since ? new Date(options.since) : new Date();
+    console.log(`re-reading works not read since ${since.toISOString()}`);
+    const result = await cache.refreshWorkComposers(source, {
+      since,
+      limit: options.limit,
+      onProgress: (line) => console.log(line),
+    });
+    const names = new Map(
+      (await db.all<{ mbid: string; name: string }>(sql`select mbid, name from mb_artist`)).map(
+        (row) => [row.mbid, row.name],
+      ),
+    );
+    for (const work of result.changed) {
+      const from = work.from ? (names.get(work.from) ?? work.from) : 'none';
+      const to = work.to ? (names.get(work.to) ?? work.to) : 'none';
+      console.log(`changed\t${work.mbid}\t${work.title}\t${from} -> ${to}`);
+    }
+    console.log(`read ${result.read} works, ${result.changed.length} changed composer`);
     return;
   }
 

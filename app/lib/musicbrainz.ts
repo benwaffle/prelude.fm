@@ -470,11 +470,21 @@ export function childPartsOf(work: MbWork): MbWorkRef[] {
   return parts;
 }
 
+/**
+ * The work's main composer.
+ *
+ * A work can credit several composers. MusicBrainz marks a completer or
+ * contributor as an `additional` composer (Süßmayr on Mozart's Requiem) and
+ * returns relations in no order that puts the main composer first, so taking
+ * the first one can file a work under its completer. A composer without that
+ * mark wins; when every credit carries it, the first is still a real credit.
+ */
 export function composerOf(work: MbWork): { id: string; name: string } | null {
-  for (const relation of work.relations ?? []) {
-    if (relation.type === 'composer' && relation.artist) return relation.artist;
-  }
-  return null;
+  const credits = (work.relations ?? []).filter(
+    (relation) => relation.type === 'composer' && relation.artist,
+  );
+  const main = credits.find((relation) => !relation.attributes?.includes('additional'));
+  return (main ?? credits[0])?.artist ?? null;
 }
 
 /**
