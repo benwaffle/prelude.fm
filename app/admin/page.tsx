@@ -7,27 +7,21 @@ import { authClient } from '@/lib/auth-client';
 import { GatewayBar } from './components/GatewayBar';
 import { AdminFailureNotice, AdminFailureProvider } from './components/AdminFailure';
 import { Spinner } from './components/Spinner';
-import { AlbumsTab } from './tabs/AlbumsTab';
-import { ContributeTab } from './tabs/ContributeTab';
-import { HealthTab } from './tabs/HealthTab';
-import { OverviewTab } from './tabs/OverviewTab';
-import { ReleaseCorrectionsTab } from './tabs/ReleaseCorrectionsTab';
-import { RefreshWorkTab } from './tabs/RefreshWorkTab';
-import type { InboxFocus } from './lib/inbox-focus';
-import { parseAdminUrl, patchAdminUrl, type AdminTab, type AdminUrlPatch } from './lib/admin-url';
+import { AlbumsTab } from './tools/AlbumsTab';
+import { HealthTab } from './tools/HealthTab';
+import { ReleaseCorrectionsTab } from './tools/ReleaseCorrectionsTab';
+import { RefreshWorkTab } from './tools/RefreshWorkTab';
+import { AdminHome } from './home/AdminHome';
+import { InboxSectionPage } from './inbox/InboxSectionPage';
+import { PAGE_TITLE } from './lib/admin-pages';
+import { adminHref, INBOX_CLASSES, parseAdminUrl, type InboxClass } from './lib/admin-url';
 
 /*
  * A workbench for closing MusicBrainz gaps — not a second catalogue.
- * /catalog and the player stay the map. Overview says how much of the
- * library the player can show and what would show the rest; the Inbox is
- * where those edits are made; Details keeps the album list and cache checks.
+ * /catalog and the player stay the map. The home page says how much of the
+ * library the player can show and lists what to fix; each list, and each
+ * occasional tool, has a page of its own.
  */
-const TABS: { id: AdminTab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'inbox', label: 'Inbox' },
-  { id: 'details', label: 'Details' },
-];
-
 export default function AdminPage() {
   return (
     <Suspense
@@ -49,18 +43,9 @@ function AdminPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { tab, albumFilter, inboxClass, focus } = parseAdminUrl(searchParams);
+  const { page, albumFilter, focus } = parseAdminUrl(searchParams);
 
   const isAdmin = session?.user?.name === 'benwaffle';
-
-  function updateUrl(patch: AdminUrlPatch) {
-    router.push(
-      `${pathname}${patchAdminUrl(new URLSearchParams(searchParams.toString()), patch)}`,
-      {
-        scroll: false,
-      },
-    );
-  }
 
   if (isPending) {
     return (
@@ -104,126 +89,60 @@ function AdminPageContent() {
     );
   }
 
-  function openInbox(focus: InboxFocus) {
-    updateUrl({
-      tab: 'inbox',
-      class: focus.kind === 'album' ? 'missing' : 'isrc',
-      album: focus.kind === 'album' ? focus.id : null,
-      release: focus.kind === 'release' ? focus.id : null,
-      filter: null,
-    });
-  }
-
-  function selectTab(nextTab: AdminTab) {
-    updateUrl({
-      tab: nextTab,
-      class: nextTab === 'inbox' ? (inboxClass ?? null) : null,
-      album: nextTab === 'inbox' && focus?.kind === 'album' ? focus.id : null,
-      release: nextTab === 'inbox' && focus?.kind === 'release' ? focus.id : null,
-      filter: nextTab === 'details' ? (albumFilter ?? null) : null,
-    });
-  }
-
   return (
     <>
       <header className="desk-rail relative">
-        <h1>prelude admin</h1>
+        <h1>
+          <Link href="/admin" className="no-underline">
+            prelude admin
+          </Link>
+        </h1>
         <GatewayBar />
         <Link href="/" className="text-[11px] text-[var(--ink-2)] hover:text-[var(--gall)]">
           Back to the player
         </Link>
       </header>
 
-      <div className="rule-b px-5">
-        <nav className="tab-strip mx-auto max-w-[1400px]" aria-label="Sections">
-          {TABS.map((item) => (
-            <button
-              key={item.id}
-              className="tab"
-              aria-current={tab === item.id ? 'page' : undefined}
-              onClick={() => selectTab(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-      </div>
-
       <main className="mx-auto max-w-[1400px] px-5 pt-6">
         <AdminFailureNotice />
-        {tab === 'inbox' && (
-          <ContributeTab
-            focus={focus}
-            inboxClass={inboxClass}
-            onClassChange={(nextClass) =>
-              updateUrl({
-                tab: 'inbox',
-                class: nextClass,
-                album: null,
-                release: null,
-                filter: null,
-              })
-            }
-          />
-        )}
-
-        {tab === 'overview' && (
-          <OverviewTab
-            onOpenInbox={(nextClass) =>
-              updateUrl({
-                tab: 'inbox',
-                class: nextClass,
-                album: null,
-                release: null,
-                filter: null,
-              })
-            }
-          />
-        )}
-
-        {tab === 'details' && (
-          <div className="flex flex-col gap-4 pb-16">
-            <details className="fold" open={albumFilter !== undefined}>
-              <summary>Albums</summary>
-              <div className="fold-body">
-                <AlbumsTab
-                  state={albumFilter}
-                  onStateChange={(nextFilter) =>
-                    updateUrl({
-                      tab: 'details',
-                      filter: nextFilter ?? null,
-                      class: null,
-                      album: null,
-                      release: null,
-                    })
-                  }
-                  onOpenInbox={openInbox}
-                />
-              </div>
-            </details>
-            <details className="fold">
-              <summary>Releases added through Harmony: what was corrected</summary>
-              <div className="fold-body">
-                <ReleaseCorrectionsTab />
-              </div>
-            </details>
-            <details className="fold">
-              <summary>Refresh a work from MusicBrainz</summary>
-              <div className="fold-body">
-                <RefreshWorkTab />
-              </div>
-            </details>
-            <details className="fold">
-              <summary>Cache checks and deployment</summary>
-              <div className="fold-body">
-                <HealthTab />
-              </div>
-            </details>
-          </div>
+        {page === null ? (
+          <AdminHome />
+        ) : (
+          <>
+            <nav className="mb-4 flex flex-wrap items-baseline gap-2" aria-label="Breadcrumb">
+              <Link href="/admin" className="text-[var(--ink-2)] hover:text-[var(--gall)]">
+                ← Admin home
+              </Link>
+              <h2 className="panel-title">{PAGE_TITLE[page]}</h2>
+            </nav>
+            {isInboxClass(page) && <InboxSectionPage key={page} section={page} focus={focus} />}
+            {page === 'albums' && (
+              <AlbumsTab
+                state={albumFilter}
+                onStateChange={(nextFilter) =>
+                  router.push(adminHref('albums', { albumFilter: nextFilter }), { scroll: false })
+                }
+                onOpenInbox={(nextFocus) =>
+                  router.push(
+                    adminHref(nextFocus.kind === 'album' ? 'missing' : 'isrc', {
+                      focus: nextFocus,
+                    }),
+                  )
+                }
+              />
+            )}
+            {page === 'corrections' && <ReleaseCorrectionsTab />}
+            {page === 'refresh-work' && <RefreshWorkTab />}
+            {page === 'checks' && <HealthTab />}
+          </>
         )}
       </main>
     </>
   );
+}
+
+function isInboxClass(page: string): page is InboxClass {
+  return (INBOX_CLASSES as readonly string[]).includes(page);
 }
 
 function Gate({ body, action }: { body: string; action: React.ReactNode }) {

@@ -1,17 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseAdminUrl, patchAdminUrl } from '../app/admin/lib/admin-url';
+import { adminHref, parseAdminUrl } from '../app/admin/lib/admin-url';
 
-test('admin URL state validates tabs, classes, filters, and focus', () => {
+test('admin URL state validates pages, filters, and focus', () => {
   assert.deepEqual(
     parseAdminUrl(
-      new URLSearchParams(
-        'tab=albums&class=missing&album=spotify-album&release=ignored&filter=absent',
-      ),
+      new URLSearchParams('page=albums&album=spotify-album&release=ignored&filter=absent'),
     ),
     {
-      tab: 'details',
-      inboxClass: 'missing',
+      page: 'albums',
       focus: { kind: 'album', id: 'spotify-album' },
       albumFilter: 'absent',
     },
@@ -19,32 +16,30 @@ test('admin URL state validates tabs, classes, filters, and focus', () => {
 });
 
 test('admin URL state ignores unknown values', () => {
-  assert.deepEqual(
-    parseAdminUrl(new URLSearchParams('tab=nope&class=nope&filter=nope&album=%20')),
-    {
-      tab: 'overview',
-      inboxClass: undefined,
-      focus: null,
-      albumFilter: undefined,
-    },
-  );
+  assert.deepEqual(parseAdminUrl(new URLSearchParams('page=nope&filter=nope&album=%20')), {
+    page: null,
+    focus: null,
+    albumFilter: undefined,
+  });
+  assert.equal(parseAdminUrl(new URLSearchParams('page=toString')).page, null);
 });
 
-test('the old Albums and Health tabs open Details', () => {
-  assert.equal(parseAdminUrl(new URLSearchParams('tab=albums')).tab, 'details');
-  assert.equal(parseAdminUrl(new URLSearchParams('tab=health')).tab, 'details');
-  assert.equal(parseAdminUrl(new URLSearchParams('tab=inbox')).tab, 'inbox');
-  assert.equal(parseAdminUrl(new URLSearchParams('tab=toString')).tab, 'overview');
+test('links from the old tabs land on the page that holds what they pointed at', () => {
+  const pageOf = (query: string) => parseAdminUrl(new URLSearchParams(query)).page;
+  assert.equal(pageOf('tab=inbox&class=missing&album=a'), 'missing');
+  assert.equal(pageOf('tab=inbox'), null);
+  assert.equal(pageOf('tab=overview'), null);
+  assert.equal(pageOf('tab=albums'), 'albums');
+  assert.equal(pageOf('tab=health'), 'checks');
+  assert.equal(pageOf('tab=details'), null);
+  assert.equal(pageOf('tab=details&filter=unchecked'), 'albums');
 });
 
-test('admin URL patches preserve unrelated state and remove null values', () => {
+test('admin hrefs carry the page, focus, and album filter', () => {
+  assert.equal(adminHref(null), '/admin');
   assert.equal(
-    patchAdminUrl(new URLSearchParams('tab=albums&filter=absent'), {
-      tab: 'inbox',
-      filter: null,
-      class: 'missing',
-      album: 'album-id',
-    }),
-    '?tab=inbox&class=missing&album=album-id',
+    adminHref('isrc', { focus: { kind: 'release', id: 'r 1' } }),
+    '/admin?page=isrc&release=r+1',
   );
+  assert.equal(adminHref('albums', { albumFilter: 'absent' }), '/admin?page=albums&filter=absent');
 });

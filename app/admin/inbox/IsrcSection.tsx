@@ -11,7 +11,6 @@ import {
   type BotStatus,
   type ContributionView,
 } from '../actions/contribute';
-import type { InboxClass } from '../lib/admin-url';
 import { ConfirmDisclosure } from './ConfirmDisclosure';
 import { InboxSection } from './InboxSection';
 import { PreviousSubmission } from './PreviousSubmission';
@@ -113,7 +112,6 @@ export function IsrcSection({
   trackTotal,
   releaseTotal,
   bot,
-  activeClass,
   onReload,
   onBotChange,
   onLoadMore,
@@ -122,7 +120,6 @@ export function IsrcSection({
   trackTotal: number;
   releaseTotal: number;
   bot: BotStatus | null;
-  activeClass?: InboxClass;
   onReload: () => Promise<void>;
   onBotChange: (bot: BotStatus) => void;
   onLoadMore: () => void;
@@ -194,7 +191,6 @@ export function IsrcSection({
   return (
     <InboxSection
       inboxClass="isrc"
-      activeClass={activeClass}
       title="Recordings missing ISRCs"
       channel="BOT"
       total={releaseTotal}

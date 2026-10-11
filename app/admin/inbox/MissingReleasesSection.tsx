@@ -18,7 +18,6 @@ import type { CachedPrecheck } from '@/lib/release-precheck-run';
 import type { PreparedSeed } from '@/lib/release-seeding-run';
 import { SeedOnMusicBrainzForm, SeedPreview } from './MusicBrainzSeed';
 import { MbPicker } from '../components/MbPicker';
-import type { InboxClass } from '../lib/admin-url';
 import {
   AMBIGUOUS_BARCODE_REASON,
   barcodeReleaseSearchUrl,
@@ -36,13 +35,11 @@ import { LoadMoreRows } from './LoadMoreRows';
 export function MissingReleasesSection({
   rows,
   total,
-  activeClass,
   onReload,
   onLoadMore,
 }: {
   rows: ContributionView['missing'];
   total: number;
-  activeClass?: InboxClass;
   onReload: () => Promise<void>;
   onLoadMore: () => void;
 }) {
@@ -153,7 +150,6 @@ export function MissingReleasesSection({
   return (
     <InboxSection
       inboxClass="missing"
-      activeClass={activeClass}
       title="MusicBrainz has no release for this album"
       channel="TOOL"
       total={total}
