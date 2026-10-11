@@ -37,7 +37,7 @@ test('a queued recording carries only the movements it can play, in order', () =
   const entry = queueEntryFor(work({}));
   assert.deepEqual(entry.uris, ['spotify:track:a', 'spotify:track:c']);
   assert.equal(entry.title, 'Piano Sonata no. 14');
-  assert.equal(entry.subtitle, 'Beethoven · Igor Levit');
+  assert.equal(entry.subtitle, 'Ludwig van Beethoven · Igor Levit');
 });
 
 test('an untitled work is queued under its album, not an invented title', () => {

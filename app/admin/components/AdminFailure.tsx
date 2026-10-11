@@ -1,11 +1,8 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { failureMessage } from '@/lib/use-server-query';
 import { Notice } from './Notice';
-
-export function adminFailureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 type FailureContext = {
   clearFailure: () => void;
@@ -17,13 +14,13 @@ const Context = createContext<FailureContext | null>(null);
 
 /**
  * The failure of the last admin action. Written only through
- * `useAdminAction`; loads and polls use `LoadFailure` instead.
+ * `useAdminAction`; loads and polls use `LoadFailure` (app/components) instead.
  */
 export function AdminFailureProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState<string | null>(null);
 
   const clearFailure = useCallback(() => setMessage(null), []);
-  const showFailure = useCallback((error: unknown) => setMessage(adminFailureMessage(error)), []);
+  const showFailure = useCallback((error: unknown) => setMessage(failureMessage(error)), []);
   const value = useMemo(
     () => ({ clearFailure, showFailure, message }),
     [clearFailure, showFailure, message],
@@ -48,34 +45,6 @@ export function AdminFailureNotice() {
           >
             Dismiss
           </button>
-        </div>
-      </Notice>
-    </div>
-  );
-}
-
-/** A load that failed, shown where its data would have been. */
-export function LoadFailure({
-  what,
-  error,
-  onRetry,
-}: {
-  what: string;
-  error: string;
-  onRetry?: () => void;
-}) {
-  return (
-    <div role="alert">
-      <Notice intent="error">
-        <div className="flex items-start gap-4">
-          <span className="min-w-0 flex-1 whitespace-pre-wrap">
-            Could not load {what}: {error}
-          </span>
-          {onRetry && (
-            <button type="button" className="underline" onClick={onRetry}>
-              Retry
-            </button>
-          )}
         </div>
       </Notice>
     </div>

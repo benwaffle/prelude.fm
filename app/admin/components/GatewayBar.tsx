@@ -7,7 +7,7 @@ import {
   setChannelPaused,
   type GatewayView,
 } from '../actions/gateway';
-import { adminFailureMessage } from './AdminFailure';
+import { failureMessage } from '@/lib/use-server-query';
 import { ADMIN_ACTION_DONE, useAdminAction } from './useAdminAction';
 
 /**
@@ -32,7 +32,7 @@ export function GatewayBar() {
         setStatus(next);
         setLoadError(null);
       })
-      .catch((error: unknown) => setLoadError(adminFailureMessage(error)));
+      .catch((error: unknown) => setLoadError(failureMessage(error)));
   }, []);
 
   useEffect(() => {

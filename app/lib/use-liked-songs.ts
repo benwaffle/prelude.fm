@@ -15,7 +15,6 @@ interface UseLikedSongsResult {
   refreshing: boolean;
   error: string | null;
   total: number;
-  refetch: () => Promise<void>;
 }
 
 export function useLikedSongs(accessToken: string, userId: string): UseLikedSongsResult {
@@ -90,24 +89,11 @@ export function useLikedSongs(accessToken: string, userId: string): UseLikedSong
     }
   }, [fetchFromApi, userId]);
 
-  const refetch = useCallback(async () => {
-    setRefreshing(true);
-    setError(null);
-    try {
-      await fetchFromApi(tracks.length === 0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [fetchFromApi, tracks.length]);
-
   useEffect(() => {
     if (fetchedFor.current === userId) return;
     fetchedFor.current = userId;
     fetch();
   }, [fetch, userId]);
 
-  return { tracks, loading, refreshing, error, total, refetch };
+  return { tracks, loading, refreshing, error, total };
 }

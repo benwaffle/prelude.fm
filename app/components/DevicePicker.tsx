@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSpotifyPlayer, type PlaybackDevice } from '@/lib/spotify-player-context';
+import { usePlayer, usePlayerActions, type PlaybackDevice } from '@/lib/spotify-player-context';
+import { useServerQuery } from '@/lib/use-server-query';
 import { Icon } from './Icon';
 
 interface DevicePickerProps {
@@ -14,32 +15,12 @@ interface DevicePickerProps {
  * app.
  */
 export function DevicePicker({ onClose }: DevicePickerProps) {
-  const {
-    devices,
-    outputDevice,
-    localStatus,
-    localProblem,
-    needsDevice,
-    refreshDevices,
-    chooseDevice,
-  } = useSpotifyPlayer();
-  const [loading, setLoading] = useState(true);
+  const { devices, outputDevice, local, needsDevice } = usePlayer();
+  const { refreshDevices, chooseDevice } = usePlayerActions();
+  // Refresh asks again; the list itself lives in the player.
+  const [scan, setScan] = useState(0);
+  const loading = useServerQuery(refreshDevices, [refreshDevices, scan]).status === 'loading';
   const panelRef = useRef<HTMLDivElement>(null);
-
-  const refresh = () => {
-    setLoading(true);
-    refreshDevices().finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    refreshDevices().finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshDevices]);
 
   // The player bar's backdrop blur traps fixed-position children inside it, so
   // an overlay can't catch outside taps; listen on the document instead.
@@ -93,7 +74,7 @@ export function DevicePicker({ onClose }: DevicePickerProps) {
         </div>
 
         <ul className="py-1">
-          {localStatus === 'ready' ? (
+          {local.status === 'ready' ? (
             devices
               .filter((d) => d.isThisBrowser)
               .map((d) => (
@@ -109,9 +90,7 @@ export function DevicePicker({ onClose }: DevicePickerProps) {
             <li className="px-4 py-[10px] opacity-60">
               <div className="font-display text-[16px] leading-tight">This browser</div>
               <div className="font-display text-[13px] text-muted italic">
-                {localStatus === 'connecting'
-                  ? 'Still connecting to Spotify…'
-                  : (localProblem ?? 'Can’t play Spotify here.')}
+                {local.status === 'unavailable' ? local.problem : 'Still connecting to Spotify…'}
               </div>
             </li>
           )}
@@ -144,7 +123,7 @@ export function DevicePicker({ onClose }: DevicePickerProps) {
           </span>
           <button
             type="button"
-            onClick={refresh}
+            onClick={() => setScan((n) => n + 1)}
             disabled={loading}
             className="cursor-pointer font-meta text-[10px] tracking-[0.16em] text-ink-2 uppercase hover:text-ink disabled:cursor-default disabled:opacity-40"
           >

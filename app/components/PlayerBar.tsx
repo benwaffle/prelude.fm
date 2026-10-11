@@ -1,22 +1,23 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSpotifyPlayer } from '@/lib/spotify-player-context';
+import { useCallback, useState } from 'react';
+import { usePlayer, usePlayerActions } from '@/lib/spotify-player-context';
 import { useLibrary } from '@/lib/library-context';
-import {
-  formatDuration,
-  hexToRgba,
-  numeralPrefix,
-  playable,
-  tintFor,
-  type LibraryWork,
-} from '@/lib/prelude';
+import { hexToRgba, numeralPrefix, workByline } from '@/lib/prelude';
+import { useMediaSession } from '@/lib/use-media-session';
 import { Icon } from './Icon';
 import { DevicePicker } from './DevicePicker';
 import { QueuePanel } from './queue/QueuePanel';
 import { NowPlayingSheet } from './NowPlayingSheet';
-import { useMediaSession } from '@/lib/use-media-session';
+import { MovementName } from './work/WorkText';
+import { Credit } from './player/Credit';
+import { useProgramme, type Programme } from './player/use-programme';
+import { ProgressLine, WorkProgress } from './player/WorkProgress';
+import { PlayButton, PlayerCover, TransportButtons } from './player/TransportButtons';
+
+const IDLE_TINT = '#2a1f2e';
+const IDLE_INK = '#f4ecd8';
 
 /**
  * The player bar, present on every screen. Progress is scoped to the whole
@@ -24,11 +25,9 @@ import { useMediaSession } from '@/lib/use-media-session';
  * with a marker at each seam.
  */
 export function PlayerBar() {
+  const { isReady, isPaused, volume, outputDevice, local, playbackError, needsDevice, queue } =
+    usePlayer();
   const {
-    isReady,
-    isPaused,
-    currentTrack,
-    volume,
     togglePlay,
     previousTrack,
     nextTrack,
@@ -36,181 +35,39 @@ export function PlayerBar() {
     setVolume,
     getProgress,
     subscribeToProgress,
-    play,
-    outputDevice,
-    localStatus,
-    localProblem,
-    playbackError,
-    needsDevice,
     dismissDevicePrompt,
-    queue,
     playQueue,
-  } = useSpotifyPlayer();
+  } = usePlayerActions();
+  const { toggleLike } = useLibrary();
+  const programme = useProgramme();
+
   const [pickerOpen, setPickerOpen] = useState(false);
   const showPicker = pickerOpen || needsDevice;
   const closePicker = useCallback(() => {
     setPickerOpen(false);
     dismissDevicePrompt();
   }, [dismissDevicePrompt]);
-  const { locate, toggleLike, likedTrackIds } = useLibrary();
-
   const [sheetOpen, setSheetOpen] = useState(false);
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
+  const chooseDeviceFromSheet = useCallback(() => {
+    setSheetOpen(false);
+    setPickerOpen(true);
+  }, []);
   const [queueOpen, setQueueOpen] = useState(false);
   const closeQueue = useCallback(() => setQueueOpen(false), []);
 
-  const located = locate(currentTrack?.id);
-
-  /**
-   * Anything playing that we can't place in a work still gets the same
-   * treatment — it just has a single movement.
-   */
-  const work: LibraryWork | null = useMemo(() => {
-    if (located) return located.work;
-    if (!currentTrack) return null;
-    const albumId = currentTrack.album?.id ?? currentTrack.id;
-    const { tint, ink } = tintFor(albumId);
-    return {
-      id: `track:${currentTrack.id}`,
-      workId: null,
-      recordingId: null,
-      composer: null,
-      composerFull: null,
-      composerId: null,
-      gaps: [],
-      ownLink: null,
-      albumId: currentTrack.album?.id ?? null,
-      composerImage: null,
-      era: null,
-      years: '',
-      title: null,
-      nickname: null,
-      catalog: null,
-      year: null,
-      performer: null,
-      ensemble: null,
-      album: currentTrack.album?.name ?? '',
-      cover: currentTrack.album?.images?.[0]?.url ?? null,
-      tint,
-      ink,
-      movements: [
-        {
-          n: 1,
-          position: 1,
-          roman: '',
-          name: currentTrack.name,
-          // Nothing here came from our metadata; it's the raw Spotify track.
-          unnamed: true,
-          missing: false,
-          durationMs: currentTrack.duration_ms,
-          duration: formatDuration(currentTrack.duration_ms),
-          liked: likedTrackIds.has(currentTrack.id),
-          trackId: currentTrack.id,
-          uri: currentTrack.uri,
-        },
-      ],
-      unmatched: true,
-      addedAt: null,
-    };
-  }, [located, currentTrack, likedTrackIds]);
-
-  /*
-   * The bar spans what this recording actually plays. Movements the recording
-   * is missing are shown greyed out in the programme but have no audio, so
-   * they take up none of the progress bar.
-   */
-  const heard = useMemo(() => (work ? playable(work.movements) : []), [work]);
-  const movement = located?.movement ?? heard[0] ?? null;
-
-  const durations = useMemo(() => heard.map((m) => m.durationMs ?? 0), [heard]);
-  const totalMs = useMemo(() => durations.reduce((a, b) => a + b, 0), [durations]);
-  const index = Math.max(
-    0,
-    heard.findIndex((m) => m.trackId === movement?.trackId),
-  );
-  const beforeMs = useMemo(
-    () => durations.slice(0, index).reduce((a, b) => a + b, 0),
-    [durations, index],
-  );
-
-  // Drive every progress readout imperatively — the bar's, the phone mini
-  // player's and the full-screen sheet's, marked with data-progress — since
-  // re-rendering on every frame would be wasteful.
-  // While a finger or mouse drags along a bar, every readout follows it.
-  const dragRatioRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!work || totalMs === 0) return;
-    // Found once, not every frame: the library can run to tens of thousands of
-    // elements. The readouts only come and go with the work or the sheet.
-    const readouts = Array.from(document.querySelectorAll<HTMLElement>('[data-progress]'));
-    // Any change to the page costs a style and layout pass over all of it, so
-    // write only what a reader could see change: the bar by the tenth of a
-    // percent, the times by the second.
-    let last = { pct: '', elapsed: '', remaining: '' };
-    let frame = 0;
-    const tick = () => {
-      frame = requestAnimationFrame(tick);
-      const progress = getProgress();
-      const dragged = dragRatioRef.current;
-      const ms =
-        dragged !== null ? dragged * totalMs : Math.min(totalMs, beforeMs + progress.position);
-      const next = {
-        pct: `${((ms / totalMs) * 100).toFixed(1)}%`,
-        elapsed: formatDuration(ms),
-        remaining: `—${formatDuration(totalMs - ms)}`,
-      };
-      for (const el of readouts) {
-        const part = el.dataset.progress;
-        if (part === 'fill' && next.pct !== last.pct) el.style.width = next.pct;
-        else if (part === 'head' && next.pct !== last.pct) el.style.left = next.pct;
-        else if (part === 'elapsed' && next.elapsed !== last.elapsed) el.textContent = next.elapsed;
-        else if (part === 'remaining' && next.remaining !== last.remaining)
-          el.textContent = next.remaining;
-      }
-      last = next;
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [getProgress, work, totalMs, beforeMs, sheetOpen]);
-
-  /**
-   * Seeking is within the work: inside the current movement it is a plain
-   * seek, elsewhere it starts that movement at the matching offset.
-   */
-  const seekToRatio = useCallback(
-    (ratio: number) => {
-      if (!work || totalMs === 0) return;
-      const targetMs = ratio * totalMs;
-
-      let acc = 0;
-      for (let i = 0; i < heard.length; i++) {
-        const next = acc + (heard[i].durationMs ?? 0);
-        if (targetMs < next || i === heard.length - 1) {
-          const offset = Math.max(0, targetMs - acc);
-          if (i === index) {
-            seek(offset);
-          } else {
-            const queue = heard.slice(i).map((m) => m.uri as string);
-            play(queue).then(() => seek(offset));
-          }
-          return;
-        }
-        acc = next;
-      }
-    },
-    [work, heard, totalMs, index, seek, play],
-  );
-
-  const localPlayback = !outputDevice || outputDevice.isThisBrowser;
+  const remote = outputDevice && !outputDevice.isThisBrowser ? outputDevice : null;
+  const work = programme?.work ?? null;
+  const movement = programme?.movement ?? null;
   useMediaSession({
-    active: localPlayback,
+    active: !remote,
     track:
-      work && movement
+      programme && movement
         ? {
             title: [numeralPrefix(movement.roman), movement.name].filter(Boolean).join(' '),
-            artist: [work.composerFull, work.performer].filter(Boolean).join(' · '),
-            album: work.title ?? work.album,
-            cover: work.cover,
+            artist: work ? (workByline(work) ?? '') : '',
+            album: work ? (work.title ?? work.album) : programme.album,
+            cover: programme.cover,
           }
         : null,
     isPaused,
@@ -222,35 +79,6 @@ export function PlayerBar() {
     subscribeToProgress,
   });
 
-  /** Tap or drag along a progress bar; the seek happens on release. */
-  const scrub = useMemo(() => {
-    const ratioAt = (e: React.PointerEvent<HTMLElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    };
-    return {
-      onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
-        e.currentTarget.setPointerCapture(e.pointerId);
-        dragRatioRef.current = ratioAt(e);
-      },
-      onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
-        if (dragRatioRef.current !== null) dragRatioRef.current = ratioAt(e);
-      },
-      onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
-        if (dragRatioRef.current === null) return;
-        const ratio = ratioAt(e);
-        seekToRatio(ratio);
-        // Hold the playhead where it was dropped until Spotify catches up.
-        setTimeout(() => {
-          if (dragRatioRef.current === ratio) dragRatioRef.current = null;
-        }, 800);
-      },
-      onPointerCancel: () => {
-        dragRatioRef.current = null;
-      },
-    };
-  }, [seekToRatio]);
-
   const handleVolume = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -259,27 +87,21 @@ export function PlayerBar() {
     [setVolume],
   );
 
-  /** Start the recording from one of its movements. */
-  const playFrom = useCallback(
-    (i: number) => play(heard.slice(i).map((m) => m.uri as string)),
-    [heard, play],
-  );
-
-  const tint = work?.tint ?? '#2a1f2e';
-  const detailHref = work?.workId ? `/work/${work.workId}?rec=${work.recordingId ?? ''}` : null;
+  const tint = programme?.tint ?? IDLE_TINT;
+  const toggleDevicePicker = () => (showPicker ? closePicker() : setPickerOpen(true));
 
   return (
     <div
       className="relative grid grid-cols-[360px_minmax(0,1fr)_320px] items-center border-t border-black/20 px-7 py-[14px] backdrop-blur-[14px] max-[900px]:block max-[900px]:px-3 max-[900px]:py-2"
       style={{
         background: `linear-gradient(180deg, ${hexToRgba(tint, 0.82)}, ${hexToRgba(tint, 0.98)})`,
-        color: work?.ink ?? '#f4ecd8',
+        color: programme?.ink ?? IDLE_INK,
       }}
     >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/5 to-black/[0.12]" />
 
       {showPicker && <DevicePicker onClose={closePicker} />}
-      {queueOpen && work && <QueuePanel onClose={closeQueue} />}
+      {queueOpen && programme && <QueuePanel onClose={closeQueue} />}
 
       {playbackError && (
         <div className="absolute right-0 bottom-full left-0 z-[2] bg-accent px-7 py-[6px] text-center font-display text-[13px] text-paper italic max-[900px]:px-4">
@@ -287,15 +109,15 @@ export function PlayerBar() {
         </div>
       )}
 
-      {!work || !movement ? (
+      {!programme || !movement ? (
         <div className="relative z-[1] col-span-full flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center font-display text-[13px] italic">
           <span className="opacity-75">
             {isReady
-              ? outputDevice && !outputDevice.isThisBrowser
-                ? `Choose a movement to play on ${outputDevice.name}.`
+              ? remote
+                ? `Choose a movement to play on ${remote.name}.`
                 : 'Choose a movement to begin.'
-              : localStatus === 'unavailable'
-                ? localProblem
+              : local.status === 'unavailable'
+                ? local.problem
                 : 'Connecting to Spotify…'}
           </span>
           {isReady && queue.length > 0 && (
@@ -308,11 +130,11 @@ export function PlayerBar() {
               Play queue ({queue.length})
             </button>
           )}
-          {(isReady || localStatus === 'unavailable') && (
+          {(isReady || local.status === 'unavailable') && (
             <button
               type="button"
               data-device-toggle
-              onClick={() => (showPicker ? closePicker() : setPickerOpen(true))}
+              onClick={toggleDevicePicker}
               className="flex cursor-pointer items-center gap-[6px] border-b border-current pb-px font-meta text-[10px] tracking-[0.16em] not-italic uppercase opacity-85 hover:opacity-100"
             >
               <Icon name="devices" size={13} />
@@ -324,9 +146,7 @@ export function PlayerBar() {
         <>
           {/* Phones: one compact row that opens the full player. */}
           <div className="relative z-[1] animate-rise min-[901px]:hidden">
-            <div className="absolute -top-2 right-[-12px] left-[-12px] h-[2px] bg-white/15">
-              <div data-progress="fill" className="absolute inset-y-0 left-0 bg-current" />
-            </div>
+            <ProgressLine programme={programme} />
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -334,212 +154,81 @@ export function PlayerBar() {
                 aria-label="Open the player"
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
               >
-                <Cover key={work.id} work={work} />
+                <BarCover key={programme.key} programme={programme} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-display text-[15px] leading-[1.25]">
+                  <span className="flex min-w-0 items-baseline font-display text-[15px] leading-[1.25]">
                     {movement.roman && (
-                      <span className="mr-[6px] italic opacity-70">
+                      <span className="mr-[6px] shrink-0 italic opacity-70">
                         {numeralPrefix(movement.roman)}
                       </span>
                     )}
-                    {movement.name}
+                    <MovementName movement={movement} className="truncate" />
                   </span>
                   <span className="block truncate font-display text-[12.5px] italic opacity-75">
-                    {outputDevice && !outputDevice.isThisBrowser
-                      ? `On ${outputDevice.name}`
-                      : [work.composer ?? work.composerFull, work.title]
-                          .filter(Boolean)
-                          .join(' · ') || 'Work unmatched'}
+                    {remote ? `On ${remote.name}` : <Credit programme={programme} />}
                   </span>
                 </span>
               </button>
-              <button
-                type="button"
-                title={isPaused ? 'Play' : 'Pause'}
-                onClick={togglePlay}
-                disabled={!isReady}
-                className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-current disabled:cursor-default disabled:opacity-35"
-              >
-                <span
-                  key={isPaused ? 'play' : 'pause'}
-                  className="flex animate-pop"
-                  style={{ color: tint }}
-                >
-                  <Icon name={isPaused ? 'play' : 'pause'} size={18} />
-                </span>
-              </button>
+              <PlayButton size="mini" tint={tint} />
             </div>
           </div>
 
           {sheetOpen && (
-            <NowPlayingSheet
-              work={work}
-              movement={movement}
-              heard={heard}
-              durations={durations}
-              totalMs={totalMs}
-              isPaused={isPaused}
-              isReady={isReady}
-              detailHref={detailHref}
-              outputDevice={outputDevice}
-              onClose={() => setSheetOpen(false)}
-              onTogglePlay={togglePlay}
-              onPrevious={previousTrack}
-              onNext={nextTrack}
-              scrub={scrub}
-              onPlayFrom={playFrom}
-              onToggleLike={toggleLike}
-              onChooseDevice={() => {
-                setSheetOpen(false);
-                setPickerOpen(true);
-              }}
-            />
+            <NowPlayingSheet onClose={closeSheet} onChooseDevice={chooseDeviceFromSheet} />
           )}
 
           {/* Now playing */}
           <div className="relative z-[1] grid min-w-0 grid-cols-[56px_1fr] items-center gap-[14px] max-[900px]:hidden">
-            {detailHref ? (
-              <Link href={detailHref} className="block shrink-0">
-                <Cover key={work.id} work={work} />
+            {programme.detailHref ? (
+              <Link href={programme.detailHref} className="block shrink-0">
+                <BarCover key={programme.key} programme={programme} />
               </Link>
             ) : (
-              <Cover key={work.id} work={work} />
+              <BarCover key={programme.key} programme={programme} />
             )}
             <div className="min-w-0">
               <div className="flex items-baseline gap-2 font-display text-[15px] leading-[1.2] max-[900px]:text-[14px]">
-                {detailHref ? (
+                {programme.detailHref ? (
                   <Link
-                    href={detailHref}
-                    className="min-w-0 truncate border-b border-transparent no-underline transition-colors duration-150 hover:border-current"
+                    href={programme.detailHref}
+                    className="flex min-w-0 items-baseline border-b border-transparent no-underline transition-colors duration-150 hover:border-current"
                   >
                     {movement.roman && (
-                      <span className="mr-[6px] italic opacity-70">
+                      <span className="mr-[6px] shrink-0 italic opacity-70">
                         {numeralPrefix(movement.roman)}
                       </span>
                     )}
-                    {movement.name}
+                    <MovementName movement={movement} className="truncate" />
                   </Link>
                 ) : (
-                  <span className="min-w-0 truncate">{movement.name}</span>
+                  <span className="flex min-w-0 items-baseline">
+                    <MovementName movement={movement} className="truncate" />
+                  </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => movement.trackId && toggleLike(movement.trackId)}
-                  title={movement.liked ? 'Remove from liked' : 'Like this movement'}
-                  className="flex shrink-0 cursor-pointer opacity-55 transition-all duration-150 hover:scale-110 hover:opacity-100"
-                >
-                  <Icon name={movement.liked ? 'heartFill' : 'heartOutline'} size={12} />
-                </button>
+                {movement.trackId && (
+                  <button
+                    type="button"
+                    onClick={() => movement.trackId && toggleLike(movement.trackId)}
+                    title={movement.liked ? 'Remove from liked' : 'Like this movement'}
+                    className="flex shrink-0 cursor-pointer opacity-55 transition-all duration-150 hover:scale-110 hover:opacity-100"
+                  >
+                    <Icon name={movement.liked ? 'heartFill' : 'heartOutline'} size={12} />
+                  </button>
+                )}
               </div>
               <div className="truncate font-display text-[11.5px] italic opacity-75">
-                {work.composerFull}
-                {!work.composerFull && !work.title && 'Work unmatched'}
-                {work.title && (
-                  <>
-                    {work.composerFull && ' · '}
-                    {detailHref ? (
-                      <Link
-                        href={detailHref}
-                        className="border-b border-transparent no-underline transition-colors duration-150 hover:border-current"
-                      >
-                        <i>{work.title}</i>
-                      </Link>
-                    ) : (
-                      <i>{work.title}</i>
-                    )}
-                  </>
-                )}
-                {work.nickname && <> “{work.nickname}”</>}
+                <Credit programme={programme} linked />
               </div>
             </div>
           </div>
 
           {/* Transport + work-scoped progress */}
           <div className="relative z-[1] flex flex-col items-center gap-2 max-[900px]:hidden">
-            <div className="flex items-center gap-[18px] max-[900px]:gap-[22px]">
-              <button
-                type="button"
-                title="Previous movement"
-                onClick={previousTrack}
-                disabled={!isReady}
-                className="cursor-pointer opacity-85 hover:opacity-100 disabled:cursor-default disabled:opacity-35"
-              >
-                <Icon name="prev" size={20} />
-              </button>
-              <button
-                type="button"
-                title={isPaused ? 'Play' : 'Pause'}
-                onClick={togglePlay}
-                disabled={!isReady}
-                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-current transition-transform duration-150 hover:scale-105 disabled:cursor-default disabled:opacity-35"
-              >
-                <span
-                  key={isPaused ? 'play' : 'pause'}
-                  className="flex animate-pop"
-                  style={{ color: tint }}
-                >
-                  <Icon name={isPaused ? 'play' : 'pause'} size={18} />
-                </span>
-              </button>
-              <button
-                type="button"
-                title="Next movement"
-                onClick={nextTrack}
-                disabled={!isReady}
-                className="cursor-pointer opacity-85 hover:opacity-100 disabled:cursor-default disabled:opacity-35"
-              >
-                <Icon name="next" size={20} />
-              </button>
-            </div>
+            <TransportButtons size="bar" tint={tint} />
 
             <div className="flex w-[min(560px,100%)] flex-col gap-1 max-[900px]:w-full">
-              <div className="relative flex font-meta text-[9px] tracking-[0.14em] uppercase opacity-65 max-[900px]:hidden">
-                {heard.map((m, i) => (
-                  <span
-                    key={m.n}
-                    className={`truncate border-l border-current pr-[6px] pl-[5px] first:border-l-0 first:pl-0 ${
-                      m.n === movement.n ? 'font-semibold opacity-100' : ''
-                    }`}
-                    style={{
-                      width: `${(durations[i] / totalMs) * 100}%`,
-                      opacity: m.liked ? 1 : 0.45,
-                    }}
-                  >
-                    {m.liked && <span className="mr-1">♥</span>}
-                    {numeralPrefix(m.roman)}{' '}
-                    {m.name.length > 12 ? `${m.name.slice(0, 12)}…` : m.name}
-                  </span>
-                ))}
-              </div>
-
-              <div
-                {...scrub}
-                className="relative h-1 cursor-pointer touch-none rounded-[2px] bg-white/15 before:absolute before:-inset-y-3 before:inset-x-0 before:content-['']"
-              >
-                <div
-                  data-progress="fill"
-                  className="absolute inset-y-0 left-0 rounded-[2px] bg-current"
-                />
-                {heard.slice(0, -1).map((m, i) => {
-                  const at = durations.slice(0, i + 1).reduce((a, b) => a + b, 0);
-                  return (
-                    <div
-                      key={m.n}
-                      className="absolute -top-[2px] -bottom-[2px] w-px bg-white/35"
-                      style={{ left: `${(at / totalMs) * 100}%` }}
-                    />
-                  );
-                })}
-                <div
-                  data-progress="head"
-                  className="absolute top-1/2 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-current shadow-[0_0_0_3px_rgba(0,0,0,0.25)]"
-                />
-              </div>
-
-              <div className="flex justify-between font-meta text-[10.5px] tabular-nums opacity-70">
-                <span data-progress="elapsed">0:00</span>
-                <span data-progress="remaining">—{formatDuration(totalMs)}</span>
-              </div>
+              <SeamLabels programme={programme} />
+              <WorkProgress key={programme.key} programme={programme} size="bar" />
             </div>
           </div>
 
@@ -549,17 +238,17 @@ export function PlayerBar() {
               type="button"
               title={outputDevice ? `Playing on ${outputDevice.name}` : 'Choose where to play'}
               data-device-toggle
-              onClick={() => (showPicker ? closePicker() : setPickerOpen(true))}
+              onClick={toggleDevicePicker}
               className={`flex min-w-0 cursor-pointer items-center gap-[6px] hover:opacity-100 ${
-                outputDevice && !outputDevice.isThisBrowser ? 'opacity-100' : 'opacity-70'
+                remote ? 'opacity-100' : 'opacity-70'
               }`}
             >
               <span className="shrink-0">
                 <Icon name="devices" size={16} />
               </span>
-              {outputDevice && !outputDevice.isThisBrowser && (
+              {remote && (
                 <span className="max-w-[140px] truncate font-meta text-[10.5px] tracking-[0.04em] max-[900px]:max-w-[90px]">
-                  {outputDevice.name}
+                  {remote.name}
                 </span>
               )}
             </button>
@@ -611,23 +300,36 @@ export function PlayerBar() {
   );
 }
 
-function Cover({ work }: { work: LibraryWork }) {
-  if (!work.cover) {
-    return (
-      <div
-        className="flex h-14 w-14 animate-rise items-center justify-center rounded-[2px] font-display text-lg max-[900px]:h-11 max-[900px]:w-11"
-        style={{ background: hexToRgba(work.ink, 0.14) }}
-      >
-        {work.composer?.slice(0, 1) ?? ''}
-      </div>
-    );
-  }
+function BarCover({ programme }: { programme: Programme }) {
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- the tinted bar wants the raw asset, not a resized one
-    <img
-      src={work.cover}
-      alt={work.album}
+    <PlayerCover
+      programme={programme}
       className="h-14 w-14 animate-rise rounded-[2px] object-cover shadow-[0_10px_30px_-10px_rgba(0,0,0,0.8)] max-[900px]:h-11 max-[900px]:w-11"
+      fallbackClassName="h-14 w-14 animate-rise rounded-[2px] text-lg max-[900px]:h-11 max-[900px]:w-11"
     />
+  );
+}
+
+/** Each movement's name over its stretch of the bar, the liked ones full strength. */
+function SeamLabels({ programme }: { programme: Programme }) {
+  const { heard, movement, timeline } = programme;
+  return (
+    <div className="relative flex font-meta text-[9px] tracking-[0.14em] uppercase opacity-65 max-[900px]:hidden">
+      {heard.map((m, i) => (
+        <span
+          key={m.n}
+          className={`truncate border-l border-current pr-[6px] pl-[5px] first:border-l-0 first:pl-0 ${
+            m.n === movement.n ? 'font-semibold opacity-100' : ''
+          }`}
+          style={{
+            width: `${(timeline.durations[i] / timeline.totalMs) * 100}%`,
+            opacity: m.liked ? 1 : 0.45,
+          }}
+        >
+          {m.liked && <span className="mr-1">♥</span>}
+          {numeralPrefix(m.roman)} {m.name.length > 12 ? `${m.name.slice(0, 12)}…` : m.name}
+        </span>
+      ))}
+    </div>
   );
 }

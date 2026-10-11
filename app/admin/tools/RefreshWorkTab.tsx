@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { refreshWorkFromMusicBrainz, type RefreshedWork } from '../actions/work-refresh';
-import { adminFailureMessage } from '../components/AdminFailure';
+import { failureMessage } from '@/lib/use-server-query';
 
 /**
  * Pick up an edit made on MusicBrainz without waiting for a sweep: paste a
@@ -21,7 +21,7 @@ export function RefreshWorkTab() {
     setResult(null);
     refreshWorkFromMusicBrainz(input)
       .then(setResult)
-      .catch((err: unknown) => setError(adminFailureMessage(err)))
+      .catch((err: unknown) => setError(failureMessage(err)))
       .finally(() => setBusy(false));
   };
 

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { failureMessage } from '@/lib/use-server-query';
 import { useAdminAction } from '../components/useAdminAction';
-import { adminFailureMessage } from '../components/AdminFailure';
 import type { ContributionView } from '../actions/inbox-view';
 import {
   attachPickedReleaseToAlbum,
@@ -117,7 +117,7 @@ export function MissingReleasesSection({
     } catch (error) {
       setLookup((current) => ({
         ...current,
-        [albumId]: adminFailureMessage(error),
+        [albumId]: failureMessage(error),
       }));
     }
   }

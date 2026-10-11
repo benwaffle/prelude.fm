@@ -1,16 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import type { ReadinessBucket, ReadinessFunnel } from '@/lib/catalogue-readiness';
 import type { ContributionView } from '../actions/inbox-view';
 import { getAdminHome } from '../actions/readiness';
-import { adminFailureMessage, LoadFailure } from '../components/AdminFailure';
+import { useServerQuery } from '@/lib/use-server-query';
+import { LoadFailure } from '@/app/components/LoadFailure';
+import { noticeClassName } from '../components/Notice';
 import { Spinner } from '../components/Spinner';
 import { PAGE_TITLE } from '../lib/admin-pages';
 import { adminHref, type InboxClass, type ToolPage } from '../lib/admin-url';
 
 type Counts = ContributionView['counts'];
+type AdminHomeData = Awaited<ReturnType<typeof getAdminHome>>;
 type Held = { tracks: number; waiting: number };
 
 /** Tracks each Inbox list holds back from the player, from the readiness count. */
@@ -79,38 +82,16 @@ const TOOLS: { page: ToolPage; note: string }[] = [
  * per list of things to fix, each opening its own page.
  */
 export function AdminHome() {
-  const [funnel, setFunnel] = useState<ReadinessFunnel | null>(null);
-  const [funnelError, setFunnelError] = useState<string | null>(null);
-  const [counts, setCounts] = useState<Counts | null>(null);
-  const [countsError, setCountsError] = useState<string | null>(null);
+  // Retry asks again: a part of the page can fail while the read succeeds.
   const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    getAdminHome()
-      .then((next) => {
-        if (cancelled) return;
-        setFunnel(next.funnel.value);
-        setFunnelError(next.funnel.error);
-        setCounts(next.counts.value);
-        setCountsError(next.counts.error);
-      })
-      .catch((failure: unknown) => {
-        if (cancelled) return;
-        setFunnelError(adminFailureMessage(failure));
-        setCountsError(adminFailureMessage(failure));
-      });
-    return () => {
-      cancelled = true;
-    };
-    // attempt is only a dependency: Retry bumps it to load again.
-  }, [attempt]);
-
-  const retry = () => {
-    setFunnelError(null);
-    setCountsError(null);
-    setAttempt((n) => n + 1);
-  };
+  const home = useServerQuery(getAdminHome, [attempt]);
+  const retry = () => setAttempt((n) => n + 1);
+  const part = <T,>(pick: (data: AdminHomeData) => { value: T | null; error: string | null }) =>
+    home.status === 'ready'
+      ? pick(home.data)
+      : { value: null, error: home.status === 'error' ? home.message : null };
+  const { value: funnel, error: funnelError } = part((data) => data.funnel);
+  const { value: counts, error: countsError } = part((data) => data.counts);
 
   const held = funnel ? heldBackByInboxClass(funnel) : null;
   const heldNote = (page: InboxClass) => {
@@ -135,7 +116,12 @@ export function AdminHome() {
           <h2 className="panel-title">To fix on MusicBrainz</h2>
         </div>
         {countsError !== null && (
-          <LoadFailure what="the lists" error={countsError} onRetry={retry} />
+          <LoadFailure
+            className={noticeClassName('error')}
+            what="the lists"
+            error={countsError}
+            onRetry={retry}
+          />
         )}
         {LISTS.map(({ page, rows, holdsBack }) => (
           <PageRow
@@ -221,7 +207,14 @@ function ReadyPanel({
 }) {
   if (!funnel) {
     if (error !== null)
-      return <LoadFailure what="library readiness" error={error} onRetry={onRetry} />;
+      return (
+        <LoadFailure
+          className={noticeClassName('error')}
+          what="library readiness"
+          error={error}
+          onRetry={onRetry}
+        />
+      );
     return (
       <div className="flex items-center gap-2 py-6 text-[var(--faint)]">
         <Spinner className="h-3 w-3" />

@@ -1,6 +1,7 @@
-import type { Era, LibraryWork } from './prelude';
+import type { Era, LibraryWork, Movement } from './prelude';
 
-export interface OtherRecording {
+/** One recording of a work, as a tile that links to its page. */
+export interface RecordingSummary {
   recordingId: string;
   albumId: string;
   album: string;
@@ -8,11 +9,13 @@ export interface OtherRecording {
   year: number | null;
   performer: string | null;
   ensemble: string | null;
-  durationMs: number | null;
+  /** Null when none of its tracks has a duration (or none is mapped). */
   duration: string | null;
-  unmatched: boolean;
+  /** Spotify popularity; null where nothing has aggregated it. */
   popularity: number | null;
   tint: string;
+  /** This recording has no tracks mapped to canonical work parts. */
+  unmatched: boolean;
 }
 
 export interface WorkSummary {
@@ -33,7 +36,7 @@ export interface WorkSummary {
   partCount: number;
   /** The recording's tracks were never matched to movements. */
   unmatched: boolean;
-  movements: { roman: string; name: string; duration: string | null; missing: boolean }[];
+  movements: Pick<Movement, 'roman' | 'name' | 'unnamed' | 'duration' | 'missing'>[];
   /** Every Spotify track we hold of this work, in any recording, so the page
    *  can tell which works are already in the reader's library. */
   trackIds: string[];
@@ -41,7 +44,7 @@ export interface WorkSummary {
 
 export interface WorkDetail {
   work: LibraryWork;
-  others: OtherRecording[];
+  others: RecordingSummary[];
   moreByComposer: WorkSummary[];
 }
 
@@ -73,22 +76,9 @@ export interface CatalogWork {
   recordingCount: number;
 }
 
-export interface CatalogRecording {
-  id: string;
-  album: string;
-  albumId: string;
-  cover: string | null;
-  year: number | null;
-  performer: string | null;
-  ensemble: string | null;
-  duration: string | null;
-  popularity: number | null;
-  tint: string;
+export interface CatalogRecording extends RecordingSummary {
   /** How many movements of this recording the user has saved. */
   liked: number;
-  firstTrackUri: string | null;
-  /** This recording has no tracks mapped to canonical work parts. */
-  unmatched: boolean;
 }
 
 export interface CatalogWorkHeader {

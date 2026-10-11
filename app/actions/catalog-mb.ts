@@ -333,13 +333,11 @@ export async function getMusicBrainzCatalogRecordings(
     works
       .filter((card) => card.workId === workMbid)
       .map((card) => {
-        const { recordingId, durationMs, ...row } = recordingRowOf(card);
+        const { durationMs, ...row } = recordingRowOf(card);
         const played = card.movements.filter((movement) => !movement.missing);
         const recording: CatalogRecording = {
           ...row,
-          id: recordingId,
           liked: played.filter((movement) => movement.liked).length,
-          firstTrackUri: played[0]?.uri ?? null,
         };
         return { recording, durationMs: durationMs ?? 0 };
       })

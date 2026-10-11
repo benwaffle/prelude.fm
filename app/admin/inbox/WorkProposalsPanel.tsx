@@ -7,7 +7,7 @@ import {
   recordEnteredWorkLinks,
   type WorkProposalsView,
 } from '../actions/work-proposals';
-import { adminFailureMessage } from '../components/AdminFailure';
+import { failureMessage } from '@/lib/use-server-query';
 import { useAdminAction } from '../components/useAdminAction';
 import type { ProposalAlbumView, ProposalRowView } from '@/lib/work-proposals-view';
 import { relationshipEditorUrl } from '@/lib/work-proposals-view';
@@ -48,7 +48,7 @@ export function WorkProposalsPanel({ onRecorded }: { onRecorded: () => Promise<v
         setLoadError(null);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setLoadError(adminFailureMessage(error));
+        if (!cancelled) setLoadError(failureMessage(error));
       });
     return () => {
       cancelled = true;

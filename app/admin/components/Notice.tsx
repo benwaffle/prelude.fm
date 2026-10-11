@@ -14,13 +14,14 @@ const intentStyles: Record<NonNullable<NoticeProps['intent']>, string> = {
 
 const joinClasses = (...classes: Array<string | undefined>) => classes.filter(Boolean).join(' ');
 
+/** The notice box's classes, for an element that draws its own (a load failure). */
+export function noticeClassName(
+  intent: NonNullable<NoticeProps['intent']>,
+  className?: string,
+): string {
+  return joinClasses('border px-4 py-3 text-sm', intentStyles[intent], className);
+}
+
 export function Notice({ children, intent, variant, className }: NoticeProps) {
-  const resolvedIntent = intent ?? variant ?? 'info';
-  return (
-    <div
-      className={joinClasses(' border px-4 py-3 text-sm', intentStyles[resolvedIntent], className)}
-    >
-      {children}
-    </div>
-  );
+  return <div className={noticeClassName(intent ?? variant ?? 'info', className)}>{children}</div>;
 }
