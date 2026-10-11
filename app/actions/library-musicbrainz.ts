@@ -15,9 +15,11 @@ import {
   matchQueue,
   spotifyAlbum,
   spotifyTrack,
+  trackArtists,
   trackClassification,
   trackRecording,
 } from '@/lib/db/schema';
+import { filmScoreReason } from '@/lib/film-scores';
 import { classicalEvidenceFor } from '@/lib/musicbrainz-classical-evidence';
 import type {
   MbArtistFact,
@@ -143,6 +145,7 @@ async function loadMusicBrainzFacts(
     storedClassificationRows,
     isrcRows,
     releaseRows,
+    trackArtistRows,
   ] = await Promise.all([
     forChunks(recordingMbids, (chunk) =>
       database.select().from(mbRecording).where(inArray(mbRecording.mbid, chunk)),
@@ -189,6 +192,9 @@ async function loadMusicBrainzFacts(
         .filter((mbid): mbid is string => mbid !== null),
       (chunk) => database.select().from(mbRelease).where(inArray(mbRelease.mbid, chunk)),
     ),
+    forChunks(requestedTrackIds, (chunk) =>
+      database.select().from(trackArtists).where(inArray(trackArtists.spotifyTrackId, chunk)),
+    ),
   ]);
 
   const [releaseTrackRows, releaseUrlRows] = await Promise.all([
@@ -217,6 +223,13 @@ async function loadMusicBrainzFacts(
       provenance: row.provenance,
       reason: row.reason,
     });
+  }
+  const artistIdsByTrack = new Map<string, string[]>();
+  for (const row of trackArtistRows) {
+    artistIdsByTrack.set(row.spotifyTrackId, [
+      ...(artistIdsByTrack.get(row.spotifyTrackId) ?? []),
+      row.spotifyArtistId,
+    ]);
   }
   const isrcRecordings = new Map<string, string[]>();
   for (const row of isrcRows) {
@@ -258,6 +271,7 @@ async function loadMusicBrainzFacts(
   ]);
 
   const providerTrackById = new Map(providerTrackRows.map((track) => [track.spotifyId, track]));
+  const providerAlbumById = new Map(providerAlbumRows.map((album) => [album.spotifyId, album]));
   const workByMbid = new Map(workRows.map((work) => [work.mbid, work]));
   const catalogedWorkMbids = new Set(catalogueRows.map((catalogue) => catalogue.workMbid));
   const anchors: TrackAnchorFact[] = [];
@@ -287,16 +301,37 @@ async function loadMusicBrainzFacts(
   return {
     requestedTrackIds,
     classifications: requestedTrackIds.flatMap((spotifyTrackId) => {
-      const stored = storedClassificationByTrack.get(spotifyTrackId);
-      if (preferStoredClassifications && stored) return [stored];
-
       const track = providerTrackById.get(spotifyTrackId);
       const evidenceMbids = anchorByTrackId.has(spotifyTrackId)
         ? [anchorByTrackId.get(spotifyTrackId)!.recordingMbid]
         : (track?.isrc && isrcRecordings.get(track.isrc)) || [];
+      const trackWorkMbids = evidenceMbids.flatMap((mbid) => worksByRecording.get(mbid) ?? []);
+
+      // A standing decision about what the catalogue holds, so it outranks
+      // both a stored verdict and fresh MusicBrainz evidence. Read here
+      // rather than stored, so it covers albums imported later too.
+      const album = track ? providerAlbumById.get(track.spotifyAlbumId) : undefined;
+      const filmScore = filmScoreReason(
+        {
+          workMbids: trackWorkMbids,
+          spotifyArtistIds: artistIdsByTrack.get(spotifyTrackId) ?? [],
+          album: album ? { spotifyAlbumId: album.spotifyId, title: album.title } : null,
+        },
+        workByMbid,
+        catalogedWorkMbids,
+      );
+      if (filmScore) {
+        return [
+          { spotifyTrackId, state: 'not_classical', provenance: 'manual', reason: filmScore },
+        ];
+      }
+
+      const stored = storedClassificationByTrack.get(spotifyTrackId);
+      if (preferStoredClassifications && stored) return [stored];
+
       const classification = classify(
         spotifyTrackId,
-        evidenceMbids.flatMap((mbid) => worksByRecording.get(mbid) ?? []),
+        trackWorkMbids,
         workByMbid,
         catalogedWorkMbids,
         queueStatusByTrack.get(spotifyTrackId) ?? null,

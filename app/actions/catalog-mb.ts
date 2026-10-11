@@ -8,8 +8,12 @@ import {
   mbRecordingWork,
   mbWork,
   mbWorkCatalogue,
+  spotifyAlbum,
+  spotifyTrack,
+  trackArtists,
   trackRecording,
 } from '@/lib/db/schema';
+import { filmScoreReason } from '@/lib/film-scores';
 import { parseCatalogueQuery } from '@/lib/catalogue-query';
 import {
   shapeHeldCatalogue,
@@ -57,20 +61,73 @@ async function heldCatalogue(seedWorkMbids?: string[]): Promise<ShapedCatalogueW
       .select({
         recordingMbid: mbRecordingWork.recordingMbid,
         workMbid: mbRecordingWork.workMbid,
+        spotifyTrackId: trackRecording.spotifyTrackId,
+        spotifyAlbumId: spotifyAlbum.spotifyId,
+        albumTitle: spotifyAlbum.title,
       })
       .from(mbRecordingWork)
       .innerJoin(trackRecording, eq(trackRecording.recordingMbid, mbRecordingWork.recordingMbid))
+      .innerJoin(spotifyTrack, eq(spotifyTrack.spotifyId, trackRecording.spotifyTrackId))
+      .innerJoin(spotifyAlbum, eq(spotifyAlbum.spotifyId, spotifyTrack.spotifyAlbumId))
       .where(where);
-  const relations = scope
+  const playable = scope
     ? await forChunks(scope, (chunk) => selectRelations(inArray(mbRecordingWork.workMbid, chunk)))
     : await selectRelations();
-  if (relations.length === 0) return [];
+  if (playable.length === 0) return [];
 
   // The related works, their ancestors and one generation of children — the
   // children so the level rule can tell a work with parts from a leaf.
-  const works = await readWorkNeighbourhood(relations.map((relation) => relation.workMbid));
-  const references = [...(await forWorks(works.map((work) => work.mbid))).values()];
-  return shapeHeldCatalogue(relations, works, references);
+  const works = await readWorkNeighbourhood(playable.map((relation) => relation.workMbid));
+  const referencesByWork = await forWorks(works.map((work) => work.mbid));
+  const relations = await withoutFilmScores(playable, works, new Set(referencesByWork.keys()));
+  if (relations.length === 0) return [];
+  return shapeHeldCatalogue(relations, works, [...referencesByWork.values()]);
+}
+
+/**
+ * Film scores are not part of the catalogue (see `film-scores`). A recording
+ * stays if any track we can play it from is not a film score, which keeps a
+ * Chopin nocturne that happens to be issued on a soundtrack album.
+ */
+async function withoutFilmScores(
+  playable: Array<{
+    recordingMbid: string;
+    workMbid: string;
+    spotifyTrackId: string;
+    spotifyAlbumId: string;
+    albumTitle: string;
+  }>,
+  works: Awaited<ReturnType<typeof readWorkNeighbourhood>>,
+  catalogedWorkMbids: Set<string>,
+): Promise<Array<{ recordingMbid: string; workMbid: string }>> {
+  const artistRows = await forChunks(
+    Array.from(new Set(playable.map((row) => row.spotifyTrackId))),
+    (chunk) => db.select().from(trackArtists).where(inArray(trackArtists.spotifyTrackId, chunk)),
+  );
+  const artistIdsByTrack = new Map<string, string[]>();
+  for (const row of artistRows) {
+    artistIdsByTrack.set(row.spotifyTrackId, [
+      ...(artistIdsByTrack.get(row.spotifyTrackId) ?? []),
+      row.spotifyArtistId,
+    ]);
+  }
+  const workByMbid = new Map(works.map((work) => [work.mbid, work]));
+  const kept = new Map<string, { recordingMbid: string; workMbid: string }>();
+  for (const row of playable) {
+    const key = `${row.recordingMbid} ${row.workMbid}`;
+    if (kept.has(key)) continue;
+    const filmScore = filmScoreReason(
+      {
+        workMbids: [row.workMbid],
+        spotifyArtistIds: artistIdsByTrack.get(row.spotifyTrackId) ?? [],
+        album: { spotifyAlbumId: row.spotifyAlbumId, title: row.albumTitle },
+      },
+      workByMbid,
+      catalogedWorkMbids,
+    );
+    if (!filmScore) kept.set(key, { recordingMbid: row.recordingMbid, workMbid: row.workMbid });
+  }
+  return [...kept.values()];
 }
 
 /** These works and everything filed beneath them, to a bounded depth. */
