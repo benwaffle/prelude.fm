@@ -9,6 +9,16 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // A cached worker would keep serving yesterday's rules; browsers must always
+  // re-check it.
+  async headers() {
+    return [
+      {
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
