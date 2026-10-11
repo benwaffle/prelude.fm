@@ -30,6 +30,8 @@ export type WorkNode = {
   type: string | null;
   parentMbid: string | null;
   parentTitle: string | null;
+  /** The parent's MusicBrainz work type, when it has one. */
+  parentType?: string | null;
   hasChildren: boolean;
   /** This work's position among its parent's parts, when it has one. */
   orderingKey?: number | null;
@@ -45,22 +47,82 @@ export type WorkLevel = {
 };
 
 /**
- * MusicBrainz titles a movement with its parent's title and a colon. The
- * parent's title often ends in a catalogue reference its movements leave out
- * ("Sinfonia in G minor, op. 6 no. 6, W. C12" over "Sinfonia in G minor,
- * op. 6 no. 6: I. Allegro"), so trailing comma-separated segments carrying a
- * number are dropped one at a time and the prefix tried again.
+ * A title and each shortening of it made by dropping one more trailing
+ * comma-separated segment that `drops` accepts.
+ */
+function shortenings(title: string, drops: (segment: string) => boolean): string[] {
+  const stages = [title];
+  for (;;) {
+    const current = stages[stages.length - 1];
+    const cut = current.lastIndexOf(', ');
+    if (cut <= 0 || !drops(current.slice(cut + 2))) return stages;
+    stages.push(current.slice(0, cut));
+  }
+}
+
+/**
+ * What a parent's title may trail that its movements leave out: any segment
+ * with a number and no colon ("W. C12", "op. 6 no. 6").
+ */
+const parentTrailer = (segment: string) => /\d/.test(segment) && !segment.includes(':');
+
+/**
+ * What a movement's title may trail that its parent leaves out: a catalogue
+ * sigil and number only ("ZWV 62", "K. 475"). Never a piece number — "no. 5"
+ * or "op. 19 no. 3" is what tells one piece in a collection from the next.
+ */
+const childTrailer = (segment: string) => /^[A-Z]{1,4}\.? ?[A-Z]?\d[\w./–-]*$/.test(segment);
+
+/**
+ * MusicBrainz titles a movement with its parent's title and a colon. Either
+ * side may carry a catalogue reference the other leaves out ("Sinfonia in G
+ * minor, op. 6 no. 6, W. C12" over "Sinfonia in G minor, op. 6 no. 6: I.
+ * Allegro"; "Gesù al Calvario" over "Gesù al Calvario, ZWV 62: Aria: …").
  */
 function titledAsPartOf(node: WorkNode): boolean {
-  let parentTitle = node.parentTitle;
-  while (parentTitle) {
-    if (node.title.startsWith(`${parentTitle}:`)) return true;
-    const cut = parentTitle.lastIndexOf(', ');
-    const segment = parentTitle.slice(cut);
-    if (cut <= 0 || !/\d/.test(segment) || segment.includes(':')) return false;
-    parentTitle = parentTitle.slice(0, cut);
+  if (!node.parentTitle) return false;
+  // Only one side may lose a reference. When both do, they may have carried
+  // different ones — RV 522 is not a movement of RV 523.
+  const parentStages = shortenings(node.parentTitle, parentTrailer);
+  for (
+    let colon = node.title.indexOf(':');
+    colon !== -1;
+    colon = node.title.indexOf(':', colon + 1)
+  ) {
+    const head = node.title.slice(0, colon);
+    if (parentStages.includes(head)) return true;
+    if (shortenings(head, childTrailer).includes(node.parentTitle)) return true;
   }
   return false;
+}
+
+/**
+ * Wholes whose parts are numbers in them rather than pieces collected
+ * together: an aria titled as part of an oratorio is a number of that
+ * oratorio, even though MusicBrainz types it "Aria".
+ */
+const WHOLES_OF_NUMBERS = new Set([
+  'Cantata',
+  'Incidental music',
+  'Mass',
+  'Motet',
+  'Opera',
+  'Operetta',
+  'Oratorio',
+  'Passion',
+  'Requiem',
+  'Zarzuela',
+]);
+
+/**
+ * A typed work still belongs to its parent when it is titled as part of it
+ * and either shares the parent's type (MusicBrainz types a sonata's
+ * movements "Sonata") or the parent is a whole made of numbers.
+ */
+function typedPartOf(node: WorkNode): boolean {
+  if (!node.type || !node.parentType || node.type === 'Étude') return false;
+  if (node.type !== node.parentType && !WHOLES_OF_NUMBERS.has(node.parentType)) return false;
+  return titledAsPartOf(node);
 }
 
 export function workLevelOf(node: WorkNode): WorkLevel {
@@ -70,7 +132,13 @@ export function workLevelOf(node: WorkNode): WorkLevel {
   // MusicBrainz types works, not movements. An Étude, a Sonata or an Aria is
   // a piece in its own right however deeply it is filed — this is what keeps
   // twenty-four Chopin études from collapsing into "12 Études, Op. 10".
-  if (node.type) return { mbid: node.mbid, reason: 'typed', needsReview: false };
+  // The exception is a typed work titled as a number of its parent, above.
+  if (node.type) {
+    if (node.parentMbid && typedPartOf(node)) {
+      return { mbid: node.parentMbid, reason: 'titled-as-part', needsReview: false };
+    }
+    return { mbid: node.mbid, reason: 'typed', needsReview: false };
+  }
 
   if (!node.parentMbid) return { mbid: node.mbid, reason: 'no-parent', needsReview: false };
 
