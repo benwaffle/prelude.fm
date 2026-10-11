@@ -104,48 +104,16 @@ export async function runMusicBrainzAlbumPass(
     releaseReason: ingest.releaseMbid ? null : describeReleaseFailure(ingest.reason),
     anchored,
     requests,
-    tracks: wanted.map((spotifyTrackId): TrackPassOutcome => {
-      const classification = classificationByTrack.get(spotifyTrackId);
+    tracks: wanted.map((spotifyTrackId) => {
       const anchor = anchorByTrack.get(spotifyTrackId);
-      const reason = classification?.reason ?? 'no MusicBrainz evidence yet';
-      if (classification?.state === 'not_classical') {
-        return {
-          spotifyTrackId,
-          state: 'not_classical',
-          classification: 'not_classical',
-          classificationProvenance: classification.provenance,
-          reason,
-        };
-      }
-      if (!anchor || anchor.state !== 'accepted') {
-        return {
-          spotifyTrackId,
-          state: 'unanchored',
-          classification: classification?.state ?? 'unreviewed',
-          classificationProvenance: classification?.provenance ?? 'musicbrainz',
-          reason:
-            anchor?.state === 'conflicting'
-              ? anchor.reason
-              : (describeReleaseFailure(ingest.reason) ??
-                'no MusicBrainz recording matched this track'),
-        };
-      }
-      if (classification?.state !== 'classical') {
-        return {
-          spotifyTrackId,
-          state: 'unclassified',
-          classification: classification?.state ?? 'unreviewed',
-          classificationProvenance: classification?.provenance ?? 'musicbrainz',
-          reason,
-        };
-      }
-      return {
-        spotifyTrackId,
-        state: 'ready',
-        classification: 'classical',
-        classificationProvenance: classification.provenance,
-        reason,
-      };
+      const unanchored =
+        anchor?.state === 'accepted'
+          ? null
+          : anchor?.state === 'conflicting'
+            ? anchor.reason
+            : (describeReleaseFailure(ingest.reason) ??
+              'no MusicBrainz recording matched this track');
+      return trackOutcome(spotifyTrackId, classificationByTrack.get(spotifyTrackId), unanchored);
     }),
   };
 }
@@ -162,35 +130,38 @@ async function classifyOnly(albumId: string, trackIds: string[]): Promise<AlbumP
     releaseReason: null,
     anchored: trackIds.length,
     requests: 0,
-    tracks: trackIds.map((spotifyTrackId): TrackPassOutcome => {
-      const classification = classificationByTrack.get(spotifyTrackId);
-      const reason = classification?.reason ?? 'no MusicBrainz evidence yet';
-      if (classification?.state === 'not_classical') {
-        return {
-          spotifyTrackId,
-          state: 'not_classical',
-          classification: 'not_classical',
-          classificationProvenance: classification.provenance,
-          reason,
-        };
-      }
-      if (classification?.state !== 'classical') {
-        return {
-          spotifyTrackId,
-          state: 'unclassified',
-          classification: classification?.state ?? 'unreviewed',
-          classificationProvenance: classification?.provenance ?? 'musicbrainz',
-          reason,
-        };
-      }
-      return {
-        spotifyTrackId,
-        state: 'ready',
-        classification: 'classical',
-        classificationProvenance: classification.provenance,
-        reason,
-      };
-    }),
+    tracks: trackIds.map((spotifyTrackId) =>
+      trackOutcome(spotifyTrackId, classificationByTrack.get(spotifyTrackId), null),
+    ),
+  };
+}
+
+/**
+ * What one track's pass came to. A track MusicBrainz calls not classical says
+ * so whether or not it is anchored; otherwise an `unanchored` reason wins.
+ */
+function trackOutcome(
+  spotifyTrackId: string,
+  classification: Awaited<ReturnType<typeof classifyTracks>>[number] | undefined,
+  unanchored: string | null,
+): TrackPassOutcome {
+  const state: PipelineOutcome =
+    classification?.state === 'not_classical'
+      ? 'not_classical'
+      : unanchored !== null
+        ? 'unanchored'
+        : classification?.state === 'classical'
+          ? 'ready'
+          : 'unclassified';
+  return {
+    spotifyTrackId,
+    state,
+    classification: classification?.state ?? 'unreviewed',
+    classificationProvenance: classification?.provenance ?? 'musicbrainz',
+    reason:
+      state === 'unanchored' && unanchored !== null
+        ? unanchored
+        : (classification?.reason ?? 'no MusicBrainz evidence yet'),
   };
 }
 

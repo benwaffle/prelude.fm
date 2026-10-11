@@ -2,11 +2,8 @@ import assert from 'node:assert/strict';
 import test, { before, beforeEach } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
-import type {
-  MbRelease,
-  MbReleaseRecording,
-  MusicBrainzSource,
-} from '../app/lib/musicbrainz-source';
+import { fakeSource } from './helpers/musicbrainz-fixtures';
+import type { MbRelease, MbReleaseRecording } from '../app/lib/musicbrainz-source';
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
@@ -23,22 +20,6 @@ before(async () => {
 beforeEach(async () => {
   await resetTestDatabase(db);
 });
-
-function source(answers: Partial<MusicBrainzSource>): MusicBrainzSource {
-  return {
-    name: 'fake',
-    releasesByBarcode: async () => [],
-    searchReleases: async () => [],
-    releaseWithRecordings: async () => null,
-    releaseRecordingIds: async () => [],
-    recordingsByIsrc: async () => new Map(),
-    recordingWorks: async () => [],
-    recordingDetail: async () => null,
-    work: async () => null,
-    artist: async () => null,
-    ...answers,
-  };
-}
 
 function recording(id: string, extras: Partial<MbReleaseRecording> = {}): MbReleaseRecording {
   return {
@@ -96,7 +77,7 @@ async function seedUnmatchedAlbum() {
 test('adoptReleaseForAlbum ingests a live MBID the barcode search does not yet know', async () => {
   await seedUnmatchedAlbum();
   const live = release();
-  const api = source({
+  const api = fakeSource({
     releasesByBarcode: async () => [],
     releaseWithRecordings: async (id) => (id === live.id ? live : null),
   });
@@ -142,7 +123,7 @@ test('ingestRecording rewrites work links from a later MusicBrainz read', async 
     matchedBy: 'release_position',
   });
 
-  const api = source({
+  const api = fakeSource({
     recordingDetail: async () =>
       recording('rec-1', {
         title: 'Air',

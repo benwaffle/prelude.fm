@@ -263,38 +263,26 @@ async function hydratePendingRowsWithoutAlbumIds(limit = 50) {
 }
 
 async function getNextPendingAlbumId(maxAttempts?: number) {
-  const [row] = await db
-    .select({ spotifyAlbumId: matchQueue.spotifyAlbumId })
-    .from(matchQueue)
-    .where(
-      and(
-        eq(matchQueue.status, 'pending'),
-        isNotNull(matchQueue.spotifyAlbumId),
-        maxAttempts === undefined ? undefined : lt(matchQueue.attempts, maxAttempts),
-      ),
-    )
-    .groupBy(matchQueue.spotifyAlbumId)
-    .limit(1);
+  const next = async () => {
+    const [row] = await db
+      .select({ spotifyAlbumId: matchQueue.spotifyAlbumId })
+      .from(matchQueue)
+      .where(
+        and(
+          eq(matchQueue.status, 'pending'),
+          isNotNull(matchQueue.spotifyAlbumId),
+          maxAttempts === undefined ? undefined : lt(matchQueue.attempts, maxAttempts),
+        ),
+      )
+      .groupBy(matchQueue.spotifyAlbumId)
+      .limit(1);
+    return row?.spotifyAlbumId ?? null;
+  };
 
-  if (row?.spotifyAlbumId) return row.spotifyAlbumId;
-
-  const hydrated = await hydratePendingRowsWithoutAlbumIds();
-  if (hydrated === 0) return null;
-
-  const [hydratedRow] = await db
-    .select({ spotifyAlbumId: matchQueue.spotifyAlbumId })
-    .from(matchQueue)
-    .where(
-      and(
-        eq(matchQueue.status, 'pending'),
-        isNotNull(matchQueue.spotifyAlbumId),
-        maxAttempts === undefined ? undefined : lt(matchQueue.attempts, maxAttempts),
-      ),
-    )
-    .groupBy(matchQueue.spotifyAlbumId)
-    .limit(1);
-
-  return hydratedRow?.spotifyAlbumId ?? null;
+  const found = await next();
+  if (found) return found;
+  if ((await hydratePendingRowsWithoutAlbumIds()) === 0) return null;
+  return next();
 }
 
 export async function claimNextPendingAlbum(

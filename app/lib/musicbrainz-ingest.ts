@@ -95,6 +95,21 @@ function evidenceStrength(evidence: AnchorEvidence): number {
   return evidence === 'isrc' ? 2 : 1;
 }
 
+/** An album's Spotify tracks, as anchoring and release matching read them. */
+function albumTracks(albumId: string) {
+  return db
+    .select({
+      spotifyId: spotifyTrack.spotifyId,
+      title: spotifyTrack.title,
+      discNumber: spotifyTrack.discNumber,
+      trackNumber: spotifyTrack.trackNumber,
+      durationMs: spotifyTrack.durationMs,
+      isrc: spotifyTrack.isrc,
+    })
+    .from(spotifyTrack)
+    .where(eq(spotifyTrack.spotifyAlbumId, albumId));
+}
+
 /**
  * Attach each Spotify track on an album to a MusicBrainz recording.
  *
@@ -109,17 +124,7 @@ export async function anchorAlbumTracks(
   albumId: string,
   releaseMbid: string,
 ): Promise<AnchorReport> {
-  const tracks = await db
-    .select({
-      spotifyId: spotifyTrack.spotifyId,
-      title: spotifyTrack.title,
-      discNumber: spotifyTrack.discNumber,
-      trackNumber: spotifyTrack.trackNumber,
-      durationMs: spotifyTrack.durationMs,
-      isrc: spotifyTrack.isrc,
-    })
-    .from(spotifyTrack)
-    .where(eq(spotifyTrack.spotifyAlbumId, albumId));
+  const tracks = await albumTracks(albumId);
 
   const releaseTracks = await db
     .select({
@@ -331,17 +336,7 @@ export async function ingestAlbum(
     .where(eq(spotifyAlbum.spotifyId, albumId));
   if (!album) throw new Error(`Unknown album ${albumId}`);
 
-  const tracks = await db
-    .select({
-      spotifyId: spotifyTrack.spotifyId,
-      title: spotifyTrack.title,
-      discNumber: spotifyTrack.discNumber,
-      trackNumber: spotifyTrack.trackNumber,
-      durationMs: spotifyTrack.durationMs,
-      isrc: spotifyTrack.isrc,
-    })
-    .from(spotifyTrack)
-    .where(eq(spotifyTrack.spotifyAlbumId, albumId));
+  const tracks = await albumTracks(albumId);
 
   const match = await findReleaseForAlbum(source, album, tracks);
   let requests = match.requests;

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { before, beforeEach } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
+import { fakeSource } from './helpers/musicbrainz-fixtures';
 import type { MbWork, MusicBrainzSource } from '../app/lib/musicbrainz-source';
 
 /**
@@ -25,21 +26,12 @@ beforeEach(async () => {
 });
 
 function source(works: Record<string, MbWork | null>, asked: string[]): MusicBrainzSource {
-  return {
-    name: 'fake',
-    releasesByBarcode: async () => [],
-    searchReleases: async () => [],
-    releaseWithRecordings: async () => null,
-    releaseRecordingIds: async () => [],
-    recordingsByIsrc: async () => new Map(),
-    recordingWorks: async () => [],
-    recordingDetail: async () => null,
+  return fakeSource({
     work: async (id) => {
       asked.push(id);
       return works[id] ?? null;
     },
-    artist: async () => null,
-  };
+  });
 }
 
 function composed(id: string, title: string): MbWork {
