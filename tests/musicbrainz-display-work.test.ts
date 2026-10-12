@@ -96,3 +96,66 @@ test('reports where the climb stopped: a parent not cached, or a cycle', () => {
   );
   assert.equal(loop.hierarchyBreak?.kind, 'cycle');
 });
+
+test('a part of a section of a Requiem resolves to the whole Requiem', () => {
+  const requiem = 'Requiem in D minor, K. 626';
+  const resolved = resolveDisplayWork(
+    'dies-irae',
+    indexWorks(
+      [
+        node({ mbid: 'requiem', title: requiem, type: 'Mass' }),
+        node({
+          mbid: 'communio',
+          title: `${requiem}: VIII. Communio`,
+          parentMbid: 'requiem',
+          orderingKey: 7,
+        }),
+        node({
+          mbid: 'lux',
+          title: `${requiem}: VIII. Communio: a. Lux aeterna`,
+          parentMbid: 'communio',
+        }),
+        node({
+          mbid: 'sequenz',
+          title: `${requiem}: III. Sequenz`,
+          parentMbid: 'requiem',
+          orderingKey: 3,
+        }),
+        node({
+          mbid: 'dies-irae',
+          title: `${requiem}: III. Sequenz: a. Dies irae`,
+          parentMbid: 'sequenz',
+          orderingKey: 1,
+        }),
+      ],
+      [],
+    ),
+  );
+  assert.equal(resolved.display?.mbid, 'requiem');
+});
+
+test('a prelude and fugue in a book stays itself', () => {
+  const book = 'The Well-Tempered Clavier, Book I';
+  const resolved = resolveDisplayWork(
+    'prelude',
+    indexWorks(
+      [
+        node({ mbid: 'book', title: book }),
+        node({
+          mbid: 'bwv846',
+          title: `${book}: Prelude and Fugue no. 1 in C major, BWV 846`,
+          parentMbid: 'book',
+          orderingKey: 1,
+        }),
+        node({
+          mbid: 'prelude',
+          title: `${book}: Prelude and Fugue no. 1 in C major, BWV 846: Prelude`,
+          parentMbid: 'bwv846',
+          orderingKey: 1,
+        }),
+      ],
+      [],
+    ),
+  );
+  assert.equal(resolved.display?.mbid, 'bwv846');
+});
