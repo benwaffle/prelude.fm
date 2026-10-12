@@ -467,10 +467,28 @@
 
 /* Match debug: one dense row per track, under a row for its album. */
 .desk table.match-debug td {
-  padding: 4px 8px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.desk table.match-debug td.w-mid {
+  max-width: 220px;
+}
+
+.desk table.match-debug td.w-wide {
+  max-width: 320px;
+}
+
+.desk table.match-debug td.w-narrow {
+  max-width: 150px;
 }
 
 .desk table.match-debug tr.album-head td {
+  max-width: none;
+  white-space: normal;
   background: var(--slip-2);
   border-top: 1px solid var(--rule-strong);
 }
