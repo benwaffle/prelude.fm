@@ -8,7 +8,7 @@ import {
 } from '../actions/submissions';
 import { MbPicker } from '../components/MbPicker';
 import { mbWorkPickHit } from '@/lib/musicbrainz-pick';
-import { ConfirmDisclosure } from './ConfirmDisclosure';
+import { RowDisclosure } from './RowDisclosure';
 import { InboxRow } from './InboxRow';
 import { RowActionStatus } from './RowActionStatus';
 import { InboxSection } from './InboxSection';
@@ -53,7 +53,7 @@ export function WorkRelationshipsSection({
         const state = rowAction(gap.recordingMbid);
 
         return (
-          <ConfirmDisclosure
+          <RowDisclosure
             key={gap.recordingMbid}
             data-inbox-album={gap.albumId}
             evidence={
@@ -79,7 +79,6 @@ export function WorkRelationshipsSection({
                 </a>
               </>
             }
-            label={gap.candidates.length > 0 ? 'Pick…' : 'Confirm…'}
           >
             <MbPicker
               seed={seed}
@@ -225,7 +224,7 @@ export function WorkRelationshipsSection({
                 </div>
               )}
             </div>
-          </ConfirmDisclosure>
+          </RowDisclosure>
         );
       })}
       <LoadMoreRows shown={rows.length} total={total} busy={busy} onMore={onLoadMore} />
