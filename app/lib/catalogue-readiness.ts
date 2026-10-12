@@ -138,7 +138,7 @@ type BucketSpec = {
   inboxClass: ReadinessInboxClass | null;
 };
 
-const BUCKETS: Record<ReadinessBucketKey, BucketSpec> = {
+export const BUCKETS: Record<ReadinessBucketKey, BucketSpec> = {
   'contested-isrc': {
     step: 'recording',
     kind: 'action',

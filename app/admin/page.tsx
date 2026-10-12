@@ -10,6 +10,7 @@ import { AdminFailureNotice, AdminFailureProvider } from './components/AdminFail
 import { Spinner } from './components/Spinner';
 import { AlbumsTab } from './tools/AlbumsTab';
 import { HealthTab } from './tools/HealthTab';
+import { MatchDebugTab } from './tools/MatchDebugTab';
 import { ReleaseCorrectionsTab } from './tools/ReleaseCorrectionsTab';
 import { RefreshWorkTab } from './tools/RefreshWorkTab';
 import { AdminHome } from './home/AdminHome';
@@ -132,6 +133,7 @@ function AdminPageContent() {
                 }
               />
             )}
+            {page === 'matches' && <MatchDebugTab />}
             {page === 'corrections' && <ReleaseCorrectionsTab />}
             {page === 'refresh-work' && <RefreshWorkTab />}
             {page === 'checks' && <HealthTab />}

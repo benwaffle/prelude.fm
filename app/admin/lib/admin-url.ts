@@ -14,7 +14,7 @@ export const INBOX_CLASSES = [
 ] as const;
 export type InboxClass = (typeof INBOX_CLASSES)[number];
 
-export const TOOL_PAGES = ['albums', 'corrections', 'refresh-work', 'checks'] as const;
+export const TOOL_PAGES = ['matches', 'albums', 'corrections', 'refresh-work', 'checks'] as const;
 export type ToolPage = (typeof TOOL_PAGES)[number];
 
 export type AdminPage = InboxClass | ToolPage;
@@ -29,6 +29,7 @@ export const PAGE_TITLE: Record<AdminPage, string> = {
   barcodes: 'Releases with no barcode',
   streaming: 'Releases with no Spotify link',
   submitted: 'Sent to MusicBrainz, not there yet',
+  matches: 'How tracks were matched',
   albums: 'Albums in the library',
   corrections: 'Releases added through Harmony: what was corrected',
   'refresh-work': 'Refresh a work from MusicBrainz',

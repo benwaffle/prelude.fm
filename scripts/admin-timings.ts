@@ -26,6 +26,7 @@ function pageLoads(): Record<string, Load> {
   const coverage = require('@/app/admin/actions/coverage');
   const cacheHealth = require('@/app/admin/actions/cache-health');
   const proposals = require('@/app/admin/actions/work-proposals');
+  const matchDebug = require('@/app/admin/actions/match-debug');
 
   const page =
     (...loads: Load[]): Load =>
@@ -47,6 +48,7 @@ function pageLoads(): Record<string, Load> {
     albums: page(() => coverage.getAlbums()),
     corrections: page(() => releaseSubmissions.getReleaseCorrections()),
     checks: page(() => cacheHealth.getCacheHealth()),
+    matches: page(() => matchDebug.getMatchDebug(process.env.MATCH_QUERY ?? 'Goldberg')),
   };
 }
 

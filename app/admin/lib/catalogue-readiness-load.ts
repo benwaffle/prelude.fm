@@ -44,7 +44,9 @@ async function loadReadinessTracks(database: DatabaseExecutor) {
 }
 
 // An applied edit counts until our next read picks it up: the track is waiting, not outstanding.
-async function loadReadinessSubmissions(database: DatabaseExecutor): Promise<ReadinessSubmissions> {
+export async function loadReadinessSubmissions(
+  database: DatabaseExecutor,
+): Promise<ReadinessSubmissions> {
   const rows = await database
     .select({
       kind: mbSubmission.kind,
