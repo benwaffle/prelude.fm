@@ -229,11 +229,13 @@ export interface LibraryWork {
 // MusicBrainz titles a part with its collection in front; repeating it under the collection heading
 // is noise.
 export function stripCollectionPrefix(title: string, parentTitle: string): string {
-  // The collection's title may also extend its parts' heading: "The Four Seasons Recomposed".
-  const head = title.slice(0, Math.max(title.indexOf(':'), 0));
+  // The collection's title may also extend its parts' heading, or case it differently: "The Four
+  // Seasons Recomposed", "Children’s Corner, L. 113, CD 119".
+  const head = title.slice(0, Math.max(title.indexOf(':'), 0)).toLowerCase();
+  const parent = parentTitle.toLowerCase();
   const prefix = title.startsWith(`${parentTitle}:`)
     ? `${parentTitle}:`
-    : head && parentTitle.startsWith(`${head} `)
+    : head && (parent === head || parent.startsWith(`${head} `) || parent.startsWith(`${head},`))
       ? `${head}:`
       : null;
   if (!prefix) return title;

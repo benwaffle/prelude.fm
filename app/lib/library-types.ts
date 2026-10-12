@@ -85,17 +85,3 @@ export interface CatalogWorkHeader {
   composerName: string | null;
   movementCount: number;
 }
-
-export interface WorkSibling {
-  workId: string | null;
-  title: string;
-  ordering: number | null;
-  isCurrent: boolean;
-}
-
-export interface WorkParent {
-  title: string;
-  /** Including ones we do not have. */
-  siblings: WorkSibling[];
-  held: number;
-}

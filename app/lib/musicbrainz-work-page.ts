@@ -1,14 +1,11 @@
-import type { WorkDetail, WorkParent, WorkSibling, WorkSummary } from './library-types';
+import type { WorkDetail, WorkSummary } from './library-types';
 import { readLibraryCards } from './musicbrainz-library-cards';
 import { playedMovementCount, recordingRowOf } from './musicbrainz-library-view';
 import {
-  findHeldWorkMbids,
   findProviderTracksForComposer,
   findProviderTracksForWork,
-  readWorkCollection,
   readWorkComposerMbid,
 } from './musicbrainz-work-queries';
-import { stripCollectionPrefix } from './prelude';
 
 // Narrowed to what the provider can play: a recording Spotify lacks is not one this reader can
 // offer.
@@ -94,24 +91,4 @@ async function worksByComposer(
     })),
     trackIds: Array.from(tracksByWork.get(card.workId!) ?? []),
   }));
-}
-
-// Parts we hold nothing for come back with a null identity, so a partial collection reads as
-// partial.
-export async function getMusicBrainzWorkParent(workMbid: string): Promise<WorkParent | null> {
-  const collection = await readWorkCollection(workMbid);
-  if (!collection) return null;
-
-  const held = await findHeldWorkMbids(collection.siblings.map((sibling) => sibling.mbid));
-  const siblings: WorkSibling[] = collection.siblings.map((sibling) => ({
-    workId: held.has(sibling.mbid) ? sibling.mbid : null,
-    title: stripCollectionPrefix(sibling.title, collection.parentTitle),
-    ordering: sibling.orderingKey,
-    isCurrent: sibling.mbid === workMbid,
-  }));
-  return {
-    title: collection.parentTitle,
-    siblings,
-    held: siblings.filter((sibling) => sibling.workId !== null).length,
-  };
 }

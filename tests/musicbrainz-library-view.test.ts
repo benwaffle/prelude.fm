@@ -398,109 +398,65 @@ test('asking for a work MusicBrainz cannot play returns nothing, not an empty ca
   assert.equal(await getMusicBrainzWorkDetail('not-a-work', null, []), null);
 });
 
-test('a collection names every part MusicBrainz lists, held or not', async () => {
-  const { getMusicBrainzWorkParent } = await import('@/lib/musicbrainz-work-page');
-  const collection = await getMusicBrainzWorkParent('part-i');
-
-  assert.ok(collection);
-  assert.equal(collection.title, 'Piano Sonata no. 16 in C major, K. 545');
-  assert.deepEqual(
-    collection.siblings.map((sibling) => [sibling.title, sibling.workId !== null]),
-    [
-      ['I. Allegro', true],
-      ['II. Andante', true],
-      // A third movement we hold nothing for stays listed, so the collection reads as two of three.
-      ['III. Rondo', false],
-    ],
-  );
-  assert.equal(collection.held, 2);
-  assert.equal(collection.siblings.filter((sibling) => sibling.isCurrent).length, 1);
-});
-
-test('a work with no collection above it has none, rather than an empty one', async () => {
-  const { getMusicBrainzWorkParent } = await import('@/lib/musicbrainz-work-page');
-  assert.equal(await getMusicBrainzWorkParent('sonata'), null);
-});
-
-test('a collection counts a part we hold only through its own parts', async () => {
-  // A prelude and fugue is one part of the WTC with two recordings beneath it.
-  await db.insert(schema.mbWork).values([
-    {
-      mbid: 'wtc',
-      title: 'The Well-Tempered Clavier, Book 1',
-      type: 'Suite',
-      parentMbid: null,
-      orderingKey: null,
-      composerMbid: 'mozart',
-      detail: 'full',
-    },
-    {
-      mbid: 'wtc-1',
-      title: 'The Well-Tempered Clavier, Book 1: Prelude and Fugue no. 1',
-      type: null,
-      parentMbid: 'wtc',
-      orderingKey: 1,
-      composerMbid: 'mozart',
-      detail: 'full',
-    },
-    {
-      mbid: 'wtc-1-prelude',
-      title: 'Prelude',
-      type: null,
-      parentMbid: 'wtc-1',
-      orderingKey: 1,
-      composerMbid: 'mozart',
-      detail: 'full',
-    },
-    {
-      mbid: 'wtc-2',
-      title: 'The Well-Tempered Clavier, Book 1: Prelude and Fugue no. 2',
-      type: null,
-      parentMbid: 'wtc',
-      orderingKey: 2,
-      composerMbid: 'mozart',
-      detail: 'full',
-    },
-  ]);
-  await db.insert(schema.mbRecording).values({
-    mbid: 'rec-wtc-prelude',
-    title: 'Prelude',
-    length: 100_000,
-    detail: 'full',
+test('a work lists every part MusicBrainz files under it, at every level, held or not', async () => {
+  const sonata = 'Piano Sonata no. 16 in C major, K. 545';
+  const part = (mbid: string, title: string, parentMbid: string, orderingKey: number) => ({
+    mbid,
+    title,
+    type: null,
+    parentMbid,
+    orderingKey,
+    composerMbid: 'mozart',
+    detail: 'full' as const,
   });
-  await db.insert(schema.mbRecordingWork).values({
-    recordingMbid: 'rec-wtc-prelude',
-    workMbid: 'wtc-1-prelude',
-  });
+  await db
+    .insert(schema.mbWork)
+    .values([
+      part('iii-a', `${sonata}: III. Rondo: a. Theme`, 'part-iii', 1),
+      part('iii-b', `${sonata}: III. Rondo: b. Coda`, 'part-iii', 2),
+      part('part-iv', `${sonata}: IV. Finale`, 'sonata', 4),
+      part('iv-a', `${sonata}: IV. Finale: a. Presto`, 'part-iv', 1),
+    ]);
+  await db
+    .insert(schema.mbRecording)
+    .values({ mbid: 'rec-iii-a', title: 'Theme', length: 60_000, detail: 'full' });
+  await db.insert(schema.mbRecordingWork).values({ recordingMbid: 'rec-iii-a', workMbid: 'iii-a' });
   await db.insert(schema.spotifyTrack).values({
-    spotifyId: 'track-wtc',
-    title: 'WTC I: Prelude no. 1',
-    trackNumber: 1,
+    spotifyId: 'track-iii-a',
+    title: 'Rondo: Theme',
+    trackNumber: 3,
     discNumber: 1,
-    durationMs: 100_000,
+    durationMs: 60_000,
     popularity: 1,
     spotifyAlbumId: 'album-1',
-    isrc: 'GBAAA0000031',
+    isrc: 'GBAAA0000013',
   });
   await db.insert(schema.trackRecording).values({
-    spotifyTrackId: 'track-wtc',
-    recordingMbid: 'rec-wtc-prelude',
-    isrc: 'GBAAA0000031',
+    spotifyTrackId: 'track-iii-a',
+    recordingMbid: 'rec-iii-a',
+    isrc: 'GBAAA0000013',
     matchedBy: 'isrc',
   });
 
-  const { getMusicBrainzWorkParent } = await import('@/lib/musicbrainz-work-page');
-  const collection = await getMusicBrainzWorkParent('wtc-1');
-
-  assert.ok(collection);
+  const { works } = await view(['track-i', 'track-ii', 'track-iii-a']);
+  assert.equal(works.length, 1);
   assert.deepEqual(
-    collection.siblings.map((sibling) => [sibling.ordering, sibling.workId !== null]),
+    works[0].movements.map((movement) => [
+      movement.roman,
+      movement.section ?? null,
+      movement.name,
+      movement.missing,
+    ]),
     [
-      [1, true],
-      [2, false],
+      ['I', null, 'Allegro', false],
+      ['II', null, 'Andante', false],
+      ['III', 'Rondo', 'Rondo: a. Theme', false],
+      // Missing parts of a section we partly hold, and a section we hold nothing of, stay listed.
+      ['III', 'Rondo', 'Rondo: b. Coda', true],
+      ['IV', null, 'Finale', true],
+      ['IV', 'Finale', 'Finale: a. Presto', true],
     ],
   );
-  assert.equal(collection.held, 1);
 });
 
 test('the catalogue lists only works we can play, under the same identity as a card', async () => {
