@@ -1,0 +1,1 @@
+ALTER TABLE `mb_work` ADD `imslp_url` text;

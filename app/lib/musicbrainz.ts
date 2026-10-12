@@ -215,7 +215,7 @@ export async function getWork(
   onAttempt?: OnMbAttempt,
 ): Promise<MbWork | null> {
   return mbGet<MbWork>(
-    `/work/${workId}?inc=work-rels+artist-rels+series-rels&fmt=json`,
+    `/work/${workId}?inc=work-rels+artist-rels+series-rels+url-rels&fmt=json`,
     channel,
     onAttempt,
   );
@@ -423,6 +423,14 @@ export function spotifyArtistIdsOf(artist: MbArtist): string[] {
     if (match) ids.push(match[1]);
   }
   return ids;
+}
+
+export function imslpUrlOf(work: MbWork): string | null {
+  for (const relation of work.relations ?? []) {
+    const resource = relation.url?.resource;
+    if (!relation.ended && resource && /^https?:\/\/imslp\.org\//.test(resource)) return resource;
+  }
+  return null;
 }
 
 export type MbWorkPart = MbWorkRef & { orderingKey: number | null };

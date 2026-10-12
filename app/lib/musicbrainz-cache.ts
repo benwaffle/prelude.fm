@@ -19,7 +19,14 @@ import {
   spotifyArtist,
 } from './db/schema';
 import { normalizeIsrc } from './isrc';
-import { cataloguesOf, composerOf, parentPartOf, spotifyArtistIdsOf, yearOf } from './musicbrainz';
+import {
+  cataloguesOf,
+  composerOf,
+  imslpUrlOf,
+  parentPartOf,
+  spotifyArtistIdsOf,
+  yearOf,
+} from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
 import type {
   MbArtist,
@@ -114,6 +121,7 @@ async function cacheWork(work: MbWork): Promise<{ parentMbid: string | null }> {
     parentMbid: parent?.id ?? null,
     orderingKey: parent?.orderingKey ?? null,
     composerMbid: composer?.id ?? null,
+    imslpUrl: imslpUrlOf(work),
     detail: 'full' as const,
     fetchedAt: new Date(),
   };

@@ -98,6 +98,7 @@ export function DetailScreen({
 
       <Hero
         work={{ ...work, movements }}
+        imslpUrl={detail.imslpUrl}
         currentTrackId={currentTrack?.id ?? null}
         onPlay={playFrom}
         onToggleLike={toggleLike}
@@ -119,11 +120,13 @@ export function DetailScreen({
 
 function Hero({
   work,
+  imslpUrl,
   currentTrackId,
   onPlay,
   onToggleLike,
 }: {
   work: LibraryWork;
+  imslpUrl: string | null;
   currentTrackId: string | null;
   onPlay: (movement: Movement) => void;
   onToggleLike: (trackId: string) => void;
@@ -192,6 +195,17 @@ function Hero({
             </span>
             <span className="font-display text-[16px]">{work.catalog}</span>
           </div>
+        )}
+
+        {imslpUrl && (
+          <a
+            href={imslpUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="self-start font-meta text-[10px] tracking-[0.18em] text-muted uppercase no-underline transition-colors duration-150 hover:text-ink"
+          >
+            Score on IMSLP ↗
+          </a>
         )}
       </div>
 

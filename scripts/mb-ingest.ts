@@ -1,4 +1,4 @@
-// Usage: pnpm mb:ingest <albums|anchor|report|loose|recordings|works|artists|refresh|composers|check>
+// Usage: pnpm mb:ingest <albums|anchor|report|loose|recordings|works|artists|refresh|composers|scores|check>
 //   [--limit n] [--all] [--since <iso>]
 // Resumable: the cache is the progress record.
 import { defineScript, UsageError } from './lib/cli';
@@ -139,6 +139,28 @@ defineScript(
         console.log(`changed\t${work.mbid}\t${work.title}\t${from} -> ${to}`);
       }
       console.log(`read ${result.read} works, ${result.changed.length} changed composer`);
+      return;
+    }
+
+    // Works read before we kept IMSLP links: re-read the top-level ones, which the work page shows.
+    if (options.step === 'scores') {
+      const since = options.since ? new Date(options.since) : new Date();
+      console.log(`re-reading top-level works not read since ${since.toISOString()}`);
+      const stale = await db.all<{ mbid: string }>(sql`
+        select mbid from mb_work
+          where detail = 'full' and parent_mbid is null and fetched_at < ${since.getTime()}
+          order by mbid
+      `);
+      console.log(`${stale.length} works to read`);
+      let read = 0;
+      for (const { mbid } of stale.slice(0, options.limit)) {
+        await cache.readAndCacheWork(source, mbid);
+        if (++read % 50 === 0) console.log(`  ${read} read`);
+      }
+      const [linked] = await db.all<{ n: number }>(
+        sql`select count(*) as n from mb_work where imslp_url is not null`,
+      );
+      console.log(`read ${read} works; ${linked.n} works now have an IMSLP link`);
       return;
     }
 

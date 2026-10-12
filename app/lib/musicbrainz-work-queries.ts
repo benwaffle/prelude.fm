@@ -84,17 +84,19 @@ export async function findProviderTracksForComposer(
 }
 
 /** The rule `resolveDisplayWork` applies, so a work page and its card name the same composer. */
-export async function readWorkComposerMbid(
+// The nearest work up the parts chain that names each: a part inherits its parent's composer and
+// score.
+export async function readWorkLineage(
   workMbid: string,
   database: DatabaseExecutor = db,
-): Promise<string | null> {
+): Promise<{ composerMbid: string | null; imslpUrl: string | null }> {
   const lineage = await database
     .select()
     .from(mbWork)
     .where(sql`${mbWork.mbid} in ${lineageOf(jsonList([workMbid]))}`);
-  return (
-    ancestry(workMbid, new Map(lineage.map((work) => [work.mbid, work]))).find(
-      (work) => work.composerMbid,
-    )?.composerMbid ?? null
-  );
+  const chain = ancestry(workMbid, new Map(lineage.map((work) => [work.mbid, work])));
+  return {
+    composerMbid: chain.find((work) => work.composerMbid)?.composerMbid ?? null,
+    imslpUrl: chain.find((work) => work.imslpUrl)?.imslpUrl ?? null,
+  };
 }

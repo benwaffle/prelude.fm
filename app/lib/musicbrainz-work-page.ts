@@ -4,7 +4,7 @@ import { playedMovementCount, recordingRowOf } from './musicbrainz-library-view'
 import {
   findProviderTracksForComposer,
   findProviderTracksForWork,
-  readWorkComposerMbid,
+  readWorkLineage,
 } from './musicbrainz-work-queries';
 
 // Narrowed to what the provider can play: a recording Spotify lacks is not one this reader can
@@ -15,9 +15,10 @@ export async function getMusicBrainzWorkDetail(
   likedTrackIds: string[] = [],
 ): Promise<WorkDetail | null> {
   const liked = new Set(likedTrackIds);
-  // The card names its composer by the same rule `readWorkComposerMbid` reads, so both can be read
-  // in parallel.
-  const [forThisWork, moreByComposer] = await Promise.all([
+  // The card names its composer by the same rule `readWorkLineage` reads, so both can be read in
+  // parallel.
+  const lineage = readWorkLineage(workMbid);
+  const [forThisWork, moreByComposer, { imslpUrl }] = await Promise.all([
     findProviderTracksForWork(workMbid).then(async (trackIds) =>
       trackIds.length === 0
         ? []
@@ -25,9 +26,10 @@ export async function getMusicBrainzWorkDetail(
             (card) => card.workId === workMbid,
           ),
     ),
-    readWorkComposerMbid(workMbid).then((composerMbid) =>
+    lineage.then(({ composerMbid }) =>
       composerMbid ? worksByComposer(composerMbid, workMbid, liked) : [],
     ),
+    lineage,
   ]);
   if (forThisWork.length === 0) return null;
 
@@ -44,6 +46,7 @@ export async function getMusicBrainzWorkDetail(
     others: forThisWork.filter((card) => card.id !== chosen.id).map(recordingRowOf),
     // A composer the cache has no artist for is not on the card either.
     moreByComposer: chosen.composerId ? moreByComposer : [],
+    imslpUrl,
   };
 }
 

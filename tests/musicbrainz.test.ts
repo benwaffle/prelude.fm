@@ -4,6 +4,7 @@ import {
   cataloguesOf,
   childPartsOf,
   composerOf,
+  imslpUrlOf,
   parentPartOf,
   yearOf,
   type MbWork,
@@ -152,4 +153,28 @@ test('reads a year from a MusicBrainz life-span date', () => {
   assert.equal(yearOf('1845'), 1845);
   assert.equal(yearOf(null), null);
   assert.equal(yearOf(''), null);
+});
+
+test('imslpUrlOf takes the live IMSLP link and ignores other URLs', () => {
+  const url = (resource: string, ended = false) => ({
+    type: 'download for free',
+    direction: 'forward' as const,
+    'target-type': 'url',
+    ended,
+    url: { resource },
+  });
+  const work: MbWork = {
+    id: 'w',
+    title: 'Symphony No. 5',
+    relations: [
+      url('https://www.wikidata.org/wiki/Q188709'),
+      url('https://imslp.org/wiki/Old_Page', true),
+      url('https://imslp.org/wiki/Symphony_No.5,_Op.67_(Beethoven,_Ludwig_van)'),
+    ],
+  };
+  assert.equal(
+    imslpUrlOf(work),
+    'https://imslp.org/wiki/Symphony_No.5,_Op.67_(Beethoven,_Ludwig_van)',
+  );
+  assert.equal(imslpUrlOf({ id: 'w', title: 'w', relations: [url('https://example.org')] }), null);
 });
