@@ -406,9 +406,18 @@
 }
 
 .desk .inbox-chevron {
-  width: 22px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 4px;
   color: var(--ink-2);
   transition: transform 120ms;
+}
+
+.desk .inbox-chevron:hover {
+  background: var(--board);
+  color: var(--ink);
 }
 
 .desk .inbox-chevron[aria-expanded='true'] {
