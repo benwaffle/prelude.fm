@@ -40,3 +40,22 @@ test('an unmatched Spotify track title reaches the programme untouched', () => {
     'Piano Concerto No. 2: I. Allegro non troppo',
   );
 });
+
+test('a part titled under a shorter or differently cased form of its work is named within it', () => {
+  assert.equal(
+    programmeMovementName(
+      'Children’s Corner, L. 113: I. Doctor Gradus ad Parnassum',
+      'Children’s Corner, L. 113, CD 119',
+      'I',
+    ),
+    'Doctor Gradus ad Parnassum',
+  );
+  assert.equal(
+    programmeMovementName(
+      'Missa votiva, in e minor, ZWV 18: Kyrie',
+      'Missa votiva, in E minor, ZWV 18',
+      'I',
+    ),
+    'Kyrie',
+  );
+});

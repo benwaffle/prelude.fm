@@ -110,6 +110,23 @@ function movementOf(work: ProjectedRecordingWork) {
   return (display === -1 ? undefined : work.hierarchy[display + 1]) ?? work.hierarchy.at(-1);
 }
 
+// The parts between that one and the track's own: "a. Dies irae" under "III. Sequenz".
+function partsBeneathMovement(work: ProjectedRecordingWork) {
+  const display = work.hierarchy.findIndex((node) => node.mbid === work.displayWorkMbid);
+  return display === -1 ? [] : work.hierarchy.slice(display + 2);
+}
+
+const orderOf = (node: { orderingKey: number | null }) =>
+  node.orderingKey ?? Number.MAX_SAFE_INTEGER;
+
+function byPlaceInWork(left: number[], right: number[]): number {
+  for (let level = 0; level < Math.max(left.length, right.length); level++) {
+    const difference = (left[level] ?? -1) - (right[level] ?? -1);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
 function partPosition(work: ProjectedRecordingWork, fallback: number): number {
   return movementOf(work)?.orderingKey ?? fallback;
 }
@@ -226,9 +243,6 @@ export function musicBrainzLibraryView(
         left.occurrence.trackNumber - right.occurrence.trackNumber,
     );
     const head = ordered[0];
-    const heldPartMbids = new Set(
-      ordered.map((member) => movementOf(member.work)?.mbid).filter(Boolean),
-    );
     const credits = performingCredits(storedCredits(head.recording));
     const { performer, ensemble } = hasPerformingCredits(credits)
       ? creditLine(credits)
@@ -239,6 +253,8 @@ export function musicBrainzLibraryView(
     const onWholeWork = (member: CardMember) =>
       member.work.parts.length > 0 && member.work.relatedWorkMbid === member.work.displayWorkMbid;
 
+    // Where each row sits in the work: its movement's position, then its place in each section.
+    const placeInWork = new Map<Movement, number[]>();
     const movements: Movement[] = ordered.map((member, index) => {
       const leaf = member.work.hierarchy.at(-1);
       const position = partPosition(member.work, member.occurrence.trackNumber);
@@ -253,7 +269,7 @@ export function musicBrainzLibraryView(
         !whole && movement && movement !== leaf && movement.title
           ? programmeMovementName(movement.title, head.work.title, numeral)
           : null;
-      return {
+      const row: Movement = {
         n: index + 1,
         position,
         roman: numeral,
@@ -269,29 +285,50 @@ export function musicBrainzLibraryView(
         trackId: member.occurrence.spotifyTrackId,
         uri: `spotify:track:${member.occurrence.spotifyTrackId}`,
       };
+      placeInWork.set(row, [position, ...partsBeneathMovement(member.work).map(orderOf)]);
+      return row;
     });
 
-    // Parts MusicBrainz lists that this issue lacks, shown as ghosts. Unknown when a track is
-    // related only to the whole work.
-    const partsKnown = !ordered.some(onWholeWork);
-    for (const part of partsKnown ? head.work.parts : []) {
-      if (heldPartMbids.has(part.mbid)) continue;
-      const position = part.orderingKey ?? movements.length + 1;
-      movements.push({
+    // Parts MusicBrainz lists that this issue lacks, at every level, shown as ghosts. Unknown
+    // under a work or section a track is related to as a whole.
+    const held = new Set(
+      ordered.flatMap((member) => member.work.hierarchy.map((node) => node.mbid)),
+    );
+    const relatedWhole = new Set(ordered.map((member) => member.work.relatedWorkMbid));
+    const partByMbid = new Map(head.work.parts.map((part) => [part.mbid, part]));
+    const unorderedPosition = new Map<string, number>();
+    for (const part of head.work.parts) {
+      const chain = [part];
+      while (partByMbid.has(chain[0].parentMbid))
+        chain.unshift(partByMbid.get(chain[0].parentMbid)!);
+      if (held.has(part.mbid) || chain.some((node) => relatedWhole.has(node.parentMbid))) continue;
+      const [movement] = chain;
+      const position =
+        movement.orderingKey ??
+        unorderedPosition.get(movement.mbid) ??
+        unorderedPosition.set(movement.mbid, movements.length + 1).get(movement.mbid)!;
+      const numeral = roman(position);
+      const row: Movement = {
         n: 0,
         position,
-        roman: roman(position),
-        name: part.title ? programmeMovementName(part.title, head.work.title, roman(position)) : '',
+        roman: numeral,
+        name: part.title ? programmeMovementName(part.title, head.work.title, numeral) : '',
         unnamed: part.title === null,
+        section:
+          movement !== part && movement.title
+            ? programmeMovementName(movement.title, head.work.title, numeral)
+            : null,
         missing: true,
         durationMs: null,
         duration: null,
         liked: false,
         trackId: null,
         uri: null,
-      });
+      };
+      placeInWork.set(row, [position, ...chain.slice(1).map(orderOf)]);
+      movements.push(row);
     }
-    movements.sort((left, right) => left.position - right.position);
+    movements.sort((left, right) => byPlaceInWork(placeInWork.get(left)!, placeInWork.get(right)!));
     movements.forEach((movement, index) => {
       movement.n = index + 1;
     });

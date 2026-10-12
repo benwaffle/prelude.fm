@@ -1,10 +1,9 @@
 import { and, eq, exists, isNotNull, or, sql } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/sqlite-core';
 import { db, type DatabaseExecutor } from './db';
 import { jsonList } from './db/chunked';
 import { heldWorkLinks } from './db/held-work-links';
 import { mbWork, spotifyTrack, trackRecording, trackWorkLink } from './db/schema';
-import { lineageOf, rootedSubtreeOf, subtreeOf } from './db/work-tree-sql';
+import { lineageOf, subtreeOf } from './db/work-tree-sql';
 import { ancestry } from './musicbrainz-work-tree';
 
 /** "Hold" is `heldWorkLinks`'s, everywhere. */
@@ -84,20 +83,6 @@ export async function findProviderTracksForComposer(
   return Array.from(new Set(trackIds));
 }
 
-/** Counts anything filed beneath, since a collection's parts often have parts of their own. */
-export async function findHeldWorkMbids(
-  workMbids: string[],
-  database: DatabaseExecutor = db,
-): Promise<Set<string>> {
-  if (workMbids.length === 0) return new Set();
-  const tree = rootedSubtreeOf(workMbids);
-  const held = heldWorkLinks({ works: sql`(select mbid from ${tree})` }, database);
-  const rows = await database.all<{ root: string }>(
-    sql`select distinct tree.root as root from ${tree} as tree where tree.mbid in (select work_mbid from ${held})`,
-  );
-  return new Set(rows.map((row) => row.root));
-}
-
 /** The rule `resolveDisplayWork` applies, so a work page and its card name the same composer. */
 export async function readWorkComposerMbid(
   workMbid: string,
@@ -112,37 +97,4 @@ export async function readWorkComposerMbid(
       (work) => work.composerMbid,
     )?.composerMbid ?? null
   );
-}
-
-export async function readWorkCollection(
-  workMbid: string,
-  database: DatabaseExecutor = db,
-): Promise<{
-  parentTitle: string;
-  siblings: Array<{ mbid: string; title: string; orderingKey: number | null }>;
-} | null> {
-  const self = alias(mbWork, 'self');
-  const parent = alias(mbWork, 'parent');
-  const rows = await database
-    .select({
-      parentTitle: parent.title,
-      mbid: mbWork.mbid,
-      title: mbWork.title,
-      orderingKey: mbWork.orderingKey,
-    })
-    .from(self)
-    .innerJoin(parent, eq(parent.mbid, self.parentMbid))
-    .innerJoin(mbWork, eq(mbWork.parentMbid, self.parentMbid))
-    .where(eq(self.mbid, workMbid));
-  if (rows.length === 0) return null;
-  return {
-    parentTitle: rows[0].parentTitle,
-    siblings: rows
-      .map(({ mbid, title, orderingKey }) => ({ mbid, title, orderingKey }))
-      .sort(
-        (left, right) =>
-          (left.orderingKey ?? Number.MAX_SAFE_INTEGER) -
-            (right.orderingKey ?? Number.MAX_SAFE_INTEGER) || left.mbid.localeCompare(right.mbid),
-      ),
-  };
 }

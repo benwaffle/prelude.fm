@@ -82,8 +82,11 @@ export type ProjectedRecordingWork = {
   displayWorkMbid: string | null;
   workLevelReason: 'has-parts' | 'typed' | 'no-parent' | 'titled-as-part' | 'unresolved' | null;
   hierarchy: ProjectedWorkNode[];
-  /** Lets a reader show a partial holding without guessing how many movements there are. */
-  parts: ProjectedWorkNode[];
+  /**
+   * Every part under the work, each before its own parts, so a reader can show a partial holding
+   * without guessing how many movements there are.
+   */
+  parts: (ProjectedWorkNode & { parentMbid: string })[];
   title: string | null;
   type: string | null;
   catalogues: ProjectedCatalogueReference[];
@@ -604,13 +607,7 @@ function projectRecordingWork(
     displayWorkMbid: display?.mbid ?? null,
     workLevelReason: level.reason,
     hierarchy: [...resolved.hierarchy].reverse().map(asNode),
-    parts: [...(index.childWorksByParent.get(level.mbid) ?? [])]
-      .sort(
-        (left, right) =>
-          (left.orderingKey ?? Number.MAX_SAFE_INTEGER) -
-            (right.orderingKey ?? Number.MAX_SAFE_INTEGER) || left.mbid.localeCompare(right.mbid),
-      )
-      .map(asNode),
+    parts: partsOf(level.mbid, index),
     title,
     type,
     catalogues,
@@ -654,6 +651,21 @@ function describeAnchoredTrack(
       projectCredit(credit, index),
     ),
   };
+}
+
+function partsOf(
+  parentMbid: string,
+  index: LibraryIndex,
+  seen = new Set([parentMbid]),
+): ProjectedRecordingWork['parts'] {
+  return [...(index.childWorksByParent.get(parentMbid) ?? [])]
+    .filter((part) => !seen.has(part.mbid) && seen.add(part.mbid))
+    .sort(
+      (left, right) =>
+        (left.orderingKey ?? Number.MAX_SAFE_INTEGER) -
+          (right.orderingKey ?? Number.MAX_SAFE_INTEGER) || left.mbid.localeCompare(right.mbid),
+    )
+    .flatMap((part) => [{ ...asNode(part), parentMbid }, ...partsOf(part.mbid, index, seen)]);
 }
 
 function asNode(work: MbWorkFact): ProjectedWorkNode {

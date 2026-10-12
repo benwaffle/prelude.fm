@@ -12,6 +12,7 @@ import { QueuePanel } from './queue/QueuePanel';
 import { NowPlayingSheet } from './NowPlayingSheet';
 import { MovementName } from './work/WorkText';
 import { Credit } from './player/Credit';
+import { Marquee } from './player/Marquee';
 import { useProgramme, type Programme } from './player/use-programme';
 import { ProgressLine, WorkProgress } from './player/WorkProgress';
 import { PlayButton, PlayerCover, TransportButtons } from './player/TransportButtons';
@@ -156,7 +157,9 @@ export function PlayerBar() {
                         {numeralPrefix(movement.roman)}
                       </span>
                     )}
-                    <MovementName movement={movement} className="truncate" />
+                    <Marquee>
+                      <MovementName movement={movement} />
+                    </Marquee>
                   </span>
                   <span className="block truncate font-display text-[12.5px] italic opacity-75">
                     {remote ? `On ${remote.name}` : <Credit programme={programme} />}
@@ -191,11 +194,15 @@ export function PlayerBar() {
                         {numeralPrefix(movement.roman)}
                       </span>
                     )}
-                    <MovementName movement={movement} className="truncate" />
+                    <Marquee>
+                      <MovementName movement={movement} />
+                    </Marquee>
                   </Link>
                 ) : (
                   <span className="flex min-w-0 items-baseline">
-                    <MovementName movement={movement} className="truncate" />
+                    <Marquee>
+                      <MovementName movement={movement} />
+                    </Marquee>
                   </span>
                 )}
                 {movement.trackId && (
@@ -311,13 +318,14 @@ function SeamLabels({ programme }: { programme: Programme }) {
           className={`truncate border-l border-current pr-[6px] pl-[5px] first:border-l-0 first:pl-0 ${
             m.n === movement.n ? 'font-semibold opacity-100' : ''
           }`}
+          title={m.name}
           style={{
             width: `${(timeline.durations[i] / timeline.totalMs) * 100}%`,
             opacity: m.liked ? 1 : 0.45,
           }}
         >
           {m.liked && <span className="mr-1">♥</span>}
-          {numeralPrefix(m.roman)} {m.name.length > 12 ? `${m.name.slice(0, 12)}…` : m.name}
+          {numeralPrefix(m.roman)} {m.name}
         </span>
       ))}
     </div>

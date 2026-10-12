@@ -7,7 +7,6 @@ import { useLibrary } from '@/lib/library-context';
 import { useServerQuery } from '@/lib/use-server-query';
 import type { RecordingSummary, WorkSummary } from '@/lib/library-types';
 import { getMusicBrainzWorkPage } from '@/app/actions/library-mb';
-import type { WorkParent } from '@/lib/library-types';
 import {
   hexToRgba,
   initialsOf,
@@ -39,7 +38,7 @@ export function DetailScreen({
     () => getMusicBrainzWorkPage(workId, recordingId),
     [workId, recordingId],
   );
-  const detail = page.status === 'ready' ? page.data.detail : null;
+  const detail = page.status === 'ready' ? page.data : null;
 
   useEffect(() => {
     if (detail) rememberWork(detail.work);
@@ -79,7 +78,6 @@ export function DetailScreen({
     );
   }
 
-  const { parent } = page.data;
   const { work, others, moreByComposer } = detail;
   // The context knows the live liked set; trust it over the server snapshot.
   const movements = withLiveLikes(work.movements, likedTrackIds);
@@ -105,8 +103,6 @@ export function DetailScreen({
         onToggleLike={toggleLike}
       />
 
-      {parent && <Collection parent={parent} />}
-
       {others.length > 0 && <OtherRecordings workId={workId} others={others} />}
 
       {moreByComposer.length > 0 && work.composerFull && (
@@ -118,62 +114,6 @@ export function DetailScreen({
         />
       )}
     </main>
-  );
-}
-
-// Parts MusicBrainz lists that we hold nothing for are greyed, not dropped, so an incomplete set
-// looks incomplete.
-function Collection({ parent }: { parent: WorkParent }) {
-  return (
-    <section className="border-b border-rule pt-8 pb-7">
-      <div className="mb-3 flex items-baseline gap-3">
-        <h2 className="m-0 font-display text-[17px] text-ink">{parent.title}</h2>
-        <span className="font-meta text-[10px] tracking-[0.14em] text-muted uppercase">
-          {parent.held} of {parent.siblings.length} here
-        </span>
-      </div>
-      <ol className="m-0 grid list-none grid-cols-2 gap-x-8 gap-y-[2px] p-0 max-[900px]:grid-cols-1">
-        {parent.siblings.map((sibling, index) => {
-          const key = `${sibling.workId ?? 'absent'}-${sibling.ordering ?? index}`;
-          const label = (
-            <>
-              <span className="w-6 shrink-0 text-right font-meta text-[10px] text-muted tabular-nums">
-                {sibling.ordering ?? '·'}
-              </span>
-              <span className="truncate">{sibling.title}</span>
-            </>
-          );
-          if (sibling.isCurrent) {
-            return (
-              <li key={key} className="flex items-baseline gap-3 py-[3px] text-[13px] text-ink">
-                {label}
-              </li>
-            );
-          }
-          if (sibling.workId === null) {
-            return (
-              <li
-                key={key}
-                className="flex items-baseline gap-3 py-[3px] text-[13px] text-muted italic"
-                title="Not in your library"
-              >
-                {label}
-              </li>
-            );
-          }
-          return (
-            <li key={key} className="flex items-baseline gap-3 py-[3px] text-[13px]">
-              <Link
-                href={`/work/${sibling.workId}`}
-                className="flex min-w-0 items-baseline gap-3 text-ink-2 no-underline transition-colors duration-150 hover:text-ink"
-              >
-                {label}
-              </Link>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
   );
 }
 

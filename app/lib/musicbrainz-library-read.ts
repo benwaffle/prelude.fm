@@ -165,6 +165,7 @@ export async function loadMusicBrainzLibraryFacts(
     readWorkNeighbourhood(
       [...links].map((link) => link.workMbid),
       database,
+      { wholeTrees: true },
     ),
   ]);
   const providerAlbumRows = Array.from(
