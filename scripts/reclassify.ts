@@ -1,11 +1,5 @@
-/**
- * Re-derive every library track's stored classification, after the classical
- * rule changes. Hand decisions are never replaced.
- *
- *   pnpm metadata:reclassify
- *
- * Reads only the database; writes `track_classification`.
- */
+// Usage: pnpm metadata:reclassify
+// Hand decisions are never replaced.
 import { defineScript } from './lib/cli';
 
 defineScript({ options: {} }, async () => {

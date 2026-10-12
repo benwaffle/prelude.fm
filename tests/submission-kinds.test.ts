@@ -27,7 +27,6 @@ const OTHER_RELEASE = '33333333-3333-4333-8333-333333333333';
 const RECORDING = '22222222-2222-4222-8222-222222222222';
 const OTHER_RECORDING = '44444444-4444-4444-8444-444444444444';
 
-/** MusicBrainz that knows nothing, counting what it was asked for. */
 function emptySource(asked: string[]): MusicBrainzSource {
   return fakeSource({
     releaseWithRecordings: async (mbid) => {

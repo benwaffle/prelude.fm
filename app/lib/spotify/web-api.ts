@@ -1,19 +1,12 @@
 import type { Track } from '@spotify/web-api-ts-sdk';
 
-/**
- * The parts of Spotify's Web API the player uses, and what its answers mean
- * to a listener. The player endpoints answer most commands with an empty
- * 204, which the typed SDK tries to parse as JSON, so these go through fetch
- * directly.
- */
+// Player endpoints answer with an empty 204, which the typed SDK tries to parse as JSON, so these
+// use fetch directly.
 
-/** Somewhere Spotify can play: this browser, or a Spotify Connect device. */
 export interface PlaybackDevice {
   id: string;
   name: string;
-  /** Spotify's device type: Computer, Smartphone, Speaker, … */
   type: string;
-  /** The browser tab's own Web Playback SDK player. */
   isThisBrowser: boolean;
   /** Spotify refuses remote control of restricted devices. */
   isRestricted: boolean;
@@ -72,7 +65,6 @@ export async function spotifyApi(
   return res;
 }
 
-/** What the account is playing, and where; null when nothing is loaded anywhere. */
 export async function readPlaybackState(token: string): Promise<SpotifyApiPlaybackState | null> {
   const res = await spotifyApi(token, '/me/player');
   if (res.status === 204) return null;
@@ -84,7 +76,6 @@ export async function listDevices(token: string): Promise<SpotifyApiDevice[]> {
   return ((await res.json()) as { devices: SpotifyApiDevice[] }).devices;
 }
 
-/** Spotify's refusals, said the way a listener would want to hear them. */
 export function describeFailure(err: unknown, device: PlaybackDevice | null): string {
   if (err instanceof SpotifyApiError) {
     if (err.status === 404) {
@@ -111,7 +102,6 @@ export function toDevice(d: SpotifyApiDevice, localId: string | null): PlaybackD
   };
 }
 
-/** This tab's own player, as the device list shows it. */
 export function localDevice(id: string): PlaybackDevice {
   return {
     id,

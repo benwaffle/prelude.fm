@@ -13,18 +13,9 @@ import type { MusicBrainzSource } from '@/lib/musicbrainz-source';
 import { forChunks } from '@/lib/db/chunked';
 import { recordAlbumPassOutcomes } from '@/lib/musicbrainz-pipeline-state';
 
-/**
- * Lease/workflow state, not the durable verdict on a track.
- *
- * `unresolved` is the pass having finished with nothing to hand the reader:
- * MusicBrainz has no recording for the track, or none of its evidence settles
- * whether the track is classical. That is not `failed` — nothing went wrong
- * and retrying the same request tomorrow asks MusicBrainz the same question —
- * and it is not `matched`, which the reader takes as ready. Which of the two
- * it was, and why, lives in `pipeline_outcome` / `pipeline_reason`; the status
- * only says no worker is holding the row and no worker should pick it up
- * until MusicBrainz has been given something new to say.
- */
+// Lease state, not the verdict. `unresolved`: the pass found nothing to hand the reader; not
+// `failed` (retrying asks the same question) and not `matched`. The why lives in `pipeline_outcome`
+// / `pipeline_reason`.
 export type MatchQueueStatus = (typeof matchQueue.$inferSelect)['status'];
 
 export interface EnqueueResult {
@@ -62,7 +53,6 @@ export interface QueueWorkerResult {
   recovered: number;
   retried: number;
   exhausted: number;
-  /** What the MusicBrainz side of the pass did, when it ran. */
   musicbrainz: {
     albumsCached: number;
     tracksAnchored: number;
@@ -75,7 +65,7 @@ export interface QueueWorkerResult {
     /** Set when the budget refused the pass, so a caller can stop chaining. */
     stopped: string | null;
   };
-  /** Cache invariants that the pass broke, if any. Non-empty means stop. */
+  /** Non-empty means stop. */
   brokenInvariants: { name: string; violations: number }[];
 }
 
@@ -115,10 +105,7 @@ function compareTrackOrder(a: Track, b: Track) {
   return a.disc_number - b.disc_number || a.track_number - b.track_number;
 }
 
-/**
- * Set these rows' status. With `heldBy`, only rows that worker still holds
- * are touched; the claim itself is left as it is.
- */
+// With `heldBy`, only rows that worker still holds are touched; the claim itself is left as it is.
 async function setQueueStatus(
   trackIds: string[],
   status: MatchQueueStatus,
@@ -356,37 +343,17 @@ export async function processNextPendingAlbum(
   return processQueuedAlbum(claim.albumId, claimOwnerId, claim.trackIds);
 }
 
-/**
- * How many work stubs a pass reads when the match queue is empty.
- *
- * Small, because each one is a request and the pass has a five-minute
- * ceiling. The chain carries on while stubs remain, so the sweep makes
- * progress without any one invocation trying to finish it.
- */
+// Small: each is a request and the pass has a five-minute ceiling; the chain continues while stubs
+// remain.
 const WORK_SWEEP_SIZE = 40;
 
-/**
- * How many artist stubs a pass reads once no works are waiting.
- *
- * After works, because a work's title and tree are what a reader sees first;
- * an artist's dates only decide which period a composer is filed under.
- */
+/** After works: a work's title and tree are what a reader sees first. */
 const ARTIST_SWEEP_SIZE = 20;
 
-/** How many ISRC-named recordings a pass reads when no album is waiting. */
 const RECORDING_SWEEP_SIZE = 30;
 
-/**
- * One pass of the worker: some albums, then MusicBrainz.
- *
- * The MusicBrainz side is deliberately split in two. Caching an album's
- * release is one request and answers what a waiting user asked — which
- * recordings are these — so it runs on the interactive channel for every
- * album the pass touched. Reading the work tree above those recordings can be
- * dozens of requests for one compilation and nobody is waiting on it, so it
- * happens only when there are no albums left to process, on the backfill
- * channel, in bounded slices.
- */
+// Release caching runs on the interactive channel for every album touched; the work tree runs on
+// backfill, in bounded slices, only when no albums are left.
 export async function runMatchQueueWorker(
   options: {
     maxAlbums?: number;
@@ -450,9 +417,7 @@ export async function runMatchQueueWorker(
 
     try {
       if (albums.length === 0) {
-        // Recordings first: a recording stub is a track somebody has liked
-        // that currently reaches no work at all, where a work stub only
-        // deepens a tree that already has leaves.
+        // Recordings first: a recording stub is a liked track reaching no work at all.
         const recordings = await drainRecordingStubs(
           musicBrainzApi('backfill'),
           RECORDING_SWEEP_SIZE,
@@ -475,9 +440,8 @@ export async function runMatchQueueWorker(
         }
       }
     } catch (error) {
-      // A paused gateway or an exhausted daily cap is not a failure of the
-      // album: the classical metadata was still saved. It does mean there is
-      // no point chaining another pass, so it is reported rather than thrown.
+      // A paused gateway or exhausted cap is not the album's failure; reported so the chain stops,
+      // not thrown.
       if (error instanceof MusicBrainzBudgetError) {
         musicbrainz.stopped = error.message;
       } else {
@@ -507,11 +471,8 @@ export async function runMatchQueueWorker(
     }
   }
 
-  // The cheap invariants run here rather than only in a nightly sweep,
-  // because a service ingesting continuously can accumulate a violation for
-  // days before anyone types a command. A broken cache stops the chain: the
-  // classical metadata this pass saved is fine, but writing more on top of an
-  // inconsistent cache makes the damage harder to understand.
+  // Cheap invariants run per pass so a violation can't accumulate for days; a broken cache stops
+  // the chain.
   let brokenInvariants: { name: string; violations: number }[] = [];
   if (options.musicbrainz !== false && albums.length > 0) {
     try {
@@ -576,7 +537,6 @@ async function getProcessingTrackIds(albumId: string, claimOwnerId: string) {
   return rows.map((row) => row.spotifyId);
 }
 
-/** Tracks already anchored to a MusicBrainz recording. */
 async function getAnchoredTrackIds(trackIds: string[]) {
   const rows = await forChunks(trackIds, (chunk) =>
     db
@@ -587,18 +547,8 @@ async function getAnchoredTrackIds(trackIds: string[]) {
   return new Set(rows.map((row) => row.spotifyTrackId));
 }
 
-/**
- * An album pass with MusicBrainz as the authority.
- *
- * Nothing is asserted that MusicBrainz did not say. A track it cannot place
- * keeps the reason MusicBrainz gave us — "no MusicBrainz release carries this
- * album's barcode" — which is a state the contribution console can act on,
- * unlike a composer somebody made up.
- *
- * The outcomes, their queue statuses and the classifications are written
- * together by `recordAlbumPassOutcomes`, which owns the outcome → status
- * mapping.
- */
+// A track MusicBrainz can't place keeps the reason it gave, which the contribution console can act
+// on. `recordAlbumPassOutcomes` owns the outcome → status mapping.
 async function processAlbumThroughMusicBrainz(
   albumId: string,
   trackIds: string[],
@@ -638,10 +588,7 @@ async function processAlbumThroughMusicBrainz(
   return result;
 }
 
-/**
- * The outside world an album pass touches, injectable so a test can run the
- * real mapping without a network: Spotify and MusicBrainz.
- */
+/** Injectable so a test can run the real mapping without a network. */
 export type AlbumPassDependencies = {
   readAlbum?: typeof getSpotifyAlbumTracks;
   musicBrainzSource?: MusicBrainzSource;

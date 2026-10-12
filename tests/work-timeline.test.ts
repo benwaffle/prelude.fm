@@ -17,7 +17,6 @@ test('the timeline places the playing movement within the whole recording', () =
   assert.equal(t.index, 1);
   assert.equal(t.beforeMs, 60_000);
   assert.equal(elapsedMs(t, 5_000), 65_000);
-  // A position Spotify reports past the end stops at the end.
   assert.equal(elapsedMs(t, 90_000), 100_000);
   assert.deepEqual(seams(t), [0.6, 0.9]);
 });

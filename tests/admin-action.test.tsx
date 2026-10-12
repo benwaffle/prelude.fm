@@ -39,7 +39,6 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-/** Let queued promise callbacks run. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test('an admin action clears its last failure, waits its turn, runs, then goes idle', async () => {

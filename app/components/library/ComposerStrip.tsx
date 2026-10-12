@@ -11,10 +11,6 @@ interface ComposerRow {
   works: number;
 }
 
-/**
- * The composers behind the library, as a scrolling row of monograms.
- * Picking one filters the library to that name.
- */
 export function ComposerStrip({
   works,
   onPick,
@@ -25,8 +21,7 @@ export function ComposerStrip({
   const byComposer = new Map<string, ComposerRow>();
   for (const w of works) {
     const liked = w.movements.filter((m) => m.liked).length;
-    // A work we cannot attribute has no composer to file it under. It stays
-    // in the library; it just is not in this strip.
+    // An unattributed work stays in the library, just not in this strip.
     if (!liked || !w.composerFull) continue;
     const row = byComposer.get(w.composerFull) ?? {
       full: w.composerFull,
@@ -78,7 +73,6 @@ export function ComposerStrip({
   );
 }
 
-/** The composer's Spotify portrait, falling back to a monogram. */
 function Portrait({ name, image }: { name: string; image: string | null }) {
   const [failed, setFailed] = useState(false);
 

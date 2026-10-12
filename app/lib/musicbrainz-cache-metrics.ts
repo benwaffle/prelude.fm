@@ -1,8 +1,3 @@
-/**
- * How the MusicBrainz cache is doing: cache hits and misses per lookup, the
- * requests each operation spends, and the requests each import run caused.
- * Written as the cache works, read by the admin pages.
- */
 import { sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbCacheLookupMetric, mbImportRun, mbRequestOperationMetric } from './db/schema';
@@ -67,7 +62,6 @@ export async function recordMusicBrainzRequest(
     });
 }
 
-/** Persist one anonymous import/worker pass for marginal-request analysis. */
 export async function recordAnonymousImportRun(input: AnonymousImportRunInput): Promise<number> {
   const [row] = await db
     .insert(mbImportRun)

@@ -1,20 +1,5 @@
-/**
- * Run prelude_fm_bot's ISRC and barcode submissions.
- *
- *   pnpm mb:bot                    show what would be submitted (ISRCs)
- *   pnpm mb:bot --apply            submit ISRCs
- *   pnpm mb:bot --release <mbid>   a particular release rather than the first
- *   pnpm mb:bot --barcode            show barcode batch (dry run)
- *   pnpm mb:bot --barcode --apply    submit barcodes
- *   pnpm mb:bot --barcode --release <mbid>
- *
- * One album at a time for ISRCs: an album is the unit somebody can actually check,
- * since every row shares a release, a barcode and one tracklist.
- *
- * Dry run by default, and the dry run needs no credentials, so the payload
- * can be read and a sample hand-checked on musicbrainz.org before anything
- * is sent.
- */
+// Usage: pnpm mb:bot [--barcode] [--release <mbid>] [--apply]
+// Dry run by default and needs no credentials, so a payload can be hand-checked first.
 import { defineScript } from './lib/cli';
 
 defineScript(

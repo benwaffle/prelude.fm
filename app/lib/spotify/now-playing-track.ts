@@ -1,10 +1,6 @@
 import type { Track } from '@spotify/web-api-ts-sdk';
 
-/**
- * The track Spotify says is playing, in the few fields the app reads. The
- * browser's player and the Web API describe a track differently; both are
- * read into this.
- */
+/** The browser's player and the Web API describe a track differently; both are read into this. */
 export interface NowPlayingTrack {
   /** Null for what Spotify plays without a catalogue id (a local file). */
   id: string | null;
@@ -18,7 +14,7 @@ export interface NowPlayingTrack {
   durationMs: number;
 }
 
-/** The browser player's track. Its album carries a URI but no id. */
+/** Its album carries a URI but no id. */
 export function fromSdkTrack(track: Spotify.Track): NowPlayingTrack {
   return {
     id: track.id,
@@ -32,7 +28,6 @@ export function fromSdkTrack(track: Spotify.Track): NowPlayingTrack {
   };
 }
 
-/** A track from the Web API, as a Connect device reports it. */
 export function fromWebApiTrack(track: Track): NowPlayingTrack {
   return {
     id: track.id,
@@ -46,7 +41,6 @@ export function fromWebApiTrack(track: Track): NowPlayingTrack {
   };
 }
 
-/** Every URI that names this track: the one playing, and the one asked for. */
 export function trackUris(track: NowPlayingTrack | null): string[] {
   if (!track) return [];
   return track.linkedFromUri ? [track.uri, track.linkedFromUri] : [track.uri];

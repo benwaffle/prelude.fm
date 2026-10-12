@@ -3,12 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getViewerIsAdmin } from '@/app/actions/viewer';
 
-/**
- * Whether the signed-in user is the admin, as the server decides it.
- *
- * Null until the server answers. The rule lives in `lib/admin.ts` only; the
- * client never re-derives it from the session.
- */
+/** Null until the server answers; the rule lives only in `lib/admin.ts`. */
 export function useIsAdmin(userId: string | null | undefined): boolean | null {
   const [answer, setAnswer] = useState<{ userId: string; isAdmin: boolean } | null>(null);
 

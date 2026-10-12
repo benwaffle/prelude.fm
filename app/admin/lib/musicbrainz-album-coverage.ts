@@ -12,10 +12,7 @@ import {
 } from '@/lib/db/schema';
 import type { AlbumRow, AlbumState, AlbumTrackRow } from './album-state';
 
-/**
- * Album status facts from the provider, durable classification, anchors, and
- * the MusicBrainz cache. Parser catalogue tables are deliberately absent.
- */
+/** Parser catalogue tables are deliberately absent. */
 
 function deriveState(row: {
   tracks: number;

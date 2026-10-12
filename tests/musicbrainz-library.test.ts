@@ -431,7 +431,6 @@ test('every requested track ID is accounted for exactly once across all states',
   );
 });
 
-/** Adds a second liked track anchored to the same MusicBrainz recording. */
 function addSecondHolding(facts: MusicBrainzLibraryFacts, state: TrackClassificationState) {
   facts.requestedTrackIds.push('liked-2');
   facts.classifications.push({
@@ -459,8 +458,7 @@ function addSecondHolding(facts: MusicBrainzLibraryFacts, state: TrackClassifica
 }
 
 test('a track ruled not classical stays in its bucket even when its recording is projected', () => {
-  // Sharing a recording with a track that did resolve must not drag a track
-  // we deliberately set aside back into the classical projection.
+  // Sharing a recording with a resolved track must not drag a set-aside track back in.
   const facts = baseFacts();
   addSecondHolding(facts, 'not_classical');
 
@@ -474,8 +472,7 @@ test('a track ruled not classical stays in its bucket even when its recording is
   assert.equal(accounted?.status, 'unclassified');
   assert.equal(accounted?.recordingMbid, null);
   assert.deepEqual(accounted?.gapCodes, ['classification-not-classical']);
-  // It is still listed as a provider occurrence, so the alternative is not
-  // lost — it is simply not held.
+  // Still listed as an occurrence, just not held.
   const occurrence = result.recordings[0].occurrences.find(
     (candidate) => candidate.spotifyTrackId === 'liked-2',
   );
@@ -514,10 +511,7 @@ test('an unfetched provider album leaves the occurrence title blank, not empty-l
 });
 
 test('a movement takes its catalogue number from the work that carries it', () => {
-  // MusicBrainz files BWV 988 against the Goldberg Variations, not against
-  // its Aria. A typed leaf stays the displayed work, so without climbing the
-  // hierarchy almost every movement would report a missing catalogue and the
-  // reader could not group by catalogue number at all.
+  // BWV 988 is filed against the Goldberg Variations, not its Aria.
   const facts = baseFacts();
   facts.mbWorks = [
     {

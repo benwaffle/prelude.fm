@@ -19,11 +19,6 @@ import { PlayButton, PlayerCover, TransportButtons } from './player/TransportBut
 const IDLE_TINT = '#2a1f2e';
 const IDLE_INK = '#f4ecd8';
 
-/**
- * The player bar, present on every screen. Progress is scoped to the whole
- * work rather than the track: the bar spans every movement of the recording,
- * with a marker at each seam.
- */
 export function PlayerBar() {
   const { isReady, isPaused, volume, outputDevice, local, playbackError, needsDevice, queue } =
     usePlayer();
@@ -144,7 +139,6 @@ export function PlayerBar() {
         </div>
       ) : (
         <>
-          {/* Phones: one compact row that opens the full player. */}
           <div className="relative z-[1] animate-rise min-[901px]:hidden">
             <ProgressLine programme={programme} />
             <div className="flex items-center gap-3">
@@ -177,7 +171,6 @@ export function PlayerBar() {
             <NowPlayingSheet onClose={closeSheet} onChooseDevice={chooseDeviceFromSheet} />
           )}
 
-          {/* Now playing */}
           <div className="relative z-[1] grid min-w-0 grid-cols-[56px_1fr] items-center gap-[14px] max-[900px]:hidden">
             {programme.detailHref ? (
               <Link href={programme.detailHref} className="block shrink-0">
@@ -222,7 +215,6 @@ export function PlayerBar() {
             </div>
           </div>
 
-          {/* Transport + work-scoped progress */}
           <div className="relative z-[1] flex flex-col items-center gap-2 max-[900px]:hidden">
             <TransportButtons size="bar" tint={tint} />
 
@@ -232,7 +224,6 @@ export function PlayerBar() {
             </div>
           </div>
 
-          {/* Queue + volume */}
           <div className="relative z-[1] flex min-w-0 items-center justify-end gap-[14px] max-[900px]:hidden">
             <button
               type="button"
@@ -310,7 +301,6 @@ function BarCover({ programme }: { programme: Programme }) {
   );
 }
 
-/** Each movement's name over its stretch of the bar, the liked ones full strength. */
 function SeamLabels({ programme }: { programme: Programme }) {
   const { heard, movement, timeline } = programme;
   return (

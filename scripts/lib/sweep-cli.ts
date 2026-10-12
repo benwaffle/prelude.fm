@@ -1,14 +1,7 @@
-/**
- * The command-line side of a backfill sweep: the options every sweep takes,
- * one line per outcome and a progress line per album, then a summary — or
- * the whole run as JSON.
- */
 import type { Sweep, SweepResult } from '@/lib/backfill-sweep';
 
 export const SWEEP_OPTIONS = {
-  /** Every gap again, not just those with nothing stored. */
   refresh: { type: 'boolean' },
-  /** Stop after this many albums. */
   albums: { type: 'integer', min: 1 },
   'no-store': { type: 'boolean' },
   json: { type: 'boolean' },
@@ -20,13 +13,9 @@ export async function runSweepCli<G, O extends { requests: number }, K extends s
   flags: SweepFlags,
   sweep: Omit<Sweep<G, O, K>, 'store' | 'onGroup'> & {
     store: (outcomes: O[]) => Promise<void>;
-    /** What one outcome prints as. */
     line: (outcome: O) => string;
-    /** The progress line for a finished group. */
     label: (group: G[], outcomes: O[]) => string;
-    /** The closing line, from the totals. */
     summary: (result: SweepResult<O, K>) => string;
-    /** More fields for the JSON output. */
     extra?: () => Record<string, unknown>;
   },
 ): Promise<void> {

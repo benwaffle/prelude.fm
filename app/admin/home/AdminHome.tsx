@@ -15,7 +15,6 @@ type Counts = ContributionView['counts'];
 type AdminHomeData = Awaited<ReturnType<typeof getAdminHome>>;
 type Held = { tracks: number; waiting: number };
 
-/** Tracks each Inbox list holds back from the player, from the readiness count. */
 function heldBackByInboxClass(funnel: ReadinessFunnel): Partial<Record<InboxClass, Held>> {
   const held: Partial<Record<InboxClass, Held>> = {};
   for (const bucket of funnel.steps.flatMap((step) => step.buckets)) {
@@ -32,11 +31,8 @@ function plural(count: number, noun: string): string {
   return `${count.toLocaleString()} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-/**
- * Each row's number counts the same rows its page lists, in the page's own
- * unit. What a list costs the player — tracks it holds back — is said beside
- * it, and only for the lists that can hold a track back at all.
- */
+// Each count uses its page's own unit; held-back tracks are shown only for lists that can hold one
+// back.
 const LISTS: {
   page: InboxClass;
   rows: (counts: Counts) => string;
@@ -76,10 +72,6 @@ const TOOLS: { page: ToolPage; note: string }[] = [
   { page: 'checks', note: 'Cache checks, and which commit is live.' },
 ];
 
-/**
- * The admin home: how much of the library the player can show, and one line
- * per list of things to fix, each opening its own page.
- */
 export function AdminHome() {
   // Retry asks again: a part of the page can fail while the read succeeds.
   const [attempt, setAttempt] = useState(0);
@@ -286,7 +278,6 @@ function ReadyPanel({
   );
 }
 
-/** A group of held-back tracks no Inbox list covers, with examples to look at. */
 function BucketRow({ bucket }: { bucket: ReadinessBucket }) {
   const outstanding = bucket.tracks - bucket.waiting;
   return (

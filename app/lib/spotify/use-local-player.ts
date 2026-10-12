@@ -2,20 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-/**
- * Whether this browser can play audio itself through Spotify's Web Playback
- * SDK. When it can't (an unsupported browser, no Premium), playback can still
- * go to the Spotify app or a speaker through Spotify Connect.
- */
+// When this browser can't play (unsupported browser, no Premium), playback can still go to a
+// Connect device.
 export type LocalPlayer =
-  /**
-   * Still starting, or reconnecting after the player dropped. A player that
-   * dropped keeps its device id, so the device list still knows it as this
-   * browser rather than as some other device.
-   */
+  /** A dropped player keeps its device id, so the device list still knows it as this browser. */
   | { status: 'connecting'; deviceId: string | null }
   | { status: 'ready'; deviceId: string }
-  /** Why this browser can't play, in plain words. */
   | { status: 'unavailable'; problem: string };
 
 export interface LocalPlayerEvents {
@@ -31,19 +23,13 @@ const LOCAL_PLAYER_NAME = 'prelude.fm';
 
 const NO_LOCAL_PLAYBACK = 'Spotify’s player didn’t start in this browser.';
 
-/**
- * This tab's own Spotify player: loads the SDK once, connects, and reports
- * what it is doing. The events are read through a ref, so the player is set
- * up once however often the caller re-renders.
- */
+// Events are read through a ref, so the player is set up once however often the caller re-renders.
 export function useLocalPlayer(
   getToken: () => string,
   events: LocalPlayerEvents,
 ): {
   local: LocalPlayer;
-  /** The player, once the SDK has made one. */
   player: () => Spotify.Player | null;
-  /** The browser's device id as last known, for telling it apart in device lists. */
   deviceId: () => string | null;
 } {
   const [local, setLocal] = useState<LocalPlayer>({ status: 'connecting', deviceId: null });

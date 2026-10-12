@@ -165,9 +165,8 @@ test('a different barcode is never verified', () => {
 });
 
 test('out-of-order releases are verified by recording identity, not Spotify position', () => {
-  // Waning Moon exposed this class of bug: Spotify and MusicBrainz publish the
-  // same recordings in a different order. Both tracks have the same duration,
-  // so duration alone cannot say which ISRC belongs at which MB position.
+  // Waning Moon: same recordings in a different order, with equal durations, so duration alone
+  // can't place the ISRC.
   const spotifyRows = [
     spotify({ spotifyTrackId: 't1', recordingMbid: 'recording-b' }),
     spotify({ spotifyTrackId: 't2', recordingMbid: 'recording-a' }),

@@ -33,7 +33,6 @@ const RELEASE = '11111111-1111-4111-8111-111111111111';
 const RECORDING = '22222222-2222-4222-8222-222222222222';
 const ISRC = 'GBAYE0601498';
 
-/** One album and one track on a one-track release with `barcode`. */
 async function seedOneTrackRelease(barcode: string | null, isrc: string | null) {
   await db.insert(schema.mbRelease).values({ mbid: RELEASE, title: 'Album', barcode });
   await db
@@ -61,7 +60,6 @@ async function seedOneTrackRelease(barcode: string | null, isrc: string | null) 
   });
 }
 
-/** One album, one track, matched by barcode to a one-track release that lacks the ISRC. */
 async function seedIsrcGap() {
   await seedOneTrackRelease('724356', ISRC);
   await db.insert(schema.trackRecording).values({
@@ -183,7 +181,6 @@ test('a withdrawn ISRC goes back into the batch like a fresh one', async () => {
   assert.equal(run.edits, 1);
 });
 
-/** A release with no barcode that Spotify's album matches by title and duration. */
 async function seedBarcodeGap() {
   await seedOneTrackRelease(null, null);
 }

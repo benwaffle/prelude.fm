@@ -23,28 +23,13 @@ import type {
   UnresolvedLibraryTrack,
 } from './musicbrainz-library';
 
-/**
- * Turns the MusicBrainz projection into the cards the library screen draws.
- *
- * The projection's unit is a recording — one performance of one work, which
- * for classical music is usually one movement. A card is a work as a
- * listener thinks of it, so the recordings are gathered by the work
- * MusicBrainz says they are parts of, and by the issue carrying them: the
- * MusicBrainz release where we have matched one, the Spotify album where we
- * have not. Two performances of the same work on different releases stay two
- * cards, which is what they are.
- *
- * Nothing here invents a value. A missing title stays null and the card says
- * so; a part of the work that this issue does not carry is listed as
- * missing, because MusicBrainz told us the part exists.
- */
+// Recordings are grouped by work and by issue (MusicBrainz release, else Spotify album). Nothing is
+// invented: a missing title stays null and a part this issue lacks is listed as missing.
 
-/** Whether a card is the fullest holding of its work, for choosing a default. */
 export function playedMovementCount(work: LibraryWork): number {
   return work.movements.filter((movement) => !movement.missing).length;
 }
 
-/** A card as one row in a list of recordings of its work. */
 export type RecordingRow = {
   recordingId: string;
   albumId: string;
@@ -53,14 +38,10 @@ export type RecordingRow = {
   year: number | null;
   performer: string | null;
   ensemble: string | null;
-  /** The movements this issue carries, added up; null when it carries none. */
   durationMs: number | null;
   duration: string | null;
-  /**
-   * Spotify popularity belongs to a track, not to a MusicBrainz recording,
-   * and nothing here has aggregated it yet. Unranked is the honest answer,
-   * and the screens already say so.
-   */
+  // Spotify popularity belongs to a track, not a recording, and nothing aggregates it yet. Unranked
+  // is the honest answer.
   popularity: null;
   tint: string;
   unmatched: false;
@@ -90,7 +71,6 @@ export function recordingRowOf(card: LibraryWork): RecordingRow {
 
 export type MusicBrainzLibrary = {
   works: LibraryWork[];
-  /** Every held track that is not on a card, with what is missing. */
   unresolvedTracks: UnresolvedLibraryTrack[];
   accounting: MusicBrainzLibraryProjection['accounting'];
 };
@@ -117,12 +97,8 @@ function storedCredits(recording: ProjectedRecording): StoredCredit[] {
   });
 }
 
-/**
- * The issue a performance was heard on. MusicBrainz's release where we have
- * one, because two Spotify albums can be the same release; otherwise the
- * Spotify album, which is a real thing even when MusicBrainz has no release
- * for it.
- */
+// MusicBrainz's release where we have one, since two Spotify albums can be one release; else the
+// Spotify album.
 function issueOf(occurrence: ProjectedProviderOccurrence): string {
   return occurrence.releaseMbid ?? `spotify:${occurrence.spotifyAlbumId}`;
 }
@@ -145,12 +121,8 @@ function weakestOwnLink(works: ProjectedRecordingWork[]): LibraryWork['ownLink']
   return weakest;
 }
 
-/**
- * Two Spotify albums can be one MusicBrainz release — a reissue, a regional
- * edition — and carry the very same recordings. That is one performance
- * heard on two files, so it is listed once, by the liked file where there is
- * one.
- */
+// A reissue or regional edition can be one release on two Spotify albums; list the recording once,
+// preferring the liked file.
 function onePerRecording(members: CardMember[], likedTrackIds: Set<string>): CardMember[] {
   const byRecording = new Map<string, CardMember>();
   for (const member of members) {
@@ -171,14 +143,8 @@ function onePerRecording(members: CardMember[], likedTrackIds: Set<string>): Car
   );
 }
 
-/**
- * An album can carry the same work twice — a compilation with two
- * performances of a concerto, a box with a studio and a live symphony. Those
- * are two performances, not one with every movement doubled. When a part
- * repeats on one issue, the card is split into runs of consecutive tracks,
- * since a performance sits together on the album. Two tracks of one part
- * side by side ("Ia", "Ib") stay one performance.
- */
+// A part repeating on one issue means two performances, so the card splits into runs of consecutive
+// tracks. Two tracks of one part side by side ("Ia", "Ib") stay one performance.
 function separatePerformances(
   cards: Map<string, CardMember[]>,
   likedTrackIds: Set<string>,
@@ -226,13 +192,8 @@ export function musicBrainzLibraryView(
 ): MusicBrainzLibrary {
   const cards = new Map<string, CardMember[]>();
   for (const recording of projection.recordings) {
-    // A recording with no work relation has no work to file it under. It is
-    // already reported as a gap; putting it on an invented card would hide
-    // that the relation is what is missing.
-    //
-    // A recording of several works — a medley — appears under each of them.
-    // Choosing one would be choosing arbitrarily, and the per-track
-    // accounting is unaffected: it counts tracks, not cards.
+    // A recording with no work relation is already reported as a gap; an invented card would hide
+    // it. A medley appears under each of its works.
     for (const work of recording.works) {
       const key = work.displayWorkMbid ?? work.relatedWorkMbid;
       for (const trackId of recording.heldTrackIds) {
@@ -264,10 +225,8 @@ export function musicBrainzLibraryView(
       ? creditLine(credits)
       : { performer: null, ensemble: null };
 
-    // MusicBrainz sometimes relates each movement's recording to the whole
-    // work rather than to its part. Such a track is some part of the work,
-    // but which one MusicBrainz doesn't say, so it is named by its own
-    // recording title and carries no movement numeral.
+    // MusicBrainz sometimes relates every movement's recording to the whole work; such a track is
+    // named by its own title, no numeral.
     const onWholeWork = (member: CardMember) =>
       member.work.parts.length > 0 && member.work.relatedWorkMbid === member.work.displayWorkMbid;
 
@@ -282,9 +241,7 @@ export function musicBrainzLibraryView(
         n: index + 1,
         position,
         roman: whole ? '' : roman(position),
-        // The MusicBrainz title of the part, or the recording's own title
-        // for a work with no parts. Never the Spotify track name, which is
-        // a provider label for the file, not a movement name.
+        // Never the Spotify track name, which is a label for the file, not a movement name.
         name: title ?? '',
         unnamed: title == null,
         missing: false,
@@ -296,11 +253,8 @@ export function musicBrainzLibraryView(
       };
     });
 
-    // Parts MusicBrainz says the work has and this issue does not carry.
-    // Ghosts, so a partial holding reads as partial rather than as a short
-    // work — and they come from MusicBrainz, not from a guess at the length.
-    // When a track is related only to the whole work, the parts it covers
-    // are unknown, so no part can be listed as missing on its account.
+    // Parts MusicBrainz lists that this issue lacks, shown as ghosts. Unknown when a track is
+    // related only to the whole work.
     const partsKnown = !ordered.some(onWholeWork);
     for (const part of partsKnown ? head.work.parts : []) {
       if (heldPartMbids.has(part.mbid)) continue;
@@ -385,14 +339,8 @@ export function musicBrainzLibraryView(
   };
 }
 
-/**
- * The library is read together with the rest of each liked track's album, so
- * a card carries every movement the album has rather than only the liked
- * ones — the unliked movements are real tracks, playable, just not hearted.
- * This narrows that read back to the library: cards holding at least one
- * liked track, and the gap list and accounting for liked tracks only, since
- * an album-mate nobody liked is not part of the library.
- */
+// Cards carry the whole album's movements; this narrows back to cards with a liked track, and gaps
+// to liked tracks.
 export function keepLikedHoldings(
   library: MusicBrainzLibrary,
   likedTrackIds: Set<string>,

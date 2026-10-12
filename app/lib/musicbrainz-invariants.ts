@@ -1,19 +1,5 @@
-/**
- * What must be true of the MusicBrainz cache.
- *
- * Defined once and run from three places, because a script somebody remembers
- * to type was right for a single-user catalogue and is wrong for a service
- * ingesting continuously: a violation can accumulate for days before anyone
- * looks. The cheap ones run in the worker after each album, so a violation
- * fails that album instead of landing quietly; the whole set runs on a
- * schedule into a table that admin shows; and the same definitions back the
- * CLI for local work and CI.
- *
- * The distinction that matters here is between a broken cache and a wrong
- * upstream. A recording referenced by a tracklist that we never stored is our
- * bug. An ISRC claimed by two recordings is MusicBrainz's, and it is reported
- * rather than failed — it is a contribution, not a defect to fix locally.
- */
+// A broken cache is our bug and fails; a wrong upstream (an ISRC on two recordings) is reported as
+// a contribution.
 import { sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbInvariantResult } from './db/schema';
@@ -32,9 +18,7 @@ export {
 export type Invariant = {
   name: string;
   severity: InvariantSeverity;
-  /** What is wrong, and why it matters, for whoever reads the report. */
   describes: string;
-  /** Cheap enough to run after every album. */
   cheap: boolean;
   query: ReturnType<typeof sql>;
 };
@@ -134,10 +118,8 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
     `,
   },
   {
-    // An album pass writes down every track Spotify lists before it decides
-    // anything. Passes from before that rule skipped tracks they judged not
-    // classical, which left the album one track short of its release and
-    // showed up in admin as a tracklist that does not line up.
+    // A pass stores every track Spotify lists before deciding anything; older passes skipped
+    // non-classical tracks.
     name: 'finished-track-is-stored',
     severity: 'hard',
     describes:
@@ -184,11 +166,9 @@ export type InvariantResult = {
   describes: string;
   violations: number;
   samples: { id: string; detail: string | null }[];
-  /** When this result was recorded. Null for a check nobody has ever run. */
   checkedAt?: Date | null;
 };
 
-/** Grades the stored results against the checks that were supposed to run. */
 export function musicBrainzInvariantHealth(
   results: InvariantResult[],
   now: Date = new Date(),
@@ -204,8 +184,7 @@ export async function runMusicBrainzInvariants(
     ? MUSICBRAINZ_INVARIANTS.filter((check) => check.cheap)
     : MUSICBRAINZ_INVARIANTS;
 
-  // Each check is counted, and only a sample of its rows read: a check with
-  // thousands of violations should not ship them all just to be counted.
+  // Count each check and read only a sample of its rows.
   return Promise.all(
     checks.map(async (check): Promise<InvariantResult> => {
       const [counted, samples] = await Promise.all([
@@ -225,12 +204,10 @@ export async function runMusicBrainzInvariants(
   );
 }
 
-/** The hard violations only, for a caller that has to decide whether to proceed. */
 export function hardViolations(results: InvariantResult[]): InvariantResult[] {
   return results.filter((result) => result.severity === 'hard' && result.violations > 0);
 }
 
-/** Store the latest result of each check, in one statement, so admin can show it as a page. */
 export async function recordInvariantResults(results: InvariantResult[]) {
   if (results.length === 0) return;
   const checkedAt = new Date();
@@ -256,7 +233,6 @@ export async function recordInvariantResults(results: InvariantResult[]) {
     });
 }
 
-/** The stored results, for the admin page. */
 export async function latestInvariantResults(): Promise<InvariantResult[]> {
   const rows = await db.select().from(mbInvariantResult);
   const described = new Map(MUSICBRAINZ_INVARIANTS.map((check) => [check.name, check.describes]));

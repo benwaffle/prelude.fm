@@ -1,54 +1,28 @@
-/**
- * Reading a set of recorded invariant results as a health state.
- *
- * Kept apart from the checks themselves — which are SQL, and so drag in a
- * database connection — because the grading rule is the part worth arguing
- * about and it should be testable without one.
- */
+/** Kept apart from the SQL checks so the grading rule is testable without a database. */
 
-/**
- * - `hard`: our cache is inconsistent with itself. Our bug, and it fails.
- * - `upstream`: MusicBrainz contradicts itself. Their bug, and we report it
- *   so it can be contributed back rather than repaired locally.
- * - `review`: the evidence points two ways and neither side is obviously
- *   wrong. Nothing to fix automatically; somebody has to look.
- */
+// `hard`: our cache contradicts itself (our bug, fails). `upstream`: MusicBrainz contradicts itself
+// (reported). `review`: evidence points two ways; somebody has to look.
 export type InvariantSeverity = 'hard' | 'upstream' | 'review';
 
 export type GradedInvariant = {
   name: string;
   severity: InvariantSeverity;
   violations: number;
-  /** When the result was recorded. Null or absent means never run. */
   checkedAt?: Date | null;
 };
 
-/**
- * How long a recorded result stands for before it stops being evidence.
- *
- * A clean invariant page is only reassuring if it is recent. Left alone, a
- * page of zeroes from three months ago reads exactly like a page of zeroes
- * from this morning, which is the failure mode worth guarding against.
- */
+/** A page of zeroes from three months ago would read like one from this morning. */
 export const INVARIANT_STALE_AFTER_HOURS = 36;
 
 export type InvariantHealth = {
-  /** Hard checks currently failing. Anything here means stop. */
   failing: string[];
-  /** Checks whose last result is older than the window. */
   stale: string[];
   /** Checks that have never run, so their silence means nothing. */
   neverRun: string[];
   state: 'green' | 'amber' | 'red';
 };
 
-/**
- * Grades `results` against the checks that were supposed to run.
- *
- * Red for a hard failure. Amber for evidence that is missing or out of date
- * — not a failure, but not a pass either, and the page should not be green
- * on the strength of a check nobody has run.
- */
+/** Amber for missing or stale evidence: the page should not be green on a check nobody has run. */
 export function invariantHealth(
   expected: Array<{ name: string; severity: InvariantSeverity }>,
   results: GradedInvariant[],

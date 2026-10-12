@@ -25,10 +25,6 @@ import { MovementList } from '../work/MovementList';
 import { RecordingTile } from '../work/RecordingTile';
 import { GapNotes, Missing, WorkTitle } from '../work/WorkText';
 
-/**
- * One recording in full: the art plate and its programme of movements, then
- * the other recordings of the same work, then more by the composer.
- */
 export function DetailScreen({
   workId,
   recordingId,
@@ -45,12 +41,10 @@ export function DetailScreen({
   );
   const detail = page.status === 'ready' ? page.data.detail : null;
 
-  // So the player bar can title what's playing while we're on this page.
   useEffect(() => {
     if (detail) rememberWork(detail.work);
   }, [detail, rememberWork]);
 
-  // The tinted wash behind the page takes its colour from this recording.
   useEffect(() => {
     if (!detail) return;
     document.documentElement.style.setProperty('--room', hexToRgba(detail.work.tint, 0.5));
@@ -127,15 +121,8 @@ export function DetailScreen({
   );
 }
 
-/**
- * The collection this work belongs to.
- *
- * Our own model is flat, so until MusicBrainz's tree was cached nothing could
- * say that a prelude and fugue is one of forty-eight. Parts MusicBrainz lists
- * that we hold nothing for are shown greyed rather than dropped: a book of
- * twenty-four showing twenty-three should look incomplete, not look like a
- * book of twenty-three.
- */
+// Parts MusicBrainz lists that we hold nothing for are greyed, not dropped, so an incomplete set
+// looks incomplete.
 function Collection({ parent }: { parent: WorkParent }) {
   return (
     <section className="border-b border-rule pt-8 pb-7">
@@ -202,8 +189,6 @@ function Hero({
   onToggleLike: (trackId: string) => void;
 }) {
   return (
-    // On a phone the plate shrinks beside the heading so the programme, the
-    // part you came to play, starts on the first screen.
     <section className="relative grid animate-enter grid-cols-[320px_1fr] grid-rows-[auto_1fr] gap-x-12 gap-y-[34px] border-b border-rule pt-12 pb-14 max-[900px]:grid-cols-[96px_minmax(0,1fr)] max-[900px]:gap-x-4 max-[900px]:gap-y-5 max-[900px]:pt-5 max-[900px]:pb-[30px]">
       <div className="relative row-span-2 aspect-square self-start shadow-deep max-[900px]:row-span-1">
         <CoverArt src={work.cover} alt={work.album} className="block h-full w-full object-cover">
@@ -282,8 +267,6 @@ function Hero({
             This recording’s tracks have not been mapped to movements yet.
           </p>
         )}
-        {/* Ruled top and bottom as one programme, not movement by
-              movement — a rule per line buried the music in furniture. */}
         <MovementList
           variant="programme"
           movements={work.movements}
@@ -327,7 +310,6 @@ function OtherRecordings({ workId, others }: { workId: string; others: Recording
   );
 }
 
-/** How many of the composer's other works show before "Show all". */
 const MORE_BY_COMPOSER_SHOWN = 8;
 
 function MoreByComposer({
@@ -340,8 +322,7 @@ function MoreByComposer({
   likedTrackIds: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  // Works already in the reader's library first; otherwise the order the
-  // server gave, which makes no claim to rank.
+  // Library works first; otherwise the server's order, which makes no claim to rank.
   const inLibrary = (w: WorkSummary) => w.trackIds.some((id) => likedTrackIds.has(id));
   const ordered = [...works.filter((w) => inLibrary(w)), ...works.filter((w) => !inLibrary(w))];
   const shown = expanded ? ordered : ordered.slice(0, MORE_BY_COMPOSER_SHOWN);

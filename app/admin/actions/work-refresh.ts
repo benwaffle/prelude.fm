@@ -14,22 +14,12 @@ const MAX_DEPTH = 8;
 export type RefreshedWork = {
   mbid: string;
   title: string;
-  /** Null when MusicBrainz no longer has the work (merged or removed). */
   found: boolean;
   composer: string | null;
 };
 
-/**
- * Re-read a work and every work above it from MusicBrainz.
- *
- * The cache otherwise keeps what it read first, so an edit made on
- * MusicBrainz (a composer added to a movement or its parent) never reached the
- * player. The parents are read too because a part with no composer of its own
- * takes its parent's.
- *
- * Takes a work MBID, or any link containing one: a prelude.fm work page or a
- * MusicBrainz work page.
- */
+// The cache keeps what it read first; parents are re-read too because a part with no composer takes
+// its parent's.
 export async function refreshWorkFromMusicBrainz(input: string): Promise<RefreshedWork[]> {
   await checkAuth();
   const mbid = findMbid(input);

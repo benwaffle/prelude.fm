@@ -13,13 +13,8 @@ import {
 } from './helpers/musicbrainz-fixtures';
 import type { AlbumPassDependencies } from '../app/lib/match-queue-processor';
 
-/**
- * What the queue does with each outcome of a MusicBrainz album pass.
- *
- * The mapping is the point: a track MusicBrainz has nothing to say about must
- * not read as a worker failure, must not be picked up again on the next cron
- * tick, and must not reach the language model at all.
- */
+// A track MusicBrainz says nothing about must not read as a failure, be picked up again, or reach
+// the LLM.
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
@@ -139,8 +134,7 @@ test('a track MusicBrainz places but does not settle is unresolved', async () =>
 
 test('a track already ruled non-classical keeps that status', async () => {
   await seedProviderTracks();
-  // The verdict the legacy parser left on the row. MusicBrainz finds no
-  // evidence to overturn it, so the pass must not quietly reopen the question.
+  // MusicBrainz finds no evidence to overturn the parser's verdict, so the pass must not reopen it.
   await db
     .update(schema.matchQueue)
     .set({ status: 'not_classical' })
@@ -184,8 +178,7 @@ test('an unresolved track is not reclaimed on the next cron tick', async () => {
     }),
   });
 
-  // What the cron's GET does before it schedules a worker: recover stale
-  // claims, retry failures, exhaust the rest.
+  // What the cron's GET does before it schedules a worker.
   const prepared = await processor.prepareMatchQueue({
     maxAttempts: 5,
     retryFailed: true,

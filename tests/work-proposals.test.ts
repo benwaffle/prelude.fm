@@ -86,8 +86,8 @@ test('a part of the work other tracks perform, in its album slot, is high confid
 });
 
 test('a part that would sit outside the album order is ruled out', () => {
-  // Suite III fills tracks 9-16, so track 2 cannot be Suite III's Allemande,
-  // however well "Allemande" matches.
+  // Suite III fills tracks 9-16, so track 2 cannot be Suite III's Allemande however well the title
+  // matches.
   const siblings = Array.from({ length: 8 }, (_, index) => ({
     medium: 1,
     position: 9 + index,

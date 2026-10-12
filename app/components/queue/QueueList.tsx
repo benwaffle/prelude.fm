@@ -3,11 +3,6 @@
 import { usePlayer, usePlayerActions } from '@/lib/spotify-player-context';
 import { Icon } from '../Icon';
 
-/**
- * What plays after the current recording, in order. Colour comes from the
- * surroundings, so it sits in the tinted phone player and the paper panel
- * alike.
- */
 export function QueueList({ onPlayQueue }: { onPlayQueue?: () => void }) {
   const { queue } = usePlayer();
   const { removeFromQueue, clearQueue } = usePlayerActions();

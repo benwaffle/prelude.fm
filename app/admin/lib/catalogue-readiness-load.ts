@@ -11,10 +11,7 @@ import {
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
 import { loadMusicBrainzLibraryFacts } from '@/lib/musicbrainz-library-read';
 
-/**
- * The readiness funnel over every Spotify track we hold, read through the
- * same facts loader and projection the player uses.
- */
+/** Same facts loader and projection the player uses. */
 export async function loadReadinessFunnel(
   database: DatabaseExecutor = db,
 ): Promise<ReadinessFunnel> {
@@ -22,10 +19,7 @@ export async function loadReadinessFunnel(
   return readinessFunnel(tracks, submissions);
 }
 
-/**
- * Per missing album, the library tracks adding its release would unblock —
- * the Overview's own count, so the Inbox order and the funnel agree.
- */
+/** The Overview's own count, so the Inbox order and the funnel agree. */
 export async function loadTracksBlockedOnRelease(
   database: DatabaseExecutor = db,
 ): Promise<Map<string, number>> {
@@ -49,11 +43,7 @@ async function loadReadinessTracks(database: DatabaseExecutor) {
   return { tracks, submissions: await loadReadinessSubmissions(database) };
 }
 
-/**
- * Submissions MusicBrainz has not rejected and the cache does not reflect
- * yet. An applied edit still counts until our next read picks it up: until
- * then the track is waiting, not outstanding.
- */
+// An applied edit counts until our next read picks it up: the track is waiting, not outstanding.
 async function loadReadinessSubmissions(database: DatabaseExecutor): Promise<ReadinessSubmissions> {
   const rows = await database
     .select({

@@ -1,16 +1,5 @@
-/**
- * Reading a catalogue reference out of a MusicBrainz series relationship.
- *
- * MusicBrainz names the series and then puts the whole printed reference in
- * one attribute: series "Bach-Werke-Verzeichnis", number "BWV 912". We store
- * the sigil and the number apart, because that is how a reader writes it and
- * how the parser records it — "BWV" and "912".
- *
- * Getting this wrong is not cosmetic. Storing the series name as the system
- * leaves the imported reference under `bach-werke-verzeichnis`/`bwv912` while
- * every parser-derived row sits under `bwv`/`912`, so the two never meet and
- * a search for BWV 912 misses the work that MusicBrainz just told us about.
- */
+// MusicBrainz puts the whole reference in one attribute ("BWV 912"); we store sigil and number
+// apart, as the parser does, or the two never meet in a search.
 import { normalizeCatalogNumber, normalizeCatalogSystem } from './classical-normalization';
 
 export type CatalogueReference = {
@@ -20,28 +9,14 @@ export type CatalogueReference = {
   normalizedNumber: string;
 };
 
-/**
- * A leading sigil then the number: `BWV 912`, `Hob. I:82`, `op. 19`,
- * `S. 516a`, and `BWV Anh. 113`, whose number is `Anh. 113`.
- */
+/** `BWV Anh. 113`'s number is `Anh. 113`. */
 const SIGIL_THEN_NUMBER = /^([A-Za-z]+\.?)\s+(\S.*)$/;
 
-/** The same without the space: `BWV912`. */
 const SIGIL_JOINED = /^([A-Za-z]+\.?)\s*(\d.*)$/;
 
-/**
- * Sigils for the catalogues MusicBrainz numbers without one.
- *
- * Most series put the sigil in the reference — "BWV 912" — and need nothing
- * here. A few number their works bare: the Köchel series calls Mozart's 41st
- * symphony "551" and nothing else, so the reference alone cannot say what
- * kind of number it is, and filing it under the series' full name leaves it
- * unfindable by the K number every listener knows it by.
- *
- * This is reference data rather than a guess — these are the standard
- * abbreviations — and matching is on a distinctive fragment so that
- * punctuation and spelling variants in the series name do not defeat it.
- */
+// A few series number works bare (Köchel calls Jupiter "551"); these standard sigils make them
+// findable by K number. Matched on a distinctive fragment so series-name spelling variants don't
+// defeat it.
 const BARE_NUMBERED_SERIES: { contains: string; sigil: string }[] = [
   { contains: 'kochelverzeichnis', sigil: 'KV' },
   { contains: 'kirkpatrick', sigil: 'K' },
@@ -51,7 +26,6 @@ const BARE_NUMBERED_SERIES: { contains: string; sigil: string }[] = [
   { contains: 'hensel', sigil: 'H-U' },
 ];
 
-/** The sigil a bare-numbered series is written with, if we know it. */
 function sigilForSeries(seriesName: string): string | null {
   const normalized = normalizeCatalogSystem(seriesName);
   for (const entry of BARE_NUMBERED_SERIES) {
@@ -60,13 +34,6 @@ function sigilForSeries(seriesName: string): string | null {
   return null;
 }
 
-/**
- * Split a MusicBrainz catalogue reference into a system and a number.
- *
- * When the reference carries no sigil of its own — a series whose numbers are
- * bare, like `12` — the series name is the system, because inventing a sigil
- * would be worse than a long one.
- */
 export function splitCatalogueReference(
   seriesName: string,
   reference: string,
@@ -75,9 +42,8 @@ export function splitCatalogueReference(
   if (!value) return null;
 
   const match = SIGIL_THEN_NUMBER.exec(value) ?? SIGIL_JOINED.exec(value);
-  // A reference with no sigil of its own takes the one its series is written
-  // with, and falls back to the series name when we do not know it — a long
-  // system is worse than a short one, but inventing a sigil is worse still.
+  // Falls back to the series name when we don't know the sigil: a long system is better than an
+  // invented one.
   const system = match ? match[1] : (sigilForSeries(seriesName) ?? seriesName.trim());
   const number = match ? match[2].trim() : value;
   if (!system || !number) return null;

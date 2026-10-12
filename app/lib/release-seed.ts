@@ -1,21 +1,9 @@
-/**
- * What Harmony would seed a MusicBrainz release with, read from Spotify.
- *
- * Harmony builds the release editor form from the Spotify album: its title,
- * its artists, and each track's title, artists, position and length. This is
- * that same album, kept so the pre-checks can reason about it and so what
- * landed on MusicBrainz can be compared with it afterwards.
- *
- * Harmony may also merge in what other stores (Deezer, iTunes, …) say about
- * the same barcode. Those are not read here, so a difference between this
- * seed and the landed release is either the person's correction or
- * Harmony's own merge — the comparison cannot tell which.
- */
+// Harmony may also merge other stores' data, so a difference from the landed release is the
+// person's correction or Harmony's merge.
 
 export type SeedArtist = {
   spotifyId: string | null;
   name: string;
-  /** Set only on a baseline we seeded ourselves, where the artist was credited by MBID. */
   mbid?: string | null;
 };
 
@@ -26,7 +14,6 @@ export type SeedTrack = {
   durationMs: number;
   isrc: string | null;
   artists: SeedArtist[];
-  /** Set only on a baseline we seeded ourselves: the existing recording we pre-filled. */
   recordingMbid?: string | null;
 };
 
@@ -34,29 +21,21 @@ export type ReleaseSeed = {
   albumId: string;
   title: string;
   upc: string | null;
-  /**
-   * `spotify`: read live from the Spotify API, as Harmony would.
-   * `library`: Spotify could not be read, so this is our stored copy — album
-   * artists are unknown and track artists are in no particular order.
-   */
+  // `library`: Spotify could not be read, so album artists are unknown and track artists unordered.
   source: 'spotify' | 'library';
   albumArtists: SeedArtist[];
   tracks: SeedTrack[];
-  /** Spotify's release date as given ('YYYY', 'YYYY-MM' or 'YYYY-MM-DD'); absent on older checks. */
+  /** Absent on older checks. */
   releaseDate?: string | null;
-  /** Spotify's label name; absent on older checks. */
+  /** Absent on older checks. */
   label?: string | null;
 };
 
-/** Tracks in disc-then-position order. */
 export function orderedSeedTracks(seed: ReleaseSeed): SeedTrack[] {
   return [...seed.tracks].sort((a, b) => a.disc - b.disc || a.position - b.position);
 }
 
-/**
- * Names compared loosely: case, accents and spacing do not count. Used only
- * to decide whether two strings name the same thing, never to display.
- */
+/** Only to decide whether two strings name the same thing, never to display. */
 export function looseName(value: string): string {
   return value
     .normalize('NFKD')
@@ -69,7 +48,6 @@ export function looseName(value: string): string {
     .trim();
 }
 
-/** Title words, for "is this search hit the same album" comparisons. */
 export function titleWords(value: string): string[] {
   return looseName(value)
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
@@ -92,12 +70,8 @@ const STOPWORDS = new Set([
   'das',
 ]);
 
-/**
- * How alike two album titles are: `same` when their words are identical;
- * `similar` when one title's words all appear in the other and make up most
- * of it — an edition that adds "Complete" or a catalogue range. Titles that
- * swap a word ("Essential Allegros" / "Essential Adagios") are `different`.
- */
+// `similar`: one title's words all appear in the other and make up most of it. A swapped word is
+// `different`.
 export function titleLikeness(a: string, b: string): 'same' | 'similar' | 'different' {
   const left = titleWords(a);
   const right = titleWords(b);
@@ -110,12 +84,10 @@ export function titleLikeness(a: string, b: string): 'same' | 'similar' | 'diffe
   return contained && smaller.size / larger.size >= 0.6 ? 'similar' : 'different';
 }
 
-/** Spotify's placeholder for a compilation's album artist. */
 export function isVariousArtists(name: string): boolean {
   return looseName(name) === 'various artists';
 }
 
-/** Distinct artists across the album and its tracks, most-credited first. */
 export function seedArtists(seed: ReleaseSeed): {
   artist: SeedArtist;
   tracks: number;

@@ -5,12 +5,6 @@ import { createTestDatabase, resetTestDatabase, type TestDatabase } from './help
 import { fakeSource } from './helpers/musicbrainz-fixtures';
 import type { MbWork, MusicBrainzSource } from '../app/lib/musicbrainz-source';
 
-/**
- * Draining work stubs: a stub read in full gains its composer, and a stub
- * MusicBrainz will not return as itself stays a stub but stops blocking the
- * stubs behind it.
- */
-
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
 let cache: typeof import('@/lib/musicbrainz-cache');

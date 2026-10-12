@@ -4,14 +4,10 @@ import { jsonList } from './db/chunked';
 import { spotifyAlbum, spotifyTrack, trackArtists } from './db/schema';
 import type { FilmScoreTrack } from './film-scores';
 
-/** What `filmScoreReason` needs to know about a track beyond its works. */
 export type FilmScoreTrackInput = Omit<FilmScoreTrack, 'workMbids'>;
 
-/**
- * The Spotify side of the film-score rule for these tracks: who Spotify
- * credits, and the album they are on. A track we have no row for comes back
- * with no artists and no album, which is what the rule is given for it.
- */
+// A track we have no row for comes back with no artists and no album, which is what the rule is
+// given for it.
 export async function filmScoreInputs(
   spotifyTrackIds: Iterable<string>,
   database: DatabaseExecutor = db,

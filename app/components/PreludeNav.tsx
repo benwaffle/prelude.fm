@@ -16,7 +16,6 @@ interface PreludeNavProps {
   placeholder?: string;
 }
 
-/** The top navbar shared by every screen, with ⌘K focusing search. */
 export function PreludeNav({ current, query, setQuery, placeholder }: PreludeNavProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -39,7 +38,6 @@ export function PreludeNav({ current, query, setQuery, placeholder }: PreludeNav
         </span>
       </Link>
 
-      {/* Phones get these as tabs along the bottom, within thumb reach. */}
       <nav className="ml-2 flex gap-[2px] max-[900px]:hidden">
         {NAV_LINKS.map((link) => (
           <Link

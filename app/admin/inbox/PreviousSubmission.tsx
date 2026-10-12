@@ -1,9 +1,6 @@
 import type { SubmissionHistoryView } from '../actions/inbox-view';
 
-/**
- * An earlier attempt that was rejected or withdrawn, shown on a gap that came
- * back so it does not read as a fresh one.
- */
+/** Shown so a returned gap does not read as a fresh one. */
 export function PreviousSubmission({ previous }: { previous: SubmissionHistoryView }) {
   return (
     <span className="album-meta">

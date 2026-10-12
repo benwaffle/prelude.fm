@@ -1,20 +1,5 @@
-/**
- * `prelude_fm_bot` submitting ISRCs and barcodes to MusicBrainz.
- *
- * The bot only ever posts what a person could have posted from the admin
- * console by clicking a prefilled link or confirming a ledger row. Same
- * detection, same evidence, same ledger — the last step is the only thing
- * that changes. That is deliberate: it means the automation can be switched
- * off and the work continues by hand rather than stopping.
- *
- * Only ISRCs and barcodes. Releases, works and merges stay human permanently,
- * because a wrong edit there is expensive for other people to undo and that
- * cost is not ours to impose.
- *
- * Credentials are never held here. The refresh token comes from the
- * environment and is exchanged for a short-lived access token on demand;
- * without one the bot refuses rather than falling back to anything.
- */
+// Posts only what a person could post from the admin console: same detection, evidence and ledger.
+// Only ISRCs and barcodes; releases, works and merges stay human.
 import { and, gte, inArray, sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbSubmission } from './db/schema';
@@ -50,33 +35,19 @@ function rejectedBody(body: string): string {
     : body;
 }
 
-/** Identifies the submitting software, which MusicBrainz requires on a POST. */
+/** MusicBrainz requires a client identifier on a POST. */
 const CLIENT = 'preludefm-0.1';
 
 const userAgent = `PreludeFM/0.1 ( ${BOT_CONTACT} )`;
 
-/**
- * The MusicBrainz bot code of conduct caps a bot at 1,000 edits a day.
- *
- * Counted as edits rather than requests, because one POST can carry many
- * ISRCs and each is an edit. The gateway's own bot cap limits requests, which
- * is a different and much weaker constraint.
- */
+/** The bot code of conduct caps a bot at 1,000 edits a day; one POST can carry many edits. */
 export const DAILY_EDIT_CAP = 1_000;
 
 const BOT_SUBMITTER = 'bot:prelude_fm_bot';
 
-/**
- * A ceiling on one album, not a batch size.
- *
- * Submissions are made an album at a time, because an album is the unit a
- * person can actually check: same release, same barcode, one tracklist to
- * read down. This only stops a box set with hundreds of missing ISRCs from
- * spending most of the day's allowance in one press.
- */
+// A ceiling on one album, not a batch size: stops a box set spending most of the day's allowance.
 const MAX_ISRC_EDITS_PER_ALBUM = 200;
 
-/** Barcode batches stay smaller — each release is a separate edit to review. */
 const MAX_BARCODE_EDITS_PER_BATCH = 50;
 
 export class MusicBrainzBotError extends Error {
@@ -88,22 +59,12 @@ export class MusicBrainzBotError extends Error {
   }
 }
 
-/** One batch, as shown before it is sent and as recorded after. */
 export type BotRun<Gap, Item> = {
-  /** What would be, or was, submitted. */
   items: Item[];
-  /**
-   * The evidence behind each item.
-   *
-   * Carried through rather than summarised, because the point of showing a
-   * batch before it goes is that somebody can check it — and an ISRC and an
-   * MBID alone are two opaque strings. The titles say what is being claimed
-   * about what, and the two barcodes let the match be seen rather than
-   * trusted.
-   */
+  // Carried through rather than summarised so a reviewer can check the claim, not just two opaque
+  // IDs.
   evidence: Gap[];
   edits: number;
-  /** Edits already made today, before this run. */
   spentToday: number;
   submitted: boolean;
   editNote: string;
@@ -111,14 +72,12 @@ export type BotRun<Gap, Item> = {
 };
 
 export type IsrcBotRun = BotRun<IsrcGap, IsrcSubmissionItem> & {
-  /** The release this batch belongs to; every item is from it. */
   releaseMbid: string | null;
   albumTitle: string | null;
 };
 
 export type BarcodeBotRun = BotRun<BarcodeGap, BarcodeSubmissionItem>;
 
-/** Edits already made today, from the ledger rather than a counter. */
 export async function editsSpentToday(now = new Date()): Promise<number> {
   const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const [row] = await db
@@ -134,7 +93,6 @@ export async function editsSpentToday(now = new Date()): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** POST one document; a refusal is an error carrying MusicBrainz's status and reply. */
 async function postBotEdits(path: 'recording' | 'release', payload: string): Promise<void> {
   const token = await botAccessToken();
 
@@ -159,17 +117,10 @@ async function postBotEdits(path: 'recording' | 'release', payload: string): Pro
   }
 }
 
-/**
- * One bot batch: check today's allowance, pick the gaps, build the document,
- * and — only when asked — send it and record what was accepted.
- *
- * `apply` defaults to false and the caller has to ask for a real submission,
- * because the failure mode here is writing to somebody else's database.
- */
+/** `apply` defaults to false: the failure mode is writing to somebody else's database. */
 async function runBot<Gap, Item>(
   options: { apply?: boolean; maxEdits: number },
   kind: {
-    /** The batch, at most `allowance` edits. */
     gaps: (allowance: number) => Promise<Gap[]>;
     toItem: (gap: Gap) => Item;
     editCount: (items: Item[]) => number;
@@ -204,25 +155,16 @@ async function runBot<Gap, Item>(
   return { ...run, submitted: true };
 }
 
-/** Submit a batch of ISRCs, or show what would be submitted. */
 export async function runIsrcBot(
   options: {
     apply?: boolean;
     maxEdits?: number;
     releaseMbid?: string;
-    /**
-     * Send this one ISRC, even though voters rejected it before. The batch
-     * never includes a rejected ISRC; only its own row's click does.
-     */
+    /** Send this one ISRC even though voters rejected it before; a batch never includes it. */
     resubmit?: { recordingMbid: string; isrc: string };
   } = {},
 ): Promise<IsrcBotRun> {
-  /*
-   * One album. Which one is the caller's choice rather than the bot's,
-   * because the person pressing the button is the one who has read it — and
-   * a bot that picks its own target would be deciding what to submit, which
-   * is the part that has not been earned yet.
-   */
+  // The caller picks the album, not the bot: choosing what to submit has not been earned yet.
   let releaseMbid = options.releaseMbid;
   const run = await runBot(
     { apply: options.apply, maxEdits: options.maxEdits ?? MAX_ISRC_EDITS_PER_ALBUM },
@@ -255,12 +197,6 @@ export async function runIsrcBot(
   };
 }
 
-/**
- * Submit one or more release barcodes, or show what would be submitted.
- *
- * Each gap is a release we already matched by title and duration with
- * Spotify's exact UPC — the same evidence as the Inbox barcode section.
- */
 export async function runBarcodeBot(
   options: { apply?: boolean; maxEdits?: number; releaseMbid?: string } = {},
 ): Promise<BarcodeBotRun> {
@@ -268,8 +204,8 @@ export async function runBarcodeBot(
   return runBot(
     { apply: options.apply, maxEdits: options.maxEdits ?? MAX_BARCODE_EDITS_PER_BATCH },
     {
-      // A named release is its row's own click, so a barcode rejected before
-      // may go again; an unnamed batch leaves rejected ones out.
+      // A named release is its row's own click, so a previously rejected barcode may go again; a
+      // batch leaves those out.
       gaps: async (allowance) =>
         releaseMbid
           ? (await barcodeEligibleGaps({ releaseMbids: [releaseMbid] })).slice(0, 1)

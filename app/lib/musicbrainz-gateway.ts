@@ -1,28 +1,6 @@
-/**
- * The one place that spends MusicBrainz request budget.
- *
- * MusicBrainz asks anonymous clients for at most one request per second. That
- * is a condition of use, not a suggestion, and it is a *shared* budget: every
- * import, backfill and submission this service makes competes for the same
- * one request per second. So there is exactly one scheduler, and everything
- * queues behind it.
- *
- * Three things follow from the budget being shared and small.
- *
- * **Priority.** A user waiting for their library to import must not sit behind
- * a backfill sweep that will still be running in an hour. Channels are served
- * strictly in order, so a busy `interactive` queue starves `backfill`, and
- * both starve `bot` — which is the intent. Submissions back to MusicBrainz are
- * never urgent.
- *
- * **A persisted counter.** Serverless instances come and go, so an in-process
- * tally measures one lambda rather than the service. The count lives in the
- * database, which also makes "how close are we to needing a mirror?" a query
- * rather than a guess.
- *
- * **A kill switch.** If we are doing something wrong to somebody else's
- * server, stopping must not require a deploy.
- */
+// MusicBrainz's one-request-per-second limit is a shared budget, so this is the only scheduler.
+// Channels are served strictly in priority order; the counter lives in the DB because lambdas come
+// and go; the kill switch must not need a deploy.
 import type { MusicBrainzChannel } from './musicbrainz-budget';
 import {
   MUSICBRAINZ_CHANNELS,
@@ -34,25 +12,16 @@ export type { MusicBrainzChannel };
 export { MUSICBRAINZ_CHANNELS };
 
 /**
- * 1,000ms plus a margin. The server measures the interval at its end, where
- * network jitter can make two requests sent 1,000ms apart arrive closer
+ * 1,000ms plus a margin: network jitter can make requests sent 1,000ms apart arrive closer
  * together.
  */
 const DEFAULT_MIN_INTERVAL_MS = 1_100;
 let minIntervalMs = DEFAULT_MIN_INTERVAL_MS;
 
-/** Channels are served in this order, highest priority first. */
 const PRIORITY: readonly MusicBrainzChannel[] = ['interactive', 'backfill', 'bot'];
 
-/**
- * Defaults, overridable per channel from the database so a cap can be widened
- * without a deploy.
- *
- * `bot` is 1,000 because the MusicBrainz bot code of conduct caps a bot at
- * 1,000 edits a day. The read channels are far below the 86,400 the rate limit
- * would allow in a day: they are runaway protection, not a policy, and a sweep
- * that genuinely needs more should have to say so.
- */
+// Overridable from the database without a deploy. `bot` matches the bot code of conduct's 1,000
+// edits a day; the read caps are runaway protection, not policy.
 const DEFAULT_CAPS: Record<MusicBrainzChannel, number> = {
   interactive: 40_000,
   backfill: 40_000,
@@ -79,18 +48,14 @@ export class MusicBrainzBudgetError extends Error {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** The UTC day a request counts against. */
 function budgetDay(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
-
-/* --------------------------------------------------------------- store --- */
 
 let injectedStore: MusicBrainzBudgetStore | null = null;
 let storePromise: Promise<MusicBrainzBudgetStore> | null = null;
 let storeIsFallback = false;
 
-/** Swap the store, for tests and for a caller that owns its own database. */
 export function setMusicBrainzBudgetStore(store: MusicBrainzBudgetStore | null) {
   injectedStore = store;
   storePromise = null;
@@ -98,13 +63,8 @@ export function setMusicBrainzBudgetStore(store: MusicBrainzBudgetStore | null) 
   controlsCache = null;
 }
 
-/**
- * An in-memory store, used only when the database-backed one cannot load.
- *
- * Falling back keeps a missing database from taking MusicBrainz reads down
- * with it, but it does silently weaken the daily caps to per-process ones, so
- * the degradation is reported by `musicbrainzGatewayStatus`.
- */
+// Only when the DB store cannot load; it weakens daily caps to per-process ones, which
+// `musicbrainzGatewayStatus` reports.
 function createMemoryStore(): MusicBrainzBudgetStore {
   const usage = new Map<string, number>();
   let nextSlotAt = 0;
@@ -154,8 +114,6 @@ async function resolveStore(): Promise<MusicBrainzBudgetStore> {
   return storePromise;
 }
 
-/* ------------------------------------------------------------ controls --- */
-
 type Controls = {
   readAt: number;
   byChannel: Record<string, MusicBrainzControl>;
@@ -202,8 +160,6 @@ function pausedReason(controls: Controls, channel: MusicBrainzChannel): string |
   return null;
 }
 
-/* ------------------------------------------------------------ dispatch --- */
-
 type Waiter = {
   channel: MusicBrainzChannel;
   enqueuedAt: number;
@@ -220,13 +176,7 @@ const queues: Record<MusicBrainzChannel, Waiter[]> = {
 
 let pumping = false;
 
-/**
- * Count one request against the day's budget, or refuse it.
- *
- * The count is incremented first and given back if it turns out to breach the
- * cap, because the increment is what makes concurrent workers agree: reading
- * and then writing would let two of them both see 999.
- */
+/** Incremented first and given back on breach, so concurrent workers can't both see 999. */
 async function reserve(channel: MusicBrainzChannel): Promise<void> {
   const controls = await readControls();
 
@@ -255,8 +205,8 @@ async function reserve(channel: MusicBrainzChannel): Promise<void> {
     );
   }
 
-  // Keep the cached total moving between refreshes so the global ceiling still
-  // bites inside one TTL window.
+  // Keep the cached total moving between refreshes so the global ceiling still bites inside one TTL
+  // window.
   controls.total += 1;
   controls.usage[channel] = used;
 }
@@ -275,14 +225,13 @@ async function pump() {
   try {
     for (;;) {
       const waiter = takeNext();
-      // No `await` between finding the queues empty and clearing `pumping`, so
-      // a request arriving now is guaranteed to start a fresh pump.
+      // No `await` between finding the queues empty and clearing `pumping`, so a new request starts
+      // a fresh pump.
       if (!waiter) return;
 
       try {
         await reserve(waiter.channel);
-        // Spacing is claimed from the store, not measured here, so that every
-        // process sending to MusicBrainz shares one queue of slots.
+        // Spacing is claimed from the store, so every process shares one queue of slots.
         const store = await resolveStore();
         const wait = await store.claimSlot(minIntervalMs);
         if (wait > 0) await sleep(wait);
@@ -302,14 +251,7 @@ async function pump() {
   }
 }
 
-/**
- * Run `request` when the budget allows it, no sooner than one interval after
- * the previous one.
- *
- * Requests are serialised end to end rather than merely started a second
- * apart, which is the conservative reading of the limit and matches what this
- * client has always done.
- */
+// Serialised end to end, not merely started a second apart: the conservative reading of the limit.
 export function scheduleMusicBrainzRequest<T>(
   channel: MusicBrainzChannel,
   request: () => Promise<T>,
@@ -326,8 +268,6 @@ export function scheduleMusicBrainzRequest<T>(
   });
 }
 
-/* -------------------------------------------------------------- status --- */
-
 export type MusicBrainzGatewayStatus = {
   day: string;
   persisted: boolean;
@@ -343,7 +283,6 @@ export type MusicBrainzGatewayStatus = {
   }[];
 };
 
-/** What admin shows: how much budget today has left, and what is switched off. */
 export async function musicbrainzGatewayStatus(): Promise<MusicBrainzGatewayStatus> {
   controlsCache = null;
   const controls = await readControls();
@@ -368,13 +307,6 @@ export function invalidateMusicBrainzControls() {
   controlsCache = null;
 }
 
-/**
- * Test seam: forget the interval and any queued work.
- *
- * The interval is adjustable because the ordering rules are what the tests are
- * about, and waiting out a real 1.1 seconds between each of them would buy no
- * extra confidence.
- */
 export function resetMusicBrainzGatewayForTests(options: { minIntervalMs?: number } = {}) {
   for (const channel of MUSICBRAINZ_CHANNELS) queues[channel].length = 0;
   controlsCache = null;

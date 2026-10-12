@@ -16,11 +16,8 @@ import {
 
 type ErrorReportRow = { ledger: ErrorLedgerView | null; previous: SubmissionHistoryView | null };
 
-/**
- * A contradiction somebody can report upstream or fix: each row records what
- * the person did (reported or fixed), never a verdict, and stays listed until
- * the cache no longer shows the contradiction.
- */
+// Records what the person did, never a verdict; stays listed until the cache no longer shows the
+// contradiction.
 export function ErrorReportSection<Row extends ErrorReportRow>({
   inboxClass,
   title,
@@ -44,15 +41,11 @@ export function ErrorReportSection<Row extends ErrorReportRow>({
   total: number;
   onReload: () => Promise<void>;
   onLoadMore: () => void;
-  /** The row's identity, which is also its report's ledger value. */
   keyOf: (row: Row) => string;
-  /** `data-inbox-*` attributes that let a link focus the row. */
   rowProps?: (row: Row) => Record<`data-${string}`, string>;
   evidence: (row: Row) => ReactNode;
   links: (row: Row) => ReactNode;
-  /** Shown above the confirmation buttons. */
   details?: (row: Row) => ReactNode;
-  /** Links beside the confirmation buttons. */
   tools: (row: Row) => ReactNode;
   record: (
     key: string,

@@ -26,18 +26,12 @@ import { recheckLedgerRows } from '../lib/submission-recheck';
 import { checkAuth } from './auth';
 import type { IsrcResubmission } from './bot';
 
-/** What the person typed beside a confirmation. */
 type ConfirmOptions = { note?: string; editId?: string };
 
 type Session = Awaited<ReturnType<typeof checkAuth>>;
 
-/**
- * Record edits the person says they made. Written when they confirm, not
- * when a link is opened, because opening a link is not an edit. The outcome
- * stays `pending`: a MusicBrainz edit is a proposal that editors vote on, and
- * marking it applied here would be recording our intention rather than the
- * result.
- */
+// Written on confirm, not on opening a link. Outcome stays `pending`: MusicBrainz edits are voted
+// on.
 async function recordConfirmed(
   session: Session,
   drafts: SubmissionDraft[],
@@ -50,22 +44,18 @@ async function recordConfirmed(
   });
 }
 
-/** Record that a release's ISRCs were submitted, as one batch. */
 export async function recordIsrcSubmission(
   releaseMbid: string,
   options: ConfirmOptions = {},
 ): Promise<void> {
   const session = await checkAuth();
-  // The batch: a rejected ISRC is only recorded through its own row.
+  // A rejected ISRC is only recorded through its own row.
   const gaps = await isrcBatchGaps({ releaseMbids: [releaseMbid] });
   if (gaps.length === 0) throw new Error('That release has no outstanding ISRCs');
   await recordConfirmed(session, gaps.map(isrcSubmissionDraft), options);
 }
 
-/**
- * Record a hand resubmission of one ISRC that voters rejected before. The
- * rejected row stays as history beside the new pending one.
- */
+/** The rejected row stays as history beside the new pending one. */
 export async function recordIsrcResubmission(
   releaseMbid: string,
   resubmit: IsrcResubmission,
@@ -81,7 +71,6 @@ export async function recordIsrcResubmission(
   await recordConfirmed(session, [isrcSubmissionDraft(gap)], options);
 }
 
-/** Record a barcode only after the editor confirms making the external edit. */
 export async function recordBarcodeSubmission(
   releaseMbid: string,
   options: ConfirmOptions = {},
@@ -103,7 +92,6 @@ async function workRelationshipGap(recordingMbid: string) {
   return gap;
 }
 
-/** Record a recording–work link only after the editor confirms the external edit. */
 export async function recordWorkRelationshipSubmission(
   recordingMbid: string,
   workMbid: string,
@@ -114,7 +102,6 @@ export async function recordWorkRelationshipSubmission(
   await recordConfirmed(session, [workRelationshipDraftFromGap(gap, workMbid)], options);
 }
 
-/** Record a newly created work only after the editor pastes its MBID. */
 export async function recordWorkCreationSubmission(
   recordingMbid: string,
   workMbid: string,
@@ -129,10 +116,6 @@ export async function recordWorkCreationSubmission(
   );
 }
 
-/**
- * Record a Spotify free-streaming URL only after the editor confirms the
- * external edit. Opening the release edit page does not write.
- */
 export async function recordStreamingUrlSubmission(
   releaseMbid: string,
   albumId: string,
@@ -151,11 +134,8 @@ export async function recordStreamingUrlSubmission(
   await recordConfirmed(session, [streamingUrlDraft(gap)], options);
 }
 
-/**
- * Record that a person reported or fixed a contested ISRC. Does not change
- * cached MusicBrainz facts: the contradiction stays visible until upstream
- * does and a later recheck observes that.
- */
+// Does not change cached MusicBrainz facts: the contradiction stays visible until a recheck sees it
+// fixed upstream.
 export async function recordContestedIsrcReport(
   isrc: string,
   disposition: string,
@@ -169,10 +149,7 @@ export async function recordContestedIsrcReport(
   await recordConfirmed(session, [errorReportDraftFromContested(gap, disposition)], options);
 }
 
-/**
- * Record that a person reported or fixed a misaligned tracklist. The cache
- * is left as MusicBrainz stated it.
- */
+/** The cache is left as MusicBrainz stated it. */
 export async function recordMisalignedTracklistReport(
   albumId: string,
   disposition: string,
@@ -186,14 +163,12 @@ export async function recordMisalignedTracklistReport(
   await recordConfirmed(session, [errorReportDraftFromMisaligned(gap, disposition)], options);
 }
 
-/** The ledger rows one Inbox row's Recheck reads. */
 export type RecheckTarget =
   | { kind: 'isrc'; releaseMbid: string }
   | { kind: 'barcode' | 'streaming_url'; releaseMbid: string }
   | { kind: 'work_relationship'; recordingMbid: string; workMbid: string }
   | { kind: 'work'; workMbid: string }
   | { kind: 'release'; albumId: string }
-  /** A contested ISRC or a misaligned album: both reports carry it as their value. */
   | { kind: 'error'; value: string };
 
 function recheckWhere(target: RecheckTarget): SQL | undefined {
@@ -222,11 +197,7 @@ function recheckWhere(target: RecheckTarget): SQL | undefined {
   }
 }
 
-/**
- * Fetch what one row's confirmations submitted from MusicBrainz, then apply
- * those the cache now holds. Submits nothing; a still-missing edit stays
- * pending. `landed` says whether the cache now shows it at all.
- */
+/** Submits nothing; a still-missing edit stays pending. */
 export async function recheckSubmission(
   target: RecheckTarget,
 ): Promise<{ applied: number; landed: boolean }> {
@@ -236,11 +207,7 @@ export async function recheckSubmission(
   return { applied: result.applied, landed: result.landed.size > 0 };
 }
 
-/**
- * Fetch every pending ledger target from MusicBrainz, then close the rows the
- * cache now shows. Submits nothing. Missing edit IDs stay missing. Unfetched
- * streaming URL relations stay pending rather than counting as landed.
- */
+/** Unfetched streaming URL relations stay pending rather than counting as landed. */
 export async function reconcileSubmissions(): Promise<{
   checked: number;
   targets: number;

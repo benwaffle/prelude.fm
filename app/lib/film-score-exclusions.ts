@@ -1,13 +1,5 @@
-/**
- * Which tracks, albums and ISRCs the film-score rule takes out, for screens
- * that read the database with their own queries instead of through the
- * facts loader — the Inbox lists above all.
- *
- * The rule itself stays in one place (`film-scores`, applied by
- * `classifyTracks`). This finds every track the rule could possibly touch with a few
- * cheap queries, then asks the classifier about just those, so the Inbox
- * and the library cannot disagree about what a film score is.
- */
+// For screens that query the DB directly. Candidates are found cheaply, then the classifier
+// decides, so the Inbox and the library agree on what a film score is.
 
 import { db } from './db';
 import { forChunks, jsonList } from './db/chunked';
@@ -17,15 +9,10 @@ import { FILM_COMPOSERS, isFilmScoreReason, isSoundtrackAlbum } from './film-sco
 import { classifyTracks } from './musicbrainz-track-classification';
 
 export type FilmScoreExclusions = {
-  /** Every track the rule marks as a film score. */
   trackIds: string[];
-  /**
-   * Albums that are soundtracks, or have no track left once film scores are
-   * taken out. A soundtrack album with one Schubert song on it is still not
-   * an album worth fixing on MusicBrainz for this catalogue.
-   */
+  // A soundtrack album with one Schubert song on it is still not worth fixing on MusicBrainz for
+  // this catalogue.
   albumIds: string[];
-  /** ISRCs carried only by film-score tracks. */
   isrcs: string[];
 };
 
@@ -56,9 +43,7 @@ async function loadFilmScoreExclusions(): Promise<FilmScoreExclusions> {
     .from(spotifyAlbum);
   const soundtrackAlbumIds = albums.filter(isSoundtrackAlbum).map((album) => album.spotifyAlbumId);
 
-  // A superset of what the rule can mark: works under a film composer (by
-  // anchor or by ISRC), tracks Spotify credits to one, and everything on a
-  // soundtrack album. The facts loader then decides each one.
+  // A superset of what the rule can mark; the facts loader then decides each one.
   const candidates = await db.all<{ id: string }>(sql`
     with recursive film_work(mbid) as (
       select mbid from mb_work where composer_mbid in (${sql.join(
@@ -102,7 +87,6 @@ async function loadFilmScoreExclusions(): Promise<FilmScoreExclusions> {
   );
   if (trackIds.size === 0) return { trackIds: [], albumIds: soundtrackAlbumIds, isrcs: [] };
 
-  // Every track on an album a film-score track is on.
   const albumTracks = await db
     .select({
       id: spotifyTrack.spotifyId,

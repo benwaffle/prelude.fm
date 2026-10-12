@@ -11,18 +11,8 @@ import { GAP_REASONS as REASONS } from '@/lib/gap-reasons';
 import { useServerQuery } from '@/lib/use-server-query';
 import { LoadFailure } from '../LoadFailure';
 
-/**
- * Held tracks the MusicBrainz reader could not put on a card, grouped by
- * what is missing.
- *
- * Deliberately quiet, like the strip it sits beside — but it does say what
- * is wrong. "We couldn't identify this" is the answer that stops the work;
- * "MusicBrainz has no release for this album" is the one that starts it.
- */
-
 export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
   const [open, setOpen] = useState(false);
-  // Sent from here this visit, on top of what the queue held when opened.
   const [sent, setSent] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState<Set<string>>(new Set());
   const [failed, setFailed] = useState<Set<string>>(new Set());
@@ -52,8 +42,7 @@ export function GapStrip({ tracks }: { tracks: UnresolvedLibraryTrack[] }) {
   const isAdmin = useIsAdmin(session?.user?.id) === true;
   if (tracks.length === 0) return null;
 
-  // Null: the reader could not place the track but recorded no reason. Kept
-  // as its own group so the count above matches what is listed.
+  // Null: unplaced with no recorded reason. Its own group so the count matches what is listed.
   const byReason = new Map<MusicBrainzGapCode | null, UnresolvedLibraryTrack[]>();
   for (const track of tracks) {
     // The first gap is the one that stopped it; the rest follow from it.

@@ -22,12 +22,7 @@ import {
   type InboxClass,
 } from './lib/admin-url';
 
-/*
- * A workbench for closing MusicBrainz gaps — not a second catalogue.
- * /catalog and the player stay the map. The home page says how much of the
- * library the player can show and lists what to fix; each list, and each
- * occasional tool, has a page of its own.
- */
+// A workbench for closing MusicBrainz gaps, not a second catalogue.
 export default function AdminPage() {
   return (
     <Suspense

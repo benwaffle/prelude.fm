@@ -21,10 +21,7 @@ const BASELINE_LABEL: Record<ReleaseCorrectionRecord['baselineSource'], string> 
     'the form prelude.fm seeded (our credits and pre-filled recordings), because the Seed on MusicBrainz button was used',
 };
 
-/**
- * What people had to change when adding releases through Harmony, by kind
- * of album — the evidence for which kinds a bot could one day add alone.
- */
+/** Evidence for which kinds of album a bot could one day add alone. */
 export function ReleaseCorrectionsTab() {
   const query = useServerQuery(getReleaseCorrections, []);
   const { runRow, row } = useAdminAction();

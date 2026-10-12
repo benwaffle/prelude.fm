@@ -39,8 +39,8 @@ test('a movement belongs to a parent whose title adds a catalogue reference', ()
 });
 
 test('a typed number of an oratorio belongs to the oratorio', () => {
-  // MusicBrainz types the aria "Aria", and the movement carries a catalogue
-  // reference the oratorio's own title leaves out.
+  // MusicBrainz types the aria "Aria", and the movement carries a reference the oratorio's title
+  // leaves out.
   const aria = workLevelOf(
     node({
       title: "Gesù al Calvario, ZWV 62: Aria: S'una sol lagrima",
@@ -134,8 +134,7 @@ test('a collection titled without a colon does not take a piece by its comma', (
 });
 
 test('a work with parts is the work, not one of its parts', () => {
-  // "Prelude and Fugue No. 1" is untyped and sits inside the book, but it has
-  // a prelude and a fugue under it, so it is the piece.
+  // Untyped and inside the book, but it has a prelude and a fugue under it, so it is the piece.
   const level = workLevelOf(
     node({
       title: 'Prelude and Fugue in C major, BWV 846',
@@ -149,9 +148,7 @@ test('a work with parts is the work, not one of its parts', () => {
 });
 
 test('a typed work stays itself however deeply it is filed', () => {
-  // All 24 cached études have a parent and no children. Climbing to the
-  // parent would file every one of them under "12 Études, Op. 10" and make
-  // them indistinguishable from each other.
+  // Climbing would file all 24 études under "12 Études, Op. 10".
   const level = workLevelOf(
     node({
       title: '12 Études, op. 10: no. 11 in E-flat major',
@@ -165,9 +162,6 @@ test('a typed work stays itself however deeply it is filed', () => {
 });
 
 test('a piece in a collection is left alone rather than merged into it', () => {
-  // The expensive mistake runs this way: collapsing distinct pieces into
-  // their collection looks plausible afterwards and cannot be undone by
-  // inspection.
   const level = workLevelOf(
     node({
       title: 'Mazurka no. 23 in D major, op. 33 no. 2',
@@ -181,9 +175,7 @@ test('a piece in a collection is left alone rather than merged into it', () => {
 });
 
 test('an unsettled case is reported rather than guessed', () => {
-  // A real movement whose parent is titled differently lands here too, and
-  // loses its grouping. That is the cheaper of the two errors, but it is
-  // still an error, so it is flagged rather than hidden.
+  // The cheaper error, but still flagged rather than hidden.
   const level = workLevelOf(
     node({
       title: 'Trio Sonata in G minor, HWV 393: I. Andante',
@@ -203,8 +195,7 @@ test('a work with no parent is its own level', () => {
 });
 
 test('a near-miss prefix does not count as naming the parent', () => {
-  // Only an exact "<parent>:" prefix. Guessing at similar words here would
-  // climb on a resemblance, which is how collections swallow pieces.
+  // Only an exact "<parent>:" prefix; climbing on resemblance is how collections swallow pieces.
   const level = workLevelOf(
     node({
       title: 'Concerto for 2 Violins in A minor, RV 522: I. Allegro',

@@ -1,13 +1,7 @@
 import { titlesAreCompatible } from './metadata-matching';
 
-/**
- * Whole-release evidence required before offering an ISRC contribution.
- *
- * Spotify's disc/track numbers are not evidence of where a recording sits on
- * a MusicBrainz release. Releases can be ordered differently (Waning Moon is
- * a real example), so the only safe bridge is the recording anchor we already
- * established. Durations corroborate that identity; they never create it.
- */
+// Spotify's disc/track numbers are not evidence of MusicBrainz position (Waning Moon is ordered
+// differently); only the recording anchor is. Durations corroborate identity, never create it.
 
 export const ISRC_SUBMISSION_TOLERANCE_MS = 3_000;
 export const BARCODE_SUBMISSION_TOLERANCE_MS = 5_000;
@@ -58,11 +52,7 @@ function normaliseBarcode(value: string | null): string | null {
   return barcode ? barcode : null;
 }
 
-/**
- * The evidence required to add a barcode to a release that currently has
- * none: compatible titles, identical complete tracklists, and every duration
- * within five seconds. Missing durations fail rather than being guessed.
- */
+/** Missing durations fail rather than being guessed. */
 export function verifyBarcodeRelease(
   spotifyRows: SpotifyBarcodeEvidence[],
   musicbrainzRows: MusicBrainzBarcodeEvidence[],
@@ -92,15 +82,9 @@ export function verifyBarcodeRelease(
   return { trackCount: spotify.length, maxDurationDeltaMs };
 }
 
-/**
- * Whether two complete tracklists have a one-to-one, evidence-backed mapping.
- *
- * Matching is by anchored recording identity first and duration second. This
- * deliberately ignores position, allowing a known out-of-order release while
- * refusing a duration-only zip that could attach every ISRC to the wrong
- * recording. The augmenting-path match also handles a recording repeated on a
- * release without allowing two Spotify tracks to reuse one MusicBrainz slot.
- */
+// By anchored recording first, duration second, ignoring position. The augmenting-path match
+// handles a recording repeated on a release without letting two Spotify tracks share one
+// MusicBrainz slot.
 function hasPerfectRecordingMapping(
   spotify: SpotifyReleaseEvidence[],
   musicbrainz: MusicBrainzReleaseEvidence[],
@@ -136,11 +120,6 @@ function hasPerfectRecordingMapping(
   return spotify.every((_, index) => claim(index, new Set()));
 }
 
-/**
- * Album/release/media combinations that satisfy the complete ISRC standard:
- * the same barcode, identical track count, and every anchored recording's
- * duration within three seconds.
- */
 export function verifiedIsrcReleaseMedia(
   spotifyRows: SpotifyReleaseEvidence[],
   musicbrainzRows: MusicBrainzReleaseEvidence[],
@@ -182,12 +161,8 @@ export function verifiedIsrcReleaseMedia(
       byMedium.set(row.medium, rows);
     }
 
-    /*
-     * Normal multi-disc releases are one tracklist spread over all media.
-     * Hybrid SACDs repeat the complete tracklist on every layer, so their
-     * total is a multiple of Spotify's count; accept that shape only when
-     * every medium independently proves the same complete one-to-one map.
-     */
+    // Hybrid SACDs repeat the full tracklist on every layer; accept that only when every medium
+    // proves the same one-to-one map.
     const wholeReleaseMatches = hasPerfectRecordingMapping(spotify, musicbrainz);
     const repeatedCompleteLayers =
       byMedium.size > 1 &&

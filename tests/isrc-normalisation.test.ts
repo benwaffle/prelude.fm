@@ -6,12 +6,8 @@ import type { MusicBrainzSource } from '@/lib/musicbrainz-source';
 import type { SpotifyAlbumMetadata } from '@/lib/spotify-app-client';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 
-/*
- * Spotify occasionally reports an ISRC in lowercase; MusicBrainz never does.
- * The joins between them are plain SQL `=`, so a lowercase spelling made a
- * track read as an ISRC gap after MusicBrainz already had it, and left its
- * submission pending forever.
- */
+// Spotify sometimes reports lowercase ISRCs; joins are plain `=`, so a lowercase spelling broke
+// matching.
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
@@ -69,8 +65,7 @@ test('a payload without an ISRC does not erase the stored one', async () => {
 });
 
 test('a track stored with a lowercase ISRC still anchors to the recording MusicBrainz names', async () => {
-  // A row written before normalisation: the search answers in MusicBrainz's
-  // spelling, and the lookup back to our track must not depend on case.
+  // A row written before normalisation.
   await db.insert(schema.spotifyAlbum).values({
     spotifyId: 'album-1',
     title: 'An Album',

@@ -9,15 +9,8 @@ import {
 } from '../app/lib/musicbrainz-gateway';
 import type { MusicBrainzBudgetStore } from '../app/lib/musicbrainz-budget';
 
-/**
- * A real payload, trimmed to two tracks.
- *
- * The point of pinning a recorded response rather than a hand-written one is
- * that the whole request-efficiency argument rests on this single `inc` list
- * returning recordings, ISRCs, work relationships and credits together. If
- * MusicBrainz ever stops doing that, a hand-written fixture would keep
- * passing.
- */
+// A recorded payload, not a hand-written one: request efficiency rests on this one `inc` returning
+// everything together.
 const fixture = JSON.parse(
   readFileSync(fileURLToPath(new URL('./fixtures/mb-release.json', import.meta.url)), 'utf8'),
 );
@@ -99,8 +92,8 @@ test('an instrument credit keeps its instrument, and other roles invent none', a
     const violin = credits.find((credit) => credit.role === 'instrument');
     assert.equal(violin?.instrument, 'violin');
 
-    // `engineer` carries an `assistant` attribute; reading that as an
-    // instrument would invent a credit that does not exist.
+    // `engineer` carries an `assistant` attribute; reading it as an instrument would invent a
+    // credit.
     const engineer = credits.find((credit) => credit.role === 'engineer');
     assert.equal(engineer?.instrument, null);
   } finally {

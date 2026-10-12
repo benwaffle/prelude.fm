@@ -37,31 +37,15 @@ export interface WorkSearchHit {
   composerName: string;
   /** The reference the search matched on, which may not be the primary one. */
   matchedOn: string | null;
-  /** Every reference the work carries, so the reader can see what it is called. */
   references: string[];
   recordingCount: number;
 }
 
-/**
- * The catalogue, read from MusicBrainz: composers → works → recordings.
- *
- * "We hold" is `heldWorkLinks`: a Spotify track anchored to a MusicBrainz
- * recording of the work, or linked to it by us where MusicBrainz has no
- * link. A work MusicBrainz knows and we cannot play is not in this catalogue
- * — it is a gap the library reports, not a row to browse.
- *
- * The level rule is the library's (`resolveDisplayWork`), so a card's work
- * and a catalogue row are the same work, composer and catalogue number.
- */
+// A work MusicBrainz knows but we cannot play is a library gap, not a catalogue row. Level rule
+// matches the library's (`resolveDisplayWork`).
 
-/**
- * Everything held, shaped into the works a reader would name.
- *
- * `seedWorkMbids` narrows it to one neighbourhood — one composer, one search
- * result. Without that every click in the catalogue was a scan of every
- * anchor, every work relation and every catalogue reference we hold, which
- * is a great deal of work to answer a question about one composer.
- */
+// `seedWorkMbids` narrows the read to one composer or search result instead of scanning everything
+// we hold.
 async function heldCatalogue(seedWorkMbids?: string[]): Promise<ShapedCatalogueWork[]> {
   if (seedWorkMbids && seedWorkMbids.length === 0) return [];
   const held = await heldWorkLinks(
@@ -69,8 +53,7 @@ async function heldCatalogue(seedWorkMbids?: string[]): Promise<ShapedCatalogueW
   );
   if (held.length === 0) return [];
 
-  // The related works, their ancestors and one generation of children — the
-  // children so the level rule can tell a work with parts from a leaf.
+  // One generation of children so the level rule can tell a work with parts from a leaf.
   const [works, filmScoreInputOf] = await Promise.all([
     readWorkNeighbourhood(held.map((link) => link.workMbid)),
     filmScoreInputs(held.map((link) => link.spotifyTrackId)),
@@ -89,11 +72,8 @@ async function heldCatalogue(seedWorkMbids?: string[]): Promise<ShapedCatalogueW
   return shapeHeldCatalogue(relations, works, references);
 }
 
-/**
- * Film scores are not part of the catalogue (see `film-scores`). A holding
- * stays if any track we can play it from is not a film score, which keeps a
- * Chopin nocturne that happens to be issued on a soundtrack album.
- */
+// A holding stays if any playable track is not a film score (a Chopin nocturne on a soundtrack
+// album).
 function withoutFilmScores(
   held: HeldRelation[],
   filmScoreOf: (row: HeldRelation) => string | null,
@@ -106,14 +86,12 @@ function withoutFilmScores(
   return [...kept.values()];
 }
 
-/** Column one: every composer MusicBrainz attributes something we hold to. */
 export async function getMusicBrainzCatalogComposers(): Promise<CatalogComposer[]> {
   const shaped = await heldCatalogue();
   const byComposer = new Map<string, { works: number; holdings: Set<string> }>();
   for (const work of shaped) {
-    // A work MusicBrainz attributes to nobody has no composer to file it
-    // under. It is reachable from the library and from search; it is simply
-    // not a row in a list of composers.
+    // A work MusicBrainz attributes to nobody stays reachable from the library and search, just not
+    // here.
     if (!work.composerMbid) continue;
     const entry = byComposer.get(work.composerMbid) ?? { works: 0, holdings: new Set<string>() };
     entry.works += 1;
@@ -149,7 +127,6 @@ export async function getMusicBrainzCatalogComposers(): Promise<CatalogComposer[
     .sort((left, right) => left.sort.localeCompare(right.sort, 'en'));
 }
 
-/** Column two: the works of one composer that we hold a recording of. */
 export async function getMusicBrainzCatalogWorks(composerMbid: string): Promise<CatalogWork[]> {
   const byThisComposer = await db
     .select({ mbid: mbWork.mbid })
@@ -167,8 +144,8 @@ export async function getMusicBrainzCatalogWorks(composerMbid: string): Promise<
         // A nickname is a MusicBrainz alias, which nothing reads yet.
         nickname: null,
         catalog: work.reference ? `${work.reference.system} ${work.reference.number}` : null,
-        // MusicBrainz dates a work through a composition relationship we do
-        // not cache. Null, not a guess from the recording's release year.
+        // MusicBrainz dates a work through a composition relationship we do not cache. Null, not a
+        // guess from the release year.
         year: null,
         genre: work.type,
         movementCount: childCounts.get(work.mbid) ?? 0,
@@ -190,18 +167,10 @@ async function partCounts(workMbids: string[]): Promise<Map<string, number>> {
   );
 }
 
-/**
- * The work heading above column three.
- *
- * Scoped to the one work rather than shaping the whole held catalogue: this
- * runs on every click in the third column, and the global version made each
- * of those a full scan of every anchor we hold.
- */
+/** Scoped to one work: this runs on every click in the third column. */
 export async function getMusicBrainzCatalogWorkHeader(
   workMbid: string,
 ): Promise<CatalogWorkHeader | null> {
-  // The work, its ancestors (where its number and composer may be filed)
-  // and its parts, in one read.
   const neighbourhood = await readWorkNeighbourhood([workMbid]);
   const byMbid = new Map(neighbourhood.map((node) => [node.mbid, node]));
   const work = byMbid.get(workMbid);
@@ -232,14 +201,8 @@ export async function getMusicBrainzCatalogWorkHeader(
   };
 }
 
-/**
- * Find works by catalogue reference or by title, in MusicBrainz.
- *
- * A reference matches any of a work's references, not only the one its card
- * shows — a Scarlatti sonata carries Kk. 9 and L 413, and a reader who knows
- * the Longo number should find it. Results are limited to works we can play,
- * because a search result that leads nowhere is not a result.
- */
+// A reference matches any of a work's references (Kk. 9 and L 413). Only playable works are
+// returned.
 export async function searchMusicBrainzWorks(
   rawQuery: string,
   limit = 40,
@@ -279,8 +242,8 @@ export async function searchMusicBrainzWorks(
   if (wanted.size === 0) return [];
 
   const shaped = await heldCatalogue([...wanted]);
-  // A reference sits on the piece; the query may have matched it there while
-  // the work a reader clicks is the same piece. Match either way round.
+  // The query may have matched the reference on the piece while the clicked work is the same piece;
+  // match either way round.
   const hits = shaped.filter(
     (work) => wanted.has(work.mbid) || (work.reference && wanted.has(work.reference.workMbid)),
   );
@@ -310,7 +273,6 @@ export async function searchMusicBrainzWorks(
   );
 }
 
-/** Every catalogue reference these works carry. */
 async function referencesOf(workMbids: string[]): Promise<CatalogueReference[]> {
   if (workMbids.length === 0) return [];
   return db
@@ -335,7 +297,6 @@ async function composerNamesFor(works: ShapedCatalogueWork[]): Promise<Map<strin
   return new Map(rows.map((row) => [row.mbid, row.name]));
 }
 
-/** Column three: every issue of one work we can play, fullest first. */
 export async function getMusicBrainzCatalogRecordings(
   workMbid: string,
   likedTrackIds: string[] = [],
@@ -356,8 +317,7 @@ export async function getMusicBrainzCatalogRecordings(
         };
         return { recording, durationMs: durationMs ?? 0 };
       })
-      // Compare milliseconds, not the formatted "m:ss" text: as strings "9:59"
-      // sorts above "10:00".
+      // Compare milliseconds, not "m:ss" text: as strings "9:59" sorts above "10:00".
       .sort(
         (left, right) =>
           right.recording.liked - left.recording.liked || right.durationMs - left.durationMs,

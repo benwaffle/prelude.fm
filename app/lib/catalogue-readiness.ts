@@ -6,23 +6,8 @@ import type {
 } from './musicbrainz-library-facts';
 import { diagnoseTracklist } from './musicbrainz-matching';
 
-/**
- * How much of the library the player can actually show, and what stands in
- * the way of the rest.
- *
- * The unit is a Spotify track. The player puts a track on a card when it is
- * classical, linked to a MusicBrainz recording, that recording is linked to
- * a work, and the work the card is filed under names a composer
- * (`projectMusicBrainzLibrary` and `musicBrainzLibraryView`). Those are the
- * steps below, in the order they have to happen: a work cannot be linked to
- * a recording nobody has matched, and MusicBrainz's evidence that a piece is
- * classical lives on the work.
- *
- * Every track lands in exactly one place — ready, excluded as not classical,
- * or blocked at the first step it fails — and every blocked track is filed
- * under the one thing that would move it on. Where nothing here can say what
- * that is, the track is counted as unknown rather than dropped.
- */
+// Every track lands in exactly one place (ready, not classical, or blocked at its first failing
+// step); where nothing can say what's needed it counts as unknown rather than dropped.
 
 export type ReadinessStepKey = 'recording' | 'work' | 'composer' | 'classical';
 
@@ -42,22 +27,17 @@ export type ReadinessBucketKey =
   | 'classification-out-of-date'
   | 'add-classical-evidence';
 
-/** The Inbox sections a bucket can send you to. Same ids as the admin URL. */
+/** Same ids as the admin URL. */
 export type ReadinessInboxClass = 'missing' | 'misaligned' | 'work' | 'contested';
 
-/**
- * `action`: someone has to do something, in the Inbox or on MusicBrainz.
- * `ours`: MusicBrainz may already have it; our cache has not read it yet.
- * `unknown`: nothing here can say what is needed.
- */
+// `action`: someone has to act. `ours`: MusicBrainz may have it; our cache hasn't read it.
+// `unknown`: nothing can say.
 export type ReadinessBucketKind = 'action' | 'ours' | 'unknown';
 
 export type ReadinessComposer = 'named' | 'missing' | 'not_read' | 'level_unclear';
 
 export type ReadinessWork = {
-  /** The work the player files the track under. */
   workMbid: string;
-  /** Whether MusicBrainz links the track to this work, or our own match does. */
   linkedBy: 'musicbrainz' | 'prelude';
   title: string | null;
   composer: ReadinessComposer;
@@ -68,25 +48,21 @@ export type ReadinessTrack = {
   spotifyAlbumId: string;
   albumTitle: string | null;
   isrc: string | null;
-  /** The classification the player uses. */
   classification: TrackClassificationState;
   /** MusicBrainz's current evidence alone would call this classical. */
   musicBrainzSaysClassical: boolean;
   link:
     | { state: 'linked'; recordingMbid: string; recordingTitle: string | null; read: boolean }
     | { state: 'contested' }
-    /** No MusicBrainz recording, but our own match links the track to a work. */
     | { state: 'ours' }
     | { state: 'none' };
   release: 'not_checked' | 'missing' | 'ambiguous' | 'matched';
   releaseMbid: string | null;
   /** Only for a matched release; null otherwise. */
   tracklist: 'aligned' | 'misaligned' | 'not_read' | null;
-  /** Empty when neither MusicBrainz nor our own match links the track to a work. */
   works: ReadinessWork[];
 };
 
-/** Submissions sent (pending or applied) whose effect the cache does not show yet. */
 export type ReadinessSubmissions = {
   releaseAlbums: Set<string>;
   tracklistReportAlbums: Set<string>;
@@ -115,11 +91,9 @@ export type ReadinessBucket = {
   detail: string;
   inboxClass: ReadinessInboxClass | null;
   tracks: number;
-  /** Of `tracks`, those whose fix has been submitted already. */
   waiting: number;
   /** The biggest groups first, so the most useful edit is the first link. */
   examples: ReadinessExample[];
-  /** How many distinct groups (albums, recordings, works) the tracks fall into. */
   groups: number;
   groupNoun: ReadinessGroupNoun;
 };
@@ -134,7 +108,6 @@ function groupNounOf(bucket: ReadinessBucketKey): ReadinessGroupNoun {
 
 export type ReadinessStep = {
   key: ReadinessStepKey;
-  /** What a track that passed this step has. */
   label: string;
   reached: number;
   blocked: number;
@@ -147,7 +120,6 @@ export type ReadinessFunnel = {
   inScope: number;
   steps: ReadinessStep[];
   ready: number;
-  /** Of `ready`, tracks a card files under a work by our own match, not MusicBrainz's. */
   readyViaOwnLinks: number;
 };
 
@@ -291,7 +263,6 @@ function workGroup(work: ReadinessWork): Placement['group'] {
   };
 }
 
-/** Which bucket a track that is not ready belongs in, or null if it is ready. */
 export function placeTrack(
   track: ReadinessTrack,
   submissions: ReadinessSubmissions = NO_SUBMISSIONS,
@@ -351,8 +322,8 @@ export function placeTrack(
       : { bucket: 'recording-not-read', waiting: false, group };
   }
 
-  // A recording of several works appears under each; every card needs its
-  // composer. The first unnamed one decides, in the order the fix is surest.
+  // A recording of several works appears under each; the first unnamed one decides, in order of
+  // surest fix.
   const unnamed = track.works.filter((work) => work.composer !== 'named');
   const blocking =
     unnamed.find((work) => work.composer === 'missing') ??
@@ -374,8 +345,8 @@ export function placeTrack(
         ? 'classification-out-of-date'
         : 'add-classical-evidence',
       waiting: false,
-      // No work to file it under only if a link's work never reached the
-      // projection; show it by album rather than fail the whole funnel.
+      // Show by album rather than fail the whole funnel if a link's work never reached the
+      // projection.
       group: track.works[0] ? workGroup(track.works[0]) : albumGroup(track),
     };
   }
@@ -384,11 +355,7 @@ export function placeTrack(
 
 const EXAMPLES = 5;
 
-/**
- * Library tracks each album holds in the funnel's missing-release buckets:
- * how many tracks adding (or picking) that album's release would move past
- * the first step. The same placement the Overview counts, per album.
- */
+/** The same placement the Overview counts, per album. */
 export function tracksBlockedOnReleaseByAlbum(
   tracks: ReadinessTrack[],
   submissions: ReadinessSubmissions = NO_SUBMISSIONS,
@@ -470,10 +437,7 @@ export function readinessFunnel(
   return { total: tracks.length, notClassical, inScope, steps, ready, readyViaOwnLinks };
 }
 
-/**
- * The composer a card would show for this work, read the way the player
- * reads it: from the work `workLevelOf` files the track under.
- */
+/** Read the way the player reads it: from the work `workLevelOf` files the track under. */
 export function composerState(work: ProjectedRecordingWork): ReadinessComposer {
   if (work.composer?.name) return 'named';
   const notRead = work.gaps.some(
@@ -490,10 +454,7 @@ export function composerState(work: ProjectedRecordingWork): ReadinessComposer {
   return 'missing';
 }
 
-/**
- * Reads readiness rows out of the facts the player loads and the projection
- * it draws from, so the two cannot disagree about what a track needs.
- */
+/** From the facts the player loads, so the two cannot disagree. */
 export function readinessTracksFrom(
   facts: MusicBrainzLibraryFacts,
   projection: MusicBrainzLibraryProjection,
@@ -516,8 +477,7 @@ export function readinessTracksFrom(
       relation.workMbid,
     ]);
   }
-  // Our own links count where MusicBrainz has none, exactly as the player
-  // uses them, so the funnel and the cards agree.
+  // Our own links count where MusicBrainz has none, exactly as the player uses them.
   const ownWorkByTrack = new Map<string, string>();
   for (const link of facts.ownWorkLinks) {
     if (link.subject === 'track') ownWorkByTrack.set(link.spotifyTrackId, link.workMbid);

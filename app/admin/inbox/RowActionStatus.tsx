@@ -1,10 +1,6 @@
 import { Notice } from '../components/Notice';
 import type { RowActionState } from '../components/useAdminAction';
 
-/**
- * A row's own admin action: waiting its turn, running, or the failure it left.
- * The failure stays until the row is retried or it is dismissed here.
- */
 export function RowActionStatus({ row }: { row: RowActionState }) {
   return (
     <>

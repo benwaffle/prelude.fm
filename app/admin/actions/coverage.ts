@@ -29,15 +29,8 @@ export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> 
   return loadMusicBrainzAlbumTracks(albumId);
 }
 
-/**
- * Canonical ISRC contribution links for albums on screen.
- *
- * Delegates to bot/MagicISRC eligibility, not the displayed cache-gap list:
- * already-ledgered ISRCs stay visible on the contribution work item but must
- * not be seeded into a new submission. Positions are MusicBrainz
- * medium/positions, and nothing is returned unless the complete release
- * passes the submission standard.
- */
+// Uses bot/MagicISRC eligibility, not the gap list: already-ledgered ISRCs must not be seeded into
+// a new submission.
 export async function getIsrcSubmissionLinks(
   albumIds: string[],
 ): Promise<Record<string, { href: string; missing: number }>> {
@@ -56,29 +49,14 @@ export async function getIsrcSubmissionLinks(
   return links;
 }
 
-/**
- * Ask MusicBrainz about one album's ISRCs again, now.
- *
- * Contributing to MusicBrainz changes nothing here until something re-reads
- * it, and until this existed the only way to see whether a submission worked
- * was to re-run the whole backfill from a terminal. That is a poor loop for a
- * page whose entire purpose is to send you off to make those submissions.
- *
- * Scoped to one album so it stays within MusicBrainz's one-request-per-second
- * rule without making anyone wait: even a long box set is a handful of
- * batched queries.
- */
+/** Scoped to one album to stay within MusicBrainz's one-request-per-second rule. */
 export async function recheckAlbum(
   albumId: string,
 ): Promise<{ resolved: number; anchored: number; tracks: number }> {
   await checkAuth();
 
-  /*
-   * The same resolution the loose-ISRC sweep does, scoped to one album. An
-   * ISRC identifies a recording without reference to a release, which is
-   * what makes this useful here: the albums a person re-checks from this
-   * page are mostly the ones whose release MusicBrainz does not have.
-   */
+  // An ISRC identifies a recording without a release, so this works for albums whose release
+  // MusicBrainz lacks.
   const { anchored: resolved } = await anchorTracksByIsrc(musicBrainzApi('interactive'), {
     albumId,
   });

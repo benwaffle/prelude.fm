@@ -69,8 +69,7 @@ test('an album MusicBrainz does not have says why, rather than inventing one', a
   for (const track of report.tracks) {
     assert.match(track.reason, /MusicBrainz/);
   }
-  // The tracks still exist as provider facts, so the library can show them
-  // as held and unplaceable rather than losing them.
+  // Kept as provider facts, so the library can show them as held and unplaceable.
   assert.equal((await db.select().from(schema.spotifyTrack)).length, 2);
 });
 

@@ -1,12 +1,7 @@
 import type { MusicBrainzGapCode } from './musicbrainz-library';
 
-/**
- * Shared vocabulary for the three editorial screens: library, recording
- * detail, catalogue. Pure helpers only, so both server actions and client
- * components can use them.
- */
+/** Pure helpers only, so both server actions and client components can use them. */
 
-/** Eras, in the order the design lists them. */
 export const ERAS = [
   'Baroque',
   'Classical',
@@ -18,15 +13,10 @@ export const ERAS = [
 
 export type Era = (typeof ERAS)[number];
 
-/**
- * The design tags every composer with an era. We only store birth years, so
- * the era is derived from them — the boundaries reproduce the design's own
- * labelling (Bach Baroque, Beethoven Classical, Mahler Romantic, Debussy and
- * Ravel Impressionist, Shostakovich 20th C., Pärt and Glass Contemporary).
- */
+/** Derived from birth years; boundaries reproduce the design's labelling. */
 export function eraFor(birthYear: number | null): Era | null {
-  // Nearly half the composers we hold have no birth year. Guessing "Contemporary"
-  // for all of them would file Suppé beside Glass, so say nothing instead.
+  // Nearly half the composers have no birth year; guessing an era would file Suppé beside Glass, so
+  // say nothing.
   if (birthYear === null) return null;
   if (birthYear < 1710) return 'Baroque';
   if (birthYear < 1780) return 'Classical';
@@ -36,30 +26,18 @@ export function eraFor(birthYear: number | null): Era | null {
   return 'Contemporary';
 }
 
-/** "1685–1750", "1935–", or "" when we know neither date. */
 export function lifespan(birthYear: number | null, deathYear: number | null): string {
   if (birthYear === null && deathYear === null) return '';
   if (birthYear === null) return `d. ${deathYear}`;
   return `${birthYear}–${deathYear ?? ''}`;
 }
 
-/**
- * A composer's surname, for the places the design shows a short name
- * ("Bach", "Pärt") next to the full one.
- */
 export function surname(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
   return parts[parts.length - 1] || fullName;
 }
 
-/**
- * The short display name: forenames as initials, surname in full — "J. S.
- * Bach", "L. van Beethoven", "A. Pärt". Nobiliary particles stay lowercase.
- *
- * Applied to everyone rather than only where surnames collide, so the label
- * for a composer reads the same wherever it appears. It also keeps the four
- * Bachs in the catalogue apart, which a bare surname could not.
- */
+// Applied to everyone, so a composer reads the same everywhere; it also keeps the four Bachs apart.
 export function shortName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return fullName;
@@ -71,10 +49,7 @@ export function shortName(fullName: string): string {
   return `${lead} ${last}`;
 }
 
-/**
- * The smallest of an artist's Spotify images that still fills a portrait at
- * twice its size, or the largest when none does.
- */
+/** The smallest that still fills a portrait at twice its size, or the largest when none does. */
 export function portraitOf(
   images: { url: string; width: number | null }[] | null | undefined,
 ): string | null {
@@ -103,7 +78,6 @@ const ROMAN: [number, string][] = [
   [1, 'I'],
 ];
 
-/** Movement numbers are set as roman numerals throughout the design. */
 export function roman(n: number): string {
   if (n < 1) return String(n);
   let rest = n;
@@ -117,7 +91,6 @@ export function roman(n: number): string {
   return out;
 }
 
-/** "VIII." for the numeral column, or nothing when a part carries no numeral. */
 export function numeralPrefix(numeral: string): string {
   return numeral ? `${numeral}.` : '';
 }
@@ -133,11 +106,7 @@ export function formatDuration(ms: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-/**
- * Album tints. The design colours the player bar and each card's wash from
- * the album art; we have no colour extraction in the pipeline, so a stable
- * hash picks from the prototype's own palette. Same album, same tint, always.
- */
+/** No colour extraction in the pipeline, so a stable hash picks from the prototype's palette. */
 const TINTS: [tint: string, ink: string][] = [
   ['#3a4a3a', '#f4ecd8'],
   ['#1e2438', '#e8dfc6'],
@@ -173,27 +142,15 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-/* ---------------------------------------------------------------
-   Shapes shared between the server actions and the screens
-   --------------------------------------------------------------- */
-
 export interface Movement {
-  /** 1-based index in display order. */
   n: number;
-  /** The part's own position in the work, which display order follows. */
   position: number;
   roman: string;
   name: string;
-  /**
-   * No MusicBrainz title. `name` is blank for a cached part without one, or
-   * Spotify's raw track title for a track we have not matched at all.
-   */
+  // `name` is blank for a cached part without one, or Spotify's raw title for an unmatched track.
   unnamed: boolean;
-  /**
-   * The work has this part but the recording has no track for it. Rendered
-   * greyed out, so a partial recording reads as partial instead of looking
-   * like a short work.
-   */
+  // Rendered greyed out, so a partial recording reads as partial instead of looking like a short
+  // work.
   missing: boolean;
   durationMs: number | null;
   duration: string | null;
@@ -202,33 +159,29 @@ export interface Movement {
   uri: string | null;
 }
 
-/** What an unnamed movement's marker says is shown in place of a title. */
 export function unnamedMovementNote(movement: Pick<Movement, 'name'>): string {
   return movement.name
     ? 'No MusicBrainz title — showing the Spotify track title'
     : 'No MusicBrainz title';
 }
 
-/** A movement this recording carries: it has audio, so it can be played. */
 export type PlayableMovement = Movement & { missing: false; trackId: string; uri: string };
 
 function isPlayable(movement: Movement): movement is PlayableMovement {
   return !movement.missing && movement.uri !== null && movement.trackId !== null;
 }
 
-/** The movements a recording actually carries, in programme order. */
 export function playable(movements: Movement[]): PlayableMovement[] {
   return movements.filter(isPlayable);
 }
 
-/** URIs to queue when starting from one movement: it and everything after. */
 export function queueFrom(movements: Movement[], from: Movement): string[] {
   return playable(movements)
     .filter((m) => m.position >= from.position)
     .map((m) => m.uri);
 }
 
-/** Hearts read off the live liked set, which runs ahead of any server snapshot. */
+/** The live liked set runs ahead of any server snapshot. */
 export function withLiveLikes(movements: Movement[], likedTrackIds: Set<string>): Movement[] {
   return movements.map((m) => ({
     ...m,
@@ -239,17 +192,13 @@ export function withLiveLikes(movements: Movement[], likedTrackIds: Set<string>)
 export interface LibraryWork {
   /** A work can be recorded more than once, so identity is work + recording. */
   id: string;
-  /**
-   * Opaque MusicBrainz identifiers, never numbers to do arithmetic on.
-   * Screens compare them or put them in a URL.
-   */
+  /** Opaque MusicBrainz identifiers. */
   workId: string;
   recordingId: string;
   /** Null where the reader has no composer for the work, not "Unknown". */
   composer: string | null;
   composerFull: string | null;
   composerId: string | null;
-  /** The composer's Spotify artist portrait, when we have one. */
   composerImage: string | null;
   era: Era | null;
   years: string;
@@ -261,54 +210,36 @@ export interface LibraryWork {
   performer: string | null;
   ensemble: string | null;
   album: string;
-  /**
-   * The Spotify album the chosen occurrence came from. A provider fact, and
-   * the thing the card's colour is derived from — kept rather than recomputed
-   * so a caller that needs to name the album has the id and not a title.
-   */
   albumId: string | null;
   cover: string | null;
   tint: string;
   ink: string;
   movements: Movement[];
-  /** No track in this recording has canonical work-part metadata yet. */
   unmatched: boolean;
-  /**
-   * What is missing from this card, named. Empty from the reader in
-   * production, which has no vocabulary for a gap; the MusicBrainz reader
-   * fills it so a card can show a hole instead of looking complete.
-   */
+  /** Named so a card can show a hole instead of looking complete. */
   gaps: MusicBrainzGapCode[];
-  /**
-   * Set when some track on the card is filed under this work by our own
-   * match rather than by MusicBrainz: the weakest such match's confidence.
-   */
+  // The weakest confidence of any track filed under this work by our own match rather than
+  // MusicBrainz.
   ownLink: 'high' | 'medium' | 'low' | null;
-  /** When the user saved the most recent of these movements, ISO 8601. */
   addedAt: string | null;
 }
 
-/**
- * MusicBrainz titles a part with its collection in front. Repeating that on
- * every row of a list headed by the collection is noise.
- */
+// MusicBrainz titles a part with its collection in front; repeating it under the collection heading
+// is noise.
 export function stripCollectionPrefix(title: string, parentTitle: string): string {
   const prefix = `${parentTitle}:`;
   if (!title.startsWith(prefix)) return title;
   return title.slice(prefix.length).trim() || title;
 }
 
-/** The detail page for this recording of the work. */
 export function workHref(work: Pick<LibraryWork, 'workId' | 'recordingId'>): string {
   return `/work/${work.workId}?rec=${work.recordingId}`;
 }
 
-/** Composer and performer, as one line of text (a queue row, the lock screen). */
 export function workByline(work: Pick<LibraryWork, 'composerFull' | 'performer'>): string | null {
   return [work.composerFull, work.performer].filter(Boolean).join(' · ') || null;
 }
 
-/** A recording waiting to play after what's playing now. */
 export interface QueueEntry {
   id: string;
   uris: string[];
@@ -317,11 +248,7 @@ export interface QueueEntry {
   cover: string | null;
 }
 
-/**
- * A recording as a queue entry: its playable movements in order, titled the
- * way the library titles it. A work MusicBrainz leaves untitled goes by its
- * album, which is real, rather than a made-up name.
- */
+// A work MusicBrainz leaves untitled goes by its album, which is real, rather than a made-up name.
 export function queueEntryFor(work: LibraryWork): Omit<QueueEntry, 'id'> {
   const title = work.title
     ? `${work.title}${work.nickname ? ` “${work.nickname}”` : ''}`
@@ -334,11 +261,6 @@ export function queueEntryFor(work: LibraryWork): Omit<QueueEntry, 'id'> {
   };
 }
 
-/**
- * A movement's name in a programme headed by its work: the work heading and
- * the numeral column already say those parts of a MusicBrainz movement
- * title. Anything else is kept as given.
- */
 export function programmeMovementName(
   title: string,
   workTitle: string | null,

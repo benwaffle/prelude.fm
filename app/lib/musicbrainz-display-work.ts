@@ -1,27 +1,8 @@
 import { workLevelOf, type WorkLevel } from './musicbrainz-work-level';
 
-/**
- * Which MusicBrainz work a recording is shown under, and what that work is
- * called, numbered and by whom.
- *
- * The library card, the catalogue and the catalogue's work heading all ask
- * this, and they have to agree: clicking a card's catalogue number must land
- * on a work the catalogue files under the same composer and number. So the
- * rule lives here, pure, and each of them only reads the cache into a
- * `WorkIndex`.
- *
- * The rule:
- *
- *  - the work shown is the one `workLevelOf` picks — the related work, or the
- *    work it is a part of;
- *  - its catalogue references are its own, else the nearest ancestor's that
- *    has any, sorted by system and number so the first is the same wherever
- *    it is read. Climbing is reading MusicBrainz, not guessing: MusicBrainz
- *    says this work is a part of that one, and that one is BWV 988;
- *  - its composer is its own, else the nearest ancestor's. MusicBrainz files
- *    the composer on the piece, not on each movement, so this is a choice
- *    between values MusicBrainz actually holds.
- */
+// The card, catalogue and work heading must agree, so the rule lives here. References and composer
+// are the work's own, else the nearest ancestor's: MusicBrainz files them on the piece, not each
+// movement.
 
 export type DisplayWorkNode = {
   mbid: string;
@@ -40,7 +21,6 @@ export type DisplayWorkReference = {
 
 export type WorkIndex<N extends DisplayWorkNode, R extends DisplayWorkReference> = {
   workById: Map<string, N>;
-  /** Works some cached work names as its parent: the ones with parts. */
   parentMbids: Set<string>;
   referencesByWork: Map<string, R[]>;
 };
@@ -65,15 +45,12 @@ export function indexWorks<N extends DisplayWorkNode, R extends DisplayWorkRefer
   };
 }
 
-/** Why a climb up the tree stopped before reaching a work with no parent. */
 export type HierarchyBreak =
   | { kind: 'cycle'; mbid: string }
   | { kind: 'parent-missing'; parentMbid: string; childMbid: string };
 
 export type WorkAttributes<R> = {
-  /** The nearest references at or above the work, sorted; empty when none. */
   references: R[];
-  /** The nearest composer at or above the work. */
   composerMbid: string | null;
 };
 
@@ -81,18 +58,14 @@ export type DisplayWork<
   N extends DisplayWorkNode,
   R extends DisplayWorkReference,
 > = WorkAttributes<R> & {
-  /** The related work, or null when the cache does not hold it. */
   related: N | null;
-  /** The related work and then its ancestors, as far as the cache goes. */
   hierarchy: N[];
   hierarchyBreak: HierarchyBreak | null;
   /** Null only when the related work is not cached. */
   level: WorkLevel | null;
-  /** The work shown, when the cache holds it. */
   display: N | null;
 };
 
-/** The work and then its ancestors, nearest first, and why the climb stopped. */
 export function climb<N extends DisplayWorkNode>(
   workMbid: string,
   workById: Map<string, N>,
@@ -117,7 +90,6 @@ export function climb<N extends DisplayWorkNode>(
   return { chain, stopped: null };
 }
 
-/** References and composer for a work, read from it and then its ancestors. */
 export function workAttributes<N extends DisplayWorkNode, R extends DisplayWorkReference>(
   ancestorsNearestFirst: N[],
   index: WorkIndex<N, R>,

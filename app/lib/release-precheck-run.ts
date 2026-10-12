@@ -1,12 +1,5 @@
-/**
- * Runs the missing-release pre-checks against live MusicBrainz and caches the
- * result, so that opening the Inbox never spends requests.
- *
- * Every request goes through the gateway on the `interactive` channel: a
- * person is waiting for it. An album costs roughly two title searches, one
- * ISRC search per twenty tracks, one Spotify-link lookup per fifty artists,
- * and at most `NAME_SEARCH_LIMIT` artist name searches.
- */
+// Uses the gateway's `interactive` channel: a person is waiting. Caches results so opening the
+// Inbox spends no requests.
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from './db';
 import {
@@ -50,7 +43,6 @@ const URL_CHUNK = 50;
 /** Unlinked artists searched by name per album; the rest say they were not looked up. */
 export const NAME_SEARCH_LIMIT = 12;
 
-/** Performer relationship types, as `mb_recording_credit.role` stores them. */
 const PERFORMER_ROLES = [
   'instrument',
   'vocal',
@@ -69,12 +61,7 @@ async function lookup<T>(run: () => Promise<T>): Promise<LookupState<T>> {
   }
 }
 
-/* ------------------------------------------------------------------- seed */
-
-/**
- * The album as Harmony would read it: live from Spotify, or — when Spotify
- * cannot be read — our stored copy, marked as such.
- */
+/** Live from Spotify, or our stored copy (marked as such) when Spotify cannot be read. */
 export async function loadReleaseSeed(albumId: string): Promise<ReleaseSeed> {
   try {
     const { album, tracks } = await getSpotifyAlbumSeed(albumId);
@@ -153,14 +140,12 @@ async function libraryReleaseSeed(albumId: string): Promise<ReleaseSeed> {
   };
 }
 
-/* ---------------------------------------------------------- MusicBrainz */
-
 const creditMbids = (credit: MbArtistCreditJson | undefined) =>
   artistCreditOf(credit).map((part) => part.artistId);
 const creditText = (credit: MbArtistCreditJson | undefined) =>
   (credit ?? []).map((part) => part.name ?? part.artist?.name ?? '').join(', ');
 
-/** Title words as a Lucene OR clause; punctuation is dropped, so nothing needs escaping. */
+/** Punctuation is dropped, so nothing needs escaping. */
 function titleClause(field: string, title: string): string | null {
   const words = titleWords(title);
   return words.length === 0 ? null : `${field}:(${words.join(' ')})`;
@@ -277,7 +262,6 @@ const candidateOf = (artist: RawArtist): MbArtistCandidate => ({
   type: artist.type ?? null,
 });
 
-/** MusicBrainz artists linked to each Spotify artist page, by Spotify id. */
 async function linkedArtists(
   mb: MbSession,
   spotifyIds: string[],
@@ -320,7 +304,6 @@ async function searchArtistByName(mb: MbSession, name: string): Promise<MbArtist
   return (result?.artists ?? []).map(candidateOf);
 }
 
-/** Composer and performer evidence our cache holds for these artists. */
 async function cacheRoleEvidence(
   mbids: string[],
 ): Promise<Map<string, { composerWorks: number; performerCredits: number }>> {
@@ -408,7 +391,6 @@ async function suggestArtists(mb: MbSession, seed: ReleaseSeed): Promise<ArtistS
   });
 }
 
-/** Every pre-check for one album, live. Writes nothing. */
 export async function runReleasePrecheck(
   albumId: string,
 ): Promise<{ precheck: ReleasePrecheck; requests: number }> {
@@ -431,7 +413,6 @@ export async function runReleasePrecheck(
   };
 }
 
-/** Run the pre-checks and cache them, replacing any earlier result. */
 export async function refreshReleasePrecheck(albumId: string): Promise<ReleasePrecheck> {
   const { precheck, requests } = await runReleasePrecheck(albumId);
   await writeMissingRelease(albumId, 'precheck', precheck, requests);
@@ -440,14 +421,12 @@ export async function refreshReleasePrecheck(albumId: string): Promise<ReleasePr
 
 export type CachedPrecheck = { result: ReleasePrecheck; requests: number | null; checkedAt: Date };
 
-/** An album's stored pre-check, if it has one. */
 export function cachedPrecheckOf({ precheck }: MissingRelease): CachedPrecheck | null {
   return precheck
     ? { result: precheck.value, requests: precheck.requests, checkedAt: precheck.recordedAt }
     : null;
 }
 
-/** Cached pre-checks for these albums. Spends no MusicBrainz requests. */
 export async function cachedReleasePrechecks(
   albumIds: string[],
 ): Promise<Map<string, CachedPrecheck>> {

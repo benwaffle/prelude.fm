@@ -65,10 +65,7 @@ export async function getWorkProposals(): Promise<WorkProposalsView> {
   return loadView();
 }
 
-/**
- * Approve, dismiss, or return proposals to undecided. Only rows that carry a
- * proposal can be decided; deciding writes nothing outside this table.
- */
+/** Deciding writes nothing outside this table. */
 export async function decideWorkProposals(
   recordingMbidsInput: string[],
   status: ProposalStatus,
@@ -94,11 +91,7 @@ export async function decideWorkProposals(
   return loadView();
 }
 
-/**
- * Record an album's approved links in the ledger, once the person says they
- * entered them in MusicBrainz's relationship editor. Submits nothing; Recheck
- * reads MusicBrainz to see whether each one landed.
- */
+/** Submits nothing; Recheck reads MusicBrainz to see whether each link landed. */
 export async function recordEnteredWorkLinks(albumId: string): Promise<WorkProposalsView> {
   const session = await checkAuth();
   const view = await loadView();

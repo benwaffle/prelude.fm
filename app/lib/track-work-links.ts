@@ -1,19 +1,5 @@
-/**
- * Matching a Spotify track straight to a MusicBrainz work, for tracks
- * MusicBrainz cannot reach through a recording (their release is not on
- * MusicBrainz yet).
- *
- * The scoring is the work-proposal matcher's (`work-proposals.ts`): the same
- * contradictions rule a candidate out — a different catalogue number, key or
- * movement number — and the same signals rank the rest. What differs is what
- * happens to the winner. A proposal waits for a person; a link is used by the
- * reader straight away. So the bar here is higher: only a high-confidence
- * match whose composer is credited on the Spotify track is linked, and
- * anything weaker is kept as a visible, unlinked best guess.
- *
- * Pure: the run that searches MusicBrainz and stores links is in
- * `track-work-links-run.ts`.
- */
+// Same scoring as `work-proposals.ts`, but a link is used straight away, so only a high-confidence
+// match with a credited composer is linked; anything weaker stays a visible unlinked best guess.
 import {
   candidateSignals,
   movementNumber,
@@ -27,26 +13,15 @@ import {
 } from './work-proposals';
 
 export type TrackWorkMatch = WorkProposal & {
-  /** Whether the reader uses this match. */
   linked: boolean;
-  /** Why a best guess is not used, in plain words; null when it is linked. */
   heldBack: string | null;
 };
 
 const TRAILING_LABEL =
   /\s+[-–—]\s+(?:live|remaster(?:ed)?|\d{4} remaster(?:ed)?|remastered \d{4}|mono|stereo)\b.*$/i;
 
-/**
- * The track title with what Spotify adds around the piece's own name: a
- * leading "Handel: " naming a credited artist, and a trailing " - Live" or
- * " - Remastered 2015".
- *
- * Two separators are also read the way MusicBrainz writes them, so the
- * movement numeral lands in the last section where the matcher looks for it:
- * a " - " between a collection and its member becomes ": " ("Op. 8 -
- * Concerto No. 1"), and a movement's own heading and tempo stay one section
- * ("III. Danza pastorale: Allegro" → "III. Danza pastorale, Allegro").
- */
+// Also rewrites " - " separators the way MusicBrainz writes them, so the movement numeral lands in
+// the last section.
 export function cleanTrackTitle(title: string, artistNames: readonly string[]): string {
   let cleaned = title.replace(TRAILING_LABEL, '').trim();
   const colon = cleaned.indexOf(':');
@@ -82,7 +57,6 @@ export function cleanTrackTitle(title: string, artistNames: readonly string[]): 
 
 const MOVEMENT_HEAD = /^([ivxIVX]+|\d{1,2})[.)]\s/;
 
-/** Whether a best guess is good enough for the reader to use. */
 export function linkDecision(proposal: WorkProposal): { linked: boolean; heldBack: string | null } {
   if (proposal.confidence !== 'high') {
     return {
@@ -105,12 +79,8 @@ export function asTrackWorkMatch(proposal: WorkProposal): TrackWorkMatch {
   return { ...proposal, ...linkDecision(proposal) };
 }
 
-/**
- * Two tracks on one album linked to the same work. A deliberate repeat — an
- * album of five conductors playing the same movement — carries the same
- * title each time, and stays. Otherwise one of them is more likely wrong, so
- * every track but the closest title loses its link, saying why.
- */
+// A deliberate repeat carries the same title each time and stays; otherwise all but the closest
+// title lose their link.
 export function unlinkSharedMatches(
   rows: readonly { spotifyTrackId: string; title: string; match: TrackWorkMatch | null }[],
 ): void {
@@ -132,21 +102,14 @@ export function unlinkSharedMatches(
   }
 }
 
-/** A work MusicBrainz says is the piece the track names, by catalogue number and composer. */
 export type ConfirmedWork = {
   workMbid: string;
   title: string;
   composerName: string;
-  /** The catalogue number both the track title and MusicBrainz give, e.g. `BWV 1042`. */
   number: string;
 };
 
-/**
- * Whether a work read from MusicBrainz is the piece the track title names:
- * one of its catalogue numbers is in the title, under the same system, and
- * its composer is credited on the Spotify track. Op. numbers count, since the
- * composer has to match as well.
- */
+/** Op. numbers count, since the composer has to match as well. */
 export function confirmWork(
   trackTitle: string,
   artistNames: readonly string[],
@@ -183,13 +146,8 @@ export function confirmWork(
   return null;
 }
 
-/**
- * Signals for a part of a confirmed work. MusicBrainz often ends a part's
- * title with its tempo ("Nocturne no. 3 in B major, op. 9 no. 3: Allegretto")
- * where the track ends with the piece ("No. 3 in B Major"), so a part whose
- * last section shares nothing is compared once more without it. Numbers, key
- * and movement position still have to agree.
- */
+// MusicBrainz often ends a part's title with its tempo where the track doesn't, so a non-matching
+// last section is retried without it.
 function partSignals(target: ProposalTarget, candidate: ProposalCandidate) {
   const signals = candidateSignals(target, candidate);
   if (signals || !candidate.title.includes(':')) return signals;
@@ -199,17 +157,8 @@ function partSignals(target: ProposalTarget, candidate: ProposalCandidate) {
   });
 }
 
-/**
- * The one part of a confirmed work the track plays, or the work itself.
- *
- * Once catalogue number and composer have fixed the work, the title only has
- * to fix the part, and a language difference ("Konzert für Violine" against
- * "Violin Concerto") no longer matters. A part qualifies when nothing
- * contradicts it and something positive picks it out: the track's movement
- * numeral is the part's position, or the title's "No. 12" is the part's.
- * The work itself qualifies when the track names no movement. Exactly one
- * qualifying candidate is a link; none or several is not.
- */
+// Once number and composer fix the work, the title only has to fix the part. Exactly one qualifying
+// candidate is a link.
 export function confirmedPart(
   target: ProposalTarget,
   confirmed: ConfirmedWork,

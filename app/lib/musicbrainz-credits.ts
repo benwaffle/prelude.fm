@@ -1,18 +1,5 @@
-/**
- * Reading a recording's credits the way a listener would.
- *
- * This replaces counting artist name strings and calling the two most
- * frequent ones performer and ensemble. That heuristic cannot tell a
- * conductor from an orchestra, cannot name an instrument, and silently merges
- * two artists who happen to share a name — and it is the headline of every
- * recording card.
- *
- * MusicBrainz states the roles outright, so the only judgement left here is
- * which roles a listener is looking for. That is an allowlist rather than a
- * denylist: the roles actually present in the cache include `balance`,
- * `instrument technician` and `creative direction`, and a denylist would
- * quietly promote the next unfamiliar one into the credit line.
- */
+// An allowlist of roles, not a denylist: the cache holds roles like `balance` and `instrument
+// technician`, and a denylist would promote the next unfamiliar one into the credit line.
 
 export type StoredCredit = {
   artistMbid: string;
@@ -26,34 +13,22 @@ export type PerformingCredits = {
   soloists: { name: string; instrument: string | null }[];
   conductors: string[];
   ensembles: string[];
-  /** Credited as a performer with nothing further said. */
   performers: string[];
-  /** Producers, engineers, piano tuners: kept, but not the credit line. */
+  /** Kept, but not the credit line. */
   production: { name: string; role: string }[];
 };
 
 const SOLOIST_ROLES = new Set(['instrument', 'vocal']);
 const ENSEMBLE_ROLES = new Set(['performing orchestra', 'orchestra', 'performing chorus', 'choir']);
 
-/**
- * A choir sings, so MusicBrainz credits it as a vocal — the Monteverdi Choir
- * arrives as `vocal` with the instrument `choir vocals`. Reading that as a
- * soloist puts a sixty-voice ensemble where the singer belongs and pushes the
- * actual soloist out of the credit line.
- */
+// MusicBrainz credits a choir as `vocal` + `choir vocals`; read as a soloist it would push out the
+// real soloist.
 const CHORAL_INSTRUMENT = /\bchoir\b|\bchorus\b/i;
 const CONDUCTOR_ROLES = new Set(['conductor', 'chorus master']);
 const PERFORMER_ROLES = new Set(['performer']);
 
-/**
- * Sort a recording's credits into the parts a reader cares about.
- *
- * Order within each part is the order MusicBrainz gave, which for classical
- * releases tends to put the principal first. Duplicates are collapsed by
- * artist, because the same person can hold two roles on one recording — a
- * soloist who also directs — and naming them twice in one line reads as an
- * error.
- */
+// Order is MusicBrainz's (principal first, usually). Duplicates collapse by artist: a soloist who
+// also directs.
 export function performingCredits(credits: StoredCredit[]): PerformingCredits {
   const result: PerformingCredits = {
     soloists: [],
@@ -98,7 +73,6 @@ export function performingCredits(credits: StoredCredit[]): PerformingCredits {
   return result;
 }
 
-/** Whether MusicBrainz said anything at all about who performed. */
 export function hasPerformingCredits(credits: PerformingCredits): boolean {
   return (
     credits.soloists.length > 0 ||
@@ -108,15 +82,8 @@ export function hasPerformingCredits(credits: PerformingCredits): boolean {
   );
 }
 
-/**
- * The two-slot credit the recording card shows.
- *
- * A concerto reads "soloist · orchestra"; a symphony has no soloist and reads
- * "conductor · orchestra"; a solo recital has only the pianist. Where
- * MusicBrainz says nothing, both slots are null and the card says so rather
- * than inventing a performer, which is the whole reason for replacing the
- * frequency count.
- */
+// Where MusicBrainz says nothing, both slots are null and the card says so rather than inventing a
+// performer.
 export function creditLine(credits: PerformingCredits): {
   performer: string | null;
   ensemble: string | null;

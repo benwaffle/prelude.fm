@@ -1,25 +1,9 @@
-/**
- * What the MusicBrainz reader can account for, and what it cannot.
- *
- * The cutover has one hard rule — no track disappears — and one contract:
- * every track asked about comes back exactly once, either on a card or in a
- * named gap. This measures both against the real database, in bounded
- * batches, and writes nothing.
- *
- *   pnpm metadata:accounting                 every Spotify track we hold
- *   pnpm metadata:accounting --limit 2000    the first n, for a quick read
- *   pnpm metadata:accounting --details       every affected track ID, not a sample
- *   pnpm metadata:accounting --json          machine-readable, for a deploy log
- *
- * Exits non-zero when a requested ID comes back unaccounted for, because
- * that is a fault in the reader rather than a gap in MusicBrainz.
- */
+// Usage: pnpm metadata:accounting [--limit N] [--details] [--json]
+// Every track asked about must come back exactly once, on a card or in a named gap.
 import { defineScript } from './lib/cli';
 
-/** Small enough that one batch is one modest set of queries. */
 const BATCH = 500;
 
-/** How many IDs to name per finding when not printing all of them. */
 const SAMPLE = 5;
 
 defineScript(

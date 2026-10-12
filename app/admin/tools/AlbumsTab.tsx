@@ -21,12 +21,7 @@ import { LoadFailure } from '@/app/components/LoadFailure';
 import { noticeClassName } from '../components/Notice';
 import { useAdminAction } from '../components/useAdminAction';
 
-/**
- * The one thing to do about this album, and where to do it in the Inbox.
- *
- * Harmony and MagicISRC only run through the Inbox ledger — never as naked
- * links that skip mb_submission.
- */
+// Harmony and MagicISRC only run through the Inbox ledger, never as links that skip mb_submission.
 function nextStep(
   album: AlbumRow,
   submission?: { missing: number },

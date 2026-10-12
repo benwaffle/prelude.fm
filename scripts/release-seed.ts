@@ -1,14 +1,5 @@
-/**
- * Prepare our MusicBrainz release-editor seed for missing albums, from the
- * command line: which existing recordings would be pre-filled, and why.
- *
- *   pnpm metadata:release-seed --album <id> [--album <id> …]
- *   pnpm metadata:release-seed --album <id> --fields    also print the form fields
- *   pnpm metadata:release-seed --album <id> --no-store  do not store the seed
- *
- * Reads MusicBrainz (interactive channel) and Spotify; submits nothing — the
- * form is only ever POSTed from the admin's own browser.
- */
+// Usage: pnpm metadata:release-seed --album <id> [--album <id> …] [--fields] [--no-store]
+// Submits nothing: the form is only ever POSTed from the admin's own browser.
 import { defineScript, UsageError } from './lib/cli';
 
 defineScript(

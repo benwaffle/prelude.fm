@@ -2,24 +2,18 @@
 
 import { useCallback, useEffect, useState, type DependencyList } from 'react';
 
-/**
- * One read from the server, as a screen renders it. A failed read is its own
- * state, so a screen can't mistake it for an empty answer.
- */
+/** A failed read is its own state, so a screen can't mistake it for an empty answer. */
 export type ServerQuery<T> =
   | { status: 'loading' }
   | { status: 'error'; message: string; retry: () => void }
   | {
       status: 'ready';
       data: T;
-      /**
-       * Read again in place: the current data stays on screen until the new
-       * data lands. Rejects, keeping the old data, when the read fails.
-       */
+      // The current data stays on screen until the new data lands; rejects, keeping it, when the
+      // read fails.
       refresh: () => Promise<void>;
     };
 
-/** What a thrown value says, in words. */
 export function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -34,15 +28,8 @@ function sameDeps(left: DependencyList, right: DependencyList): boolean {
   return left.length === right.length && left.every((value, i) => Object.is(value, right[i]));
 }
 
-/**
- * Run `load` whenever `deps` change, and say where it got to. An answer is
- * only shown for the deps it was asked for: the moment they change the query
- * reads as loading again, so one composer's works never sit under another's
- * name.
- *
- * `load` is null while there is nothing to ask yet (no composer chosen, a
- * panel closed); the query reads as loading until there is.
- */
+// An answer is only shown for the deps it was asked for, so one composer's works never sit under
+// another's name. `load` is null while there is nothing to ask yet.
 export function useServerQuery<T>(
   load: (() => Promise<T>) | null,
   deps: DependencyList,

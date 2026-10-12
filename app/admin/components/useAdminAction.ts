@@ -5,7 +5,6 @@ import { enqueueAdminAction } from './admin-action-queue';
 import { failureMessage } from '@/lib/use-server-query';
 import { useAdminFailure } from './AdminFailure';
 
-/** Fired after every admin action, so the gateway counter shows what it spent. */
 export const ADMIN_ACTION_DONE = 'admin-action-done';
 
 export type AdminActionStatus = 'queued' | 'running';
@@ -16,17 +15,8 @@ export type AdminActionEffects = {
   setStatus: (status: AdminActionStatus | null) => void;
 };
 
-/**
- * One admin action: clear this action's previous failure, wait its turn in
- * the admin queue ("queued"), run ("running"), and leave a thrown error where
- * `showFailure` puts it until retried or dismissed. Never rejects, so callers
- * need no try/catch. With `queue: false` it runs at once, for controls such
- * as stopping the gateway that must not wait behind queued edits.
- *
- * Only actions report here. Loads and polls show their failures inline where
- * the missing data would be, so a background refresh can never replace or
- * resurrect an action's failure.
- */
+// Never rejects. `queue: false` runs at once, for controls (like stopping the gateway) that must
+// not wait behind queued edits.
 export async function runAdminAction(
   action: () => Promise<void>,
   effects: AdminActionEffects,
@@ -60,14 +50,12 @@ export type RowAction = {
 };
 
 export type RowActionState = RowAction & {
-  /** The row's own action is queued or running, so its buttons must wait. */
   busy: boolean;
   dismiss: () => void;
 };
 
 const IDLE: RowAction = { label: '', status: null, failure: null };
 
-/** What the section header says is in progress: the running action, and how many wait. */
 export function pendingSummary(
   section: { label: string; status: AdminActionStatus | null },
   rows: RowAction[],
@@ -80,15 +68,6 @@ export function pendingSummary(
   return queued > 0 ? `${running.label} · ${queued} more queued` : running.label;
 }
 
-/**
- * A component's admin actions.
- *
- * `run` is a section-wide action (Recheck all, gateway controls): `busy`
- * while it is in flight, failures in the page's admin failure notice.
- * `runRow` belongs to one row, keyed by `key`: only that row is busy, its
- * failure stays on it (`row(key).failure`) until it is retried or dismissed,
- * and other rows stay clickable. Rows queue in click order.
- */
 export function useAdminAction({ queue = true }: { queue?: boolean } = {}) {
   const { clearFailure, showFailure } = useAdminFailure();
   const [section, setSection] = useState<{ label: string; status: AdminActionStatus | null }>({

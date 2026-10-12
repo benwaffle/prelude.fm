@@ -10,19 +10,10 @@ import {
 import { failureMessage } from '@/lib/use-server-query';
 import { ADMIN_ACTION_DONE, useAdminAction } from './useAdminAction';
 
-/**
- * The MusicBrainz request budget, and the switch that stops it.
- *
- * This sits in the header rather than on a tab because it answers a question
- * that applies to every page — is the gateway running, and how much of today's
- * budget is left — and because a stop button you have to navigate to is a
- * worse stop button.
- */
 export function GatewayBar() {
   // Stopping must not wait behind queued edits.
   const { pending, busy, run } = useAdminAction({ queue: false });
   const [status, setStatus] = useState<GatewayView | null>(null);
-  // The poll's failure stays here, beside the figures it failed to refresh.
   const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 

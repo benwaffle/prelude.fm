@@ -5,14 +5,8 @@ import {
   type DisplayWorkReference,
 } from './musicbrainz-display-work';
 
-/**
- * Which MusicBrainz work a held recording belongs under, and what that work
- * is called.
- *
- * The catalogue has to agree with the library about what counts as a work,
- * or clicking a card's catalogue number would land on a work the catalogue
- * has never heard of. Both use `resolveDisplayWork`.
- */
+// Uses `resolveDisplayWork`, as the library does, so a card's catalogue number lands on the same
+// work.
 
 export type CatalogueWorkNode = DisplayWorkNode;
 
@@ -21,7 +15,6 @@ export type CatalogueReference = DisplayWorkReference & {
   number: string;
 };
 
-/** A held track of a work: a MusicBrainz recording, or a track we linked ourselves. */
 export type HeldRelation = {
   recordingMbid: string | null;
   spotifyTrackId: string;
@@ -34,19 +27,12 @@ export type ShapedCatalogueWork = {
   title: string | null;
   type: string | null;
   composerMbid: string | null;
-  /** The first of the nearest references at or above the work, if MusicBrainz has one. */
   reference: CatalogueReference | null;
   /** MusicBrainz recordings, and `track:<spotify id>` for a track with none. */
   holdings: string[];
 };
 
-/**
- * Groups held recordings under the work a reader would call theirs.
- *
- * `relations` is held track → the work it is of; the level rule then decides
- * whether that work, or the one above it, is the thing to show. A work the
- * cache does not hold stays in the list, untitled.
- */
+/** A work the cache does not hold stays in the list, untitled. */
 export function shapeHeldCatalogue(
   relations: HeldRelation[],
   works: CatalogueWorkNode[],

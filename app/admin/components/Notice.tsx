@@ -14,7 +14,6 @@ const intentStyles: Record<NonNullable<NoticeProps['intent']>, string> = {
 
 const joinClasses = (...classes: Array<string | undefined>) => classes.filter(Boolean).join(' ');
 
-/** The notice box's classes, for an element that draws its own (a load failure). */
 export function noticeClassName(
   intent: NonNullable<NoticeProps['intent']>,
   className?: string,

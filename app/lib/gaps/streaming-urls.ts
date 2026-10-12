@@ -11,14 +11,8 @@ import {
 } from '../musicbrainz-manual-submissions';
 import { within, without } from './scope';
 
-/**
- * Matched releases whose URL relations have been fetched, and which have no
- * active Spotify free-streaming link.
- *
- * Unfetched stays unknown, never a contribution: an empty `mb_release_url`
- * result is not evidence that MusicBrainz has no External Links. The reader
- * uses the same rule; this list is only the `missing` side of it.
- */
+// Unfetched stays unknown: an empty `mb_release_url` result is not evidence MusicBrainz has no
+// External Links.
 export type StreamingUrlGap = {
   releaseMbid: string;
   releaseTitle: string;
@@ -49,7 +43,6 @@ async function relationsByRelease(
   return byRelease;
 }
 
-/** What the cache currently knows about each release's Spotify free-streaming URL. */
 export async function streamingUrlStates(
   releaseMbids: readonly string[],
 ): Promise<Map<string, SpotifyFreeStreamingUrlState>> {

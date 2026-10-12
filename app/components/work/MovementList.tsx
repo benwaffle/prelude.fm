@@ -5,27 +5,14 @@ import { numeralPrefix, type Movement } from '@/lib/prelude';
 import { Icon, Waveform } from '../Icon';
 import { MovementName } from './WorkText';
 
-/**
- * A recording's movements, wherever they are listed:
- *
- * - `card`: a library card's column, where liking happens. A click selects,
- *   a double click (or a tap) plays.
- * - `programme`: the recording page, large, every row playable.
- * - `summary`: a compact, inert list under another work.
- * - `sheet`: the phone player's list of what the recording plays.
- *
- * Every variant shows a movement the recording lacks the same way — greyed,
- * struck through and inert — so a partial recording reads as partial, and
- * every one marks a movement MusicBrainz has no title for.
- */
+// Every variant shows a movement the recording lacks as greyed, struck through and inert, so a
+// partial recording reads as partial.
 export type MovementListProps =
   | {
       variant: 'card';
       movements: Movement[];
-      /** For the screen reader's account of each row. */
       workTitle: string | null;
       playingTrackId: string | null;
-      /** Which row is selected, by `n`. */
       selectedN: number | null;
       onSelect: (movement: Movement) => void;
       onPlay: (movement: Movement) => void;
@@ -169,8 +156,7 @@ function CardRow({
   const liked = movement.liked;
   const tappedRef = useRef(false);
 
-  // A part of the work this recording doesn't carry: present so the programme
-  // reads whole, but greyed out and inert — nothing to play, nothing to like.
+  // A part of the work this recording lacks: shown so the programme reads whole, but inert.
   if (movement.missing) {
     return (
       <div
@@ -264,9 +250,7 @@ function ProgrammeRow({
   movement: Movement;
   list: Extract<MovementListProps, { variant: 'programme' }>;
 }) {
-  /* A movement of the work that this recording doesn't carry. Shown so the
-     programme is the whole work, greyed out and inert so it can't be
-     mistaken for something playable. */
+  // A part of the work this recording lacks: shown, but inert so it can't be mistaken for playable.
   if (m.missing) {
     return (
       <li className="relative">

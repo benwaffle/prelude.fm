@@ -3,23 +3,9 @@ import { db, type DatabaseExecutor } from './index';
 import { jsonList } from './chunked';
 import { mbRecordingWork, mbWorkProposal, trackRecording, trackWorkLink } from './schema';
 
-/**
- * Which works the Spotify tracks we hold are of, with the precedence between
- * MusicBrainz and our own links applied here, once, in SQL.
- *
- * Our own link stands in only where MusicBrainz has none:
- *
- *  - a track anchored to a MusicBrainz recording is of the works MusicBrainz
- *    relates that recording to;
- *  - if MusicBrainz relates the recording to no work, of the work
- *    `mb_work_proposal` suggests for it (any suggestion nobody dismissed, at
- *    its own confidence);
- *  - a track with no MusicBrainz recording is of the work `track_work_link`
- *    linked it to.
- *
- * Every reader — the library facts, the classifier, the work page and the
- * catalogue — asks this, so none of them can disagree about it.
- */
+// MusicBrainz relations first; our own link (an undismissed `mb_work_proposal`, or
+// `track_work_link` for a track with no recording) only where MusicBrainz has none. Every reader
+// asks this, so none can disagree.
 
 export type HeldWorkLink = {
   spotifyTrackId: string;
@@ -27,14 +13,13 @@ export type HeldWorkLink = {
   recordingMbid: string | null;
   workMbid: string;
   linkedBy: 'musicbrainz' | 'prelude';
-  /** Our link's confidence; null for a MusicBrainz relation. */
+  /** Null for a MusicBrainz relation. */
   confidence: 'high' | 'medium' | 'low' | null;
 };
 
-/** Narrow by the tracks asked about, or by a subquery of work MBIDs. */
 export type HeldWorkLinkScope = { tracks: Iterable<string> } | { works: SQL };
 
-/** The work a proposal suggests (indexed). Its confidence is still read from the JSON. */
+/** Indexed column; its confidence is still read from the JSON. */
 const proposedWorkMbid = sql<string>`${mbWorkProposal.workMbid}`;
 const proposedConfidence = sql`json_extract(${mbWorkProposal.proposal}, '$.confidence')`;
 
@@ -49,7 +34,6 @@ function inScope(
     : sql`${work} in ${scope.works}`;
 }
 
-/** One branch's columns, named so the union can be embedded and selected from. */
 function columns(
   spotifyTrackId: SQLWrapper,
   recordingMbid: SQLWrapper,
@@ -66,11 +50,6 @@ function columns(
   };
 }
 
-/**
- * The links as one `union all` query, its columns named `spotify_track_id`,
- * `recording_mbid`, `work_mbid`, `linked_by` and `confidence`: await it for
- * rows, or embed it in a larger statement.
- */
 /** Without a scope, every held track. */
 export function heldWorkLinks(
   scope: HeldWorkLinkScope | undefined,

@@ -1,14 +1,5 @@
-/**
- * The shared shell of every script: load the environment, check for a
- * database, parse the options strictly, run, and exit with the right code.
- *
- * Options are parsed by `node:util`'s `parseArgs` in strict mode, so a typo
- * or a missing value is an error rather than an option quietly ignored, and
- * an `integer` option must actually be one.
- *
- * `main` receives the parsed options and should import anything that reads
- * the environment (the database above all) dynamically, after it is loaded.
- */
+// Options are parsed strictly, so a typo is an error. `main` should import env-dependent modules
+// dynamically.
 import { loadEnvConfig } from '@next/env';
 import { parseArgs } from 'node:util';
 
@@ -35,7 +26,7 @@ export type ScriptArgs<O extends Record<string, OptionSpec>> = {
   positionals: string[];
 };
 
-/** A mistake in how the script was called: printed without a stack. */
+/** Printed without a stack. */
 export class UsageError extends Error {}
 
 export function parseScriptArgs<O extends Record<string, OptionSpec>>(
@@ -75,22 +66,14 @@ export function parseScriptArgs<O extends Record<string, OptionSpec>>(
   return { options: options as ScriptArgs<O>['options'], positionals: parsed.positionals };
 }
 
-/** Write everything already printed before the process exits. */
 const flush = (stream: NodeJS.WriteStream) =>
   new Promise<void>((resolve) => stream.write('', () => resolve()));
 
-/**
- * Run a script. `main` returns its exit code, or nothing for success.
- *
- * The process is ended explicitly once `main` settles: an open database
- * connection or a gateway timer would otherwise keep it alive.
- */
+/** Exits explicitly: an open database connection or gateway timer would keep the process alive. */
 export function defineScript<O extends Record<string, OptionSpec>>(
   config: {
     options: O;
-    /** Accept arguments that are not options (a subcommand, a code). */
     positionals?: boolean;
-    /** Whether the script needs TURSO_DATABASE_URL; true unless said otherwise. */
     database?: boolean;
   },
   main: (args: ScriptArgs<O>) => Promise<number | void>,

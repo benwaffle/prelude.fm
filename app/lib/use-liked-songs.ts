@@ -9,9 +9,7 @@ const spotifyClientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? '';
 
 interface UseLikedSongsResult {
   tracks: SavedTrack[];
-  /** No library to show yet — distinct from refreshing one we already hold. */
   loading: boolean;
-  /** A fetch is in flight, whether or not we're showing a cached library. */
   refreshing: boolean;
   error: string | null;
   total: number;
@@ -67,8 +65,7 @@ export function useLikedSongs(accessToken: string, userId: string): UseLikedSong
         setTracks(cached.tracks);
         setTotal(cached.tracks.length);
 
-        // A stale cache is still a whole library. Hand it to the app now and
-        // refresh behind it, rather than sitting on a spinner for a minute.
+        // A stale cache is still a whole library: show it now and refresh behind it.
         if (hasCachedTracks) setLoading(false);
 
         if (!cached.isStale) return;
@@ -76,8 +73,7 @@ export function useLikedSongs(accessToken: string, userId: string): UseLikedSong
 
       await fetchFromApi(!hasCachedTracks);
     } catch (err) {
-      // An expired cache is still useful. Keep showing it if a background
-      // refresh fails instead of replacing the library with an error screen.
+      // Keep showing an expired cache if the background refresh fails.
       if (hasCachedTracks) {
         console.error('Failed to refresh liked songs:', err);
       } else {

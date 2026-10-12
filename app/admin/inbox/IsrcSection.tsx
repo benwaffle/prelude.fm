@@ -26,7 +26,6 @@ function IsrcTrackTable({
   resubmitActions,
 }: {
   tracks: IsrcRelease['tracks'];
-  /** Controls for a track voters rejected before; omitted in the read-only view. */
   resubmitActions?: (track: IsrcTrack) => ReactNode;
 }) {
   return (
@@ -91,7 +90,6 @@ function IsrcTrackTable({
   );
 }
 
-/** "3 submitted (2 pending, 1 applied)", or null when nothing is submitted yet. */
 function submittedSummary(tracks: IsrcRelease['tracks']): string | null {
   const byOutcome = new Map<string, number>();
   for (const track of tracks) {

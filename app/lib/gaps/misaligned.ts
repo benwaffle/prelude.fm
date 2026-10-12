@@ -11,31 +11,18 @@ import {
 import type { TracklistMismatch } from '../submission-evidence';
 import { within, without } from './scope';
 
-/**
- * Albums whose tracklist does not line up with the release we matched.
- *
- * Anchoring refuses these, which is right, but refusing silently makes them
- * look like albums MusicBrainz simply has nothing for. They are the
- * opposite: MusicBrainz has the release and one of the two tracklists is
- * wrong. A reordered one is an error somebody can fix — and it is not
- * always MusicBrainz's, which is why this reports rather than submits.
- */
+// Reported rather than submitted: MusicBrainz has the release, and either tracklist may be the
+// wrong one.
 export type MisalignedAlbum = {
   albumId: string;
   albumTitle: string;
   releaseMbid: string;
   diagnosis: TracklistDiagnosis;
-  /**
-   * Only the positions that disagree.
-   *
-   * An album can line up for twenty tracks and part company on the
-   * twenty-first; showing the first few rows would show the agreement and
-   * hide the problem.
-   */
+  // Only the disagreeing positions: an album can agree for twenty tracks and part company on the
+  // twenty-first.
   mismatches: TracklistMismatch[];
   ourCount: number;
   theirCount: number;
-  /** Tracks anchored anyway, by ISRC, which needs no tracklist at all. */
   anchoredByIsrc: number;
 };
 
@@ -60,8 +47,7 @@ export async function misalignedAlbums(
     );
   if (albums.length === 0) return [];
 
-  // Every album's two tracklists at once: one round trip per album was most
-  // of an Inbox load.
+  // Every album's two tracklists at once: one round trip per album was most of an Inbox load.
   const albumIds = albums.map((album) => album.albumId);
   const [ourRows, theirRows, anchoredRows] = await Promise.all([
     forChunks(albumIds, (chunk) =>

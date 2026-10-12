@@ -1,18 +1,6 @@
-/**
- * Writing MusicBrainz into our cache of it.
- *
- * These tables hold what MusicBrainz says, keyed by MBID, shared by every
- * user. Ingest is idempotent: re-reading a release rewrites its rows rather
- * than accumulating them, because the cache should converge on whatever
- * MusicBrainz currently says and never hold a mixture of two readings.
- *
- * The shape of the work is dictated by the request budget. One release read
- * brings back a whole album — tracklist, recordings, ISRCs, work names,
- * credits — and the only thing it cannot bring back is the work tree above
- * those names, because a work's parent is only visible from the work itself.
- * So: one request for the release, then one for each work we have never
- * looked at, and none at all for anything already cached.
- */
+// Ingest is idempotent: re-reading a release rewrites its rows so the cache converges on what
+// MusicBrainz says now. One request per release, then one per work never read; a work's parent is
+// only visible from the work itself.
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import { db } from './db';
@@ -45,19 +33,14 @@ import type {
 /** libSQL takes large statements, but not unbounded ones. */
 const INSERT_CHUNK = 200;
 
-/** A transaction or the root client; the cache writes through either. */
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** Collapse rows that would collide on their key before they reach SQLite. */
 function dedupe<T>(rows: T[], key: (row: T) => string): T[] {
   const byKey = new Map<string, T>();
   for (const row of rows) byKey.set(key(row), row);
   return [...byKey.values()];
 }
 
-/* ------------------------------------------------------------- lookup --- */
-
-/** Whether a release MBID is already present in the local cache. */
 export async function releaseIsCached(releaseMbid: string): Promise<boolean> {
   const [row] = await db
     .select({ mbid: mbRelease.mbid })
@@ -67,12 +50,7 @@ export async function releaseIsCached(releaseMbid: string): Promise<boolean> {
   return Boolean(row);
 }
 
-/* ------------------------------------------------------------ entities --- */
-
-/**
- * Of the Spotify pages MusicBrainz links, the one our tracks credit, so its
- * portrait is one we hold; the first link when none is.
- */
+// The Spotify page our tracks credit, so its portrait is one we hold; the first link when none is.
 async function heldSpotifyArtistId(artist: MbArtist): Promise<string | null> {
   const linked = spotifyArtistIdsOf(artist);
   if (linked.length <= 1) return linked[0] ?? null;
@@ -97,23 +75,15 @@ async function cacheArtist(artist: MbArtist) {
     linksReadAt: now,
     fetchedAt: now,
   };
-  // `creditedName` is deliberately absent from the update: it is the name a
-  // release printed, which this lookup does not know and must not erase.
+  // `creditedName` is deliberately not updated: it is the name a release printed, which this lookup
+  // does not know.
   await db.insert(mbArtist).values(row).onConflictDoUpdate({
     target: mbArtist.mbid,
     set: row,
   });
 }
 
-/**
- * Record that a work exists and what it is called, without claiming to have
- * read it.
- *
- * A release names dozens of works and says nothing about their parents, so a
- * stub is all we know. It must never overwrite a work already fetched in
- * full — hence the do-nothing — or every release read would erase the tree
- * built by the work reads.
- */
+/** A stub must never overwrite a fully fetched work, hence the do-nothing. */
 async function cacheWorkStubs(
   works: { id: string; title: string; type?: string | null }[],
   executor: Transaction | typeof db = db,
@@ -134,13 +104,6 @@ async function cacheWorkStubs(
   }
 }
 
-/**
- * Store a work we have actually read: its parent, its position in that parent,
- * its composer and its catalogue references.
- *
- * Returns the parent's MBID so a caller can walk upwards without re-reading
- * the relations.
- */
 async function cacheWork(work: MbWork): Promise<{ parentMbid: string | null }> {
   const parent = parentPartOf(work);
   const composer = composerOf(work);
@@ -160,8 +123,7 @@ async function cacheWork(work: MbWork): Promise<{ parentMbid: string | null }> {
     return split ? [{ seriesMbid: catalogue.seriesId, ...split }] : [];
   });
 
-  // One batch, so the catalogue references are never left deleted and not
-  // yet put back.
+  // One batch, so the catalogue references are never left deleted and not yet put back.
   const statements: BatchItem<'sqlite'>[] = [];
   if (parent) {
     statements.push(
@@ -193,15 +155,12 @@ async function cacheWork(work: MbWork): Promise<{ parentMbid: string | null }> {
   return { parentMbid: parent?.id ?? null };
 }
 
-/* ------------------------------------------------------------- release --- */
-
 export type CachedRelease = {
   releaseMbid: string;
   tracks: number;
   recordings: number;
   credits: number;
   isrcs: number;
-  /** Works named by this release, whether or not they were already known. */
   workMbids: string[];
 };
 
@@ -237,14 +196,8 @@ async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
 
   const works = [...recordings.values()].flatMap((recording) => recording.works);
 
-  /*
-   * One transaction, because the tracklist, work links, credits and ISRCs are
-   * rewritten rather than merged: each is deleted and reinserted so the cache
-   * converges on what MusicBrainz currently says instead of holding a mixture
-   * of two readings. Half of that applied is worse than none of it — a
-   * release whose tracklist was deleted and not put back looks to every
-   * invariant like a release with no tracks.
-   */
+  // One transaction: rows are deleted and reinserted, and a half-applied rewrite looks like a
+  // release with no tracks.
   await db.transaction(async (tx) => {
     const fetchedAt = new Date();
     const releaseRow = {
@@ -253,9 +206,9 @@ async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
       barcode: release.barcode,
       date: release.date,
       country: release.country,
-      // An older mirror/test source may not implement URL relationships yet.
-      // Omitting the marker preserves unknown; an explicit empty array from a
-      // source that requested `url-rels` is authoritative absence.
+      // An older mirror/test source may not implement URL relationships: omitting the marker
+      // preserves unknown, while an explicit empty array from a `url-rels` request is authoritative
+      // absence.
       ...(release.urlRelations === undefined ? {} : { urlRelationsFetchedAt: fetchedAt }),
       fetchedAt,
     };
@@ -296,8 +249,7 @@ async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
       );
     }
 
-    // One statement per batch rather than one per recording: a box set is a
-    // few hundred rows, and a round trip each made caching one a minute's work.
+    // One statement per batch: a round trip per recording made caching a box set a minute's work.
     for (const batch of chunksOf([...recordings.values()], INSERT_CHUNK)) {
       await tx
         .insert(mbRecording)
@@ -351,10 +303,6 @@ async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
   };
 }
 
-/**
- * Artist names learned from a release: the relationship gives their
- * MusicBrainz name, the artist credit gives the name this release printed.
- */
 async function cacheArtistNames(tx: Transaction, recordings: MbReleaseRecording[]) {
   const named = new Map<string, { name: string; creditedName: string | null }>();
   for (const recording of recordings) {
@@ -376,16 +324,12 @@ async function cacheArtistNames(tx: Transaction, recordings: MbReleaseRecording[
       .values(batch.map(([mbid, artist]) => ({ mbid, ...artist })))
       .onConflictDoUpdate({
         target: mbArtist.mbid,
-        // Only fills a gap: a name we already learned is not replaced by a
-        // later release crediting the same artist differently.
+        // Only fills a gap: a later release crediting the artist differently does not replace it.
         set: { creditedName: sql`coalesce(${mbArtist.creditedName}, excluded.credited_name)` },
       });
   }
 }
 
-/* -------------------------------------------------------------- ingest --- */
-
-/** Works we know the name of but have never read. */
 export async function worksNeedingDetail(mbids: string[]): Promise<string[]> {
   if (mbids.length === 0) return [];
   const known = new Set<string>();
@@ -405,21 +349,10 @@ export async function worksNeedingDetail(mbids: string[]): Promise<string[]> {
   return pending;
 }
 
-/**
- * How far up a work tree to walk.
- *
- * MusicBrainz trees are shallow in practice — a prelude inside a
- * prelude-and-fugue inside a book is three deep — so this is a guard against a
- * cycle or a pathological chain spending the day's budget, not a real limit.
- */
+// A guard against cycles or pathological chains spending the day's budget; real trees are about
+// three deep.
 const MAX_TREE_DEPTH = 8;
 
-/**
- * Read a work and everything above it, skipping what is already cached.
- *
- * Returns the number of requests spent, because that is the number the whole
- * design is judged on.
- */
 export async function ingestWorkTree(
   source: MusicBrainzSource,
   workMbid: string,
@@ -450,11 +383,6 @@ export async function ingestWorkTree(
   return { requests };
 }
 
-/**
- * Read one work and cache it, returning what MusicBrainz said so a caller
- * that also needs its parts does not have to ask twice. Null when
- * MusicBrainz has no such work.
- */
 export async function readAndCacheWork(
   source: MusicBrainzSource,
   workMbid: string,
@@ -477,13 +405,7 @@ export type ReleaseIngestReport = {
   worksFetched: number;
 };
 
-/**
- * Bring one release, and the works it reaches, into the cache.
- *
- * The request count is the point of the shape: one for the release, then one
- * per work nobody has read yet. An album whose works are already cached — the
- * common case once a few users share a repertoire — costs exactly one.
- */
+/** An album whose works are already cached costs exactly one request. */
 export async function ingestRelease(
   source: MusicBrainzSource,
   releaseMbid: string,
@@ -530,12 +452,7 @@ export async function ingestRelease(
   };
 }
 
-/**
- * Re-read one recording: ISRCs, work links, credits.
- *
- * A Recheck of a work-relationship or contested-ISRC row has to ask MusicBrainz
- * again; the worker will not, once the track is already anchored.
- */
+/** Recheck needs this: the worker won't re-read an already-anchored track. */
 export async function ingestRecording(
   source: MusicBrainzSource,
   recordingMbid: string,
@@ -602,15 +519,7 @@ export async function ingestRecording(
   return { found: true, requests: 1 };
 }
 
-/**
- * Read recordings that an ISRC named but nobody has looked at.
- *
- * These come from the ISRC sweep, which resolves a track without knowing its
- * release and so learns nothing but an MBID. One request each turns that into
- * a title, a length, the works it performs and who played — the same
- * information a release read would have brought, for the albums MusicBrainz
- * does not have as releases.
- */
+/** The ISRC sweep learns only an MBID; one request each fills in what a release read would have. */
 export async function drainRecordingStubs(
   source: MusicBrainzSource,
   limit: number,
@@ -675,26 +584,9 @@ export async function drainRecordingStubs(
   return { recordings, requests, reachedWork };
 }
 
-/**
- * Read works that a release named but nobody has looked at.
- *
- * This is the unbounded half of ingest, separated from the album-facing half
- * on purpose. Caching a release is one request and answers the question a
- * user is waiting on — which recordings are these? Reading the work tree
- * above them can be fifty requests for one compilation, and nobody is waiting
- * on it, so it belongs on the backfill channel where it can be starved
- * without anyone noticing.
- *
- * The stub rows are the queue: `mb_work.detail = 'stub'` means named but
- * never read, so there is no separate work list to keep in step.
- *
- * A stub MusicBrainz will not hand back as itself — removed, or merged into
- * another work, so the answer carries a different MBID — stays a stub: we
- * still have not read that work, and the gap should keep showing. Its
- * `fetched_at` moves to now so the next slice starts with stubs nobody has
- * tried yet; without that, a slice's worth of such works at the head of the
- * table would be asked for again on every pass and the rest never reached.
- */
+// Separate from release ingest so it can run on the backfill channel. `mb_work.detail = 'stub'` is
+// the queue. A stub MusicBrainz won't return as itself (removed or merged) stays a stub, but
+// `fetched_at` moves so the next slice doesn't keep re-asking the same works.
 export async function drainWorkStubs(
   source: MusicBrainzSource,
   limit: number,
@@ -728,20 +620,8 @@ export async function drainWorkStubs(
   return { works, requests, unavailable };
 }
 
-/**
- * Re-read works whose stored composer may be a work's second composer.
- *
- * Until `composerOf` learned to prefer the main composer, a work crediting
- * several (Mozart's Requiem names Süßmayr as an additional composer) was
- * filed under whichever MusicBrainz listed first. Nothing in the cache says
- * how many composers a work has, so the candidates are re-read: every
- * top-level work with a composer, and every part whose composer is not the
- * one it would inherit. Parts that simply repeat their parent's composer are
- * re-read only when that parent's composer changed.
- *
- * Resumable: works read at or after `since` are skipped, so a rerun given the
- * first run's start time picks up where it stopped.
- */
+// For works whose stored composer may be an `additional` one (Süßmayr on the Requiem). Resumable:
+// works read at or after `since` are skipped.
 export async function refreshWorkComposers(
   source: MusicBrainzSource,
   options: { since: Date; limit: number; onProgress?: (line: string) => void },
@@ -814,15 +694,7 @@ export async function refreshWorkComposers(
   return { read, changed };
 }
 
-/**
- * Re-read releases already cached, to pick up fields a later version of the
- * reader learned to ask for.
- *
- * Cheap in a way worth stating: the expensive half of ingest is the work
- * tree, and those works are already cached, so a re-read is one request per
- * release. That is what makes it reasonable to change what we store and
- * backfill it afterwards rather than getting it right first time.
- */
+/** The work tree is already cached, so a re-read is one request per release. */
 export async function refreshCachedReleases(
   source: MusicBrainzSource,
   limit: number,
@@ -838,16 +710,7 @@ export async function refreshCachedReleases(
   return { releases: refreshed, requests };
 }
 
-/**
- * Artists we know the name of but nothing else.
- *
- * Every artist reaches the cache as a stub — a name attached to a credit or a
- * composer relationship — because that is all a release read carries. Their
- * dates, sort name and type each cost a request, so they are filled in
- * afterwards and composers come first: a composer's dates are what place a
- * work in a period, which is a thing the reader shows, while a session
- * engineer's are not.
- */
+/** Composers first: their dates place a work in a period, which the reader shows. */
 async function artistsNeedingDetail(limit: number): Promise<string[]> {
   // A composer read before we asked for links is read again for its portrait.
   const composers = await db
@@ -869,12 +732,6 @@ async function artistsNeedingDetail(limit: number): Promise<string[]> {
   return [...seen, ...rest.map((row) => row.mbid).filter((mbid) => !seen.has(mbid))];
 }
 
-/**
- * Read artist stubs, composers first.
- *
- * One request each, and unlike works there is no tree to walk, so the cost is
- * exactly the number of artists nobody has looked at yet.
- */
 export async function drainArtistStubs(
   source: MusicBrainzSource,
   limit: number,

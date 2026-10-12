@@ -7,7 +7,6 @@ const TABS = [
   { label: 'Catalogue', href: '/catalog', key: 'catalogue' },
 ] as const;
 
-/** The section tabs on phones, under the player where a thumb can reach them. */
 export function MobileTabs({ current }: { current: 'library' | 'catalogue' }) {
   return (
     <nav className="hidden border-t border-rule bg-paper pb-[env(safe-area-inset-bottom)] select-none max-[900px]:flex">

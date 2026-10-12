@@ -53,7 +53,6 @@ function seed(overrides: Partial<ReleaseSeed> = {}): ReleaseSeed {
   };
 }
 
-/** Exactly what Harmony would have seeded, landed untouched. */
 function landedTrack(position: number, overrides: Partial<LandedTrack> = {}): LandedTrack {
   const artists = [mb.vivaldi, mb.carmignola, mb.vbo];
   return {

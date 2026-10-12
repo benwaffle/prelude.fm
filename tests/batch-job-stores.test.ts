@@ -86,7 +86,6 @@ test('invariants count every violation but read only a sample', async () => {
   const parent = results.find((result) => result.name === 'work-parent-is-cached');
   assert.equal(parent?.violations, 3);
   assert.equal(parent?.samples.length, 2);
-  // The recursive check runs as a subquery too.
   assert.equal(results.find((result) => result.name === 'work-tree-has-no-cycle')?.violations, 0);
 
   await invariants.recordInvariantResults(results);

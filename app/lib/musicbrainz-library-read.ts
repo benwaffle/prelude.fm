@@ -36,18 +36,8 @@ import type {
 import { catalogedComposerMbids, classifyTracks } from './musicbrainz-track-classification';
 import { portraitOf } from './prelude';
 
-/**
- * Reads everything the MusicBrainz reader projection needs, from the Spotify
- * provider tables, `track_recording` and `mb_*` only. No legacy `work`,
- * `work_part_v2`, `recording_v2` or parser column is touched — the projection
- * cannot show what this does not fetch, which is how the authority boundary
- * is enforced in practice rather than by convention.
- *
- * A field MusicBrainz does not have arrives null and the projection names
- * the gap. The one verdict in the facts, each track's classification, is
- * `classifyTracks`'s, under the reader's precedence (a stored decision
- * stands).
- */
+// Reads only provider tables, `track_recording` and `mb_*`: the projection can't show what this
+// doesn't fetch, which is how the authority boundary is enforced.
 
 const FREE_STREAMING_RELATIONSHIP_TYPE_ID = '08445ccf-7b99-4438-9f9a-fb9ac18099ee';
 
@@ -73,8 +63,8 @@ function releaseResolutionOf(album: {
 }): ReleaseResolution {
   if (album.mbReleaseId) return { state: 'matched', releaseMbid: album.mbReleaseId };
   if (!album.mbCheckedAt) return { state: 'not_checked' };
-  // We know how many releases carry the barcode but not which they are; the
-  // reader says "several" rather than inventing MBIDs it was never given.
+  // We know how many releases carry the barcode but not which; say "several" rather than inventing
+  // MBIDs.
   if ((album.mbReleaseCandidates ?? 0) > 1) return { state: 'ambiguous', candidateMbids: [] };
   return { state: 'missing' };
 }
@@ -91,11 +81,8 @@ export async function loadMusicBrainzLibraryFacts(
   // Settled here so a failure elsewhere cannot leave it as an unhandled rejection.
   classifications.catch(() => {});
 
-  // The same performance can be issued on several Spotify albums. Pulling
-  // every provider track anchored to these recordings is what lets the
-  // projection coalesce them into one recording with several playable
-  // occurrences instead of showing the holding twice. The requested tracks'
-  // own anchors are among them, so one read answers both.
+  // Every provider track anchored to these recordings, so the projection can coalesce one
+  // performance issued on several albums.
   const requested = new Set(requestedTrackIds);
   const [anchorRows, links] = await Promise.all([
     forChunks(requestedTrackIds, (chunk) =>
@@ -120,8 +107,7 @@ export async function loadMusicBrainzLibraryFacts(
     [...requestedAnchors, ...anchorRows].map((anchor) => [anchor.spotifyTrackId, anchor]),
   );
 
-  // What MusicBrainz relates the anchored recordings to, and our own links
-  // where it relates nothing — the precedence is `heldWorkLinks`'s.
+  // The precedence is `heldWorkLinks`'s.
   const recordingWorks = new Map<string, MbRecordingWorkFact>();
   const ownWorkLinks = new Map<string, OwnWorkLinkFact>();
   for (const link of links) {
@@ -147,8 +133,7 @@ export async function loadMusicBrainzLibraryFacts(
     }
   }
 
-  // Tracks and their albums in one round trip: the albums are found from the
-  // same track ids rather than from the tracks' rows.
+  // Tracks and their albums in one round trip.
   const providerTrackIds = new Set([...requestedTrackIds, ...anchorByTrackId.keys()]);
   const [providerTrackRows, albumRows, recordingRows, creditRows, workRows] = await Promise.all([
     forChunks(providerTrackIds, (chunk) =>
@@ -192,8 +177,8 @@ export async function loadMusicBrainzLibraryFacts(
     .map((work) => work.composerMbid)
     .filter((mbid): mbid is string => !!mbid);
 
-  // Only for tracks we could not anchor: an ISRC naming two recordings is
-  // the contradiction, and it is worth showing rather than dropping.
+  // Only for tracks we could not anchor: an ISRC naming two recordings is a contradiction worth
+  // showing.
   const unanchoredIsrcs = providerTrackRows.flatMap((track) =>
     !anchorByTrackId.has(track.spotifyId) && track.isrc ? [track.isrc] : [],
   );
@@ -315,8 +300,8 @@ export async function loadMusicBrainzLibraryFacts(
         recordingMbid: credit.recordingMbid,
         artistMbid: credit.artistMbid,
         role: credit.role,
-        // '' is how the table spells "this role has no instrument", because
-        // the column is part of the key and SQLite would allow duplicate nulls.
+        // '' is how the table spells "no instrument": the column is part of the key and SQLite
+        // allows duplicate nulls.
         instrument: credit.instrument || null,
       }),
     ),
@@ -353,11 +338,6 @@ export async function loadMusicBrainzLibraryFacts(
 
 type AnchorRow = typeof trackRecording.$inferSelect;
 
-/**
- * A track's anchor: the recording it was matched to, or, where its ISRC
- * names more than one recording, the contradiction — worth showing rather
- * than dropping. Nothing for a track neither applies to.
- */
 function anchorFactOf(
   track: { spotifyId: string; isrc: string | null },
   anchor: AnchorRow | undefined,
@@ -386,7 +366,6 @@ function anchorFactOf(
   ];
 }
 
-/** Each ISRC's MusicBrainz recordings. */
 async function readIsrcRecordings(
   isrcs: string[],
   database: DatabaseExecutor,
@@ -400,10 +379,6 @@ async function readIsrcRecordings(
   return byIsrc;
 }
 
-/**
- * Just the anchors of these tracks, for a job that needs to know which are
- * anchored (or contested) without reading the library around them.
- */
 export async function readTrackAnchors(
   spotifyTrackIds: string[],
   database: DatabaseExecutor = db,

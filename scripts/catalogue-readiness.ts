@@ -1,15 +1,5 @@
-/**
- * The admin Overview's readiness funnel, from the command line.
- *
- * How many library tracks the player can show, and, for the rest, the
- * MusicBrainz edit (or cache read) that would show them. Reads only.
- *
- *   pnpm metadata:readiness          the funnel and its buckets
- *   pnpm metadata:readiness --json   machine-readable
- *
- * Exits non-zero if the funnel does not account for every track exactly
- * once, because that is a fault in the funnel rather than a gap in the data.
- */
+// Usage: pnpm metadata:readiness [--json]
+// Exits non-zero unless every track is accounted for exactly once.
 import { defineScript } from './lib/cli';
 
 defineScript({ options: { json: { type: 'boolean' } } }, async ({ options: { json } }) => {

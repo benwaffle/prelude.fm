@@ -307,7 +307,7 @@ test('a correction record against our own seed counts pre-filled recordings kept
   });
   assert.equal(record.recordings.seededKept, 1);
   assert.equal(record.recordings.seededReplaced, 0);
-  // The seeded group, the pre-filled recording and MBID-credited artists are not corrections.
+  // The seeded group, pre-filled recording and MBID-credited artists are not corrections.
   assert.deepEqual(record.corrections, []);
 
   const swapped = compareRelease({

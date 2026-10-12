@@ -4,12 +4,7 @@ import { pullAndApply, type PullAndApplyResult } from '@/lib/submission-kinds';
 import { readLedger } from '@/lib/submission-ledger';
 import { forgetTracksBlockedOnRelease } from './release-unblocks';
 
-/**
- * Re-read the ledger rows `where` selects from MusicBrainz and apply the
- * ones that landed. Null when no row matches. Submits nothing.
- *
- * Not a server action: callers check auth and decide what `where` is.
- */
+/** Not a server action: callers check auth and decide what `where` is. */
 export async function recheckLedgerRows(
   where: SQL | undefined,
 ): Promise<(PullAndApplyResult & { checked: number }) | null> {

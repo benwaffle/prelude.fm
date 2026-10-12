@@ -12,7 +12,6 @@ import { isMusicBrainzChannel } from '@/lib/musicbrainz-budget';
 import { checkAuth } from './auth';
 
 export type GatewayView = MusicBrainzGatewayStatus & {
-  /** Requests per day over the last fortnight, oldest first. */
   history: { day: string; requests: number }[];
 };
 
@@ -28,13 +27,7 @@ export async function getGatewayStatus(): Promise<GatewayView> {
   return { ...status, history };
 }
 
-/**
- * Stop or resume a channel.
- *
- * `all` is the whole gateway. The note is what the next person to look at this
- * page needs in order to know whether it is safe to turn back on, so it is
- * kept rather than being a transient confirmation.
- */
+/** The note is kept so the next person knows whether it is safe to turn back on. */
 export async function setChannelPaused(channel: string, paused: boolean, note?: string) {
   await checkAuth();
   if (channel !== 'all' && !isMusicBrainzChannel(channel)) {

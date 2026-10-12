@@ -1,10 +1,5 @@
 import type { MissingRelease } from './gaps/missing-releases';
-/**
- * How many rows an Inbox section shows at a time.
- *
- * Counts are the real totals. The list is a page. Claiming the total while
- * rendering a 40-row slice is how "202 albums" became forty boxes.
- */
+/** Counts are the real totals; the list is a page. */
 export const CONTRIBUTION_PAGE_SIZE = 40;
 
 export type ContributionListLimits = {
@@ -55,13 +50,8 @@ export function pageSlice<T>(rows: T[], limit: number, offset = 0): T[] {
   return rows.slice(offset, offset + limit);
 }
 
-/**
- * Missing albums, biggest unblock first.
- *
- * `unblocks` is the Overview funnel's per-album count of library tracks held
- * at "add the missing release"; null when it could not be loaded, in which
- * case every row says so and the order falls back to the album's size.
- */
+// `unblocks` is null when it could not be loaded; every row then says so and the order falls back
+// to album size.
 export function rankMissingReleases<T extends MissingRelease>(
   rows: T[],
   unblocks: Map<string, number> | null,

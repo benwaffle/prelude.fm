@@ -1,4 +1,3 @@
-/** Where playback was when Spotify last said, and whether it was moving. */
 export interface PlaybackProgress {
   position: number;
   duration: number;
@@ -14,7 +13,6 @@ export const NO_PROGRESS: PlaybackProgress = {
   paused: true,
 };
 
-/** Where playback is now, counting the time since Spotify last reported it. */
 export function positionAt(p: PlaybackProgress, now: number): number {
   if (p.paused) return p.position;
   const elapsed = now - p.timestamp;
@@ -22,18 +20,12 @@ export function positionAt(p: PlaybackProgress, now: number): number {
 }
 
 export interface ProgressStore {
-  /** The last report, as reported. */
   get(): PlaybackProgress;
-  /** Record a new report and tell every subscriber. */
   set(next: PlaybackProgress): void;
   subscribe(callback: (progress: PlaybackProgress) => void): () => void;
 }
 
-/**
- * Progress changes many times a second while playing, so it lives outside
- * React state: readouts draw it themselves, and subscribers hear of every
- * report — from the browser's player, a Connect poll, or a tap that moved it.
- */
+// Lives outside React state: progress changes many times a second, so readouts draw it themselves.
 export function createProgressStore(): ProgressStore {
   let current = NO_PROGRESS;
   const subscribers = new Set<(progress: PlaybackProgress) => void>();

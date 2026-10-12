@@ -13,26 +13,15 @@ import { filmScoreExclusions } from '../film-score-exclusions';
 import { mbReleasePickHit, normalisePickBarcode, type MbPickHit } from '../musicbrainz-pick';
 import { within, without } from './scope';
 
-/**
- * Albums MusicBrainz does not hold as a release.
- *
- * The largest remaining gap by a distance, and the one class that stays
- * human permanently: a duplicate release is expensive for other people to
- * merge away, and that cost is not ours to impose. Harmony seeds the form
- * from the Spotify album, so the human step is checking rather than typing.
- *
- * Ordered by how much of the library each would unlock, because adding a
- * thirty-track box set is worth more than adding a single.
- */
+// Stays human permanently: duplicate releases are expensive for others to merge. Ordered by how
+// much of the library each unlocks.
 export type MissingRelease = {
   albumId: string;
   albumTitle: string;
   year: number | null;
   upc: string | null;
   tracks: number;
-  /** Tracks still reaching no MusicBrainz recording at all. */
   unanchored: number;
-  /** Why the lookup failed, as far as we know. */
   reason: string;
 };
 
@@ -70,12 +59,8 @@ export async function missingReleases(
     .orderBy(sql`count(distinct ${spotifyTrack.spotifyId}) desc`, spotifyAlbum.spotifyId);
 }
 
-/**
- * Releases already in the cache that share this album's barcode.
- *
- * The matcher counted them and then discarded the MBIDs. What we can still
- * show, without a live search, is whatever those releases left in `mb_release`.
- */
+// The matcher discarded these MBIDs; this shows what those releases left in `mb_release`, without a
+// live search.
 export async function cachedReleasesSharingBarcodes(
   upcs: string[],
 ): Promise<Map<string, MbPickHit[]>> {

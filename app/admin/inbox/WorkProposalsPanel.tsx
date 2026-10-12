@@ -25,13 +25,7 @@ function workUrl(workMbid: string) {
   return `https://musicbrainz.org/work/${workMbid}`;
 }
 
-/**
- * Proposed work links, approved in batches.
- *
- * Approving records only that you agree. The edit itself is made in
- * MusicBrainz's relationship editor, one album at a time; then "Record as
- * entered" writes the ledger rows the section below rechecks.
- */
+/** Approving records only agreement; the edit is made in MusicBrainz's relationship editor. */
 export function WorkProposalsPanel({ onRecorded }: { onRecorded: () => Promise<void> }) {
   const [view, setView] = useState<WorkProposalsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);

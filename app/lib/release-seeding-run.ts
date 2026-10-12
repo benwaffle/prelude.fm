@@ -1,14 +1,4 @@
-/**
- * Prepares our release-editor seed for a missing album and stores it.
- *
- * Uses the album's stored pre-check (running it first if there is none) for
- * ISRC hits, artists and release-group candidates, re-reads the Spotify
- * album for its date and label, and — for a new edition — reads the
- * tracklists of existing releases in the matched group so recordings can be
- * pre-filled by position. Those reads go through the gateway on the
- * `interactive` channel: about one browse per group and one read per
- * candidate release, capped at `EDITION_LIMIT`.
- */
+/** Reads go through the gateway's `interactive` channel, capped at `EDITION_LIMIT` releases. */
 import { createMbSession, type MbSession } from './musicbrainz-session';
 import {
   readMissingReleases,
@@ -27,10 +17,8 @@ import {
 
 export { markReleaseSeeded } from './missing-release-store';
 
-/** Existing releases read for their tracklists, across all matched groups. */
 export const EDITION_LIMIT = 3;
 
-/** Existing releases in these groups with the album's disc/track shape, with their tracklists. */
 async function loadEditions(
   mb: MbSession,
   groupMbids: string[],
@@ -87,13 +75,11 @@ export type PreparedSeed = {
   plan: SeedPlan;
   requests: number | null;
   preparedAt: Date;
-  /** When this album's seed was last opened on MusicBrainz. */
   seededAt: Date | null;
-  /** The plan that was opened then. Preparing again does not replace it. */
+  /** Preparing again does not replace it. */
   seededPlan: SeedPlan | null;
 };
 
-/** Build the seed plan live. Writes only the pre-check cache, if it had to run one. */
 export async function buildReleaseSeed(
   albumId: string,
 ): Promise<{ plan: SeedPlan; requests: number }> {
@@ -102,8 +88,8 @@ export async function buildReleaseSeed(
   // A pre-check run just now read the album already; only a cached one is re-read.
   const fresh = cached ? await loadReleaseSeed(albumId) : precheck.seed;
   const notes: string[] = [];
-  // The pre-check's ISRC hits and artists describe its own read of the album;
-  // a fresh read that disagrees on the tracks would mis-assign them.
+  // A fresh read that disagrees on the tracks would mis-assign the pre-check's ISRC hits and
+  // artists.
   const sameTracks =
     fresh.source === 'spotify' &&
     fresh.tracks.length === precheck.seed.tracks.length &&
@@ -158,7 +144,6 @@ export async function buildReleaseSeed(
   return { plan: { ...planned, notes }, requests: mb.requests };
 }
 
-/** Build and store the seed; returns what is now stored. */
 export async function prepareReleaseSeed(albumId: string): Promise<PreparedSeed> {
   const { plan, requests } = await buildReleaseSeed(albumId);
   await writeMissingRelease(albumId, 'seed', plan, requests);
@@ -181,7 +166,7 @@ export function preparedSeedOf({ seed, seeded }: MissingRelease): PreparedSeed |
   };
 }
 
-/** Stored seeds for these albums. Spends no requests. */
+/** Spends no requests. */
 export async function cachedReleaseSeeds(albumIds: string[]): Promise<Map<string, PreparedSeed>> {
   const stored = await readMissingReleases(albumIds);
   return new Map(

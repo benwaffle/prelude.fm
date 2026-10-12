@@ -13,14 +13,12 @@ test('a sigil and a number are separated the way a reader writes them', () => {
 });
 
 test('the split matches what the parser stores, so the two can be looked up together', () => {
-  // The parser records system 'BWV', number '912'; the point of splitting is
-  // that both land on the same normalized pair.
+  // The parser records 'BWV' / '912'; both must land on the same normalized pair.
   const imported = splitCatalogueReference('Bach-Werke-Verzeichnis', 'BWV 912');
   assert.equal(imported?.normalizedSystem, 'bwv');
   assert.equal(imported?.normalizedNumber, '912');
 });
 
-/** The pair a reader would write, ignoring the normalized forms. */
 function printed(series: string, reference: string) {
   const split = splitCatalogueReference(series, reference);
   return split && { system: split.system, number: split.number };
@@ -67,9 +65,7 @@ test('an empty reference is not a catalogue reference', () => {
 });
 
 test('a bare-numbered series takes the sigil it is written with', () => {
-  // MusicBrainz's Köchel series calls Mozart's 41st symphony "551" and
-  // nothing else. Filed under the series name it cannot be found by the K
-  // number every listener knows.
+  // Köchel calls Mozart's 41st "551"; it must be findable by its K number.
   assert.deepEqual(printed('Köchelverzeichnis', '551'), { system: 'KV', number: '551' });
   assert.deepEqual(
     printed("Alessandro Longo's catalog of Domenico Scarlatti's keyboard works", '375'),

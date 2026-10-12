@@ -17,16 +17,8 @@ import {
 import { BATCH_BLOCKING_OUTCOMES, BLOCKING_OUTCOMES } from '../musicbrainz-manual-submissions';
 import { within, without } from './scope';
 
-/**
- * Releases MusicBrainz holds without a barcode, where Spotify gives us one.
- *
- * Small, because a release is usually found *by* its barcode in the first
- * place — these are the ones matched on title and duration instead.
- *
- * A submitted barcode stays listed until the cache holds one. Hiding it on
- * confirm would look like MusicBrainz had accepted an edit that is still a
- * proposal.
- */
+// A submitted barcode stays listed until the cache holds one; hiding it would look like MusicBrainz
+// accepted it.
 export type BarcodeGap = {
   releaseMbid: string;
   releaseTitle: string;
@@ -36,7 +28,6 @@ export type BarcodeGap = {
   maxDurationDeltaMs: number;
 };
 
-/** Narrow a barcode list to some releases, for one release's own action. */
 export type BarcodeGapScope = { releaseMbids?: readonly string[] };
 
 export async function barcodeGaps(scope: BarcodeGapScope = {}): Promise<BarcodeGap[]> {
@@ -115,14 +106,8 @@ export async function barcodeGaps(scope: BarcodeGapScope = {}): Promise<BarcodeG
     );
 }
 
-/**
- * Barcode gaps with no submission in hand (pending or applied).
- *
- * The displayed list is `barcodeGaps`, which keeps pending ledger rows visible.
- * The bot only receives rows from this set. With `batch`, releases whose
- * barcode edit was rejected before are left out too: those go again only
- * when their own row asks.
- */
+// The bot only receives rows from this set. With `batch`, previously rejected releases are left out
+// too.
 export async function barcodeEligibleGaps({
   batch = false,
   ...scope

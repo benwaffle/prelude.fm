@@ -38,18 +38,15 @@ test('a track with recording, work, composer and a classical classification is r
 });
 
 test('each blocked track is placed at its first missing step', () => {
-  // No recording and no work: the recording is what is missing first.
   assert.equal(
     placeTrack(readyTrack({ ...unlinked, release: 'missing', releaseMbid: null, tracklist: null }))
       ?.bucket,
     'add-release',
   );
-  // A recording without a work, and unclassified: the work comes first.
   assert.equal(
     placeTrack(readyTrack({ works: [], classification: 'unreviewed' }))?.bucket,
     'add-work-link',
   );
-  // A work without a composer, and unclassified: the composer comes first.
   assert.equal(
     placeTrack(
       readyTrack({
@@ -189,7 +186,6 @@ test('the funnel accounts for every track exactly once', () => {
   const addRelease = funnel.steps[0].buckets[0];
   assert.equal(addRelease.key, 'add-release');
   assert.equal(addRelease.groups, 2);
-  // Biggest group first.
   assert.deepEqual(addRelease.examples[0], {
     label: 'Album',
     href: 'https://open.spotify.com/album/album-2',
@@ -310,8 +306,7 @@ function facts(): MusicBrainzLibraryFacts {
         detail: 'full',
       },
       {
-        // Titled as a part of a parent that has no composer of its own:
-        // the player files it under the parent and shows no composer.
+        // Titled as a part of a parent with no composer: filed under the parent, no composer shown.
         mbid: 'movement',
         title: 'Suite: I. Prelude',
         type: null,
@@ -377,12 +372,10 @@ test('rows read from the player projection agree with what the player shows', ()
     { workMbid: 'suite', linkedBy: 'musicbrainz', title: 'Suite', composer: 'missing' },
   ]);
   assert.equal(placeTrack(byId.get('movement')!)?.bucket, 'add-composer');
-  // Unreviewed but MusicBrainz types the work as a sonata: our stored
-  // decision is what is behind, not MusicBrainz.
+  // Our stored decision is what is behind, not MusicBrainz.
   assert.equal(byId.get('unclassified')!.musicBrainzSaysClassical, true);
   assert.equal(placeTrack(byId.get('unclassified')!)?.bucket, 'classification-out-of-date');
   assert.equal(placeTrack(byId.get('bare')!)?.bucket, 'add-work-link');
-  // Unclassified and unlinked is still in scope, blocked on its release.
   assert.equal(byId.get('unlinked')!.release, 'missing');
   assert.equal(placeTrack(byId.get('unlinked')!)?.bucket, 'add-release');
 
@@ -422,7 +415,6 @@ test('a track our own match links to a work skips the recording step, and is cou
     works: [{ workMbid: 'work-1', linkedBy: 'prelude', title: 'Work', composer: 'named' }],
   });
   assert.equal(placeTrack(ours), null);
-  // It still has to clear the composer and classical steps like anything else.
   assert.equal(
     placeTrack({ ...ours, classification: 'uncertain', musicBrainzSaysClassical: false })?.bucket,
     'add-classical-evidence',

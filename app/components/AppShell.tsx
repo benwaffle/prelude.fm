@@ -20,7 +20,6 @@ interface NavSearch {
 
 const NavSearchContext = createContext<NavSearch>({ query: '', setQuery: () => {} });
 
-/** The nav's search box, read by whichever screen is mounted under it. */
 export function useNavSearch(): NavSearch {
   return useContext(NavSearchContext);
 }
@@ -29,7 +28,6 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-/** Which tab the navbar highlights, and what its search box is searching. */
 function sectionFor(pathname: string): {
   current: 'library' | 'catalogue';
   placeholder: string;
@@ -39,11 +37,6 @@ function sectionFor(pathname: string): {
     : { current: 'library', placeholder: 'Search your library…' };
 }
 
-/**
- * Session, playback and the persistent chrome — navbar above, player bar
- * below — wrapped around whichever screen is showing. This lives in the
- * listening layout, so it survives navigation and playback keeps going.
- */
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const { current, placeholder } = sectionFor(pathname);
@@ -54,9 +47,8 @@ export function AppShell({ children }: AppShellProps) {
   const [query, setQuery] = useState('');
   const navSearch = useMemo(() => ({ query, setQuery }), [query]);
 
-  // A library search means nothing on the catalogue and vice versa, so the box
-  // empties when you cross between them. Moving within a section — library to a
-  // work and back — keeps whatever you typed.
+  // The search box empties when crossing between library and catalogue; within a section it keeps
+  // what you typed.
   const [searchedSection, setSearchedSection] = useState(current);
   if (searchedSection !== current) {
     setSearchedSection(current);
@@ -77,8 +69,6 @@ export function AppShell({ children }: AppShellProps) {
         })
         .catch((err) => {
           console.error('Error fetching token:', err);
-          // Without a token there is nothing to show, so say so rather than
-          // leaving the reader on a spinner that will never resolve.
           if (!cancelled) setTokenError(err instanceof Error ? err.message : 'Unknown error');
         });
     };
@@ -91,9 +81,8 @@ export function AppShell({ children }: AppShellProps) {
     };
   }, [session]);
 
-  // Better Auth resolves the session on the client, so the first paint has no
-  // session yet. Showing the sign-in screen then would flash it at someone who
-  // is already signed in.
+  // Better Auth resolves the session on the client; showing sign-in on first paint would flash it
+  // at signed-in users.
   if (isPending) return <Interlude>Opening the hall…</Interlude>;
 
   if (!session) return <SignIn />;
@@ -130,8 +119,6 @@ export function AppShell({ children }: AppShellProps) {
             placeholder={placeholder}
           />
           <div className="relative z-[1] min-h-screen">{children}</div>
-          {/* The player, and on phones the section tabs under it, share one
-              fixed footer so neither has to know the other's height. */}
           <div className="fixed inset-x-0 bottom-0 z-10">
             <PlayerBar />
             <MobileTabs current={current} />
@@ -142,7 +129,6 @@ export function AppShell({ children }: AppShellProps) {
   );
 }
 
-/** A quiet full-page line, for the moments between states. */
 function Interlude({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-paper px-6">

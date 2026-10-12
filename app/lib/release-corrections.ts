@@ -1,20 +1,5 @@
-/**
- * What the person adding a release changed, compared with Harmony's seed.
- *
- * The seed is the Spotify album (`release-seed.ts`): its titles, its
- * credits, and — because Harmony cannot know better — a new recording for
- * every track in a new release group. What landed on MusicBrainz is compared
- * with that, one kind of change at a time, so that across albums we can see
- * which kinds of album land untouched and which always need the same fix.
- *
- * A change here is a difference between seed and result. It is usually the
- * person's correction, but Harmony can merge other stores' data into the
- * seed, and a difference from that is indistinguishable here.
- *
- * Everything is pure. Where a comparison could not be made — a recording
- * whose history we could not read, a seed with no album artist — it is
- * listed in `incomplete` rather than counted as unchanged.
- */
+// A difference is usually the person's correction but may be Harmony's merge of other stores. Pure.
+// Comparisons that couldn't be made go in `incomplete`, never counted as unchanged.
 import {
   looseName,
   orderedSeedTracks,
@@ -41,18 +26,15 @@ export type LandedRelease = {
   releaseGroup: {
     mbid: string;
     title: string;
-    /** Other releases in the group; null when that could not be read. */
+    /** Null when that could not be read. */
     otherReleases: number | null;
   };
   media: number;
   tracks: LandedTrack[];
 };
 
-/**
- * `reused`: the recording is on another release too, or existed before (the
- * pre-check found it by ISRC). `created`: on this release only. `unknown`:
- * its releases could not be read.
- */
+// `reused`: on another release too, or found by ISRC beforehand. `created`: this release only.
+// `unknown`: unreadable.
 export type RecordingOrigin = 'reused' | 'created' | 'unknown';
 
 export type AlbumKind = 'new-edition' | 'box-set' | 'compilation' | 'single-composer' | 'unknown';
@@ -80,7 +62,6 @@ export type CorrectionType =
   | 'tracks-removed'
   | 'tracks-moved';
 
-/** Plain words for each kind of change, as the admin page shows them. */
 export const CORRECTION_LABELS: Record<CorrectionType, string> = {
   'release-title': 'Album title changed',
   'release-artist': 'Album artist changed',
@@ -102,11 +83,7 @@ export type ReleaseCorrectionRecord = {
   releaseMbid: string;
   releaseTitle: string;
   releaseGroupMbid: string;
-  /** Where the seed came from: the stored pre-check, a live Spotify read, or our copy. */
-  /**
-   * `prelude-seed`: the form we seeded (our credits and pre-filled
-   * recordings). The others are the Spotify album Harmony would read.
-   */
+  /** `prelude-seed`: the form we seeded. The others are the Spotify album Harmony would read. */
   baselineSource: 'precheck' | 'spotify' | 'library' | 'prelude-seed';
   kind: AlbumKind;
   kindWhy: string;
@@ -129,13 +106,9 @@ export type ReleaseCorrectionRecord = {
     unknown: number;
     /** Reused recordings the baseline did not already name (a person picked them). */
     reusedUnseeded?: number;
-    /** Tracks whose pre-filled recording landed as seeded. */
     seededKept?: number;
-    /** Tracks whose pre-filled recording was swapped for another. */
     seededReplaced?: number;
-    /** Of the created recordings: title differs from the Spotify track title. */
     titleChanged: number;
-    /** Of the created recordings: artists differ from the Spotify track artists. */
     artistsChanged: number;
     examples: { from: string; to: string }[];
   };
@@ -146,9 +119,6 @@ export type ReleaseCorrectionRecord = {
 
 const EXAMPLES = 5;
 
-/* ------------------------------------------------------------ comparisons */
-
-/** Punctuation and spacing that a typographic cleanup changes. Case is kept. */
 export function punctuationKey(value: string): string {
   return value
     .normalize('NFC')
@@ -165,13 +135,8 @@ export function compareTitle(from: string, to: string): 'same' | 'punctuation' |
   return punctuationKey(from) === punctuationKey(to) ? 'punctuation' : 'changed';
 }
 
-/**
- * Whether a landed credit names the same artists as a seeded one, in any
- * order. A seeded artist whose MusicBrainz identity is known (the pre-check
- * found it linked to its Spotify page) matches by MBID, so a credit printed
- * as "Vivaldi" for Antonio Vivaldi is not a change; anyone else matches by
- * name.
- */
+// A seeded artist with a known MBID matches by MBID, so "Vivaldi" for Antonio Vivaldi is not a
+// change.
 export function sameCredit(
   seeded: SeedArtist[],
   landed: LandedArtist[],
@@ -191,8 +156,6 @@ export function sameCredit(
   return remaining.length === 0;
 }
 
-/* ---------------------------------------------------------------- pairing */
-
 export type TrackPair = {
   seed: SeedTrack;
   landed: LandedTrack;
@@ -202,13 +165,7 @@ export type TrackPair = {
 const POSITION_TOLERANCE_MS = 5_000;
 const DURATION_TOLERANCE_MS = 2_000;
 
-/**
- * Which landed track each seeded track became.
- *
- * By ISRC first (only reused recordings carry one), then by the same disc and
- * position with a length that agrees, then by a unique near-identical length
- * anywhere. What is left over on either side was removed or added.
- */
+// By ISRC, then same disc and position with agreeing length, then a unique near-identical length.
 export function pairTracks(
   seed: ReleaseSeed,
   landed: LandedTrack[],
@@ -259,11 +216,8 @@ export function pairTracks(
   return { pairs, removed: [...freeSeed], added: [...freeLanded] };
 }
 
-/**
- * How many paired tracks are out of order. Tracks added or removed shift
- * positions without reordering anything, so this counts the tracks outside
- * the longest run that kept its relative order.
- */
+// Counts tracks outside the longest run that kept its order, so added or removed tracks don't count
+// as moves.
 export function movedCount(pairs: TrackPair[]): number {
   const landedIndex = (track: LandedTrack) => track.medium * 10_000 + track.position;
   const sequence = pairs.map((pair) => landedIndex(pair.landed));
@@ -281,13 +235,7 @@ export function movedCount(pairs: TrackPair[]): number {
   return sequence.length - tails.length;
 }
 
-/* ------------------------------------------------------------------- kind */
-
-/**
- * One coarse label, in order of what most changes how the release is added:
- * joining an existing group, then several discs, then how many composers.
- * `composers` is null when no composer could be identified.
- */
+/** `composers` is null when no composer could be identified. */
 export function albumKind(input: {
   releaseGroup: ReleaseCorrectionRecord['releaseGroup'];
   media: number;
@@ -304,17 +252,13 @@ export function albumKind(input: {
   return { kind: 'unknown', why: 'no composer could be identified' };
 }
 
-/* ---------------------------------------------------------------- compare */
-
 export function compareRelease(input: {
   seed: ReleaseSeed;
   baselineSource: ReleaseCorrectionRecord['baselineSource'];
   landed: LandedRelease;
   origins: Map<string, RecordingOrigin>;
   composers: number | null;
-  /** MusicBrainz artist for a Spotify artist id, where the pre-check found one linked. */
   artistMbids?: Map<string, string>;
-  /** The release group we seeded, when the baseline is our own seed. */
   seededReleaseGroup?: string | null;
 }): ReleaseCorrectionRecord {
   const { seed, landed, origins } = input;
@@ -359,8 +303,7 @@ export function compareRelease(input: {
     }
   }
 
-  // Recordings are counted over every landed track: an added track's
-  // recording is reused or created like any other.
+  // An added track's recording is reused or created like any other.
   const pairedByLanded = new Map(pairs.map((pair) => [pair.landed, pair.seed]));
   for (const track of landed.tracks) {
     const origin = origins.get(track.recording.mbid) ?? 'unknown';
@@ -467,16 +410,12 @@ export function compareRelease(input: {
   };
 }
 
-/* ---------------------------------------------------------------- summary */
-
 export type CorrectionSummaryRow = {
   kind: AlbumKind;
   albums: number;
-  /** No corrections found and every comparison was made. */
   untouched: number;
   /** No corrections found, but some comparison could not be made. */
   untouchedIncomplete: number;
-  /** Correction types by how many albums of this kind needed them, most first. */
   byType: { type: CorrectionType; albums: number }[];
 };
 

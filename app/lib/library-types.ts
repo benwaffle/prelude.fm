@@ -1,6 +1,5 @@
 import type { Era, LibraryWork, Movement } from './prelude';
 
-/** One recording of a work, as a tile that links to its page. */
 export interface RecordingSummary {
   recordingId: string;
   albumId: string;
@@ -11,10 +10,9 @@ export interface RecordingSummary {
   ensemble: string | null;
   /** Null when none of its tracks has a duration (or none is mapped). */
   duration: string | null;
-  /** Spotify popularity; null where nothing has aggregated it. */
+  /** Null where nothing has aggregated it. */
   popularity: number | null;
   tint: string;
-  /** This recording has no tracks mapped to canonical work parts. */
   unmatched: boolean;
 }
 
@@ -30,15 +28,12 @@ export interface WorkSummary {
   album: string | null;
   performer: string | null;
   ensemble: string | null;
-  /** Movements this recording actually carries. */
   movementCount: number;
-  /** Parts the work has in total, including ones this recording lacks. */
+  /** Including ones this recording lacks. */
   partCount: number;
-  /** The recording's tracks were never matched to movements. */
   unmatched: boolean;
   movements: Pick<Movement, 'roman' | 'name' | 'unnamed' | 'duration' | 'missing'>[];
-  /** Every Spotify track we hold of this work, in any recording, so the page
-   *  can tell which works are already in the reader's library. */
+  /** So the page can tell which works are already in the reader's library. */
   trackIds: string[];
 }
 
@@ -57,7 +52,6 @@ export interface CatalogComposer {
   born: number | null;
   died: number | null;
   years: string;
-  /** The composer's Spotify artist portrait, when we have one. */
   image: string | null;
   workCount: number;
   recordingCount: number;
@@ -70,14 +64,13 @@ export interface CatalogWork {
   nickname: string | null;
   catalog: string | null;
   year: number | null;
-  /** null when `work.form` is unrecorded. */
+  /** Null when `work.form` is unrecorded. */
   genre: string | null;
   movementCount: number;
   recordingCount: number;
 }
 
 export interface CatalogRecording extends RecordingSummary {
-  /** How many movements of this recording the user has saved. */
   liked: number;
 }
 
@@ -94,18 +87,15 @@ export interface CatalogWorkHeader {
 }
 
 export interface WorkSibling {
-  /** Our work, when we hold one for this part of the collection. */
   workId: string | null;
   title: string;
-  /** Its position among the parent's parts, as MusicBrainz orders them. */
   ordering: number | null;
   isCurrent: boolean;
 }
 
 export interface WorkParent {
   title: string;
-  /** Every part MusicBrainz lists, including ones we do not have. */
+  /** Including ones we do not have. */
   siblings: WorkSibling[];
-  /** How many of those parts we hold a work for. */
   held: number;
 }

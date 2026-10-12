@@ -1,20 +1,5 @@
-/**
- * Movements and numbers the reader still files apart from their parent work.
- *
- * Every cached work with a parent and a matched recording that `workLevelOf`
- * leaves where it is ("unresolved"), grouped by parent. Most are pieces in a
- * collection, which stay apart on purpose; the rest are where a new rule, or
- * a MusicBrainz title fix, would bring a work's movements together. Reads
- * only.
- *
- *   pnpm metadata:level-review               grouped by parent, largest first
- *   pnpm metadata:level-review --json        machine-readable
- *   pnpm metadata:level-review --duplicates  also: cards that list a movement
- *                                            twice, across every cached track
- *
- * A movement listed twice is usually two tracks of one movement (a cadenza
- * or a part split across tracks), which is real. Anything else is a bug.
- */
+// Usage: pnpm metadata:level-review [--json] [--duplicates]
+// A movement listed twice is usually one movement split across tracks; anything else is a bug.
 import { sql } from 'drizzle-orm';
 import { defineScript } from './lib/cli';
 
@@ -101,7 +86,6 @@ defineScript(
   },
 );
 
-/** Cards, over every cached track, that list the same movement twice. */
 async function findDuplicates() {
   const { db } = await import('@/lib/db');
   const { spotifyTrack } = await import('@/lib/db/schema');

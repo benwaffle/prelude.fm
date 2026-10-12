@@ -18,7 +18,6 @@ interface MediaSessionOptions {
   onPrevious: () => void;
   onNext: () => void;
   onSeek: (positionMs: number) => void;
-  /** Where the current track is, for the notification's seek bar. */
   getProgress: () => { position: number; duration: number; paused: boolean };
   subscribeToProgress: (callback: () => void) => () => void;
 }
@@ -36,23 +35,10 @@ function isAppleTouch(): boolean {
   );
 }
 
-/**
- * The lock screen, notification and headphone buttons: what's playing, and
- * controls that reach this page.
- *
- * Spotify's player plays from inside its own frame, and browsers give the
- * notification to a frame that is making sound, so what this page set was
- * never shown: Android showed "prelude.fm" and a play button. A loop on this
- * page, playing while Spotify does, makes this page the one asked:
- *
- * - Chrome asks the top-most frame with a player, so any loop will do. It
- *   must be over 5 seconds; shorter sounds get no notification.
- * - Firefox asks the frame that most recently became audible, and treats
- *   anything under -72 dB as silence. So the loop is a 30 Hz tone at -60 dB,
- *   far below hearing at that pitch and below what phone speakers play, and
- *   it is restarted a moment after Spotify starts each movement, so it is
- *   the more recent of the two.
- */
+// Spotify plays inside its own frame, and browsers give the notification to a frame making sound,
+// so we play our own loop. Chrome asks the top-most frame with a player, and needs a sound over 5s.
+// Firefox asks the most recently audible frame and treats under -72 dB as silence: so a 30 Hz tone
+// at -60 dB, restarted just after Spotify starts each movement.
 export function useMediaSession({
   active,
   track,
@@ -72,11 +58,9 @@ export function useMediaSession({
   const supported = typeof navigator !== 'undefined' && 'mediaSession' in navigator;
   const on = supported && active && track !== null;
 
-  // The loop follows Spotify's playing and pausing.
   useEffect(() => {
     if (!on || isAppleTouch()) return;
     if (!silenceRef.current) {
-      // In the document, like any other player on the page.
       const audio = document.createElement('audio');
       audio.src = '/inaudible.flac';
       audio.loop = true;
@@ -93,8 +77,7 @@ export function useMediaSession({
       });
   }, [on, isPaused]);
 
-  // Restart the loop once Spotify's sound has begun (on play, resume and each
-  // new movement), so Firefox sees this page as the latest to make sound.
+  // Restart after Spotify's sound begins, so Firefox sees this page as the latest to make sound.
   const title = track?.title;
   useEffect(() => {
     if (!on || isPaused || isAppleTouch()) return;

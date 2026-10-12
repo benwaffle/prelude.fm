@@ -1,15 +1,5 @@
-/**
- * An in-app MusicBrainz search-results row.
- *
- * Ambiguous links — several releases sharing a barcode, several works that
- * could be the recording relationship — should be picked here, the way the
- * MusicBrainz editor lists hits, rather than by sending the person to a
- * generic search page. Opening a hit is still not a ledger write. Confirm is.
- *
- * Fields we do not hold stay blank. The disambiguation comment and physical
- * format are the usual absences: the cache never stored them, so the picker
- * does not invent them.
- */
+// Fields we do not hold (disambiguation, format) stay blank rather than invented. Opening a hit is
+// not a ledger write; Confirm is.
 
 export const AMBIGUOUS_BARCODE_REASON = 'several releases share the barcode';
 
@@ -17,23 +7,17 @@ export type MbPickHit = {
   entity: 'release' | 'work';
   mbid: string;
   title: string;
-  /** Artist credit or composer. */
   credit: string | null;
   date: string | null;
   country: string | null;
-  /** Work type, or track/medium counts for a release. */
   detail: string | null;
   catalogues: string[];
   comment: string | null;
   href: string;
 };
 
-/**
- * What attaching a picked release to the Spotify album would take.
- *
- * Confirmation in the Inbox only ledgers. Recheck and a live pick ingest the
- * chosen release, then write `spotify_album.mbReleaseId`.
- */
+// Confirmation in the Inbox only ledgers. Recheck and a live pick ingest the release, then write
+// `spotify_album.mbReleaseId`.
 export type PickedReleaseAttachRequest = {
   albumId: string;
   releaseMbid: string;
@@ -55,7 +39,6 @@ export function normalisePickBarcode(value: string | null | undefined): string |
   return barcode ? barcode : null;
 }
 
-/** Advanced search for this barcode, not a generic MusicBrainz search box. */
 export function barcodeReleaseSearchUrl(upc: string): string {
   const barcode = normalisePickBarcode(upc) ?? upc.trim();
   const query = new URLSearchParams({

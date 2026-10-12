@@ -1,15 +1,7 @@
-/**
- * Where the catalogue is, as its URL says: /catalog?composer=…&work=…. The
- * URL carries it so the back gesture steps back through it and a work can
- * be linked to.
- */
 export interface CatalogUrlState {
   composerId: string | null;
   workId: string | null;
-  /**
-   * Which pane a phone shows, one at a time: 0 composers, 1 works,
-   * 2 recordings. The desk shows all three.
-   */
+  /** Phones show one pane: 0 composers, 1 works, 2 recordings. */
   level: 0 | 1 | 2;
 }
 

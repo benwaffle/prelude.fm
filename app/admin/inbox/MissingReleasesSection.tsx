@@ -50,11 +50,6 @@ export function MissingReleasesSection({
   const [prechecks, setPrechecks] = useState<Record<string, CachedPrecheck>>({});
   const [seeds, setSeeds] = useState<Record<string, PreparedSeed>>({});
 
-  /*
-   * Once the release is attached, what was corrected is measured straight
-   * away. A failure stays on the row; the Details tab lists every added
-   * album that still has no measurement, with a button to retry.
-   */
   async function confirm(albumId: string) {
     const form = formOf(albumId);
     await runRow(albumId, 'Confirming and attaching the release…', async () => {
@@ -86,11 +81,7 @@ export function MissingReleasesSection({
     });
   }
 
-  /*
-   * The form opens MusicBrainz itself; this only notes that it was opened,
-   * so the correction record compares against our seed. Not awaited: the
-   * submit must stay a direct user action or the new tab is blocked.
-   */
+  // Not awaited: the submit must stay a direct user action or the new tab is blocked.
   function seeded(albumId: string) {
     void recordMusicBrainzSeeded(albumId).then(() =>
       setSeeds((current) => {

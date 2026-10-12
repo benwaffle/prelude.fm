@@ -17,13 +17,7 @@ function settle<T>(read: Promise<T>): Promise<Loaded<T>> {
   );
 }
 
-/**
- * Everything the admin home reads, in one action.
- *
- * Next runs a page's server actions one after another, so two actions would
- * wait on each other; one action reads both at once. Each half fails on its
- * own, so a broken count does not hide the funnel.
- */
+/** One action, not two: Next runs a page's server actions serially. Each half fails on its own. */
 export async function getAdminHome(): Promise<{
   funnel: Loaded<ReadinessFunnel>;
   counts: Loaded<Awaited<ReturnType<typeof contributionCounts>>>;

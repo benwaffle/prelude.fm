@@ -41,13 +41,7 @@ import { insertSubmissions, readLedger } from '@/lib/submission-ledger';
 import { recheckLedgerRows } from '../lib/submission-recheck';
 import { checkAuth } from './auth';
 
-/**
- * Live MusicBrainz hits for a barcode, used when the cache does not yet hold
- * the releases that share it.
- *
- * Reads only. Does not ingest, does not write the album's matched release,
- * and does not write the ledger.
- */
+/** Reads only: does not ingest, write the album's matched release, or write the ledger. */
 export async function lookupBarcodeReleaseHits(upc: string): Promise<{
   hits: MbPickHit[];
   error: string | null;
@@ -72,7 +66,6 @@ export async function lookupBarcodeReleaseHits(upc: string): Promise<{
   }
 }
 
-/** Fetch a live-picked release into the cache, attach it, and ingest the album. */
 export async function attachPickedReleaseToAlbum(request: PickedReleaseAttachRequest) {
   await checkAuth();
   return adoptReleaseForAlbum(
@@ -82,12 +75,7 @@ export async function attachPickedReleaseToAlbum(request: PickedReleaseAttachReq
   );
 }
 
-/**
- * Record a Harmony submission only after the editor confirms the external
- * edit. With the new release's MBID, the release is fetched and attached
- * straight away, so the album's tracks anchor and the funnel moves; the
- * caller then measures what was corrected.
- */
+/** Recorded only after the editor confirms the external edit. */
 export async function recordReleaseSubmission(
   albumId: string,
   options: { note?: string; editId?: string; releaseMbid?: string } = {},
@@ -111,10 +99,6 @@ export async function recordReleaseSubmission(
   return { landed: (result?.landed.size ?? 0) > 0 };
 }
 
-/**
- * Run the missing-release pre-checks for one album against live MusicBrainz
- * and cache them. Writes only the pre-check cache.
- */
 export async function runReleasePrecheck(albumId: string): Promise<CachedPrecheck> {
   await checkAuth();
   await refreshReleasePrecheck(albumId);
@@ -123,32 +107,20 @@ export async function runReleasePrecheck(albumId: string): Promise<CachedPrechec
   return cached;
 }
 
-/**
- * Prepare our release-editor seed for one album: which existing recordings
- * to pre-fill and why. Reads MusicBrainz and Spotify; writes only the seed
- * (and the pre-check, if the album had none). Submits nothing.
- */
+/** Submits nothing. */
 export async function prepareMusicBrainzSeed(albumId: string): Promise<PreparedSeed> {
   await checkAuth();
   return prepareReleaseSeed(albumId);
 }
 
-/**
- * The person opened the seed on MusicBrainz, from their own browser. From
- * now on the album's correction record compares against this seed.
- */
 export async function recordMusicBrainzSeeded(albumId: string): Promise<void> {
   await checkAuth();
   await markReleaseSeeded(albumId);
 }
 
-/**
- * Compare the album's landed release with the Spotify seed and store the
- * correction record. Reads MusicBrainz; submits nothing.
- */
+/** Reads MusicBrainz; submits nothing. */
 export async function measureReleaseCorrections(albumId: string): Promise<ReleaseCorrectionRecord> {
   await checkAuth();
-  // The album's latest release confirmation names the MBID, if it had one.
   const [latest] = (
     await readLedger(and(eq(mbSubmission.kind, 'release'), eq(mbSubmission.subject, albumId)))
   ).slice(-1);
@@ -159,7 +131,6 @@ export async function measureReleaseCorrections(albumId: string): Promise<Releas
 export type ReleaseCorrectionsView = {
   rows: CorrectionRow[];
   summary: CorrectionSummaryRow[];
-  /** Albums added through the Inbox and matched, with no correction record yet. */
   unmeasured: { albumId: string; albumTitle: string; releaseMbid: string | null }[];
 };
 

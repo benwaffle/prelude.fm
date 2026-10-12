@@ -1,10 +1,4 @@
-/**
- * Pull a Spotify album's MusicBrainz release into the cache and attach it.
- *
- * Serves a person picking a release in the Inbox, a release they confirm
- * with its new MBID, and a Recheck of a release submission
- * (`submission-kinds`). Submits nothing.
- */
+/** Submits nothing. */
 import { eq } from 'drizzle-orm';
 import { db } from './db';
 import { spotifyAlbum } from './db/schema';
@@ -13,11 +7,7 @@ import { ingestRelease, releaseIsCached } from './musicbrainz-cache';
 import type { PickedReleaseAttachOutcome, PickedReleaseAttachRequest } from './musicbrainz-pick';
 import type { MusicBrainzSource } from './musicbrainz-source';
 
-/**
- * Attach a picked release to its Spotify album when the release is already
- * cached. Does not ingest, does not write the ledger, and does not invent
- * cache rows for releases MusicBrainz returned only on a live lookup.
- */
+// Does not ingest, write the ledger, or invent cache rows for releases seen only on a live lookup.
 export async function attachPickedRelease(
   request: PickedReleaseAttachRequest,
 ): Promise<PickedReleaseAttachOutcome> {
@@ -46,12 +36,7 @@ export async function attachPickedRelease(
   return { attached: true, releaseMbid: request.releaseMbid };
 }
 
-/**
- * Fetch a chosen release by MBID, attach it to the Spotify album, then run
- * the album ingest so tracks anchor and works are read.
- *
- * Lookup-by-MBID does not wait for the barcode search index.
- */
+/** Lookup-by-MBID does not wait for the barcode search index. */
 export async function adoptReleaseForAlbum(
   source: MusicBrainzSource,
   albumId: string,
@@ -73,12 +58,6 @@ export async function adoptReleaseForAlbum(
   return after;
 }
 
-/**
- * Refresh the album's MusicBrainz release into the cache.
- *
- * A known MBID (from the ledger or a pick) is fetched directly. Otherwise the
- * usual barcode/title match runs against live MusicBrainz.
- */
 export async function pullAlbumFromMusicBrainz(
   source: MusicBrainzSource,
   albumId: string,

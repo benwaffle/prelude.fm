@@ -19,7 +19,6 @@ const SORTS: [Sort, string][] = [
   ['era', 'Era'],
 ];
 
-/** The library: every work you hold at least one liked movement of. */
 export function LibraryScreen() {
   const { works, gapTracks, loading, refreshing, matching, error, matchFailure, toggleLike } =
     useLibrary();
@@ -61,8 +60,7 @@ export function LibraryScreen() {
       );
     }
     if (sort === 'era') {
-      // Composers whose dates we don't know sort to the end rather than
-      // masquerading as the most recent.
+      // Composers with unknown dates sort last rather than masquerading as the most recent.
       const rank = (w: LibraryWork) => (w.era === null ? ERAS.length : ERAS.indexOf(w.era));
       return [...list].sort(
         (a, b) =>
@@ -72,8 +70,6 @@ export function LibraryScreen() {
     return [...list].sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''));
   }, [works, query, sort]);
 
-  /* Sorting by composer or era gathers the works under a heading; recency is
-     a flat run, since every group would hold a single work. */
   const groups = useMemo(() => {
     if (sort === 'added') return [{ key: null as string | null, works: likedWorks }];
     const by = new Map<string, LibraryWork[]>();
@@ -87,7 +83,6 @@ export function LibraryScreen() {
     return Array.from(by, ([key, group]) => ({ key, works: group }));
   }, [likedWorks, sort]);
 
-  // Stable, so a card re-renders only when something on it changes.
   const playFrom = useCallback(
     (work: LibraryWork, movement: Movement) => {
       const queue = queueFrom(work.movements, movement);
@@ -114,9 +109,8 @@ export function LibraryScreen() {
   };
 
   return (
-    /* overflow-x-clip, not overflow-hidden: it still contains each card's
-       gradient bleed, but doesn't become a scroll container and so leaves the
-       sticky group headings below free to stick to the viewport. */
+    // overflow-x-clip, not overflow-hidden: it contains the gradient bleed without becoming a
+    // scroll container, so the sticky headings still stick.
     <main className="relative z-[1] mx-auto max-w-[1280px] overflow-x-clip px-6 pb-[180px] max-[900px]:px-4 max-[900px]:pb-[132px]">
       <Masthead works={likedWorks} loading={loading || matching} refreshing={refreshing} />
 
@@ -161,9 +155,6 @@ export function LibraryScreen() {
           className="scroll-mt-[70px] [&+&]:mt-[6px]"
         >
           {group.key && (
-            /* Sticky under the navbar: grouped by composer this page runs to
-               tens of thousands of pixels, and without it you scroll deep into
-               someone's works with no idea whose. */
             <div className="sticky top-[var(--nav-h)] z-[5] flex items-baseline gap-3 border-b border-transparent bg-paper pt-[26px] pb-[6px] max-[900px]:pt-5 max-[900px]:pb-1">
               <span className="font-display text-[22px] font-medium whitespace-nowrap max-[900px]:text-[18px]">
                 {group.key}
@@ -192,14 +183,13 @@ export function LibraryScreen() {
       ))}
 
       <ComposerStrip works={likedWorks} onPick={setQuery} />
-      {/* Until the works resolve, every track looks unmatched — don't claim
-          the whole library is unidentifiable while we're still working. */}
+      {/* Until the works resolve every track looks unmatched; don't claim the library is
+          unidentifiable meanwhile. */}
       {!loading && !matching && <GapStrip tracks={gapTracks} />}
     </main>
   );
 }
 
-/** Whether this card plays the track, so only the cards it concerns re-render. */
 function holds(work: LibraryWork, trackId: string | null): boolean {
   return trackId !== null && work.movements.some((m) => m.trackId === trackId);
 }
@@ -208,7 +198,6 @@ function slug(key: string): string {
   return key.replace(/[^a-z0-9]/gi, '');
 }
 
-/** A quieter masthead than a cover page — this is the daily view. */
 function Masthead({
   works,
   loading,
@@ -229,7 +218,6 @@ function Masthead({
 
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-6 pt-[26px] pb-1 max-[900px]:pt-3 max-[900px]:pb-0">
-      {/* On phones the Library tab already says where you are. */}
       <div className="flex items-center gap-3 text-muted max-[900px]:hidden">
         <span className="text-[10.5px] font-semibold tracking-[0.18em] uppercase">
           Your library
@@ -249,8 +237,7 @@ function Masthead({
             <b className="onum font-semibold whitespace-nowrap text-ink not-italic">
               {hours}h {minutes}m
             </b>
-            {/* The counts above are last hour's until the refresh lands; say so
-                rather than presenting a stale library as current. */}
+            {/* The counts are stale until the refresh lands; say so. */}
             {refreshing && (
               <>
                 <span className="text-rule">·</span>
@@ -320,7 +307,6 @@ function Toolbar({
   );
 }
 
-/** Every group at a glance; click to jump to one. */
 function GroupIndex({ groups }: { groups: { key: string | null; works: LibraryWork[] }[] }) {
   const jump = (key: string) => {
     const el = document.getElementById(`g-${slug(key)}`);

@@ -1,10 +1,5 @@
-/**
- * The MusicBrainz web service, as a `MusicBrainzSource`.
- *
- * Every request here goes through `musicbrainz-gateway.ts`, which owns the one
- * request per second MusicBrainz allows us and decides whose turn it is. This
- * module is only about what to ask for and how to read the answer.
- */
+// All requests go through `musicbrainz-gateway.ts`, which owns MusicBrainz's one-request-per-second
+// budget.
 import {
   MusicBrainzBudgetError,
   scheduleMusicBrainzRequest,
@@ -48,31 +43,16 @@ const userAgent = `PreludeFM/0.1 ( ${contact} )`;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * The channel a bare call counts against.
- *
- * `backfill` is the safe default: it is the lowest-priority read channel, so
- * forgetting to say what a call is for makes it wait rather than jump a queue
- * somebody is sitting in front of.
- */
+// `backfill` is the lowest-priority read channel, so an unlabelled call waits rather than jumping a
+// queue.
 const DEFAULT_CHANNEL: MusicBrainzChannel = 'backfill';
 
 export class MusicBrainzError extends Error {}
 
-/** Told of every request actually sent, retries included, for a caller that counts them. */
 export type OnMbAttempt = () => void;
 
-/**
- * GET a web-service path. Returns null for 404 (the entity is genuinely absent),
- * throws for anything we could not resolve after retrying.
- *
- * MusicBrainz answers 503 with a "server is busy" body under load, and it does
- * so often enough that treating it as fatal would abort long backfills
- * needlessly, so it is retried with a backoff. Each attempt is a fresh trip
- * through the gateway, so retries queue like anything else and are counted
- * against the day's budget — a retry is a request the server had to serve.
- * `onAttempt` hears about each of them for the same reason.
- */
+// Null for 404. MusicBrainz often answers 503 "busy" under load, so it is retried with backoff;
+// each retry goes through the gateway and counts against the day's budget.
 export async function mbGet<T>(
   path: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
@@ -110,33 +90,16 @@ export async function mbGet<T>(
   throw new MusicBrainzError(`retries exhausted for ${path}`);
 }
 
-/* ------------------------------------------------------------- lookups --- */
-
-/**
- * A value as one quoted Lucene term. Quotes and backslashes are the only
- * characters that end or escape a phrase, so they become spaces; null when
- * nothing is left to search for.
- */
+/** Quotes and backslashes are the only characters that end or escape a phrase. */
 export function luceneQuote(value: string): string | null {
   const cleaned = value.replace(/["\\]/g, ' ').trim();
   return cleaned ? `"${cleaned}"` : null;
 }
 
-/** One ISRC we asked for, and a recording the search index says carries it. */
 export type MbIsrcHit = { isrc: string; recording: MbRecordingSearchHit };
 
-/**
- * Every recording carrying any of these ISRCs, in one search.
- *
- * The per-ISRC endpoint would need one request each, which is hours for a
- * library of this size. The search index accepts a Lucene OR over ISRCs and
- * echoes each hit's full `isrcs` list, so a batch can be mapped back to the
- * ISRCs that produced it.
- *
- * Only ISRCs we asked for are returned; a recording carrying extra ISRCs does
- * not cause those to be claimed. An ISRC on several recordings is a hit for
- * each.
- */
+// One Lucene OR search instead of a request per ISRC. Only ISRCs we asked for are returned; an ISRC
+// on several recordings is a hit for each.
 export async function searchRecordingsByIsrcs(
   isrcs: string[],
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
@@ -158,7 +121,6 @@ export async function searchRecordingsByIsrcs(
   );
 }
 
-/** Each ISRC's first recording, for a caller that needs one answer per ISRC. */
 export async function findRecordingsByIsrcs(
   isrcs: string[],
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
@@ -171,14 +133,8 @@ export async function findRecordingsByIsrcs(
   return found;
 }
 
-/**
- * Releases carrying a barcode, filtered to exact matches.
- *
- * The search index is fuzzy and will return near misses, so results whose own
- * barcode differs are dropped: a near miss here would attach an album to the
- * wrong release. Leading zeros are ignored, since UPC-12 and EAN-13 write the
- * same barcode with different padding.
- */
+// The search is fuzzy, so non-exact barcodes are dropped. Leading zeros are ignored (UPC-12 vs
+// EAN-13).
 export async function findReleasesByBarcode(
   barcode: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
@@ -198,14 +154,8 @@ export async function findReleasesByBarcode(
     .map((release) => release.id);
 }
 
-/**
- * Releases with this title and exactly this many tracks.
- *
- * This is the route to releases MusicBrainz holds without a barcode, which
- * sampling suggests is a real share of the albums currently filed as absent.
- * The search is fuzzy by design, so it only produces a shortlist — the caller
- * confirms each candidate against the album's durations before believing it.
- */
+// For releases MusicBrainz holds without a barcode. Fuzzy, so the caller confirms durations before
+// believing it.
 export async function searchReleasesByTitle(
   title: string,
   trackCount: number,
@@ -223,14 +173,8 @@ export async function searchReleasesByTitle(
   return (result?.releases ?? []).map((release) => release.id);
 }
 
-/**
- * The recordings a release contains, in order.
- *
- * Used to decide whether releases sharing a barcode actually differ. A record
- * issued in two territories is two releases in MusicBrainz and one set of
- * recordings, so for anything addressed to recordings — ISRCs above all — the
- * two are interchangeable and the barcode is not really ambiguous at all.
- */
+// A record issued in two territories is two releases with one set of recordings, so for ISRCs the
+// barcode isn't really ambiguous.
 export async function getReleaseRecordingIds(
   releaseId: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
@@ -248,7 +192,6 @@ export async function getReleaseRecordingIds(
   return ids;
 }
 
-/** The works a recording is a performance of. */
 export async function getRecordingWorks(
   recordingId: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
@@ -286,25 +229,13 @@ export async function getArtist(
   return mbGet<MbArtist>(`/artist/${artistId}?inc=url-rels&fmt=json`, channel, onAttempt);
 }
 
-/* --------------------------------------------------- the release read --- */
-
-/**
- * Everything one release can tell us, in one request.
- *
- * This single `inc` list returns the tracklist, each track's recording, its
- * ISRCs, the works those recordings perform, the artists credited on them
- * with their roles, and the release's group. Asking per recording instead
- * would cost one request each — dozens for an album — and the difference
- * between those two shapes is what decides whether the rate-limited web
- * service is usable at all.
- */
+// One request for the whole release instead of one per recording; this shape is what makes the rate
+// limit workable.
 const RELEASE_INC =
   'recordings+recording-level-rels+work-rels+artist-rels+artist-credits+isrcs+url-rels+release-groups';
 
-/** An `artist-credit` list as the web service returns it. */
 export type MbArtistCreditJson = { name?: string; artist?: { id: string; name: string } }[];
 
-/** The artists of a credit, under the names the credit prints. */
 export function artistCreditOf(
   credit: MbArtistCreditJson | undefined,
 ): { artistId: string; name: string }[] {
@@ -362,15 +293,8 @@ function releaseUrlRelations(relations: MbRelation[] | undefined): MbReleaseUrlR
   );
 }
 
-/**
- * Artist credits on a recording.
- *
- * An instrument relationship names the instrument in its attributes — a
- * violinist is `instrument` + `violin`, not a role called `violin` — so the
- * attribute is only read as an instrument for the relationship types that use
- * it that way. `engineer` also carries attributes (`assistant`), and reading
- * that as an instrument would invent a credit that does not exist.
- */
+// The attribute is only an instrument for relationship types that use it that way: `engineer` also
+// carries attributes (`assistant`).
 function creditsFromRelations(relations: MbRelation[] | undefined): MbCredit[] {
   const credits: MbCredit[] = [];
   for (const relation of relations ?? []) {
@@ -400,11 +324,9 @@ function recordingOf(raw: RawRecording): MbReleaseRecording {
   };
 }
 
-/** A release with the credits `MbRelease` leaves out: its own, its group's and each track's. */
 export type MbReleaseDetail = Omit<MbRelease, 'tracks'> & {
   artistCredit: { artistId: string; name: string }[];
   releaseGroup: { id: string; title: string } | null;
-  /** How many media (discs) the release has, including any without tracks. */
   media: number;
   tracks: (MbReleaseTrack & { artistCredit: { artistId: string; name: string }[] })[];
 };
@@ -454,7 +376,6 @@ export async function getReleaseWithRecordings(
   };
 }
 
-/** One recording, with the works it performs and who played on it. */
 export async function getRecordingDetail(
   recordingId: string,
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
@@ -468,15 +389,7 @@ export async function getRecordingDetail(
   return raw ? recordingOf(raw) : null;
 }
 
-/* ------------------------------------------------------------- source --- */
-
-/**
- * The web service as a `MusicBrainzSource`, bound to one channel.
- *
- * Binding the channel at construction rather than per call means the caller
- * says once what it is doing — serving a signup, sweeping the cache — and
- * every read it makes inherits the right priority.
- */
+/** Bound to one channel so every read inherits the caller's priority. */
 export function musicBrainzApi(
   channel: MusicBrainzChannel = DEFAULT_CHANNEL,
   onAttempt?: OnMbAttempt,
@@ -496,12 +409,9 @@ export function musicBrainzApi(
   };
 }
 
-/* ------------------------------------------------------ relation readers --- */
-
 /**
- * The Spotify artists a MusicBrainz artist links to. Spotify often has
- * several pages for one composer (Beethoven has three), and MusicBrainz
- * links each of them.
+ * Spotify often has several pages for one composer (Beethoven has three), and MusicBrainz links
+ * each.
  */
 export function spotifyArtistIdsOf(artist: MbArtist): string[] {
   const ids: string[] = [];
@@ -515,16 +425,10 @@ export function spotifyArtistIdsOf(artist: MbArtist): string[] {
   return ids;
 }
 
-/** A work in a `parts` relationship, with its position in the parent. */
 export type MbWorkPart = MbWorkRef & { orderingKey: number | null };
 
-/**
- * The parent work and this work's position in it.
- *
- * MusicBrainz puts the position on the child's own view of the relationship,
- * so a child fetch answers both questions at once and the parent never has to
- * be fetched just to learn what order its parts come in.
- */
+// MusicBrainz puts the position on the child's side, so a child fetch answers both without fetching
+// the parent.
 export function parentPartOf(work: MbWork): MbWorkPart | null {
   for (const relation of work.relations ?? []) {
     if (relation.type === 'parts' && relation.direction === 'backward' && relation.work) {
@@ -538,7 +442,6 @@ export function parentPartOf(work: MbWork): MbWorkPart | null {
   return null;
 }
 
-/** Child parts with their positions, in the order MusicBrainz returned them. */
 export function childPartsOf(work: MbWork): MbWorkPart[] {
   const parts: MbWorkPart[] = [];
   for (const relation of work.relations ?? []) {
@@ -553,15 +456,9 @@ export function childPartsOf(work: MbWork): MbWorkPart[] {
   return parts;
 }
 
-/**
- * The work's main composer.
- *
- * A work can credit several composers. MusicBrainz marks a completer or
- * contributor as an `additional` composer (Süßmayr on Mozart's Requiem) and
- * returns relations in no order that puts the main composer first, so taking
- * the first one can file a work under its completer. A composer without that
- * mark wins; when every credit carries it, the first is still a real credit.
- */
+// MusicBrainz marks completers as `additional` composers (Süßmayr on the Requiem) and returns
+// relations unordered. A composer without that mark wins; when every credit carries it, the first
+// is still a real credit.
 export function composerOf(work: MbWork): { id: string; name: string } | null {
   const credits = (work.relations ?? []).filter(
     (relation) => relation.type === 'composer' && relation.artist,
@@ -570,14 +467,8 @@ export function composerOf(work: MbWork): { id: string; name: string } | null {
   return (main ?? credits[0])?.artist ?? null;
 }
 
-/**
- * Catalogue references, e.g. `{ system: 'Bach-Werke-Verzeichnis', number: 'BWV 1067' }`.
- *
- * A work can also belong to non-catalogue series — Bach's orchestral suites sit
- * in a "Work series" numbered 1-4 — and reading those as catalogue numbers
- * would file the second suite under catalogue number "2". Only series whose
- * type is Catalogue are returned.
- */
+// Only Catalogue-type series: Bach's orchestral suites sit in a "Work series" numbered 1-4, which
+// is not a catalogue number.
 export function cataloguesOf(work: MbWork): { seriesId: string; system: string; number: string }[] {
   const catalogues: { seriesId: string; system: string; number: string }[] = [];
   for (const relation of work.relations ?? []) {
@@ -590,7 +481,6 @@ export function cataloguesOf(work: MbWork): { seriesId: string; system: string; 
   return catalogues;
 }
 
-/** MusicBrainz life-span dates are ISO-ish strings; we only keep the year. */
 export function yearOf(value: string | null | undefined): number | null {
   const match = /^(\d{4})/.exec(value ?? '');
   return match ? Number(match[1]) : null;

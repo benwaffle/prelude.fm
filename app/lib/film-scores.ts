@@ -1,44 +1,14 @@
-/**
- * Film and TV scores are not part of the catalogue.
- *
- * Ben decided this on 11 Oct 2026. Before it, a Hans Zimmer soundtrack in the
- * liked songs showed up in the catalogue as a composer with forty works, and
- * the readiness funnel counted every soundtrack track as classical work the
- * pipeline still owed.
- *
- * MusicBrainz cannot make this call for us: it has no "film score" work type
- * that anyone uses consistently, and a film composer's cue is filed exactly
- * like a concert piece. So the decision is ours, written down here as
- * reference data, and it is applied when tracks are read rather than stored
- * on rows. That makes it hold for albums imported later and makes it
- * reversible by editing this file.
- *
- * Three things mark a track as a film score, checked in this order:
- *
- *  - MusicBrainz credits its work to someone on the film-composer list;
- *  - Spotify credits someone on that list as an artist on the track;
- *  - it is on a soundtrack album, and MusicBrainz does not tie it to a
- *    classical work (a catalogue number or an art-music work type). This is
- *    what catches a cue MusicBrainz has not linked to a work yet, and what
- *    keeps the Chopin on "The Pianist" soundtrack in.
- *
- * The list holds composers who write for the screen. Composers who also write
- * concert music — Philip Glass, Max Richter, Michael Nyman, Wojciech Kilar —
- * are deliberately not on it: their soundtrack albums go through the album
- * rule, and their concert works stay.
- *
- * Excluded tracks are not deleted or hidden. They read as not classical, with
- * a reason that says why, the same as anything else ruled out.
- */
+// Film and TV scores are not part of the catalogue (Ben's call). MusicBrainz has no consistent
+// film-score type, so the rule is reference data applied on read: it covers later imports and is
+// reversible here. Concert composers who also score films (Glass, Richter, Nyman, Kilar) are
+// deliberately not listed. Excluded tracks read as not classical with a reason, never hidden.
 
 import { classicalEvidenceFor, type ClassicalEvidenceWork } from './musicbrainz-classical-evidence';
 import { ancestry } from './musicbrainz-work-tree';
 
 type FilmComposer = {
   name: string;
-  /** MusicBrainz artist MBID. */
   mbid: string;
-  /** Spotify artist id, where Spotify credits them on tracks we hold. */
   spotifyId?: string;
 };
 
@@ -88,8 +58,8 @@ export const FILM_COMPOSERS: FilmComposer[] = [
     mbid: '661e20c8-3d82-4da2-94a2-97d9e11691c0',
     spotifyId: '7ctAOUlIAs7yuMODWE2Fyz',
   },
-  // The composer, born 1932 — not John Williams the guitarist, whose
-  // recordings of Bach and Barrios belong in the catalogue.
+  // The composer, born 1932, not John Williams the guitarist, whose Bach and Barrios belong in the
+  // catalogue.
   {
     name: 'John Williams',
     mbid: '53b106e7-0cc6-42cc-ac95-ed8d30a3a98e',
@@ -128,11 +98,7 @@ export const FILM_COMPOSERS: FilmComposer[] = [
   { name: 'Trevor Morris', mbid: 'b8634d0b-e1f8-4671-9ed9-21e9a03973ed' },
 ];
 
-/**
- * Soundtrack albums whose Spotify title does not say so. Titles that do —
- * "(Original Motion Picture Soundtrack)", "Music from the HBO Series" — are
- * recognised by `SOUNDTRACK_TITLE` and need no entry here.
- */
+/** Titles that say so are recognised by `SOUNDTRACK_TITLE` and need no entry here. */
 export const SOUNDTRACK_ALBUMS: Record<string, string> = {
   '2vj3iA2LvtvPKL8G0ZqEkm': 'Crimson Tide',
   '0yhQBaWmkWfbfpkUrbahAC': 'Live In Prague (Hans Zimmer in concert)',
@@ -167,13 +133,11 @@ export function isFilmScoreReason(reason: string | null | undefined): boolean {
 export type FilmScoreWork = ClassicalEvidenceWork & { composerMbid: string | null };
 
 export type FilmScoreTrack = {
-  /** The works MusicBrainz relates the track's recording to. */
   workMbids: string[];
   spotifyArtistIds: string[];
   album: { spotifyAlbumId: string; title: string } | null;
 };
 
-/** Why a track is a film score, or null when it is not one. */
 export function filmScoreReason(
   track: FilmScoreTrack,
   workByMbid: Map<string, FilmScoreWork>,

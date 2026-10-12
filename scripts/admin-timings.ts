@@ -1,16 +1,5 @@
-/**
- * How long each /admin page's reads take, and how many database round trips
- * they make. Calls the same server actions the pages call on load, with the
- * session read stubbed to the admin's user (the admin check itself still
- * reads). Reads only.
- *
- *   pnpm admin:timings           every page, three runs each
- *   pnpm admin:timings home      one page
- *   RUNS=1 pnpm admin:timings    fewer runs
- *
- * Pages run their actions at once here; in the browser Next sends one
- * action at a time, so a page that calls two actions waits for both in turn.
- */
+// Usage: RUNS=3 pnpm admin:timings [page]
+// Session read is stubbed to the admin. Actions run in parallel here; Next runs them serially.
 /* eslint-disable @typescript-eslint/no-require-imports */
 import { loadEnvConfig } from '@next/env';
 
@@ -38,7 +27,6 @@ function pageLoads(): Record<string, Load> {
   const cacheHealth = require('@/app/admin/actions/cache-health');
   const proposals = require('@/app/admin/actions/work-proposals');
 
-  // The gateway bar sits on every page.
   const page =
     (...loads: Load[]): Load =>
     () =>
