@@ -241,6 +241,7 @@ export function musicBrainzLibraryView(
     const movements: Movement[] = ordered.map((member, index) => {
       const leaf = member.work.hierarchy.at(-1);
       const position = partPosition(member.work, member.occurrence.trackNumber);
+      const movement = movementOf(member.work);
       const whole = onWholeWork(member);
       const title = whole
         ? (member.recording.title ?? leaf?.title)
@@ -252,6 +253,7 @@ export function musicBrainzLibraryView(
         // Never the Spotify track name, which is a label for the file, not a movement name.
         name: title ?? '',
         unnamed: title == null,
+        section: !whole && movement && movement !== leaf ? movement.title : null,
         missing: false,
         durationMs: member.occurrence.durationMs,
         duration: formatDuration(member.occurrence.durationMs),

@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef } from 'react';
-import { numeralPrefix, type Movement } from '@/lib/prelude';
+import { Fragment, useRef } from 'react';
+import { numeralPrefix, programmeMovementName, type Movement } from '@/lib/prelude';
 import { Icon, Waveform } from '../Icon';
 import { MovementName } from './WorkText';
 
@@ -53,9 +53,20 @@ export function MovementList(props: MovementListProps) {
     case 'programme':
       return (
         <ol className="m-0 flex list-none flex-col border-y border-rule p-0">
-          {props.movements.map((m) => (
-            <ProgrammeRow key={m.n} movement={m} list={props} />
-          ))}
+          {props.movements.map((m, i) => {
+            const previous = props.movements[i - 1];
+            // The section's own track ("V. Sanctus") already heads its sub-parts.
+            const opensSection =
+              m.section &&
+              previous?.section !== m.section &&
+              !(previous && !previous.section && previous.position === m.position);
+            return (
+              <Fragment key={m.n}>
+                {opensSection && <SectionHeading movement={m} workTitle={props.workTitle} />}
+                <ProgrammeRow movement={m} list={props} />
+              </Fragment>
+            );
+          })}
         </ol>
       );
     case 'summary':
@@ -243,6 +254,25 @@ function CardRow({
   );
 }
 
+function SectionHeading({
+  movement: m,
+  workTitle,
+}: {
+  movement: Movement;
+  workTitle: string | null;
+}) {
+  return (
+    <li className="grid grid-cols-[36px_1fr] items-baseline gap-4 pt-[14px] pb-[2px]">
+      <span className="onum text-right font-display text-[22px] text-muted italic">
+        {numeralPrefix(m.roman)}
+      </span>
+      <span className="font-display text-[20px] font-medium">
+        {programmeMovementName(m.section!, workTitle, m.roman)}
+      </span>
+    </li>
+  );
+}
+
 function ProgrammeRow({
   movement: m,
   list,
@@ -294,16 +324,16 @@ function ProgrammeRow({
             playing ? 'font-bold text-accent not-italic' : 'text-muted italic'
           }`}
         >
-          {numeralPrefix(m.roman)}
+          {m.section ? '' : numeralPrefix(m.roman)}
         </button>
         <button
           type="button"
           onClick={() => list.onPlay(m)}
           className={`cursor-pointer text-left font-display text-[20px] font-medium ${
             playing ? 'text-accent' : ''
-          }`}
+          } ${m.section ? 'pl-5' : ''}`}
         >
-          <MovementName movement={m} workTitle={list.workTitle} />
+          <MovementName movement={m} workTitle={m.section ?? list.workTitle} />
           {playing && <Waveform bars={5} className="ml-[10px] h-3 align-middle" />}
         </button>
         <span className="font-meta text-[12px] text-muted tabular-nums">{m.duration}</span>

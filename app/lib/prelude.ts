@@ -149,6 +149,8 @@ export interface Movement {
   name: string;
   // `name` is blank for a cached part without one, or Spotify's raw title for an unmatched track.
   unnamed: boolean;
+  /** The section a sub-part sits in ("III. Sequenz" for "a. Dies irae"), so a page can nest it. */
+  section?: string | null;
   // Rendered greyed out, so a partial recording reads as partial instead of looking like a short
   // work.
   missing: boolean;
