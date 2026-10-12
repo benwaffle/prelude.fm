@@ -210,7 +210,7 @@ export function PlayerBar() {
                     type="button"
                     onClick={() => movement.trackId && toggleLike(movement.trackId)}
                     title={movement.liked ? 'Remove from liked' : 'Like this movement'}
-                    className="flex shrink-0 cursor-pointer opacity-55 transition-all duration-150 hover:scale-110 hover:opacity-100"
+                    className="flex shrink-0 cursor-pointer opacity-55 transition-all duration-150 hover:scale-110 hover:opacity-100 active:scale-95"
                   >
                     <Icon name={movement.liked ? 'heartFill' : 'heartOutline'} size={12} />
                   </button>

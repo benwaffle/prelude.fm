@@ -6,10 +6,13 @@ import { Icon } from '../Icon';
 import { CoverArt } from '../work/CoverArt';
 import type { Programme } from './use-programme';
 
+// A quick shrink on press so a tap visibly lands, most of all on phones where nothing hovers.
+const PRESS = 'transition-transform duration-150 ease-out active:scale-95';
+
 const PLAY_SIZES = {
   mini: { button: 'h-11 w-11 shrink-0', icon: 18 },
-  bar: { button: 'h-10 w-10 transition-transform duration-150 hover:scale-105', icon: 18 },
-  sheet: { button: 'h-[68px] w-[68px] transition-transform active:scale-95', icon: 28 },
+  bar: { button: 'h-10 w-10 hover:scale-105', icon: 18 },
+  sheet: { button: 'h-[68px] w-[68px]', icon: 28 },
 } as const;
 
 export function PlayButton({ size, tint }: { size: keyof typeof PLAY_SIZES; tint: string }) {
@@ -23,7 +26,7 @@ export function PlayButton({ size, tint }: { size: keyof typeof PLAY_SIZES; tint
       aria-label={isPaused ? 'Play' : 'Pause'}
       onClick={togglePlay}
       disabled={!isReady}
-      className={`flex cursor-pointer items-center justify-center rounded-full bg-current disabled:cursor-default disabled:opacity-35 ${button}`}
+      className={`flex cursor-pointer items-center justify-center rounded-full bg-current disabled:cursor-default disabled:opacity-35 ${PRESS} ${button}`}
     >
       <span key={isPaused ? 'play' : 'pause'} className="flex animate-pop" style={{ color: tint }}>
         <Icon name={isPaused ? 'play' : 'pause'} size={icon} />
@@ -37,8 +40,8 @@ export function TransportButtons({ size, tint }: { size: 'bar' | 'sheet'; tint: 
   const { previousTrack, nextTrack } = usePlayerActions();
   const sheet = size === 'sheet';
   const step = sheet
-    ? 'flex h-12 w-12 cursor-pointer items-center justify-center disabled:opacity-35'
-    : 'cursor-pointer opacity-85 hover:opacity-100 disabled:cursor-default disabled:opacity-35';
+    ? `flex h-12 w-12 cursor-pointer items-center justify-center disabled:opacity-35 ${PRESS}`
+    : `cursor-pointer opacity-85 hover:opacity-100 disabled:cursor-default disabled:opacity-35 ${PRESS}`;
   return (
     <div className={`flex items-center justify-center ${sheet ? 'gap-10' : 'gap-[18px]'}`}>
       <button
