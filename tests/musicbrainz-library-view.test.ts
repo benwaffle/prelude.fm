@@ -304,6 +304,25 @@ test('a track related only to the whole work is not doubled by a missing part', 
   );
 });
 
+test('tracks filed under a whole section are pieces of one performance, not repeats', async () => {
+  // Bajazet: tracks MusicBrainz links to "Act III" rather than an aria, with a track we cannot
+  // file between them.
+  await db.insert(schema.mbWork).values({
+    mbid: 'part-iii-a',
+    title: 'Piano Sonata no. 16 in C major, K. 545: III. Rondo: a. Theme',
+    type: null,
+    parentMbid: 'part-iii',
+    orderingKey: 1,
+    composerMbid: 'mozart',
+    detail: 'full',
+  });
+  await seedExtraTrack('track-iii-1', 4, 'rec-iii-1', 'part-iii');
+  await seedExtraTrack('track-iii-2', 6, 'rec-iii-2', 'part-iii');
+  const { works } = await view(['track-i', 'track-ii', 'track-iii-1', 'track-iii-2']);
+
+  assert.equal(works.length, 1);
+});
+
 async function seedOtherPerformance() {
   await db.insert(schema.spotifyAlbum).values({
     spotifyId: 'album-2',

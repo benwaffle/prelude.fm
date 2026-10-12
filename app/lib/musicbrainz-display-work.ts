@@ -1,4 +1,4 @@
-import { workLevelOf, type WorkLevel } from './musicbrainz-work-level';
+import { isWholeOfNumbers, workLevelOf, type WorkLevel } from './musicbrainz-work-level';
 
 // The card, catalogue and work heading must agree, so the rule lives here. References and composer
 // are the work's own, else the nearest ancestor's: MusicBrainz files them on the piece, not each
@@ -148,6 +148,7 @@ function levelOf<N extends DisplayWorkNode, R extends DisplayWorkReference>(
   index: WorkIndex<N, R>,
 ): WorkLevel {
   const parent = work.parentMbid ? index.workById.get(work.parentMbid) : undefined;
+  const above = parent?.parentMbid ? climb(parent.parentMbid, index.workById).chain : [];
   return workLevelOf({
     mbid: work.mbid,
     title: work.title ?? '',
@@ -155,6 +156,7 @@ function levelOf<N extends DisplayWorkNode, R extends DisplayWorkReference>(
     parentMbid: work.parentMbid,
     parentTitle: parent?.title ?? null,
     parentType: parent?.type ?? null,
+    wholeAbove: above.some((ancestor) => isWholeOfNumbers(ancestor.type)),
     hasChildren: index.parentMbids.has(work.mbid),
     orderingKey: work.orderingKey,
   });

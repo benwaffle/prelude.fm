@@ -11,6 +11,8 @@ export type WorkNode = {
   parentMbid: string | null;
   parentTitle: string | null;
   parentType?: string | null;
+  /** An opera, Mass or other whole of numbers further up than the parent. */
+  wholeAbove?: boolean;
   hasChildren: boolean;
   orderingKey?: number | null;
 };
@@ -18,7 +20,7 @@ export type WorkNode = {
 export type WorkLevel = {
   mbid: string;
   /** So a report can explain itself and a wrong rule can be found. */
-  reason: 'has-parts' | 'typed' | 'no-parent' | 'titled-as-part' | 'unresolved';
+  reason: 'has-parts' | 'typed' | 'no-parent' | 'titled-as-part' | 'filed-in-whole' | 'unresolved';
   needsReview: boolean;
 };
 
@@ -114,7 +116,18 @@ function typedPartOf(node: WorkNode): boolean {
   return titledAsPartOf(node) || continuesPartTitle(node);
 }
 
+export function isWholeOfNumbers(type: string | null | undefined): boolean {
+  return WHOLES_OF_NUMBERS.has(type ?? '');
+}
+
 export function workLevelOf(node: WorkNode): WorkLevel {
+  // "Il Bajazet, Atto I, Scena 1: Aria" sits under "Atto I": anything filed below a section of an
+  // opera or Mass is a number of it, however it is titled or typed. A typed piece with its own
+  // parts (a suite drawn from the opera) still decides for itself.
+  if (node.parentMbid && node.wholeAbove && !(node.type && node.hasChildren)) {
+    return { mbid: node.parentMbid, reason: 'filed-in-whole', needsReview: false };
+  }
+
   if (node.hasChildren) {
     // A section of a Mass or opera ("III. Sequenz", "Act II") is still a part of it; a prelude and
     // fugue in a book of 24 is a piece, so a parent's title alone is not enough.
