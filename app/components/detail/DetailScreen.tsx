@@ -132,7 +132,7 @@ function Hero({
   onToggleLike: (trackId: string) => void;
 }) {
   return (
-    <section className="relative grid animate-enter grid-cols-[320px_1fr] grid-rows-[auto_1fr] gap-x-12 gap-y-[34px] border-b border-rule pt-12 pb-14 max-[900px]:grid-cols-[96px_minmax(0,1fr)] max-[900px]:gap-x-4 max-[900px]:gap-y-5 max-[900px]:pt-5 max-[900px]:pb-[30px]">
+    <section className="relative grid animate-enter grid-cols-[320px_1fr] grid-rows-[auto_1fr] gap-x-12 gap-y-[34px] pt-12 pb-14 max-[900px]:grid-cols-[96px_minmax(0,1fr)] max-[900px]:gap-x-4 max-[900px]:gap-y-5 max-[900px]:pt-5 max-[900px]:pb-[30px]">
       <div className="relative row-span-2 aspect-square self-start shadow-deep max-[900px]:row-span-1">
         <CoverArt src={work.cover} alt={work.album} className="block h-full w-full object-cover">
           <WorkPlate work={work} size="hero" />
@@ -295,7 +295,7 @@ function MoreByComposer({
         <Link
           key={w.workId}
           href={workHref(w)}
-          className={`relative grid w-full grid-cols-[132px_1fr_240px] gap-7 border-t border-rule py-[26px] text-left no-underline last:border-b hover:bg-[linear-gradient(90deg,var(--paper-2),transparent_60%)] max-[900px]:grid-cols-[84px_minmax(0,1fr)] max-[900px]:gap-[14px] ${
+          className={`relative grid w-full grid-cols-[132px_1fr_240px] gap-7 border-b border-rule py-[26px] text-left no-underline hover:bg-[linear-gradient(90deg,var(--paper-2),transparent_60%)] max-[900px]:grid-cols-[84px_minmax(0,1fr)] max-[900px]:gap-[14px] ${
             i >= MORE_BY_COMPOSER_SHOWN ? 'animate-rise' : ''
           }`}
         >
