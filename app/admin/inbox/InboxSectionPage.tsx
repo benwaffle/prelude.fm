@@ -24,6 +24,7 @@ import { MissingReleasesSection } from './MissingReleasesSection';
 import { StreamingUrlsSection } from './StreamingUrlsSection';
 import { SubmittedSection } from './SubmittedSection';
 import { WorkRelationshipsSection } from './WorkRelationshipsSection';
+import { WholeWorkLinksSection } from './WholeWorkLinksSection';
 
 export function InboxSectionPage({
   section,
@@ -205,6 +206,13 @@ export function InboxSectionPage({
           total={view.counts.contestedIsrcs}
           onReload={reload}
           onLoadMore={() => loadMore('contested', view.counts.contestedIsrcs)}
+        />
+      )}
+      {section === 'whole-work' && (
+        <WholeWorkLinksSection
+          rows={view.wholeWork}
+          total={view.counts.wholeWork}
+          onLoadMore={() => loadMore('wholeWork', view.counts.wholeWork)}
         />
       )}
       {section === 'submitted' && (

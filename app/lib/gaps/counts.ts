@@ -8,18 +8,21 @@ import { misalignedAlbums } from './misaligned';
 import { missingReleases } from './missing-releases';
 import { streamingUrlGaps } from './streaming-urls';
 import { workRelationshipGaps } from './work-relationships';
+import { wholeWorkLinks } from './whole-work-links';
 
 export async function gapLists() {
-  const [isrc, work, contested, missing, barcodes, streaming, misaligned] = await Promise.all([
-    isrcGaps(),
-    workRelationshipGaps(),
-    contestedIsrcs(),
-    missingReleases(),
-    barcodeGaps(),
-    streamingUrlGaps(),
-    misalignedAlbums(),
-  ]);
-  return { isrc, work, contested, missing, barcodes, streaming, misaligned };
+  const [isrc, work, contested, missing, barcodes, streaming, misaligned, wholeWork] =
+    await Promise.all([
+      isrcGaps(),
+      workRelationshipGaps(),
+      contestedIsrcs(),
+      missingReleases(),
+      barcodeGaps(),
+      streamingUrlGaps(),
+      misalignedAlbums(),
+      wholeWorkLinks(),
+    ]);
+  return { isrc, work, contested, missing, barcodes, streaming, misaligned, wholeWork };
 }
 
 export type GapLists = Awaited<ReturnType<typeof gapLists>>;
@@ -42,6 +45,7 @@ export function countContributions(lists: GapLists, submissions: Record<string, 
     barcodes: lists.barcodes.length,
     streamingUrls: lists.streaming.length,
     misaligned: lists.misaligned.length,
+    wholeWork: lists.wholeWork.length,
     submissions,
   };
 }
