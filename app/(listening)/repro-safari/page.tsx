@@ -1,11 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { use } from 'react';
 
 // Temporary: reproduce Safari full reloads on library links. Not for merge.
-export default function Repro() {
-  const sp = useSearchParams();
+export default function Repro({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
+  const q = use(searchParams);
+  const sp = { get: (k: string) => q[k] ?? null };
   const cv = sp.get('cv') !== '0';
   const pf = sp.get('pf') === '1';
   const n = Number(sp.get('n') ?? 1500);
