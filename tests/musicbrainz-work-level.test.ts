@@ -38,10 +38,11 @@ test('a movement belongs to a parent whose title extends its heading', () => {
   assert.equal(level.reason, 'titled-as-part');
 });
 
-test('a movement belongs to a parent whose title adds a catalogue reference', () => {
+test('a movement belongs to a parent whose title adds a catalogue reference by its numeral', () => {
   const level = workLevelOf(
     node({
       title: 'Sinfonia in G minor, op. 6 no. 6: I. Allegro',
+      orderingKey: 1,
       parentMbid: 'sinfonia',
       parentTitle: 'Sinfonia in G minor, op. 6 no. 6, W. C12',
     }),

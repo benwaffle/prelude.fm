@@ -1,11 +1,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import {
-  programmeMovementName,
-  unnamedMovementNote,
-  type LibraryWork,
-  type Movement,
-} from '@/lib/prelude';
+import { unnamedMovementNote, type LibraryWork, type Movement } from '@/lib/prelude';
 import { GAP_REASONS } from '@/lib/gap-reasons';
 import type { MusicBrainzGapCode } from '@/lib/musicbrainz-library';
 
@@ -40,17 +35,13 @@ export function WorkTitle({ work }: { work: Pick<LibraryWork, 'title' | 'nicknam
 
 export function MovementName({
   movement,
-  workTitle,
   className,
+  name = movement.name,
 }: {
-  movement: Pick<Movement, 'name' | 'unnamed' | 'roman'>;
-  workTitle?: string | null;
+  movement: Pick<Movement, 'name' | 'unnamed'>;
   className?: string;
+  name?: string;
 }) {
-  const name =
-    workTitle === undefined
-      ? movement.name
-      : programmeMovementName(movement.name, workTitle, movement.roman);
   return (
     <>
       <span className={className}>{name}</span>
