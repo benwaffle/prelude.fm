@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePlayer } from '@/lib/spotify-player-context';
@@ -46,6 +47,14 @@ export function NowPlayingSheet({
 
   const { movement } = programme;
   const remote = outputDevice && !outputDevice.isThisBrowser;
+  const title = (
+    <>
+      {movement.roman && (
+        <span className="mr-2 italic opacity-70">{numeralPrefix(movement.roman)}</span>
+      )}
+      <MovementName movement={movement} />
+    </>
+  );
 
   return createPortal(
     <div
@@ -98,12 +107,17 @@ export function NowPlayingSheet({
 
         <div className="mt-6 flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <div className="font-display text-[22px] leading-[1.2]">
-              {movement.roman && (
-                <span className="mr-2 italic opacity-70">{numeralPrefix(movement.roman)}</span>
-              )}
-              <MovementName movement={movement} />
-            </div>
+            {programme.detailHref ? (
+              <Link
+                href={programme.detailHref}
+                onClick={close}
+                className="block font-display text-[22px] leading-[1.2] no-underline"
+              >
+                {title}
+              </Link>
+            ) : (
+              <div className="font-display text-[22px] leading-[1.2]">{title}</div>
+            )}
             <div className="mt-1 font-display text-[15px] italic opacity-75">
               <Credit programme={programme} linked onNavigate={close} />
             </div>
