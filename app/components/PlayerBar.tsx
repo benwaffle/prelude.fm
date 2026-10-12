@@ -12,6 +12,7 @@ import { QueuePanel } from './queue/QueuePanel';
 import { NowPlayingSheet } from './NowPlayingSheet';
 import { MovementName } from './work/WorkText';
 import { Credit } from './player/Credit';
+import { Marquee } from './player/Marquee';
 import { useProgramme, type Programme } from './player/use-programme';
 import { ProgressLine, WorkProgress } from './player/WorkProgress';
 import { PlayButton, PlayerCover, TransportButtons } from './player/TransportButtons';
@@ -156,7 +157,9 @@ export function PlayerBar() {
                         {numeralPrefix(movement.roman)}
                       </span>
                     )}
-                    <MovementName movement={movement} className="truncate" />
+                    <Marquee>
+                      <MovementName movement={movement} />
+                    </Marquee>
                   </span>
                   <span className="block truncate font-display text-[12.5px] italic opacity-75">
                     {remote ? `On ${remote.name}` : <Credit programme={programme} />}
@@ -191,11 +194,15 @@ export function PlayerBar() {
                         {numeralPrefix(movement.roman)}
                       </span>
                     )}
-                    <MovementName movement={movement} className="truncate" />
+                    <Marquee>
+                      <MovementName movement={movement} />
+                    </Marquee>
                   </Link>
                 ) : (
                   <span className="flex min-w-0 items-baseline">
-                    <MovementName movement={movement} className="truncate" />
+                    <Marquee>
+                      <MovementName movement={movement} />
+                    </Marquee>
                   </span>
                 )}
                 {movement.trackId && (
