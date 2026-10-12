@@ -13,10 +13,6 @@ import type { SeedPlan } from '../release-seeding';
 import type { WorkProposal } from '../work-proposals';
 import type { TrackWorkMatch } from '../track-work-links';
 
-/*
- * Better Auth
- */
-
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -132,22 +128,11 @@ export const spotifyAlbum = sqliteTable(
     >(),
     /** The release barcode Spotify reports; the key MusicBrainz indexes releases by. */
     upc: text('upc'),
-    /** The MusicBrainz release this album is, when one carries the same barcode. */
     mbReleaseId: text('mb_release_id'),
-    /**
-     * How many releases carry this barcode. Without the count, a null release
-     * is two different problems wearing the same face: MusicBrainz has nothing
-     * (add the release) or it has several and none of them identifies this
-     * album (pick one). Telling someone to add a release that already exists
-     * is how duplicates get created.
-     */
+    // Releases carrying this barcode: tells "MusicBrainz has none" from "several, none identifying
+    // this album".
     mbReleaseCandidates: integer('mb_release_candidates'),
-    /**
-     * When we last asked MusicBrainz about this barcode. Without it a null
-     * release is ambiguous — it could mean MusicBrainz does not have the
-     * release, or simply that nobody has looked yet, and those call for
-     * completely different work.
-     */
+    /** Null: nobody has asked MusicBrainz about this barcode yet. */
     mbCheckedAt: integer('mb_checked_at', { mode: 'timestamp_ms' }),
   },
   (table) => [index('spotify_album_mb_release_idx').on(table.mbReleaseId)],
@@ -165,11 +150,7 @@ export const spotifyTrack = sqliteTable(
     spotifyAlbumId: text('spotify_album_id')
       .notNull()
       .references(() => spotifyAlbum.spotifyId),
-    /**
-     * The track's ISRC as Spotify reports it. Stored rather than re-fetched
-     * because it is the join key into MusicBrainz, and re-deriving it for the
-     * whole library costs a full pass over the Spotify API.
-     */
+    /** Stored because it is the join key into MusicBrainz. */
     isrc: text('isrc'),
   },
   (table) => [index('spotify_track_isrc_idx').on(table.isrc)],
@@ -206,7 +187,7 @@ export const matchQueue = sqliteTable(
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
     submittedBy: text('submitted_by').notNull(),
-    /** See `MatchQueueStatus` for what each state means. */
+    /** See `MatchQueueStatus`. */
     status: text('status', {
       enum: ['pending', 'processing', 'matched', 'failed', 'not_classical', 'unresolved'],
     }).notNull(),
@@ -214,8 +195,8 @@ export const matchQueue = sqliteTable(
     lastAttemptAt: integer('last_attempt_at', { mode: 'timestamp_ms' }),
     processedAt: integer('processed_at', { mode: 'timestamp_ms' }),
     errorMessage: text('error_message'),
-    claimOwnerId: text('workflow_run_id'), // Legacy physical column name; now used as a claim lease.
-    /** MusicBrainz pipeline outcome; null until the MB pass reports one. */
+    claimOwnerId: text('workflow_run_id'), // Legacy column name; holds the claim lease.
+    /** Null until the MB pass reports one. */
     pipelineOutcome: text('pipeline_outcome', {
       enum: ['ready', 'unanchored', 'unclassified', 'not_classical'],
     }),
@@ -230,13 +211,7 @@ export const matchQueue = sqliteTable(
   ],
 );
 
-/**
- * Durable routing/classification for a Spotify track.
- *
- * Separate from `match_queue`, which remains lease/workflow state. No user
- * relation — classification is global. Precedence is enforced in code:
- * manual > musicbrainz > llm_proposal.
- */
+/** Global, no user relation. Precedence enforced in code: manual > musicbrainz > llm_proposal. */
 export const trackClassification = sqliteTable(
   'track_classification',
   {
@@ -280,19 +255,7 @@ export const trackArtistsRelations = relations(trackArtists, ({ one }) => ({
   }),
 }));
 
-/*
- * MusicBrainz gateway: request budget and kill switch
- */
-
-/**
- * Requests spent against the MusicBrainz web service, per UTC day and channel.
- *
- * Persisted rather than counted in memory because serverless instances come
- * and go, so a per-process tally measures one lambda instead of the service.
- * It is also the number that decides when the web service stops being enough
- * and a local mirror becomes necessary, which makes it worth keeping even
- * when no cap is close.
- */
+/** Persisted because serverless instances come and go. */
 export const mbRequestBudget = sqliteTable(
   'mb_request_budget',
   {
@@ -305,13 +268,6 @@ export const mbRequestBudget = sqliteTable(
   (table) => [primaryKey({ columns: [table.day, table.channel] })],
 );
 
-/**
- * MusicBrainz requests by UTC day, channel, and cache operation.
- *
- * Complements `mb_request_budget` with the operation that caused each request
- * so we can see whether marginal imports spend budget on releases, works, or
- * stub backfill.
- */
 export const mbRequestOperationMetric = sqliteTable(
   'mb_request_operation_metric',
   {
@@ -323,12 +279,7 @@ export const mbRequestOperationMetric = sqliteTable(
   (table) => [primaryKey({ columns: [table.day, table.channel, table.operation] })],
 );
 
-/**
- * Daily cache lookup efficiency by operation.
- *
- * A hit means the local `mb_*` row was already sufficient and no MusicBrainz
- * request was needed for that lookup; a miss means a fetch followed or will.
- */
+/** A hit means the local `mb_*` row sufficed; a miss means a fetch followed or will. */
 export const mbCacheLookupMetric = sqliteTable(
   'mb_cache_lookup_metric',
   {
@@ -341,12 +292,7 @@ export const mbCacheLookupMetric = sqliteTable(
   (table) => [primaryKey({ columns: [table.day, table.operation] })],
 );
 
-/**
- * Anonymous aggregate for one import/worker pass.
- *
- * No user id and no track ids — only counts and timing so we can compute
- * marginal MusicBrainz requests per import and rolling percentiles.
- */
+/** No user id and no track ids: only counts and timing. */
 export const mbImportRun = sqliteTable('mb_import_run', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
@@ -361,34 +307,14 @@ export const mbImportRun = sqliteTable('mb_import_run', {
   requestsCaused: integer('requests_caused').notNull(),
 });
 
-/**
- * The next moment a MusicBrainz request may be sent.
- *
- * One row, shared by every process. The in-process scheduler can only space
- * out its own requests, and there is never only one process: a serverless
- * deployment runs several instances, and a backfill on somebody's laptop runs
- * beside them. Each of them spacing its own requests a second apart still
- * adds up to more than one request per second at the far end.
- *
- * So a slot is claimed here first. The claim is a single atomic update that
- * moves the marker forward by one interval and returns the moment it moved
- * from, which is that caller's turn; the caller then waits for it. Two
- * processes asking at once get consecutive slots rather than the same one.
- * Times are the database's own clock, so the processes do not need to agree
- * on what time it is.
- */
+// One row shared by every process: a claim atomically moves the marker one interval forward on the
+// DB clock.
 export const mbRateSlot = sqliteTable('mb_rate_slot', {
   id: integer('id').primaryKey(),
   nextSlotAt: integer('next_slot_at').notNull(),
 });
 
-/**
- * Per-channel pause flags and cap overrides.
- *
- * A row for the pseudo-channel `all` applies to every channel. This exists so
- * that stopping traffic to somebody else's server, or widening the bot's daily
- * cap once its submissions have been reconciled, does not require a deploy.
- */
+/** A row for the pseudo-channel `all` applies to every channel. */
 export const mbGatewayControl = sqliteTable('mb_gateway_control', {
   /** 'all' | 'interactive' | 'backfill' | 'bot' */
   channel: text('channel').primaryKey(),
@@ -401,43 +327,20 @@ export const mbGatewayControl = sqliteTable('mb_gateway_control', {
     .notNull(),
 });
 
-/*
- * The MusicBrainz cache
- *
- * MusicBrainz entities as MusicBrainz states them, keyed by MBID and shared by
- * every user. These tables are a cache of somebody else's database, not our
- * interpretation of it: nothing here is edited by hand, and anything we
- * believe that MusicBrainz does not is recorded elsewhere.
- *
- * There is deliberately no `mb_fetch_log`. Freshness is the `fetched_at` on
- * each row, "have we read this work properly or only seen it named" is
- * `mb_work.detail`, and request accounting is `mb_request_budget`. A separate
- * log would restate all three and could disagree with them.
- */
+// A cache of MusicBrainz as it states it, keyed by MBID; nothing here is edited by hand.
 
 export const mbArtist = sqliteTable('mb_artist', {
   mbid: text('mbid').primaryKey(),
   name: text('name').notNull(),
-  /**
-   * The name a release printed for this artist.
-   *
-   * MusicBrainz files an artist under their own script, so a Japanese
-   * conductor is 鈴木雅明 and a Russian violinist is Дмитрий Синьковский. The
-   * release's artist credit carries the Latin form the label printed, which
-   * is what the rest of this interface is written in, and it arrives with the
-   * release read rather than costing a request of its own.
-   */
+  // The Latin-script name the release credit printed (MusicBrainz files 鈴木雅明 under his own script).
   creditedName: text('credited_name'),
   sortName: text('sort_name'),
   /** 'Person' | 'Group' | 'Orchestra' | 'Choir' | ... */
   type: text('type'),
   beginYear: integer('begin_year'),
   endYear: integer('end_year'),
-  /**
-   * The Spotify artist MusicBrainz links to this artist, which is where a
-   * composer's portrait comes from. Null with `linksReadAt` set means
-   * MusicBrainz has no link; null without it means we have not looked.
-   */
+  // Null with `linksReadAt` set means MusicBrainz has no link; null without it means we have not
+  // looked.
   spotifyArtistId: text('spotify_artist_id'),
   linksReadAt: integer('links_read_at', { mode: 'timestamp_ms' }),
   fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
@@ -445,21 +348,8 @@ export const mbArtist = sqliteTable('mb_artist', {
     .notNull(),
 });
 
-/**
- * A MusicBrainz work, and the parent it is a part of.
- *
- * The parent link is the whole point of this table. Our own model is flat —
- * a work owns a list of leaf parts — and that flatness is what produced
- * eighteen separate works called "The Well-Tempered Clavier, Book 2", because
- * there was nowhere to say which prelude each one was. MusicBrainz's tree is
- * recursive and arbitrarily deep, so we store it as it is and decide which
- * level to show when reading.
- *
- * `detail` distinguishes a work we have actually fetched from one we only know
- * the name of because a recording pointed at it. A release fetch names dozens
- * of works and gives their parents for none of them, so without this the cache
- * could not tell "no parent" from "not looked yet".
- */
+// `detail` tells a fetched work from one only named by a recording, so "no parent" differs from
+// "not looked yet".
 export const mbWork = sqliteTable(
   'mb_work',
   {
@@ -468,7 +358,7 @@ export const mbWork = sqliteTable(
     /** MusicBrainz work type: 'Sonata', 'Symphony', 'Aria', ... */
     type: text('type'),
     parentMbid: text('parent_mbid'),
-    /** This work's position among its parent's parts, from the relation's ordering-key. */
+    /** Position among the parent's parts, from the relation's ordering-key. */
     orderingKey: integer('ordering_key'),
     composerMbid: text('composer_mbid'),
     /** 'stub': named by a recording. 'full': fetched with its relations. */
@@ -486,14 +376,6 @@ export const mbWork = sqliteTable(
   ],
 );
 
-/**
- * Catalogue references — BWV, Köchel, Ryom, Longo — from a work's Catalogue
- * series relationships.
- *
- * Normalised with our own `classical-normalization`, which is better at this
- * than MusicBrainz's series-name-plus-free-text: the number arrives as an
- * attribute string like "BWV 1067" and has to be parsed back out either way.
- */
 export const mbWorkCatalogue = sqliteTable(
   'mb_work_catalogue',
   {
@@ -510,27 +392,13 @@ export const mbWorkCatalogue = sqliteTable(
   ],
 );
 
-/**
- * A recording: one performance, independent of the releases carrying it.
- *
- * Our current model ties a recording to a Spotify album, so the same
- * performance issued twice becomes two recordings of two works. MusicBrainz
- * has it the right way round and this table follows.
- */
 export const mbRecording = sqliteTable('mb_recording', {
   mbid: text('mbid').primaryKey(),
   title: text('title').notNull(),
-  /** Milliseconds, as MusicBrainz reports it. */
+  /** Milliseconds. */
   length: integer('length'),
-  /**
-   * 'stub': an ISRC search named this recording and nothing else is known.
-   * 'full': read with its works and credits, from a release or its own lookup.
-   *
-   * An ISRC resolves without reference to a release, which is the only way to
-   * anchor a track whose album MusicBrainz does not have. That leaves a
-   * recording we can name but know nothing about, and this column is what
-   * keeps that from looking like a broken reference: the stubs are the queue.
-   */
+  // 'stub': named by an ISRC search only. 'full': read with its works and credits. The stubs are
+  // the queue.
   detail: text('detail', { enum: ['stub', 'full'] })
     .default('full')
     .notNull(),
@@ -539,19 +407,8 @@ export const mbRecording = sqliteTable('mb_recording', {
     .notNull(),
 });
 
-/**
- * The ISRCs a recording carries.
- *
- * Stored because this is the join that anchors a Spotify track to a
- * MusicBrainz recording, and it has to be a local lookup rather than a search
- * request: Spotify gives us the ISRC, and everything downstream depends on
- * turning that into a recording without spending budget.
- *
- * Not keyed on the ISRC alone. An ISRC should identify one recording, but
- * MusicBrainz genuinely holds cases where a label attached the same one to
- * two — that is how Haydn's Symphony 87 lost its link — and a unique key here
- * would hide the conflict instead of letting us find and report it.
- */
+// Not unique on ISRC: MusicBrainz has ISRCs on several recordings, and a unique key would hide the
+// conflict.
 export const mbRecordingIsrc = sqliteTable(
   'mb_recording_isrc',
   {
@@ -564,7 +421,7 @@ export const mbRecordingIsrc = sqliteTable(
   ],
 );
 
-/** The works a recording performs. Usually one; a medley has several. */
+/** Usually one; a medley has several. */
 export const mbRecordingWork = sqliteTable(
   'mb_recording_work',
   {
@@ -577,28 +434,15 @@ export const mbRecordingWork = sqliteTable(
   ],
 );
 
-/**
- * Who played, and what they did.
- *
- * This replaces counting artist name strings and calling the second most
- * frequent one the performer — a heuristic that cannot tell a conductor from
- * an orchestra and silently merges two artists who share a name. `role` is the
- * MusicBrainz relationship type; `instrument` qualifies it, so a violinist is
- * `instrument` + `violin` rather than a role of their own.
- */
+// `role` is the relationship type; `instrument` qualifies it (violinist = `instrument` + `violin`).
 export const mbRecordingCredit = sqliteTable(
   'mb_recording_credit',
   {
     recordingMbid: text('recording_mbid').notNull(),
     artistMbid: text('artist_mbid').notNull(),
     role: text('role').notNull(),
-    /**
-     * The instrument, or '' for a role that has none.
-     *
-     * Empty rather than null because this column is part of the key, and
-     * SQLite allows duplicate rows when a key column is null — two identical
-     * conductor credits would both be stored. Readers map '' back to absent.
-     */
+    // '' rather than null: it is part of the key, and SQLite allows duplicate rows when a key
+    // column is null.
     instrument: text('instrument').default('').notNull(),
   },
   (table) => [
@@ -615,16 +459,11 @@ export const mbRelease = sqliteTable(
     mbid: text('mbid').primaryKey(),
     title: text('title').notNull(),
     barcode: text('barcode'),
-    /** MusicBrainz release date, as given: 'YYYY', 'YYYY-MM' or 'YYYY-MM-DD'. */
+    /** 'YYYY', 'YYYY-MM' or 'YYYY-MM-DD'. */
     date: text('date'),
     country: text('country'),
-    /**
-     * When release-level URL relationships were last read authoritatively.
-     *
-     * Null means the cached release predates `url-rels` ingestion, so an
-     * empty `mb_release_url` result is unknown rather than evidence that
-     * MusicBrainz has no external links for the release.
-     */
+    // Null means the release predates `url-rels` ingestion, so an empty `mb_release_url` is
+    // unknown, not absence.
     urlRelationsFetchedAt: integer('url_relations_fetched_at', { mode: 'timestamp_ms' }),
     fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
@@ -633,7 +472,6 @@ export const mbRelease = sqliteTable(
   (table) => [index('mb_release_barcode_idx').on(table.barcode)],
 );
 
-/** Release-level external links exactly as MusicBrainz states them. */
 export const mbReleaseUrl = sqliteTable(
   'mb_release_url',
   {
@@ -654,23 +492,16 @@ export const mbReleaseUrl = sqliteTable(
   ],
 );
 
-/**
- * A release's tracklist.
- *
- * This is what replaces the parser's album-local `recordingGroup` string and
- * the 0.55 Jaccard overlap used to reconcile it: an exact tracklist, stated by
- * MusicBrainz, in order.
- */
 export const mbReleaseTrack = sqliteTable(
   'mb_release_track',
   {
     releaseMbid: text('release_mbid').notNull(),
-    /** Disc, one-based. */
+    /** One-based. */
     medium: integer('medium').notNull(),
-    /** Position within the disc, one-based. */
+    /** One-based. */
     position: integer('position').notNull(),
     recordingMbid: text('recording_mbid').notNull(),
-    /** The title as printed on this release, which can differ from the recording's. */
+    /** As printed on this release, which can differ from the recording's. */
     title: text('title').notNull(),
     length: integer('length'),
   },
@@ -680,15 +511,7 @@ export const mbReleaseTrack = sqliteTable(
   ],
 );
 
-/**
- * How a Spotify track was anchored to a MusicBrainz recording.
- *
- * `matched_by` is kept because the two routes do not deserve equal trust. An
- * ISRC is the label's own identifier and is nearly always right; a position on
- * a release is only as right as the release match behind it. Recording which
- * one was used means a later doubt can be narrowed to the rows that earned it,
- * rather than discarding everything.
- */
+/** `matched_by` kept because ISRC and release position deserve different trust. */
 export const trackRecording = sqliteTable(
   'track_recording',
   {
@@ -696,7 +519,6 @@ export const trackRecording = sqliteTable(
       .primaryKey()
       .references(() => spotifyTrack.spotifyId),
     recordingMbid: text('recording_mbid').notNull(),
-    /** The ISRC that resolved it, when that is how it was resolved. */
     isrc: text('isrc'),
     matchedBy: text('matched_by', {
       enum: ['isrc', 'release_position'],
@@ -711,53 +533,27 @@ export const trackRecording = sqliteTable(
   ],
 );
 
-/*
- * Contributions back to MusicBrainz
- */
-
-/**
- * Every edit we have sent to MusicBrainz, whoever sent it.
- *
- * A human clicking through a prefilled form and a bot posting the same edit
- * are recorded identically, on purpose. Automation is something each class of
- * edit earns rather than a different pipeline: when the last step changes
- * from a click to a POST, nothing downstream of this table changes with it.
- *
- * It is also the cross-user deduplicator. Two people owning the same album
- * must not both submit its ISRCs, and once prelude has more than one user
- * nothing else knows that the first submission happened.
- *
- * `outcome` stays `pending` until somebody confirms the edit landed, because
- * a submitted edit is a proposal: MusicBrainz editors vote, and some of ours
- * will be voted down. Recording a submission as a success at the moment we
- * make it would be recording our intention rather than the result.
- */
+// Human and bot edits are recorded identically. `outcome` stays `pending` until the edit is seen to
+// land: MusicBrainz edits are voted on.
 export const mbSubmission = sqliteTable(
   'mb_submission',
   {
     id: integer('id').primaryKey(),
-    /**
-     * What kind of edit. 'isrc' and 'barcode' are mechanical and will one day
-     * be the bot's; 'release', 'work' and 'work_relationship' stay human
-     * because a wrong one of those is expensive for other people to undo.
-     */
+    // 'isrc' and 'barcode' are mechanical; 'release', 'work' and 'work_relationship' stay human.
     kind: text('kind', {
       enum: ['isrc', 'barcode', 'streaming_url', 'release', 'work', 'work_relationship', 'error'],
     }).notNull(),
-    /** The MusicBrainz entity being edited, or null when it does not exist yet. */
+    /** Null when the entity does not exist yet. */
     targetMbid: text('target_mbid'),
-    /** Our side of it: the Spotify track or album the evidence comes from. */
+    /** The Spotify track or album the evidence comes from. */
     subject: text('subject').notNull(),
-    /** The value submitted — an ISRC, a barcode, a URL — for reconciliation. */
     value: text('value'),
-    /** What convinced us, kept so a rejected edit can be understood later. */
     evidence: text('evidence', { mode: 'json' }).$type<Record<string, unknown>>(),
     /** 'human:<name>' or 'bot:prelude_fm_bot'. */
     submittedBy: text('submitted_by').notNull(),
     submittedAt: integer('submitted_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
-    /** The MusicBrainz edit number, once known. */
     editId: text('edit_id'),
     outcome: text('outcome', { enum: ['pending', 'applied', 'rejected', 'withdrawn'] })
       .default('pending')
@@ -766,8 +562,7 @@ export const mbSubmission = sqliteTable(
     note: text('note'),
   },
   (table) => [
-    // One submission in hand per value per target: the deduplicator. Rejected
-    // and withdrawn rows are history and may sit beside a later attempt.
+    // One submission in hand per value per target. Rejected and withdrawn rows are history.
     uniqueIndex('mb_submission_identity_idx')
       .on(table.kind, table.targetMbid, table.value)
       .where(sql`${table.outcome} in ('pending', 'applied')`),
@@ -776,50 +571,19 @@ export const mbSubmission = sqliteTable(
   ],
 );
 
-/**
- * The latest result of each MusicBrainz cache invariant.
- *
- * One row per check, overwritten each time it runs. A history would answer
- * "when did this start" but the honest answer to that is in the git log and
- * the ingest logs; what a person needs here is whether the cache is sound
- * right now, on a page rather than behind a command.
- */
+/** One row per check, overwritten each run. */
 export const mbInvariantResult = sqliteTable('mb_invariant_result', {
   name: text('name').primaryKey(),
   severity: text('severity', { enum: ['hard', 'upstream', 'review'] }).notNull(),
   violations: integer('violations').notNull(),
-  /** A few offending ids, so the report says what to look at. */
   samples: text('samples', { mode: 'json' }).$type<{ id: string; detail: string | null }[]>(),
   checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
 });
 
-/*
- * Adding missing releases
- */
-
-/**
- * What we know about a missing album at each stage of adding it, one row per
- * album and stage. Cached because each stage costs live MusicBrainz requests,
- * and a page load must not spend them. A stage is overwritten when it runs
- * again.
- *
- * - `precheck`: whether MusicBrainz already has the album in some form, which
- *   MusicBrainz artists its Spotify artists are, and what Harmony will likely
- *   get wrong for a classical release (`ReleasePrecheck`).
- * - `seed`: the release-editor seed we prepared — track by track, which
- *   recording is pre-filled and why (`SeedPlan`).
- * - `seeded`: the seed as it was when the person opened it on MusicBrainz.
- *   Preparing the seed again does not touch it, so the correction record
- *   compares against the form that was actually used.
- * - `correction`: what the person adding the release had to change, compared
- *   with the seed (`ReleaseCorrectionRecord`). The measurement that decides
- *   which kinds of album a bot could one day add unattended.
- *
- * The value's type follows the stage; `missing-release-store.ts` is the only
- * reader and writer and holds that mapping.
- */
+// Cached because each stage costs live MusicBrainz requests. `seeded` is the form actually opened,
+// untouched by re-preparing. `missing-release-store.ts` maps stage to value type.
 export const mbMissingRelease = sqliteTable(
   'mb_missing_release',
   {
@@ -830,10 +594,8 @@ export const mbMissingRelease = sqliteTable(
     value: text('value', { mode: 'json' })
       .$type<ReleasePrecheck | SeedPlan | ReleaseCorrectionRecord>()
       .notNull(),
-    /**
-     * MusicBrainz requests the stage spent (a seed's excludes its pre-check).
-     * Null for corrections measured before they were counted.
-     */
+    // A seed's count excludes its pre-check. Null for corrections measured before they were
+    // counted.
     requests: integer('requests'),
     recordedAt: integer('recorded_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
@@ -842,29 +604,19 @@ export const mbMissingRelease = sqliteTable(
   (table) => [primaryKey({ columns: [table.spotifyAlbumId, table.stage] })],
 );
 
-/**
- * A work we propose for a recording that MusicBrainz links to none, and what
- * the person decided about it.
- *
- * A proposal is never a relationship: approving one records only that the
- * person agrees and will make the edit on MusicBrainz. The ledger
- * (`mb_submission`) still records the edit once they say it is made, and
- * the cache only learns the link when a recheck reads it back. `proposal` is
- * null when the run looked and found nothing worth offering, so that gap
- * stays visible as "no proposal" rather than disappearing.
- */
+// Approving records only agreement; the ledger records the edit. Null `proposal` means the run
+// found nothing, kept visible.
 export const mbWorkProposal = sqliteTable(
   'mb_work_proposal',
   {
     recordingMbid: text('recording_mbid').primaryKey(),
     releaseMbid: text('release_mbid'),
     proposal: text('proposal', { mode: 'json' }).$type<WorkProposal>(),
-    /** The proposed work: `proposal.workMbid`, kept as a column to join and compare on. */
+    /** `proposal.workMbid`, as a column to join on. */
     workMbid: text('work_mbid'),
     status: text('status', { enum: ['proposed', 'approved', 'dismissed'] })
       .default('proposed')
       .notNull(),
-    /** MusicBrainz requests spent on this recording's proposal. */
     requests: integer('requests').notNull(),
     checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
@@ -877,22 +629,9 @@ export const mbWorkProposal = sqliteTable(
   ],
 );
 
-/**
- * Our own link from a Spotify track straight to a MusicBrainz work, for
- * tracks MusicBrainz cannot link through a recording: their release is not
- * on MusicBrainz yet, or the release does not line up.
- *
- * This is prelude.fm's claim, not MusicBrainz's, and it lives here so that no
- * MusicBrainz read ever overwrites it or mistakes it for MusicBrainz data.
- * The reader uses it only while the track has no MusicBrainz recording; once
- * the release is added and the track is anchored, MusicBrainz's own
- * recording-to-work link takes over and this row is ignored.
- *
- * `work_mbid` is set only for a confident match. A weaker best guess stays in
- * `match` with a null `work_mbid`, so the track stays visibly unmatched while
- * the guess is kept for whoever looks next. `match` is null when the run
- * looked and found nothing at all.
- */
+// Our own claim, kept apart so no MusicBrainz read overwrites it; ignored once the track is
+// anchored. `work_mbid` is set only for a confident match; a weaker guess stays in `match`. Null
+// `match`: nothing found.
 export const trackWorkLink = sqliteTable(
   'track_work_link',
   {
@@ -901,7 +640,6 @@ export const trackWorkLink = sqliteTable(
       .references(() => spotifyTrack.spotifyId),
     workMbid: text('work_mbid'),
     match: text('match', { mode: 'json' }).$type<TrackWorkMatch>(),
-    /** MusicBrainz requests spent on this track's match. */
     requests: integer('requests').notNull(),
     checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)

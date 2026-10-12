@@ -27,8 +27,8 @@ test('the payload nests every ISRC under its recording', () => {
 });
 
 test('a malformed ISRC never reaches the payload', () => {
-  // MusicBrainz would reject the whole document; worse, a typo submitted to
-  // somebody else's database is somebody else's problem to undo.
+  // MusicBrainz would reject the whole document, and a typo upstream is somebody else's problem to
+  // undo.
   const xml = buildIsrcSubmission([
     { recordingMbid: 'rec-1', isrc: 'not-an-isrc' },
     { recordingMbid: 'rec-1', isrc: 'GBAYE0601498' },
@@ -52,9 +52,7 @@ test('the same ISRC twice on one recording is one edit, not two', () => {
 });
 
 test('the cap counts edits rather than requests', () => {
-  // One POST can carry fifty ISRCs. The bot code of conduct caps edits at
-  // 1,000 a day, so counting requests would let one request spend fifty
-  // times its share.
+  // The cap counts edits, not requests: one POST can carry fifty ISRCs.
   const items = Array.from({ length: 50 }, (_, i) => ({
     recordingMbid: `rec-${i}`,
     isrc: `GBAYE06014${String(i).padStart(2, '0')}`,
@@ -71,9 +69,7 @@ test('an id containing XML syntax cannot break out of the document', () => {
 });
 
 test('the edit note travels inside the document', () => {
-  // The server reads it with the XPath /mb:metadata/mb:edit-note. The first
-  // version of this built a note, stored it in our ledger, and submitted
-  // four edits without one — which the bot code of conduct requires.
+  // The server reads the note at /mb:metadata/mb:edit-note; the code of conduct requires one.
   const xml = buildIsrcSubmission(
     [{ recordingMbid: 'rec-1', isrc: 'GBAYE0601498' }],
     'Because of reasons.',

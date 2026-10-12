@@ -1,12 +1,7 @@
 import { spotifyApi, type PlaybackDevice } from './web-api';
 import { positionAt, type ProgressStore } from './progress';
 
-/**
- * The controls, for wherever playback is going. This browser's player is
- * driven through the Web Playback SDK; a Spotify Connect device through the
- * Web API. Starting playback goes through the Web API for both, since only
- * it can hand over a list of tracks.
- */
+/** Starting playback uses the Web API for both, since only it can hand over a list of tracks. */
 export interface PlaybackTransport {
   play(uris: string[], positionMs?: number): Promise<void>;
   pause(): Promise<void>;
@@ -18,11 +13,7 @@ export interface PlaybackTransport {
   setVolume(volume: number): Promise<void>;
 }
 
-/**
- * Send one request on behalf of `device`: on success clear the last refusal,
- * on failure say what Spotify refused, and either way re-read a Connect
- * device, which takes a moment to act.
- */
+/** Either way a Connect device is re-read, since it takes a moment to act. */
 export type Send = (
   device: PlaybackDevice,
   what: string,
@@ -38,7 +29,6 @@ function play(send: Send, device: PlaybackDevice, uris: string[], positionMs?: n
   );
 }
 
-/** This tab's player. */
 export function localTransport(
   player: Spotify.Player | null,
   device: PlaybackDevice,
@@ -56,11 +46,8 @@ export function localTransport(
   };
 }
 
-/**
- * A Connect device, or nowhere yet (`device` null), where every command but
- * the optimistic bookkeeping is a no-op. Taps are answered at once in
- * `progress`; the next poll corrects them if Spotify disagrees.
- */
+// With `device` null every command but the optimistic bookkeeping is a no-op. Taps update
+// `progress` at once; the next poll corrects them.
 export function connectTransport(
   device: PlaybackDevice | null,
   send: Send,

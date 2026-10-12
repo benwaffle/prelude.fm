@@ -13,8 +13,6 @@ export default function WorkDetailPage({
   const { workId } = use(params);
   const { rec } = use(searchParams);
 
-  // MusicBrainz work identity is an MBID. The route does
-  // not need to know which.
   if (workId === '') {
     return (
       <main className="mx-auto max-w-[1280px] px-6 pt-16">

@@ -92,7 +92,6 @@ function RecordingList({ judgement, mbids }: { judgement: Judgement; mbids: stri
   );
 }
 
-/** What the library says about which recording keeps the ISRC. */
 function ContestedVerdict({ judgement }: { judgement: Judgement }) {
   const { verdict } = judgement;
   const lines: React.ReactNode[] = [];

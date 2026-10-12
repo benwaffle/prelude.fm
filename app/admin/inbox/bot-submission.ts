@@ -7,11 +7,7 @@ export type BotSubmissionFeedback =
 
 export type BotSubmissionMessages = { success: (submitted: number) => string; empty: string };
 
-/**
- * What a row says about its latest bot submission. A call that never
- * answered is "not confirmed", never a MusicBrainz rejection, and a batch with
- * nothing eligible is neither success nor rejection.
- */
+/** A call that never answered is "not confirmed", never a rejection; an empty batch is neither. */
 export async function botSubmissionFeedback(
   submit: () => Promise<BotSubmissionResult>,
   messages: BotSubmissionMessages,
@@ -31,11 +27,7 @@ export async function botSubmissionFeedback(
   return { kind: 'success', message: messages.success(result.submitted) };
 }
 
-/**
- * Submit, put the outcome on the row, and refresh only after an accepted
- * edit. Only `refresh` can throw: its failure is the admin action's failure
- * and leaves the row's outcome in place.
- */
+/** Only `refresh` can throw; its failure leaves the row's outcome in place. */
 export async function submitThenRefresh(
   submit: () => Promise<BotSubmissionResult>,
   messages: BotSubmissionMessages,

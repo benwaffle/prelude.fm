@@ -34,8 +34,7 @@ test('the note links the MusicBrainz release the ISRCs were matched on', () => {
 });
 
 test('both barcodes appear, each labelled as whose it is', () => {
-  // The same number written two ways — Spotify pads a UPC-12. Calling one of
-  // them the other is the sort of small inaccuracy that costs a bot trust.
+  // Spotify pads a UPC-12; the note must not call one barcode the other.
   const note = editNoteFor([gap()]);
   assert.match(note, /Spotify release with barcode 00028946813423/);
   assert.match(note, /this release: 028946813423/);
@@ -50,8 +49,7 @@ test('identical barcodes are not explained away as padding', () => {
 });
 
 test('the note bounds the whole batch by its worst duration difference', () => {
-  // Quoting the closest match would flatter the batch; the worst is what an
-  // editor is actually being asked to accept.
+  // The worst match, not the closest, is what an editor is being asked to accept.
   const note = editNoteFor([
     gap({ durationDeltaMs: 0 }),
     gap({ durationDeltaMs: 2300 }),
@@ -69,7 +67,7 @@ test('the note says how many and who sent them', () => {
 });
 
 test('the note does not restate which ISRC went where', () => {
-  // The edit itself shows that; repeating it is noise in a review queue.
+  // The edit itself shows which ISRC went where.
   const note = editNoteFor([gap({ isrc: 'GBAYE0601498' })]);
   assert.doesNotMatch(note, /GBAYE0601498/);
 });
@@ -79,8 +77,6 @@ test('an empty batch has no note', () => {
 });
 
 test('a sub-second difference is stated in milliseconds', () => {
-  // "within 0.0s" reads like a rounding artefact and makes the number look
-  // decorative rather than measured.
   assert.match(editNoteFor([gap({ durationDeltaMs: 1 })]), /within 1ms/);
   assert.match(editNoteFor([gap({ durationDeltaMs: 940 })]), /within 940ms/);
   assert.match(editNoteFor([gap({ durationDeltaMs: 2586 })]), /within 2\.6s/);

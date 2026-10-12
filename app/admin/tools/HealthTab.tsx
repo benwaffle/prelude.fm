@@ -23,7 +23,6 @@ async function readDeployHealth(): Promise<DeployHealth> {
   return (await response.json()) as DeployHealth;
 }
 
-/** Deployment facts, unsettled-tree samples, and cache checks for the MusicBrainz reader. */
 export function HealthTab() {
   const healthQuery = useServerQuery(getCacheHealth, []);
   const deploy = useServerQuery(readDeployHealth, []);

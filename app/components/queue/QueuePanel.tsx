@@ -3,7 +3,6 @@
 import { useDismiss } from '../DevicePicker';
 import { QueueList } from './QueueList';
 
-/** The queue, opened from the desktop player bar. */
 export function QueuePanel({ onClose }: { onClose: () => void }) {
   const panelRef = useDismiss('[data-queue-toggle]', onClose);
 

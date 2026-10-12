@@ -4,8 +4,6 @@ import { Cormorant_Garamond, Inter } from 'next/font/google';
 import { ServiceWorker } from './components/ServiceWorker';
 import './globals.css';
 
-// The editorial type pairing from the design: a Garamond for display, Inter
-// for body and metadata.
 const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
@@ -27,7 +25,6 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // The browser chrome takes the paper colour, ivory or mahogany with the OS.
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#f6f1e6' },
     { media: '(prefers-color-scheme: dark)', color: '#141210' },

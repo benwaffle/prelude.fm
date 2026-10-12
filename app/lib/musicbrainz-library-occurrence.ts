@@ -6,11 +6,6 @@ import type {
 } from './musicbrainz-library-facts';
 import { gap, nonBlank, pushGap, type MusicBrainzGap } from './musicbrainz-library-gaps';
 
-/**
- * One Spotify track as a playable occurrence of a recording: where it was
- * issued, what MusicBrainz says about that issue, and the gaps in it.
- */
-
 export type ProjectedProviderOccurrence = {
   spotifyTrackId: string;
   providerTitle: string;
@@ -24,7 +19,6 @@ export type ProjectedProviderOccurrence = {
   popularity: number | null;
   popularityState: 'ranked' | 'unranked';
   held: boolean;
-  /** Number of accepted MusicBrainz anchors on this provider album. */
   albumAnchoredTrackCount: number;
   releaseMbid: string | null;
   releaseTitle: string | null;
@@ -33,12 +27,10 @@ export type ProjectedProviderOccurrence = {
   gaps: MusicBrainzGap[];
 };
 
-/** The lookups an occurrence is read from, built once per projection. */
 export type OccurrenceIndex = {
   albumById: Map<string, ProviderAlbumFact>;
   releaseById: Map<string, MbReleaseFact>;
   releaseTrackByPosition: Map<string, MbReleaseTrackFact>;
-  /** Accepted MusicBrainz anchors per provider album. */
   acceptedAnchorCountByAlbum: Map<string, number>;
 };
 

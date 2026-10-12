@@ -55,9 +55,7 @@ test('a soft violation is not a failure', () => {
 });
 
 test('an old clean sweep is amber, not green', () => {
-  // A page of zeroes from three months ago reads exactly like a page of
-  // zeroes from this morning, and that is the failure worth guarding
-  // against: silence from a check nobody has run is not a pass.
+  // Silence from a check nobody has run recently is not a pass.
   const health = invariantHealth(
     CHECKS,
     recorded({ checkedAt: new Date('2026-06-01T00:00:00Z') }),

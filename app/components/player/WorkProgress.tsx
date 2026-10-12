@@ -13,15 +13,8 @@ interface Readouts {
   remaining?: RefObject<HTMLSpanElement | null>;
 }
 
-/**
- * Draw progress straight into the readouts, not through React state:
- * re-rendering on every frame would be wasteful, and the library behind the
- * bar runs to tens of thousands of elements. Only what a reader could see
- * change is written. It redraws every frame while playing, and while paused
- * only when Spotify reports a new position (a seek, say) or a drag moves.
- *
- * Returns a redraw, for a drag while paused.
- */
+// Draws straight into the readouts, not React state: re-rendering every frame is too costly with
+// the library behind the bar.
 function useProgressDrawing(
   programme: Programme,
   dragRatio: RefObject<number | null>,
@@ -71,7 +64,6 @@ function useProgressDrawing(
 
 const NO_DRAG = { current: null };
 
-/** The phone bar's hairline of progress along its top edge. */
 export function ProgressLine({ programme }: { programme: Programme }) {
   const fill = useRef<HTMLDivElement>(null);
   useProgressDrawing(programme, NO_DRAG, { fill });
@@ -82,16 +74,11 @@ export function ProgressLine({ programme }: { programme: Programme }) {
   );
 }
 
-/**
- * Progress through the whole recording: a seam at each movement, the times,
- * and tap or drag to seek (the seek happens on release).
- */
 export function WorkProgress({ programme, size }: { programme: Programme; size: 'bar' | 'sheet' }) {
   const fill = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
   const elapsed = useRef<HTMLSpanElement>(null);
   const remaining = useRef<HTMLSpanElement>(null);
-  // While a finger or mouse drags along the bar, the readouts follow it.
   const dragRatio = useRef<number | null>(null);
   const draw = useProgressDrawing(programme, dragRatio, { fill, head, elapsed, remaining });
   const { timeline, seekToRatio } = programme;

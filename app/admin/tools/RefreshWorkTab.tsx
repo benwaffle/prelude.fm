@@ -4,11 +4,6 @@ import { useState } from 'react';
 import { refreshWorkFromMusicBrainz, type RefreshedWork } from '../actions/work-refresh';
 import { failureMessage } from '@/lib/use-server-query';
 
-/**
- * Pick up an edit made on MusicBrainz without waiting for a sweep: paste a
- * work page link (ours or MusicBrainz's) and the work and its parents are
- * read again.
- */
 export function RefreshWorkTab() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);

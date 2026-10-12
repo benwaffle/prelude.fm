@@ -31,12 +31,8 @@ import {
 export type { MusicBrainzGap, MusicBrainzGapCode } from './musicbrainz-library-gaps';
 export type { ProjectedProviderOccurrence } from './musicbrainz-library-occurrence';
 
-/**
- * The MusicBrainz-authoritative reader projection: pure, IO-free, and fed
- * only by `MusicBrainzLibraryFacts`, so the authority boundary is
- * mechanically testable. What it cannot show, it reports as a typed gap
- * rather than filling in.
- */
+// Pure and fed only by `MusicBrainzLibraryFacts`, so the authority boundary is testable. Gaps are
+// reported, not filled in.
 
 export type AccountedTrackStatus = 'ready' | 'incomplete' | 'unmatched' | 'unclassified';
 
@@ -48,12 +44,8 @@ export type AccountedTrack = {
 };
 
 export type ProjectedCatalogueReference = {
-  /**
-   * The work in the hierarchy that actually carries this reference. A
-   * movement rarely has its own catalogue number — BWV 988 is filed against
-   * the Goldberg Variations, not against its Aria — so the reader has to be
-   * able to say which work the number describes.
-   */
+  // A movement rarely has its own catalogue number: BWV 988 is filed against the Goldberg
+  // Variations, not its Aria.
   fromWorkMbid: string;
   seriesMbid: string;
   system: string;
@@ -82,24 +74,15 @@ export type ProjectedWorkNode = {
 };
 
 export type ProjectedRecordingWork = {
-  /** The work MusicBrainz (or, see `linkedBy`, we) relate directly to the recording. */
   relatedWorkMbid: string;
-  /**
-   * `musicbrainz`: MusicBrainz relates the recording to this work.
-   * `prelude`: MusicBrainz does not, and the link is our own match, at
-   * `linkConfidence`. The work itself is still read from MusicBrainz.
-   */
+  // `prelude`: MusicBrainz has no relation and the link is our own match. The work itself is still
+  // read from MusicBrainz.
   linkedBy: 'musicbrainz' | 'prelude';
   linkConfidence: 'high' | 'medium' | 'low' | null;
-  /** The conservative reader level selected by `workLevelOf`. */
   displayWorkMbid: string | null;
   workLevelReason: 'has-parts' | 'typed' | 'no-parent' | 'titled-as-part' | 'unresolved' | null;
   hierarchy: ProjectedWorkNode[];
-  /**
-   * The displayed work's own parts, in MusicBrainz's ordering. This is what
-   * lets a reader show that a holding is partial — the movements of the work
-   * a performance does not carry — without guessing how many there are.
-   */
+  /** Lets a reader show a partial holding without guessing how many movements there are. */
   parts: ProjectedWorkNode[];
   title: string | null;
   type: string | null;
@@ -117,19 +100,12 @@ export type ProjectedCredit = {
 };
 
 export type ProjectedRecording = {
-  /**
-   * A MusicBrainz recording MBID, or for `source: 'track'` the key
-   * `track:<spotify id>`, which names no MusicBrainz entity.
-   */
+  /** For `source: 'track'`, the key `track:<spotify id>`, which names no MusicBrainz entity. */
   recordingMbid: string;
-  /**
-   * `musicbrainz`: a MusicBrainz recording. `track`: one Spotify track
-   * MusicBrainz has no recording for, which we linked to a work ourselves.
-   */
   source: 'musicbrainz' | 'track';
   title: string | null;
   lengthMs: number | null;
-  /** Null when the recording is not in the cache at all — we know nothing yet. */
+  /** Null when the recording is not in the cache at all. */
   detail: 'stub' | 'full' | null;
   heldTrackIds: string[];
   works: ProjectedRecordingWork[];
@@ -139,15 +115,7 @@ export type ProjectedRecording = {
   gaps: MusicBrainzGap[];
 };
 
-/**
- * What MusicBrainz already says about a track that is not in the library.
- *
- * Reading metadata and deciding whether a track is classical are separate
- * questions, and a track held back on the second still deserves the first: a
- * reviewer looking at a track we filed as uncertain needs to see the
- * recording, the work and the composer MusicBrainz already gave us, not an
- * empty row with a label on it.
- */
+/** A held-back track still shows what MusicBrainz knows, so a reviewer doesn't see an empty row. */
 export type UnresolvedTrackMetadata = {
   recordingMbid: string;
   recordingTitle: string | null;
@@ -162,18 +130,12 @@ export type UnresolvedLibraryTrack = {
   spotifyAlbumId: string | null;
   status: 'unmatched' | 'unclassified';
   classification: TrackClassification | null;
-  /** Null only when nothing anchored the track to a MusicBrainz recording. */
   musicBrainz: UnresolvedTrackMetadata | null;
-  /**
-   * The work our own match links the track to, when MusicBrainz has no
-   * recording for it. Set only for such tracks.
-   */
   ownWorks?: ProjectedRecordingWork[];
   gaps: MusicBrainzGap[];
 };
 
 export type MusicBrainzLibraryProjection = {
-  /** Input IDs as a set, preserving first-seen order. */
   requestedTrackIds: string[];
   recordings: ProjectedRecording[];
   unresolvedTracks: UnresolvedLibraryTrack[];
@@ -197,11 +159,7 @@ function manyByKey<T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> 
   return result;
 }
 
-/**
- * Every lookup the projection needs, built once per call. The projection is
- * run over a whole liked library, so rebuilding these per recording or per
- * work is the difference between linear and quadratic.
- */
+/** Built once per call: per-recording lookups would make projecting a whole library quadratic. */
 type LibraryIndex = OccurrenceIndex & {
   classificationByTrack: Map<string, TrackClassification>;
   childWorksByParent: Map<string, MbWorkFact[]>;
@@ -271,7 +229,6 @@ function indexFacts(facts: MusicBrainzLibraryFacts): LibraryIndex {
   };
 }
 
-/** Where a classification that is not `classical` sends the track. */
 const HELD_BACK_GAP: Record<
   Exclude<TrackClassification['state'], 'classical'>,
   MusicBrainzGapCode
@@ -281,11 +238,6 @@ const HELD_BACK_GAP: Record<
   not_classical: 'classification-not-classical',
 };
 
-/**
- * Build the MusicBrainz-only reader projection. This function performs no IO
- * and accepts no legacy/parser facts, which makes the authority boundary
- * mechanically testable.
- */
 export function projectMusicBrainzLibrary(
   facts: MusicBrainzLibraryFacts,
 ): MusicBrainzLibraryProjection {
@@ -296,12 +248,9 @@ export function projectMusicBrainzLibrary(
   const { trackById, classificationByTrack, anchorByTrack } = index;
 
   const recordingIds = new Set<string>();
-  // Tracks with no MusicBrainz recording that we linked to a work ourselves.
   const ownTrackHoldings: string[] = [];
-  // Requested tracks this projection actually accepted into a recording. A
-  // track we sent to a gap bucket — unreviewed, uncertain, deliberately not
-  // classical, anchor in conflict — must not be pulled back in as a held
-  // occurrence just because it shares a recording with a track that resolved.
+  // A track sent to a gap bucket must not be pulled back in because it shares a recording with one
+  // that resolved.
   const heldByRecording = new Map<string, Set<string>>();
   const unresolvedTracks: UnresolvedLibraryTrack[] = [];
   const accountingByTrack = new Map<string, AccountedTrack>();
@@ -341,12 +290,11 @@ export function projectMusicBrainzLibrary(
     const providerTrack = trackById.get(spotifyTrackId);
     const classification = classificationByTrack.get(spotifyTrackId) ?? null;
     const anchor = anchorByTrack.get(spotifyTrackId);
-    // Read first, route second. What MusicBrainz knows about the track does
-    // not depend on whether we have decided the track is classical.
+    // Read first, route second: what MusicBrainz knows doesn't depend on whether the track is
+    // classical.
     const known =
       anchor?.state === 'accepted' ? describeAnchoredTrack(anchor.recordingMbid, index) : null;
-    // A contested ISRC is a contradiction in MusicBrainz, and it is worth
-    // reporting whatever the track's classification turns out to be.
+    // A contested ISRC is worth reporting whatever the track's classification.
     const contested =
       anchor?.state === 'conflicting'
         ? [
@@ -430,8 +378,7 @@ export function projectMusicBrainzLibrary(
   const accounting = requestedTrackIds.map((spotifyTrackId) => {
     const accounted = accountingByTrack.get(spotifyTrackId);
     if (accounted) return accounted;
-    // This is a defensive, visible failure rather than a dropped input. It
-    // should be unreachable because every branch above records the track.
+    // A defensive, visible failure rather than a dropped input; should be unreachable.
     return {
       spotifyTrackId,
       status: 'unmatched' as const,
@@ -443,11 +390,7 @@ export function projectMusicBrainzLibrary(
   return { requestedTrackIds, recordings, unresolvedTracks, accounting };
 }
 
-/**
- * One MusicBrainz recording with its provider occurrences. `heldTrackIds` are
- * the requested tracks this projection accepted here; other occurrences are
- * real alternatives we keep but do not claim the reader holds.
- */
+/** Other occurrences are real alternatives we keep but do not claim the reader holds. */
 function projectRecording(
   recordingMbid: string,
   heldTrackIds: Set<string>,
@@ -532,11 +475,7 @@ function projectRecording(
   };
 }
 
-/**
- * One Spotify track MusicBrainz has no recording for, held under the work we
- * linked it to. There is no recording to read, so there is no recording
- * title and no performer credit: those stay empty, and the gaps say why.
- */
+// No recording to read, so no recording title or performer: those stay empty and the gaps say why.
 function projectOwnTrack(
   spotifyTrackId: string,
   index: LibraryIndex,
@@ -619,8 +558,7 @@ function projectRecordingWork(
   if (!title) pushGap(gaps, gap('work-title-missing', 'work', level.mbid));
   if (!type) pushGap(gaps, gap('work-type-missing', 'work', level.mbid));
 
-  // Without climbing to the piece almost every movement would report a
-  // missing catalogue and the reader could not group by catalogue number.
+  // Without climbing to the piece almost every movement would report a missing catalogue.
   const catalogues = resolved.references.map(
     (catalogue): ProjectedCatalogueReference => ({
       fromWorkMbid: catalogue.workMbid,
@@ -681,10 +619,7 @@ function projectRecordingWork(
   };
 }
 
-/**
- * The works a recording is of: MusicBrainz's relations, or our own link
- * where MusicBrainz relates none (the facts should carry one only then).
- */
+/** Our own link only where MusicBrainz relates none. */
 function recordingWorks(recordingMbid: string, index: LibraryIndex): ProjectedRecordingWork[] {
   const relations = index.worksByRecording.get(recordingMbid) ?? [];
   const ownLink = relations.length === 0 ? index.ownWorkByRecording.get(recordingMbid) : undefined;
@@ -705,8 +640,6 @@ function projectCredit(credit: MbRecordingCreditFact, index: LibraryIndex): Proj
   };
 }
 
-/** The MusicBrainz reading of a track, with no view on whether it belongs in
- *  the classical library. */
 function describeAnchoredTrack(
   recordingMbid: string,
   index: LibraryIndex,

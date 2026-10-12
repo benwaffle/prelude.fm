@@ -15,12 +15,8 @@ import {
 import { filmScoreExclusions } from '../film-score-exclusions';
 import { within, without } from './scope';
 
-/**
- * Recordings MusicBrainz holds but has never linked to a work.
- *
- * Sibling recordings on the same MusicBrainz release may suggest works.
- * They are candidates for a human to verify, not inferred links.
- */
+// Sibling recordings may suggest works; they are candidates for a human to verify, not inferred
+// links.
 export type WorkRelationshipGap = {
   recordingMbid: string;
   recordingTitle: string;
@@ -32,7 +28,6 @@ export type WorkRelationshipGap = {
   candidates: WorkCandidate[];
 };
 
-/** A gap before its candidates are read; the list is counted in this form. */
 export type WorkRelationshipGapRow = Omit<WorkRelationshipGap, 'candidates'>;
 
 export type WorkCandidate = {
@@ -45,7 +40,6 @@ export type WorkCandidate = {
   evidence: 'same_release_recording'[];
 };
 
-/** Every recording with no work relationship, most-played first. */
 export async function workRelationshipGaps(
   scope: { recordingMbids?: readonly string[] } = {},
 ): Promise<WorkRelationshipGapRow[]> {
@@ -78,11 +72,6 @@ export async function workRelationshipGaps(
     .orderBy(sql`count(*) desc`, trackRecording.recordingMbid);
 }
 
-/**
- * The works offered for each gap. Read only for the rows shown or acted on:
- * a work on another recording of the same MusicBrainz release is a
- * suggestion, never proof that this recording performs it.
- */
 export async function withWorkCandidates(
   gaps: WorkRelationshipGapRow[],
 ): Promise<WorkRelationshipGap[]> {

@@ -41,13 +41,11 @@ test('a structured number keeps its structure', () => {
 });
 
 test('a bare number can match any catalogue', () => {
-  // Someone who remembers 1067 but not that it is a BWV number.
   assert.deepEqual(parseCatalogueQuery('1067'), { kind: 'number', number: '1067' });
 });
 
 test('a word followed by a number is a title, not a reference', () => {
-  // "Sonata 3" is someone typing a title. Reading it as catalogue system
-  // "sonata" would find nothing and hide the works that do match.
+  // "Sonata 3" is a title, not catalogue system "sonata".
   assert.deepEqual(parseCatalogueQuery('Sonata 3'), { kind: 'text', text: 'sonata 3' });
 });
 
@@ -61,8 +59,6 @@ test('an empty query is empty text rather than a match on everything', () => {
 });
 
 test('an ordinary title is not read as a catalogue reference', () => {
-  // "piano sonata" used to parse as the reference "P. ianosonata", which
-  // matches nothing, so the search came back empty with no explanation.
   assert.deepEqual(parseCatalogueQuery('piano sonata'), {
     kind: 'text',
     text: 'piano sonata',

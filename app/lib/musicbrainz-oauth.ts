@@ -1,16 +1,5 @@
-/**
- * Getting a usable access token for `prelude_fm_bot`.
- *
- * MusicBrainz access tokens expire, so the thing worth storing is the refresh
- * token: it does not, and it can be exchanged for an access token whenever
- * one is needed. A static bearer in the environment would work for an hour
- * and then start failing in a way that looks like the bot being rejected.
- *
- * Nothing here is written down. The refresh token and client secret come from
- * the environment, the access token lives in memory until shortly before it
- * expires, and neither is logged — a token is a password, and the failure
- * mode for printing one is somebody else editing the database as us.
- */
+// Stores the refresh token (access tokens expire). Nothing is written down or logged: a token is a
+// password.
 
 export const TOKEN_ENDPOINT = 'https://musicbrainz.org/oauth2/token';
 export const BOT_REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob';
@@ -22,8 +11,7 @@ export function botAuthorizationUrl(clientId: string): string {
     client_id: clientId,
     redirect_uri: BOT_REDIRECT_URI,
     scope: BOT_SCOPES,
-    // Without this MusicBrainz returns no refresh token, so the bot stops
-    // working when its short-lived access token expires.
+    // Without this MusicBrainz returns no refresh token.
     access_type: 'offline',
   });
   return `https://musicbrainz.org/oauth2/authorize?${query}`;
@@ -42,7 +30,6 @@ export type BotCredentials = {
   refreshToken: string;
 };
 
-/** What the environment supplies, or null when the bot is not configured. */
 export function botCredentials(): BotCredentials | null {
   const clientId = process.env.MUSICBRAINZ_CLIENT_ID;
   const clientSecret = process.env.MUSICBRAINZ_CLIENT_SECRET;
@@ -51,14 +38,7 @@ export function botCredentials(): BotCredentials | null {
   return { clientId, clientSecret, refreshToken };
 }
 
-/**
- * An access token, from the cache when one is still good.
- *
- * This deliberately does not go through the request gateway. The gateway
- * exists to keep us inside MusicBrainz's one-request-per-second budget for
- * the *web service*; the OAuth endpoint is a different service, and queueing
- * a token refresh behind a backfill would stall a submission for no reason.
- */
+/** Not through the request gateway: the OAuth endpoint is outside the web service's rate budget. */
 export async function botAccessToken(): Promise<string> {
   if (cached && Date.now() < cached.expiresAt - EXPIRY_MARGIN_MS) return cached.token;
 

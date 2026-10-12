@@ -1,15 +1,5 @@
-/**
- * Bringing a Spotify album into the MusicBrainz cache.
- *
- * Two questions, in order. Which MusicBrainz release is this album? And which
- * recording is each of its tracks? The first costs requests and is where the
- * judgement lives; the second is a local join once the first is answered.
- *
- * Both refuse to guess. An album that matches two releases equally well is
- * left unmatched, because a wrong release attaches every track on it to the
- * wrong recording, and that error is invisible afterwards — the tracks all
- * have plausible titles and plausible works.
- */
+// Both steps refuse to guess: a wrong release attaches every track to the wrong recording,
+// invisibly.
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from './db';
 import { forChunks } from './db/chunked';
@@ -47,36 +37,19 @@ export type {
   ReleaseMatchFailure,
 } from './musicbrainz-matching';
 
-/* ------------------------------------------------ which recording is it --- */
-
 export type AnchorReport = {
   anchored: number;
   byIsrc: number;
   byPosition: number;
   unanchored: number;
-  /** Whether the release's tracklist lines up with the album's, position for position. */
   tracklistAligned: boolean;
-  /** ISRCs MusicBrainz maps to more than one recording; an upstream defect worth reporting. */
   contestedIsrcs: string[];
-  /**
-   * Tracks whose ISRC and whose position name different recordings.
-   *
-   * Always resolved in the ISRC's favour, but counted rather than swallowed:
-   * it means either a mis-attached ISRC upstream or a release that is not
-   * quite the edition we think it is, and both are worth knowing about.
-   */
+  // Resolved in the ISRC's favour, but counted: either a mis-attached ISRC or not quite the edition
+  // we think.
   isrcPositionDisagreements: number;
-  /** Anchors this pass replaced, because the new evidence is stronger. */
   replaced: number;
-  /**
-   * Anchors this pass did not make, because one already existed naming a
-   * different recording on evidence at least as good.
-   *
-   * Kept rather than overwritten. A stored anchor is what the reader has
-   * been showing and what a contribution may have been filed against;
-   * silently repointing it loses both, and the disagreement is the thing
-   * worth looking at.
-   */
+  // Kept rather than overwritten: a stored anchor is what the reader shows and what contributions
+  // may cite.
   conflicts: Array<{
     spotifyTrackId: string;
     held: string;
@@ -86,16 +59,12 @@ export type AnchorReport = {
   }>;
 };
 
-/** How a track was tied to a recording, weakest last. */
 export type AnchorEvidence = 'isrc' | 'release_position';
 
-/** An ISRC is the label's own identifier; a position is only as good as the
- *  tracklist it sits in. */
 function evidenceStrength(evidence: AnchorEvidence): number {
   return evidence === 'isrc' ? 2 : 1;
 }
 
-/** An album's Spotify tracks, as anchoring and release matching read them. */
 function albumTracks(albumId: string) {
   return db
     .select({
@@ -110,16 +79,7 @@ function albumTracks(albumId: string) {
     .where(eq(spotifyTrack.spotifyAlbumId, albumId));
 }
 
-/**
- * Attach each Spotify track on an album to a MusicBrainz recording.
- *
- * ISRC first — it is the label's own identifier for the recording and needs no
- * corroboration. Then position, but only if the album's whole tracklist lines
- * up with the release's, because a position is only as good as the tracklist
- * it is a position in.
- *
- * Costs no requests: everything it needs is already cached.
- */
+/** ISRC first; position only when the whole tracklist lines up. Costs no requests. */
 export async function anchorAlbumTracks(
   albumId: string,
   releaseMbid: string,
@@ -208,11 +168,8 @@ export async function anchorAlbumTracks(
       report.contestedIsrcs.push(track.isrc);
     }
 
-    // Two different strengths of evidence. When the whole tracklist lines up,
-    // the position is corroborated by every other track and a generous
-    // tolerance is safe. When we hold a fragment of the release — a liked
-    // track from a box set, which most of a personal library is — the
-    // position stands alone and the duration has to agree closely.
+    // A whole aligned tracklist corroborates each position, so the tolerance can be generous; a
+    // fragment (a liked track from a box set) stands alone and must agree closely.
     const positionHolds = aligned
       ? Boolean(positional)
       : loneTrackFits(
@@ -242,17 +199,8 @@ export async function anchorAlbumTracks(
   return report;
 }
 
-/**
- * Store the anchors this pass worked out, without losing the ones already
- * there.
- *
- * The rule is that evidence has to improve. Re-anchoring the same recording
- * is harmless and keeps the ISRC fresh; pointing a track at a *different*
- * recording is only allowed when the new evidence is strictly stronger than
- * what is stored, and otherwise the existing anchor stands and the
- * disagreement is reported. Anything else means a backfill over the whole
- * library can quietly repoint anchors that were right.
- */
+// Evidence has to improve: repointing to a different recording needs strictly stronger evidence,
+// else the conflict is reported. Otherwise a backfill could quietly repoint correct anchors.
 async function writeAnchors(
   rows: Array<{
     spotifyTrackId: string;
@@ -308,8 +256,6 @@ async function writeAnchors(
   return written;
 }
 
-/* -------------------------------------------------------------- album --- */
-
 export type AlbumIngestReport = {
   albumId: string;
   releaseMbid: string | null;
@@ -357,10 +303,8 @@ export async function ingestAlbum(
     };
   }
 
-  // Works are read after anchoring, not with the release, so a box set we own
-  // one track of costs one request rather than a hundred. Reading the tree
-  // above a recording nobody in the library has is work for a library that
-  // does not exist yet.
+  // Works are read after anchoring, so a box set we own one track of costs one request rather than
+  // a hundred.
   const release = await ingestRelease(source, match.releaseMbid, { fetchWorks: false });
   requests += release.requests;
 
@@ -407,19 +351,8 @@ export async function ingestAlbum(
   };
 }
 
-/**
- * Anchor tracks by ISRC alone, without knowing their release.
- *
- * An ISRC identifies a recording, so it does not need a release to resolve —
- * the search index answers directly. That matters because a track whose album
- * is not in MusicBrainz, or whose release we could not identify, is otherwise
- * unreachable: release-first ingest anchors nothing for 202 of our albums,
- * and 1,556 tracks that the older ISRC-only pass had resolved were left
- * behind by it.
- *
- * Batched twenty at a time, because the search takes a Lucene OR over ISRCs
- * and a long query makes the server answer 503 far more often.
- */
+// An ISRC resolves without a release, reaching albums MusicBrainz lacks. Batched twenty at a time:
+// long Lucene OR queries make the server answer 503.
 export async function anchorTracksByIsrc(
   source: MusicBrainzSource,
   options: { limit?: number; albumId?: string } = {},
@@ -456,9 +389,7 @@ export async function anchorTracksByIsrc(
       // Remember the mapping so a later lookup of the same ISRC is a join.
       await db.insert(mbRecordingIsrc).values({ isrc, recordingMbid }).onConflictDoNothing();
 
-      // A stub, so the anchor points at something the cache holds. The search
-      // gives an MBID and nothing else; the stub is what queues the lookup
-      // that turns it into a title, works and credits.
+      // A stub, so the anchor points at something cached; the stub queues the full lookup.
       await db
         .insert(mbRecording)
         .values({ mbid: recordingMbid, title: '', detail: 'stub' })
@@ -477,7 +408,6 @@ export async function anchorTracksByIsrc(
   return { anchored, requests, searched: isrcs.length };
 }
 
-/** The works reachable from the recordings this album's tracks are anchored to. */
 async function worksReachedByAlbum(albumId: string): Promise<string[]> {
   const rows = await db
     .selectDistinct({ workMbid: mbRecordingWork.workMbid })
@@ -488,20 +418,8 @@ async function worksReachedByAlbum(albumId: string): Promise<string[]> {
   return rows.map((row) => row.workMbid);
 }
 
-/**
- * Albums whose MusicBrainz side is not yet cached.
- *
- * Two kinds, and the cheap kind comes first. An album whose release we already
- * know costs one request to cache; an album with no release yet costs a search
- * and a fetch per candidate and may still come to nothing. Draining the cheap
- * ones first means a run that is interrupted has spent its budget on the work
- * most likely to have paid off.
- *
- * Within the second kind, never-checked albums come before ones already looked
- * at, and the oldest check comes round again after that — MusicBrainz grows,
- * and an album absent last month may be there now, possibly because we added
- * it.
- */
+// Albums with a known release first (one request each), so an interrupted run spent budget where it
+// pays off. Then never-checked albums, then the oldest check: MusicBrainz grows.
 export async function albumsNeedingIngest(limit = 25): Promise<string[]> {
   const rows = await db
     .select({ spotifyId: spotifyAlbum.spotifyId })
@@ -518,14 +436,7 @@ export async function albumsNeedingIngest(limit = 25): Promise<string[]> {
   return rows.map((row) => row.spotifyId);
 }
 
-/**
- * Albums whose release is cached and whose tracks can be anchored.
- *
- * `includeAnchored` re-anchors albums that already have anchors, which is what
- * a change to the matching rules needs: anchoring costs no requests, so
- * re-running it over everything is cheap and is the only way a rule change
- * reaches rows decided under the old rule.
- */
+/** `includeAnchored`: anchoring is free, so re-running it is how a rule change reaches old rows. */
 export async function albumsNeedingAnchoring(
   limit = 100,
   includeAnchored = false,

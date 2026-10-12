@@ -3,7 +3,7 @@ import type { SavedTrack } from '@spotify/web-api-ts-sdk';
 const DB_VERSION = 2;
 const STORE_NAME = 'likedSongs';
 const META_STORE = 'metadata';
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL = 60 * 60 * 1000;
 let legacyCleanupStarted = false;
 
 export function likedSongsDatabaseName(userId: string) {

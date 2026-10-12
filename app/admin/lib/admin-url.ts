@@ -13,14 +13,11 @@ export const INBOX_CLASSES = [
 ] as const;
 export type InboxClass = (typeof INBOX_CLASSES)[number];
 
-/** Pages for the tools that are not Inbox lists. */
 export const TOOL_PAGES = ['albums', 'corrections', 'refresh-work', 'checks'] as const;
 export type ToolPage = (typeof TOOL_PAGES)[number];
 
-/** Every admin page but the home page: one per Inbox section, one per tool. */
 export type AdminPage = InboxClass | ToolPage;
 
-/** The name each admin page goes by, on the home page and in its own header. */
 export const PAGE_TITLE: Record<AdminPage, string> = {
   missing: 'Albums MusicBrainz has no release for',
   misaligned: 'Tracklists that do not line up',
@@ -46,7 +43,6 @@ const ALBUM_STATES: AlbumState[] = [
 ];
 
 export type AdminUrlState = {
-  /** Null on the home page. */
   page: AdminPage | null;
   focus: InboxFocus | null;
   albumFilter?: AlbumState;

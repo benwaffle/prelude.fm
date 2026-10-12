@@ -1,10 +1,6 @@
 import { WorkCredit } from '../work/WorkText';
 import type { Programme } from './use-programme';
 
-/**
- * Whose work and which: the composer and title, each labelled when
- * MusicBrainz lacks it. A track we can't place in a work says so.
- */
 export function Credit({
   programme,
   linked = false,

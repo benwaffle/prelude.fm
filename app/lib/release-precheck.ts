@@ -1,19 +1,6 @@
-/**
- * Checks to run before somebody adds a missing album to MusicBrainz through
- * Harmony.
- *
- * Harmony seeds a brand-new release from the Spotify album. That is right
- * only when MusicBrainz truly has nothing: if the album is a new edition of
- * a release group it holds, or its recordings already exist, the new release
- * must attach to those rather than duplicate them — and duplicates are
- * expensive for other editors to merge away. Harmony also copies Spotify's
- * credits, which for classical music are usually not what the classical
- * style guide asks for.
- *
- * Everything here is pure: the live lookups happen in
- * `release-precheck-run.ts` and arrive as `LookupState`s, so a lookup that
- * failed or was never made says so rather than reading as "nothing found".
- */
+// Harmony seeds a brand-new release; duplicating an existing edition or recordings is expensive for
+// other editors to merge. Pure: a failed or skipped lookup arrives as a `LookupState` and never
+// reads as "nothing found".
 import {
   isVariousArtists,
   looseName,
@@ -27,12 +14,12 @@ export type LookupState<T> =
   | { state: 'failed'; error: string }
   | { state: 'skipped'; reason: string };
 
-/** A lookup's value, or `empty` when it failed or was skipped. */
+/** `empty` when the lookup failed or was skipped. */
 export function doneOr<T>(lookup: LookupState<T>, empty: T): T {
   return lookup.state === 'done' ? lookup.value : empty;
 }
 
-/** Recordings the ISRC lookup found; none when it did not run to completion. */
+/** None when the lookup did not run to completion. */
 export function precheckHits(isrcs: LookupState<PrecheckIsrcs>): PrecheckIsrcHit[] {
   return isrcs.state === 'done' ? isrcs.value.hits : [];
 }
@@ -48,7 +35,6 @@ export type PrecheckReleaseHit = {
   media: number | null;
   groupMbid: string | null;
   groupTitle: string | null;
-  /** Artists in the release's credit. */
   artistMbids: string[];
   likeness: 'same' | 'similar';
 };
@@ -59,7 +45,6 @@ export type PrecheckGroupHit = {
   artist: string;
   firstReleaseDate: string | null;
   primaryType: string | null;
-  /** Artists in the group's credit. */
   artistMbids: string[];
   likeness: 'same' | 'similar';
 };
@@ -68,16 +53,13 @@ export type PrecheckIsrcHit = {
   isrc: string;
   recordingMbid: string;
   recordingTitle: string;
-  /** The recording's length; absent on checks stored before it was kept. */
+  /** Absent on checks stored before it was kept. */
   lengthMs?: number | null;
-  /** Release groups the recording already appears on, per the search index. */
   groups: { mbid: string; title: string }[];
 };
 
 export type PrecheckIsrcs = {
-  /** Distinct ISRCs looked up. */
   asked: number;
-  /** Tracks Spotify gives no ISRC for. */
   withoutIsrc: number;
   hits: PrecheckIsrcHit[];
 };
@@ -90,13 +72,9 @@ export type MbArtistCandidate = {
 };
 
 export type ArtistMatch =
-  /** MusicBrainz links exactly this artist to the Spotify artist page. */
   | { state: 'linked'; artist: MbArtistCandidate }
-  /** MusicBrainz links several artists to the same Spotify page. */
   | { state: 'several-linked'; candidates: MbArtistCandidate[] }
-  /** Not linked; exactly one MusicBrainz artist has this exact name. */
   | { state: 'name-match'; artist: MbArtistCandidate }
-  /** Not linked; several MusicBrainz artists have this name. */
   | { state: 'ambiguous'; candidates: MbArtistCandidate[] }
   | { state: 'not-found' }
   | { state: 'not-looked-up'; reason: string }
@@ -105,9 +83,7 @@ export type ArtistMatch =
 export type ArtistRole = 'composer' | 'performer' | 'composer-and-performer' | 'couldnt-tell';
 
 export type ArtistRoleEvidence = {
-  /** Works our cache files under this artist as composer. */
   composerWorks: number;
-  /** Recordings our cache credits this artist as a performer on. */
   performerCredits: number;
   type: string | null;
   disambiguation: string | null;
@@ -120,7 +96,6 @@ export type ArtistSuggestion = {
   onAlbum: boolean;
   match: ArtistMatch;
   role: ArtistRole;
-  /** Where the role came from, in words; or why it could not be told. */
   roleWhy: string;
 };
 
@@ -139,7 +114,6 @@ export type ChecklistItem = { key: string; text: string; links?: PrecheckLink[] 
 export type ReleasePrecheck = {
   version: 1;
   seed: ReleaseSeed;
-  /** The artist name the title searches were narrowed by, if any. */
   searchedArtist: string | null;
   releases: LookupState<PrecheckReleaseHit[]>;
   groups: LookupState<PrecheckGroupHit[]>;
@@ -154,9 +128,6 @@ export const releaseGroupUrl = (mbid: string) => `https://musicbrainz.org/releas
 export const recordingUrl = (mbid: string) => `https://musicbrainz.org/recording/${mbid}`;
 export const artistUrl = (mbid: string) => `https://musicbrainz.org/artist/${mbid}`;
 
-/* ------------------------------------------------------------ search hits */
-
-/** Keeps search hits whose title is the album's or close to it. */
 export function likeTitled<T extends { title: string }>(
   albumTitle: string,
   hits: T[],
@@ -167,17 +138,8 @@ export function likeTitled<T extends { title: string }>(
   });
 }
 
-/**
- * How a search hit's credit compares with the album's artists.
- *
- * Classical titles are generic: "The Well-Tempered Clavier, Books I & II" by
- * Bach is dozens of different albums. A title match is only this album when
- * a performer agrees. `composer-only`: the credit names only composers we
- * share, so the performers cannot be compared here. `other-artists`: it
- * names someone who is not ours — a different performance — unless one of
- * our own performers is unidentified, in which case it could be them and the
- * answer is `unknown`.
- */
+// Classical titles are generic, so a title match only counts when a performer agrees.
+// `other-artists` becomes `unknown` when one of our own performers is unidentified.
 export type CreditMatch = 'performer' | 'composer-only' | 'other-artists' | 'unknown';
 
 export function creditMatch(hitArtistMbids: string[], artists: ArtistSuggestion[]): CreditMatch {
@@ -200,11 +162,8 @@ export function creditMatch(hitArtistMbids: string[], artists: ArtistSuggestion[
   return unidentifiedPerformer ? 'unknown' : 'other-artists';
 }
 
-/**
- * A release with the album's title and track count, which the barcode search
- * did not find — possibly the same album entered without a barcode. Dropped
- * when its credit names a different performer.
- */
+// Possibly the same album entered without a barcode. Dropped when its credit names a different
+// performer.
 export function possibleDuplicates(
   seed: ReleaseSeed,
   releases: PrecheckReleaseHit[],
@@ -221,21 +180,12 @@ export function possibleDuplicates(
 export type GroupCandidate = {
   mbid: string;
   title: string;
-  /**
-   * `recordings`: holds recordings with this album's ISRCs.
-   * `performer`: similar title and a performer in common.
-   * `composer-only` / `unknown`: similar title, performers not comparable.
-   */
   via: 'recordings' | 'performer' | 'composer-only' | 'unknown';
 };
 
 export const strongCandidate = (group: GroupCandidate) =>
   group.via === 'recordings' || group.via === 'performer';
 
-/**
- * Release groups the album could be a new edition of, from every source.
- * Title matches whose credit names another performer are left out.
- */
 export function candidateGroups(
   seed: ReleaseSeed,
   releases: PrecheckReleaseHit[],
@@ -254,9 +204,8 @@ export function candidateGroups(
     const current = out.get(candidate.mbid);
     if (!current || rank[candidate.via] < rank[current.via]) out.set(candidate.mbid, candidate);
   };
-  // A recording already on a group of the same name is the strongest sign
-  // this is another edition of it. Groups of a different name are other
-  // albums reusing the performance, which says nothing about this one.
+  // A recording already on a same-named group is the strongest sign of another edition; other names
+  // say nothing.
   for (const hit of isrcHits) {
     for (const group of hit.groups) {
       if (titleLikeness(seed.title, group.title) === 'different') continue;
@@ -285,7 +234,6 @@ export function candidateGroups(
   return [...out.values()].sort((a, b) => rank[a.via] - rank[b.via]);
 }
 
-/** The pre-check's strong release-group candidates (shared performer or recordings). */
 export function strongGroupsOf(precheck: ReleasePrecheck): GroupCandidate[] {
   return candidateGroups(
     precheck.seed,
@@ -295,8 +243,6 @@ export function strongGroupsOf(precheck: ReleasePrecheck): GroupCandidate[] {
     precheck.artists,
   ).filter(strongCandidate);
 }
-
-/* ---------------------------------------------------------------- verdict */
 
 function failures(parts: [string, LookupState<unknown>][]): string[] {
   return parts.flatMap(([label, state]) =>
@@ -322,15 +268,8 @@ function groupLinks(groups: GroupCandidate[]): PrecheckLink[] {
   }));
 }
 
-/**
- * Whether the album is really missing, in one line, with where to look.
- *
- * Ordered by what costs other editors most if missed: a duplicate release,
- * then a release group that would be split, then recordings that would be
- * duplicated. A title match that cannot be tied to the album's performers is
- * "couldn't tell", not a new edition. "Looks new" needs all three lookups to
- * have run; otherwise it is "couldn't tell", naming the lookup that did not.
- */
+// Ordered by what costs other editors most if missed. "Looks new" needs all three lookups to have
+// run.
 export function existingVerdict(
   seed: ReleaseSeed,
   releases: LookupState<PrecheckReleaseHit[]>,
@@ -413,9 +352,6 @@ function recordingCount(hits: PrecheckIsrcHit[]): number {
   return new Set(hits.map((hit) => hit.isrc)).size;
 }
 
-/* ---------------------------------------------------------------- artists */
-
-/** What the MusicBrainz lookups say about one Spotify artist. */
 export function artistMatchFrom(
   name: string,
   linked: MbArtistCandidate[],
@@ -437,13 +373,8 @@ const PERFORMER_WORDS =
 
 const PERFORMER_TYPES = new Set(['orchestra', 'choir', 'group']);
 
-/**
- * Composer, performer, both, or couldn't tell — and why.
- *
- * Our cache is the first witness: a composer of works we have read, or an
- * artist we have seen credited on recordings. MusicBrainz's own artist type
- * and disambiguation come next. Nothing is inferred from a name.
- */
+// Our cache is the first witness, then MusicBrainz's type and disambiguation. Nothing is inferred
+// from a name.
 export function artistRole(evidence: ArtistRoleEvidence | null): {
   role: ArtistRole;
   why: string;
@@ -486,8 +417,6 @@ export function matchedMbid(match: ArtistMatch): string | null {
   return match.state === 'linked' || match.state === 'name-match' ? match.artist.mbid : null;
 }
 
-/* -------------------------------------------------------------- checklist */
-
 const MOVEMENT_ONLY =
   /^(?:[IVXLC]+|\d+)[.)]\s|^(?:allegro|adagio|andante|largo|presto|vivace|moderato|allegretto|lento|grave|menuet(?:to)?|minuet|scherzo|rondo|finale|gigue|sarabande|courante|allemande|gavotte|bourr[ée]e|air|aria|prelude|pr[ée]lude|fugue)\b/i;
 
@@ -497,11 +426,7 @@ const WORK_MARKERS =
 const STORE_SUFFIX =
   /(?:\(|\[|\s-\s)[^()[\]]*\b(remaster(?:ed)?|live|bonus(?: track)?|single version|radio edit|mono|stereo)\b/i;
 
-/**
- * What Harmony will likely get wrong for this album, as a short list for the
- * person adding it. Every item counts only what the seed shows; where the
- * seed cannot tell (no composer identified), the item says so.
- */
+/** Where the seed cannot tell (no composer identified), the item says so. */
 export function classicalChecklist(
   seed: ReleaseSeed,
   artists: ArtistSuggestion[],
@@ -637,7 +562,6 @@ export function classicalChecklist(
   return items;
 }
 
-/** Whole pre-check from its lookups. */
 export function assemblePrecheck(parts: {
   seed: ReleaseSeed;
   searchedArtist: string | null;

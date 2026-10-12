@@ -1,25 +1,6 @@
-/**
- * One-time authorisation for prelude_fm_bot.
- *
- * MusicBrainz issues access tokens that expire and a refresh token that does
- * not, so this is run once and what it prints is kept. It uses the
- * out-of-band redirect, which is what MusicBrainz offers installed
- * applications: no web server, no callback to host — the authorise page shows
- * a code and you paste it back.
- *
- *   pnpm mb:authorise            print the URL to open
- *   pnpm mb:authorise <code>     exchange the code for a refresh token
- *
- * Register the application first at
- * https://musicbrainz.org/account/applications with:
- *   Type:     Installed application
- *   Callback: urn:ietf:wg:oauth:2.0:oob
- *
- * Then put MUSICBRAINZ_CLIENT_ID and MUSICBRAINZ_CLIENT_SECRET in .envrc and
- * run this. Authorise while signed in as prelude_fm_bot, not as yourself —
- * the token carries whoever was logged in, and edits made with the wrong one
- * are attributed to the wrong account.
- */
+// Usage: pnpm mb:authorise [<code>]  (no code prints the URL; a code is exchanged for a token)
+// Register at https://musicbrainz.org/account/applications as an installed application with
+// callback urn:ietf:wg:oauth:2.0:oob. Authorise signed in as prelude_fm_bot, not yourself.
 import { defineScript } from './lib/cli';
 import {
   botAuthorizationUrl,

@@ -1,23 +1,6 @@
-/**
- * Our own seed for the MusicBrainz release editor.
- *
- * Harmony seeds a release from Spotify but leaves every track pointing at a
- * new recording, so for an album whose recordings already exist somebody has
- * to pick each one by hand. We already know many of them — the pre-check
- * found recordings by ISRC, and a new edition's existing release lists its
- * recordings by position — so this seed pre-fills them.
- *
- * The rule is: pre-fill a recording only when one answer is clearly right.
- * Two recordings for one ISRC, lengths that disagree, existing releases that
- * disagree — all of those leave the track empty (MusicBrainz then creates a
- * new recording unless the person picks one) and are listed for the person.
- *
- * Field names follow https://musicbrainz.org/doc/Development/Release_Editor_Seeding.
- * The form is POSTed from the person's own browser to /release/add, so the
- * edit is theirs; nothing here submits anything.
- *
- * Everything in this file is pure.
- */
+// Pre-fills existing recordings Harmony would leave as new, only when one answer is clearly right;
+// conflicts stay empty and are listed. Fields follow
+// https://musicbrainz.org/doc/Development/Release_Editor_Seeding. Pure; submits nothing.
 import { matchedMbid, type ArtistSuggestion, type PrecheckIsrcHit } from './release-precheck';
 import {
   looseName,
@@ -33,22 +16,12 @@ export const RELEASE_ADD_URL = 'https://musicbrainz.org/release/add';
 /** Release–URL "free streaming" (08445ccf-7b99-4438-9f9a-fb9ac18099ee). */
 export const FREE_STREAMING_LINK_TYPE = 85;
 
-/** How far a recording's length may be from the Spotify track's to be reused. */
 export const RECORDING_LENGTH_TOLERANCE_MS = 5_000;
 
-/**
- * What the seeded track artist credit is.
- *
- * `composer`: the classical style guide's track artist — the composer(s)
- * only. The release editor copies a track's credit onto any recording it
- * creates, so new recordings will show the composer and need their
- * performers set; reused recordings keep their own credits.
- */
+// `composer`: the classical style guide's track artist. The editor copies it onto new recordings,
+// which then need performers set.
 export const TRACK_CREDIT_MODE: 'composer' | 'performers' = 'composer';
 
-/* ------------------------------------------------------------ recordings */
-
-/** A release of the same album already on MusicBrainz, as its tracklist. */
 export type EditionTracklist = {
   releaseMbid: string;
   releaseTitle: string;
@@ -86,7 +59,6 @@ const seconds = (ms: number) => `${Math.round(ms / 1000)}s`;
 
 type Proposal = { recordingMbid: string; why: string };
 
-/** What the ISRC lookup says for one track. */
 function byIsrc(
   track: SeedTrack,
   hits: PrecheckIsrcHit[],
@@ -122,7 +94,6 @@ function byIsrc(
   };
 }
 
-/** What the existing editions say for one track, at the same disc and position. */
 function byPosition(
   track: SeedTrack,
   editions: EditionTracklist[],
@@ -164,14 +135,8 @@ function byPosition(
   return { proposal: null, problem: problems[0] ?? null, candidates: [] };
 }
 
-/**
- * The recording to pre-fill for each track, or why none is.
- *
- * `editions` are existing releases of this album with the same number of
- * tracks on each disc; the caller only passes those. ISRC and position must
- * agree when both answer. A recording that would land on two tracks is
- * pulled from both.
- */
+// `editions` share the album's per-disc track counts. ISRC and position must agree; a recording
+// landing on two tracks is pulled from both.
 export function matchRecordings(
   seed: ReleaseSeed,
   isrcHits: PrecheckIsrcHit[],
@@ -245,10 +210,6 @@ export function matchRecordings(
   return decisions;
 }
 
-/**
- * Releases usable for position matching: same number of discs, and the same
- * number of tracks on each disc as the Spotify album.
- */
 export function editionsShapedLike(
   seed: ReleaseSeed,
   editions: EditionTracklist[],
@@ -269,15 +230,12 @@ export function editionsShapedLike(
   });
 }
 
-/* --------------------------------------------------------------- credits */
-
 export type CreditPart = { name: string; mbid: string | null; joinPhrase: string };
 
 function keyOf(artist: SeedArtist) {
   return artist.spotifyId ?? `name:${looseName(artist.name)}`;
 }
 
-/** Spotify artists as credit parts, with MBIDs where the pre-check resolved them. */
 function partsFor(artists: SeedArtist[], suggestions: Map<string, ArtistSuggestion>): CreditPart[] {
   return artists.map((artist, index) => {
     const suggestion = suggestions.get(keyOf(artist));
@@ -289,14 +247,8 @@ function partsFor(artists: SeedArtist[], suggestions: Map<string, ArtistSuggesti
   });
 }
 
-/**
- * The track artist credit.
- *
- * With `composer` mode, the credit is the track's composers when at least one
- * credited artist is known to be a composer; performers stay off it. When no
- * composer can be identified the Spotify credit is kept as it is — we cannot
- * tell who to leave out.
- */
+// When no composer can be identified the Spotify credit is kept as is: we cannot tell who to leave
+// out.
 export function trackCredit(
   artists: SeedArtist[],
   suggestions: Map<string, ArtistSuggestion>,
@@ -318,8 +270,6 @@ export function trackCredit(
     ? { credit: partsFor(artists, suggestions), shape: 'as-spotify' }
     : { credit: partsFor(performers, suggestions), shape: 'performers-only' };
 }
-
-/* ------------------------------------------------------------------ plan */
 
 export type PlannedTrack = {
   disc: number;
@@ -343,14 +293,11 @@ export type SeedPlan = {
   releaseCredit: CreditPart[];
   /** Set only when exactly one existing group shares the album's performers or recordings. */
   releaseGroupMbid: string | null;
-  /** Why no group was seeded, when the pre-check found candidates. */
   releaseGroupNote: string | null;
-  /** The existing releases whose tracklists were used for position matching. */
   editions: { releaseMbid: string; releaseTitle: string }[];
   tracks: PlannedTrack[];
   editNote: string;
   counts: { tracks: number; prefilled: number; ambiguous: number; none: number };
-  /** What the preparation could not do, for the person (set by the runner). */
   notes: string[];
 };
 
@@ -358,7 +305,6 @@ export function planSeed(input: {
   seed: ReleaseSeed;
   artists: ArtistSuggestion[];
   isrcHits: PrecheckIsrcHit[];
-  /** Strong release-group candidates from the pre-check (shared performer or recordings). */
   strongGroups: { mbid: string; title: string }[];
   editions: EditionTracklist[];
 }): SeedPlan {
@@ -418,7 +364,6 @@ export function planSeed(input: {
   return { ...plan, editNote: seedEditNote(plan) };
 }
 
-/** The edit note: where the data came from and how each recording was chosen. */
 export function seedEditNote(plan: Omit<SeedPlan, 'editNote'>): string {
   const lines = [`Tracklist, titles, lengths and barcode from Spotify: ${plan.spotifyUrl}`];
   if (plan.releaseGroupMbid) {
@@ -447,8 +392,6 @@ export function seedEditNote(plan: Omit<SeedPlan, 'editNote'>): string {
   return lines.join('\n');
 }
 
-/* ---------------------------------------------------------------- fields */
-
 function creditFields(prefix: string, credit: CreditPart[]): [string, string][] {
   return credit.flatMap((part, index) => {
     const base = `${prefix}artist_credit.names.${index}`;
@@ -462,12 +405,7 @@ function creditFields(prefix: string, credit: CreditPart[]): [string, string][] 
   });
 }
 
-/**
- * The release-editor form, as ordered name/value pairs.
- *
- * Only what we know: no country, format, catalogue number or type — the
- * editor leaves those for the person rather than us guessing.
- */
+/** Only what we know: country, format, catalogue number and type are left for the person. */
 export function seedFields(plan: SeedPlan): [string, string][] {
   const fields: [string, string][] = [
     ['name', plan.title],
@@ -509,11 +447,6 @@ export function seedFields(plan: SeedPlan): [string, string][] {
   return fields;
 }
 
-/**
- * The seed as a baseline for the correction record: what the person was
- * handed, including the recordings we pre-filled and the artists we credited
- * by MBID.
- */
 export function seedPlanBaseline(plan: SeedPlan): ReleaseSeed {
   const artists = (credit: CreditPart[]): SeedArtist[] =>
     credit.map((part) => ({ spotifyId: null, name: part.name, mbid: part.mbid }));

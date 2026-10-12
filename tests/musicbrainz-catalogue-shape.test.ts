@@ -42,8 +42,7 @@ test('files a movement under the piece a reader would name', () => {
 });
 
 test('keeps a typed work as itself and still finds its catalogue above it', () => {
-  // The library shows an étude as an étude; the catalogue must agree, or a
-  // card's catalogue number would lead to a work the catalogue never lists.
+  // The catalogue must agree with the library, or a card's catalogue number would lead nowhere.
   const [shaped] = shapeHeldCatalogue(
     [{ recordingMbid: 'rec-1', spotifyTrackId: 'track-rec-1', workMbid: 'etude-1' }],
     [

@@ -17,7 +17,6 @@ before(async () => {
   ({ findAlbumMateTrackIds } = await import('@/lib/musicbrainz-work-queries'));
 });
 
-/** Two of a sonata's three movements, on one album, anchored by ISRC. */
 async function seedPartialSonata() {
   await db.insert(schema.spotifyAlbum).values({
     spotifyId: 'album-1',
@@ -163,8 +162,7 @@ test('gathers the movements of one work on one issue into a single card', async 
   assert.equal(card.catalog, 'K. 545');
   assert.equal(card.era, 'Classical');
   assert.equal(card.performer, 'Mitsuko Uchida');
-  // Nobody has looked for this album's MusicBrainz release, and the card
-  // says so rather than presenting itself as complete.
+  // Nobody has looked for this album's release, and the card says so.
   assert.deepEqual(card.gaps, ['release-not-checked']);
 });
 
@@ -201,7 +199,6 @@ test('shows the movement this issue does not carry as missing, from MusicBrainz'
   );
 });
 
-/** The library as the home screen reads it: liked tracks plus their album-mates. */
 async function libraryOf(likedTrackIds: string[]) {
   const liked = new Set(likedTrackIds);
   const facts = await loadMusicBrainzLibraryFacts(await findAlbumMateTrackIds(likedTrackIds));
@@ -247,7 +244,6 @@ test('an album-mate of a work with nothing liked does not make a card', async ()
   assert.deepEqual(works, []);
 });
 
-/** Another track on album-1, anchored to its own recording of `workMbid`. */
 async function seedExtraTrack(
   id: string,
   trackNumber: number,
@@ -306,7 +302,6 @@ test('a track related only to the whole work is not doubled by a missing part', 
   );
 });
 
-/** A second album holding the sonata's first movement in another performance. */
 async function seedOtherPerformance() {
   await db.insert(schema.spotifyAlbum).values({
     spotifyId: 'album-2',
@@ -389,8 +384,7 @@ test('the detail of a work gathers every issue of it we can play', async () => {
   const detail = await getMusicBrainzWorkDetail('sonata', null, ['track-i']);
 
   assert.ok(detail);
-  // The two-movement holding is fuller than the one-movement one, and
-  // fullness is a fact about what we hold, not a guess at which is better.
+  // Fullness is a fact about what we hold, not a guess at which is better.
   assert.equal(detail.work.movements.filter((movement) => !movement.missing).length, 2);
   assert.equal(detail.others.length, 1);
   assert.equal(detail.others[0].album, 'Another Mozart Recital');
@@ -417,8 +411,7 @@ test('a collection names every part MusicBrainz lists, held or not', async () =>
     [
       ['I. Allegro', true],
       ['II. Andante', true],
-      // MusicBrainz lists a third movement we hold nothing for. It stays on
-      // the list, unlinked, so the collection reads as two of three.
+      // A third movement we hold nothing for stays listed, so the collection reads as two of three.
       ['III. Rondo', false],
     ],
   );
@@ -432,9 +425,7 @@ test('a work with no collection above it has none, rather than an empty one', as
 });
 
 test('a collection counts a part we hold only through its own parts', async () => {
-  // A prelude and fugue is one part of the Well-Tempered Clavier and two
-  // recordings beneath it. Asking only about the part's own recordings would
-  // report the collection as emptier than it is.
+  // A prelude and fugue is one part of the WTC with two recordings beneath it.
   await db.insert(schema.mbWork).values([
     {
       mbid: 'wtc',
@@ -530,8 +521,6 @@ test('the catalogue lists only works we can play, under the same identity as a c
     works.map((work) => [work.id, work.catalog, work.movementCount, work.recordingCount]),
     [['sonata', 'K. 545', 3, 2]],
   );
-  // The same identity the library card carries, so a card's catalogue number
-  // leads to a work the catalogue actually lists.
   const { works: cards } = await view(['track-i']);
   assert.equal(cards[0].workId, works[0].id);
 });
@@ -574,9 +563,8 @@ test('searching a composer finds their works, and one we cannot play does not ap
 });
 
 test('a medley appears under each work it performs, and is accounted for once', async () => {
-  // MusicBrainz relates one recording to two works. Filing it under one of
-  // them would be choosing arbitrarily; filing it under both is what
-  // MusicBrainz actually says. The per-track accounting is still one row.
+  // MusicBrainz relates one recording to two works; it is filed under both, still one accounting
+  // row.
   await db.insert(schema.mbWork).values({
     mbid: 'fantasia',
     title: 'Fantasia in D minor, K. 397',
@@ -625,8 +613,6 @@ test('the work heading reads the same values as the catalogue row', async () => 
   const header = await getMusicBrainzCatalogWorkHeader('sonata');
 
   assert.ok(header);
-  // The heading is scoped to one work rather than shaping the whole held
-  // catalogue, so it has to be checked against the list it sits above.
   assert.equal(header.id, row.id);
   assert.equal(header.title, row.title);
   assert.equal(header.catalog, row.catalog);
@@ -645,9 +631,7 @@ test('the heading finds a catalogue number filed on the work above', async () =>
 });
 
 test('a composer with more works than one statement can bind returns all of them', async () => {
-  // Bach has more works than SQLite will take as bound parameters in one
-  // statement. Reading only the first chunk would silently lose the rest,
-  // and the catalogue would look complete while being wrong.
+  // More works than SQLite binds in one statement; reading one chunk would silently lose the rest.
   const total = 450;
   const works = Array.from({ length: total }, (unused, index) => ({
     mbid: `bulk-work-${index}`,

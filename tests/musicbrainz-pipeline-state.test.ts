@@ -115,7 +115,6 @@ test('stores outcome, queue status and classification together, under provenance
       },
       {
         spotifyId: 'upgrade',
-        // Nothing to hand the reader, so no worker holds it any more.
         status: 'unresolved',
         outcome: 'unclassified',
         reason: 'MusicBrainz has no distinguishing evidence',

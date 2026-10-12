@@ -41,7 +41,7 @@ function seed(overrides: Partial<ReleaseSeed> = {}): ReleaseSeed {
   };
 }
 
-// Bach resolved as composer, Gould as performer; `suggestion` is hoisted.
+// `suggestion` is hoisted.
 const ARTISTS: ArtistSuggestion[] = [suggestion(bach, 'composer'), suggestion(gould, 'performer')];
 const done = <T>(value: T): LookupState<T> => ({ state: 'done', value });
 const noIsrcs = done<PrecheckIsrcs>({ asked: 3, withoutIsrc: 0, hits: [] });

@@ -9,7 +9,6 @@ const client = createClient({
 
 export const db = drizzle(client, { schema });
 
-/** Query surface shared by the root client and a libSQL transaction. */
 export type DatabaseExecutor = Pick<
   typeof db,
   'select' | 'selectDistinct' | 'insert' | 'update' | 'delete' | 'all'

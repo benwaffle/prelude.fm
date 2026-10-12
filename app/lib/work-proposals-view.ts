@@ -1,11 +1,5 @@
-/**
- * The Inbox's view of proposed work links: every open gap, grouped by album,
- * with its stored proposal and what the person decided.
- *
- * A gap with no stored row is "not checked yet", and a stored row with no
- * proposal is "no proposal": both stay in the list, so the gaps the matcher
- * could not answer remain as visible as the ones it could.
- */
+// Unchecked gaps and gaps with no proposal both stay listed, so what the matcher couldn't answer
+// stays visible.
 import type { ProposalConfidence, WorkProposal } from './work-proposals';
 
 export type ProposalStatus = 'proposed' | 'approved' | 'dismissed';
@@ -31,7 +25,7 @@ export type ProposalRowView = {
   title: string;
   medium: number | null;
   position: number | null;
-  /** `unchecked` — the matcher has not looked yet; `none` — it looked and found nothing. */
+  /** `unchecked`: the matcher has not looked yet; `none`: it looked and found nothing. */
   state: 'unchecked' | 'none' | ProposalStatus;
   proposal: WorkProposal | null;
 };
@@ -54,11 +48,7 @@ export function relationshipEditorUrl(releaseMbid: string): string {
   return `https://musicbrainz.org/release/${releaseMbid}/edit-relationships`;
 }
 
-/**
- * Albums in order of how many proposals still wait on a decision, so the
- * batches worth the most come first. Recordings whose link is already
- * recorded in the ledger are left to the ledger's own rows.
- */
+/** Recordings whose link is already ledgered are left to the ledger's own rows. */
 export function proposalAlbums(
   gaps: readonly ProposalGapInput[],
   stored: readonly StoredProposal[],

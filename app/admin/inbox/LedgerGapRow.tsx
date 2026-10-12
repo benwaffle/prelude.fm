@@ -8,10 +8,6 @@ import { InboxRow } from './InboxRow';
 import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
 
-/**
- * A section's row actions, plus `mutate`: a row action that writes, then
- * reloads the section so the row shows what it changed.
- */
 export function useRowMutation(onReload: () => Promise<void>) {
   const actions = useAdminAction();
   const mutate = (key: string, label: string, change: () => Promise<unknown>) =>
@@ -22,7 +18,6 @@ export function useRowMutation(onReload: () => Promise<void>) {
   return { ...actions, mutate };
 }
 
-/** What each row's confirmation form holds, by row key, until it is sent. */
 export function useRowForms<Form extends object>(empty: Form) {
   const [forms, setForms] = useState<Record<string, Form>>({});
   return {
@@ -32,7 +27,6 @@ export function useRowForms<Form extends object>(empty: Form) {
   };
 }
 
-/** The optional MusicBrainz edit number beside a confirmation. */
 export function EditIdInput({
   value,
   onChange,
@@ -52,10 +46,6 @@ export function EditIdInput({
   );
 }
 
-/**
- * A gap's evidence, then what happened to an earlier attempt (only while
- * nothing is in hand) and the row's own action status.
- */
 export function GapEvidence({
   children,
   ledger,
@@ -76,11 +66,7 @@ export function GapEvidence({
   );
 }
 
-/**
- * One gap: with a submission in hand, its ledger state and Recheck; without
- * one, a confirmation form behind a disclosure. The gap stays listed either
- * way until the cache shows the edit.
- */
+/** The gap stays listed until the cache shows the edit. */
 export function LedgerGapRow({
   ledger,
   evidence,
@@ -94,11 +80,9 @@ export function LedgerGapRow({
   ledger: LedgerView | null;
   evidence: ReactNode;
   links: ReactNode;
-  /** What the row in hand says beyond its ledger state. */
   ledgerNote?: ReactNode;
   busy: boolean;
   onRecheck: () => void;
-  /** The confirmation form. */
   children: ReactNode;
 } & HTMLAttributes<HTMLDivElement>) {
   if (ledger) {

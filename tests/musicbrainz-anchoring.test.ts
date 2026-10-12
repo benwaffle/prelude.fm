@@ -13,11 +13,7 @@ before(async () => {
   ({ anchorAlbumTracks } = await import('@/lib/musicbrainz-ingest'));
 });
 
-/**
- * One album of two tracks, and a release whose tracklist lines up with it.
- * Track 1 carries an ISRC MusicBrainz knows; track 2 carries none, so it can
- * only be anchored by its position.
- */
+/** Track 2 carries no ISRC, so it can only be anchored by position. */
 async function seed() {
   await db.insert(schema.spotifyAlbum).values({
     spotifyId: 'album-1',
@@ -126,10 +122,8 @@ test('running the pass again changes nothing', async () => {
 });
 
 test('a weaker reading does not repoint an anchor we already hold', async () => {
-  // The stored anchor came from an ISRC. A later pass reading the position
-  // must not quietly move the track to a different recording — that anchor
-  // is what the reader has been showing, and what a contribution may have
-  // been filed against.
+  // A later position pass must not repoint an ISRC anchor the reader shows and contributions may
+  // cite.
   await db.insert(schema.trackRecording).values({
     spotifyTrackId: 'track-1',
     recordingMbid: 'rec-somewhere-else',
@@ -178,7 +172,7 @@ test('one ISRC naming two recordings anchors nothing and is reported', async () 
   const report = await anchorAlbumTracks('album-1', 'release-1');
 
   assert.deepEqual(report.contestedIsrcs, ['GBAAA0000001']);
-  // It still gets a position anchor, because the tracklist lines up — the
-  // contested ISRC is reported rather than used.
+  // The tracklist lines up, so it still gets a position anchor; the contested ISRC is reported, not
+  // used.
   assert.equal((await anchorOf('track-1'))?.matchedBy, 'release_position');
 });

@@ -11,11 +11,8 @@ const minutes = (ms: number) => {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 };
 
-/**
- * The seeded release editor, opened in a new tab by a real form POST from
- * this browser: MusicBrainz only accepts a seed with the person's own
- * session, and the edit is theirs to review and enter.
- */
+// A real form POST from this browser: MusicBrainz only accepts a seed with the person's own
+// session.
 export function SeedOnMusicBrainzForm({
   albumId,
   plan,
@@ -83,7 +80,6 @@ function RecordingCell({ decision }: { decision: RecordingDecision }) {
   }
 }
 
-/** What the seed will pre-fill, track by track, before anyone opens it. */
 export function SeedPreview({ seed }: { seed: PreparedSeed }) {
   const { plan } = seed;
   const ambiguous = plan.tracks.filter((track) => track.recording.state === 'ambiguous');

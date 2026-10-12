@@ -19,32 +19,20 @@ interface Placement {
 }
 
 interface LibraryContextValue {
-  /** Works with at least one saved movement. */
   works: LibraryWork[];
-  /**
-   * Held tracks the MusicBrainz reader cannot put on a card, each with what
-   * is missing. Empty under the reader in production, which reports a track
-   * it cannot place only as absent.
-   */
+  /** Empty under the production reader, which reports an unplaceable track only as absent. */
   gapTracks: UnresolvedLibraryTrack[];
   likedTrackIds: Set<string>;
-  /** No library to show yet. A stale cache counts as a library. */
+  /** A stale cache counts as a library. */
   loading: boolean;
-  /** Spotify is being re-read behind a library we're already showing. */
   refreshing: boolean;
   matching: boolean;
-  /** Spotify would not hand over the liked songs. */
   error: string | null;
-  /** We hold the liked songs but could not match them to works. */
   matchFailure: { message: string; retry: () => void } | null;
   totalSaved: number;
   toggleLike: (trackId: string) => void;
-  /**
-   * A recording a page is showing that the library may not hold, so the
-   * player can still say which work it is playing. Never shown in the library.
-   */
+  /** So the player can name a work the library doesn't hold. Never shown in the library. */
   rememberWork: (work: LibraryWork) => void;
-  /** Which work and movement each track belongs to, as far as we know. */
   placements: Map<string, Placement>;
 }
 
@@ -73,11 +61,8 @@ export function LibraryProvider({
     return next;
   }, [tracks, pendingLikes]);
 
-  /* Resolve saved tracks into works as soon as we hold a whole library — a
-     stale cache included, so an hour-old page still shows its works while
-     Spotify is re-read. Keyed on `loading` so a first, progressive load is
-     resolved once, not once per page; keyed on one snapshot of the library
-     (its size and its ends) so each snapshot is resolved once. */
+  // Resolve as soon as we hold a whole library, stale cache included. Keyed on `loading` and one
+  // snapshot (size and ends) so each snapshot is resolved once, not once per page.
   const snapshot =
     loading || tracks.length === 0
       ? ''
@@ -106,7 +91,6 @@ export function LibraryProvider({
     [matched, likedTrackIds],
   );
 
-  /** Built once per library, not searched on every render of the player. */
   const placements = useMemo(() => {
     const byTrack = new Map<string, Placement>();
     const place = (work: LibraryWork) => {
@@ -136,7 +120,6 @@ export function LibraryProvider({
 
       request.catch((err) => {
         console.error('Failed to update liked track:', err);
-        // Put the heart back where it was.
         setPendingLikes((prev) => {
           const next = new Map(prev);
           next.delete(trackId);
@@ -199,11 +182,7 @@ export function useLibrary(): LibraryContextValue {
   return ctx;
 }
 
-/**
- * What is playing, placed in its work when we know the work: the library's
- * cards first, then any recording a page has shown. A track we can't place
- * is still playing, and is said to be unplaced rather than dressed as a work.
- */
+/** A track we can't place is said to be unplaced rather than dressed as a work. */
 export type NowPlaying =
   | { kind: 'placed'; work: LibraryWork; movement: Movement }
   | { kind: 'unplaced'; track: NowPlayingTrack }

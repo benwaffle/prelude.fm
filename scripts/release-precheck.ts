@@ -1,17 +1,5 @@
-/**
- * Missing-release pre-checks from the command line, for the albums that
- * would unblock the most library tracks — the same order as the Inbox.
- *
- *   pnpm metadata:release-precheck               top 10, stored in the cache
- *   pnpm metadata:release-precheck --top 20
- *   pnpm metadata:release-precheck --album <id>  one album
- *   pnpm metadata:release-precheck --no-store    run without writing the cache
- *   pnpm metadata:release-precheck --json
- *
- * Spends live MusicBrainz requests on the interactive channel, through the
- * gateway like everything else. Writes only the album's `precheck` stage in
- * `mb_missing_release` (unless --no-store); submits nothing.
- */
+// Usage: pnpm metadata:release-precheck [--top N] [--album <id>] [--no-store] [--json]
+// Spends interactive-channel requests; writes only the `precheck` stage. Submits nothing.
 import { defineScript } from './lib/cli';
 
 defineScript(

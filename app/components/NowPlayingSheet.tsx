@@ -14,14 +14,8 @@ import { useProgramme } from './player/use-programme';
 import { WorkProgress } from './player/WorkProgress';
 import { PlayerCover, TransportButtons } from './player/TransportButtons';
 
-/**
- * The phone player, full screen: the cover, the work, transport big enough
- * for a thumb, and the recording's movements to jump between. The bar it
- * opens from stays a single row so it doesn't eat the screen.
- *
- * Rendered into <body>: the player bar's backdrop blur would otherwise trap a
- * fixed-position child inside the bar.
- */
+// Rendered into <body>: the player bar's backdrop blur would otherwise trap a fixed-position child
+// inside the bar.
 export function NowPlayingSheet({
   onClose,
   onChooseDevice,
@@ -32,11 +26,9 @@ export function NowPlayingSheet({
   const { isPaused, outputDevice } = usePlayer();
   const { toggleLike } = useLibrary();
   const programme = useProgramme();
-  // Slides down before it goes, the way it came up.
   const [leaving, setLeaving] = useState(false);
   const close = useCallback(() => setLeaving(true), []);
 
-  // The page underneath shouldn't scroll while the sheet covers it.
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -50,7 +42,6 @@ export function NowPlayingSheet({
     };
   }, [close]);
 
-  // The bar only opens the sheet while something is playing.
   if (!programme) return null;
 
   const { movement } = programme;
@@ -129,7 +120,6 @@ export function NowPlayingSheet({
           )}
         </div>
 
-        {/* Work-scoped progress, one seam per movement, like the desktop bar. */}
         <div className="mt-6">
           <WorkProgress key={programme.key} programme={programme} size="sheet" />
         </div>

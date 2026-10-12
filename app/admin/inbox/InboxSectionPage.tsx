@@ -25,7 +25,6 @@ import { StreamingUrlsSection } from './StreamingUrlsSection';
 import { SubmittedSection } from './SubmittedSection';
 import { WorkRelationshipsSection } from './WorkRelationshipsSection';
 
-/** One Inbox section on its own page; only that section's rows are read. */
 export function InboxSectionPage({
   section,
   focus = null,
@@ -44,12 +43,8 @@ export function InboxSectionPage({
 
   const { showFailure } = useAdminFailure();
 
-  /**
-   * Refresh after an action; a failure here is that action's failure. During
-   * a burst of queued actions only the last one reloads, so rows neither
-   * flicker nor move mid-burst; if that reload is owed past the last action,
-   * its failure goes to the admin failure notice.
-   */
+  // During a burst of queued actions only the last one reloads, so rows don't flicker or move
+  // mid-burst.
   const reload = useCallback(
     () =>
       afterAdminBurst(

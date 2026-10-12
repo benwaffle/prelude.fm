@@ -15,11 +15,6 @@ before(async () => {
   ({ classifyTracks } = await import('@/lib/musicbrainz-track-classification'));
 });
 
-/**
- * One performance (recording-1) issued on two Spotify albums, of a work that
- * is a part of a larger work, plus a track the parser set aside and a track
- * whose ISRC names two recordings.
- */
 async function seedLibrary() {
   await db.insert(schema.spotifyAlbum).values([
     {
@@ -128,8 +123,8 @@ async function seedLibrary() {
       matchedBy: 'isrc',
     },
   ]);
-  // A popular song is a recording of a work in MusicBrainz too. Nothing
-  // about that relation makes it classical.
+  // A popular song is a recording of a work in MusicBrainz too; that alone doesn't make it
+  // classical.
   await db.insert(schema.mbRecording).values({
     mbid: 'recording-pop',
     title: 'A Pop Single',
@@ -228,7 +223,6 @@ async function seedLibrary() {
     title: 'Aria',
     length: 200_000,
   });
-  // The parser set this one aside, and nothing in MusicBrainz contradicts it.
   await db.insert(schema.matchQueue).values({
     spotifyId: 'held-2',
     spotifyAlbumId: 'album-3',
@@ -386,8 +380,7 @@ test('labels the parser verdict as a proposal and lets MusicBrainz outrank it', 
   assert.equal(classificationOf('held-1')?.state, 'classical');
   assert.equal(classificationOf('held-1')?.provenance, 'musicbrainz');
 
-  // MusicBrainz relating the recording to a work is deterministic evidence
-  // and outranks the parser, but the disagreement is stated, not buried.
+  // MusicBrainz evidence outranks the parser, but the disagreement is stated.
   await db.insert(schema.matchQueue).values({
     spotifyId: 'held-1',
     spotifyAlbumId: 'album-1',

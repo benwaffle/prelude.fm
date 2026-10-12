@@ -40,7 +40,6 @@ defineScript(
     }
     const options = {
       albumId: flags.album,
-      // One album is one pass.
       concurrency: flags.album ? 1 : flags.concurrency,
       dryRun: flags['dry-run'],
       maxAlbums: flags['max-albums'] ?? Number.POSITIVE_INFINITY,

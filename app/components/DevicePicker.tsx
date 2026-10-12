@@ -5,12 +5,8 @@ import { usePlayer, usePlayerActions, type PlaybackDevice } from '@/lib/spotify-
 import { useServerQuery } from '@/lib/use-server-query';
 import { Icon } from './Icon';
 
-/**
- * Close a panel opened from the player bar on an outside tap or Escape. The
- * bar's backdrop blur traps fixed-position children inside it, so an overlay
- * can't catch outside taps; this listens on the document instead. A tap on
- * `toggle` is left to the button that toggles the panel.
- */
+// The bar's backdrop blur traps fixed-position children, so an overlay can't catch outside taps;
+// listen on the document instead.
 export function useDismiss(toggle: string, onClose: () => void): RefObject<HTMLDivElement | null> {
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -38,15 +34,9 @@ interface DevicePickerProps {
   onClose: () => void;
 }
 
-/**
- * Where playback goes: this browser when it can play, or any Spotify Connect
- * device on the account — the Spotify app on a phone, a speaker, a desktop
- * app.
- */
 export function DevicePicker({ onClose }: DevicePickerProps) {
   const { devices, outputDevice, local, needsDevice } = usePlayer();
   const { refreshDevices, chooseDevice } = usePlayerActions();
-  // Refresh asks again; the list itself lives in the player.
   const [scan, setScan] = useState(0);
   const loading = useServerQuery(refreshDevices, [refreshDevices, scan]).status === 'loading';
   const panelRef = useDismiss('[data-device-toggle]', onClose);
@@ -184,7 +174,6 @@ function DeviceRow({
   );
 }
 
-/** Spotify's device types, as words. Anything unknown is shown as Spotify names it. */
 function deviceKind(type: string): string {
   const kinds: Record<string, string> = {
     Smartphone: 'Phone',

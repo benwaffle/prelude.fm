@@ -1,44 +1,11 @@
-/**
- * Whether MusicBrainz itself says a recording is of art music.
- *
- * The tempting rule — "the recording is related to a work" — is wrong.
- * MusicBrainz files works for popular songs too: a pop single is routinely a
- * recording of a work, and so is a jazz standard. Reading a work relation as
- * proof of classical puts a chart single in the library under a composer,
- * which is worse than leaving it unreviewed.
- *
- * So the evidence has to be specific, and there are only two specific things
- * MusicBrainz says:
- *
- *  - a catalogue-series reference — BWV, K., Ryom, Op. as a series — which
- *    exists because a scholar catalogued a composer's output, and which
- *    popular songs do not have;
- *  - a work type from the art-music part of MusicBrainz's list. Types like
- *    "Song" and "Other" are exactly the ones that do not distinguish, so
- *    they are not evidence either way.
- *
- * Both are checked against the work and its ancestors, because MusicBrainz
- * files the catalogue number and usually the type on the piece, not on its
- * movements.
- *
- * One more thing counts, and it is about the composer rather than the piece
- * (Ben's call, 11 Oct 2026): MusicBrainz catalogues other works by the same
- * composer. Brahms's Hungarian Dances have no catalogue link on MusicBrainz,
- * but his symphonies do; nobody keeps a scholarly catalogue of a pop
- * songwriter or a film composer. Film scores are excluded before this rule is
- * asked (`film-scores.ts`).
- *
- * Anything else is inconclusive. Inconclusive is a visible state, not a
- * default to "no": the point is that nobody has established it yet.
- */
+// A work relation alone isn't proof of classical (MusicBrainz files pop songs as works too).
+// Evidence is a catalogue-series reference, an art-music work type, or a catalogued composer; else
+// inconclusive, visibly.
 
-/**
- * MusicBrainz work types that only art music carries. Deliberately excludes
- * Song, Other, Musical, Play, Prose, Audio drama and Soundtrack, which say
- * nothing either way.
- */
 import { ancestry } from './musicbrainz-work-tree';
 
+// Excludes Song, Other, Musical, Play, Prose, Audio drama and Soundtrack, which say nothing either
+// way.
 const CLASSICAL_WORK_TYPES = new Set([
   'aria',
   'ballet',
@@ -80,7 +47,6 @@ export function classicalEvidenceFor(
   workMbids: string[],
   workByMbid: Map<string, ClassicalEvidenceWork>,
   catalogedWorkMbids: Set<string>,
-  /** Composers MusicBrainz catalogues at least one work by. */
   catalogedComposerMbids: Set<string> = new Set(),
 ): ClassicalEvidence {
   if (workMbids.length === 0) {

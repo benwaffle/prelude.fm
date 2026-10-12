@@ -11,7 +11,6 @@ function credit(role: string, name: string, instrument = '', artistMbid = name):
   return { artistMbid, name, role, instrument };
 }
 
-/** A real recording's credits, as cached from one release read. */
 const vivaldi: StoredCredit[] = [
   credit('editor', 'Jean-Daniel Noir'),
   credit('engineer', 'Marie Delorme'),
@@ -40,9 +39,8 @@ test('production roles are kept but stay out of the performing credits', () => {
 });
 
 test('an unfamiliar role is production, not a performer', () => {
-  // The cache really does hold `balance`, `creative direction` and
-  // `instrument technician`. A denylist would promote the next new one into
-  // the credit line.
+  // The cache really holds `balance`, `creative direction` and `instrument technician`; a denylist
+  // would promote the next one.
   const credits = performingCredits([
     credit('instrument technician', 'A Piano Tuner'),
     credit('balance', 'A Balance Engineer'),
@@ -89,16 +87,13 @@ test('a solo recital fills one slot and leaves the other empty', () => {
 });
 
 test('a recording MusicBrainz credits to nobody says so rather than guessing', () => {
-  // The point of replacing the frequency count: where there is nothing to
-  // say, say nothing.
+  // Where there is nothing to say, say nothing.
   const credits = performingCredits([credit('producer', 'Someone')]);
   assert.deepEqual(creditLine(credits), { performer: null, ensemble: null });
 });
 
 test('a choir is an ensemble, not a soloist', () => {
-  // MusicBrainz credits a choir as a vocal, because a choir sings. Reading
-  // that literally puts sixty voices in the soloist slot and pushes the
-  // actual singer out of the credit line.
+  // MusicBrainz credits a choir as a vocal; it must not take the soloist slot.
   const credits = performingCredits([
     credit('vocal', 'Monteverdi Choir', 'choir vocals'),
     credit('vocal', 'Robin Blaze', 'alto vocals'),
@@ -125,8 +120,7 @@ test('a solo singer is still a soloist', () => {
 });
 
 test('a recording with only production credits has nothing to say about performers', () => {
-  // The reader uses this to keep the name it already had rather than
-  // replacing a real credit with a blank.
+  // The reader uses this to keep a name it already had rather than blanking a real credit.
   assert.equal(hasPerformingCredits(performingCredits([credit('producer', 'Someone')])), false);
   assert.equal(
     hasPerformingCredits(performingCredits([credit('instrument', 'Someone', 'piano')])),

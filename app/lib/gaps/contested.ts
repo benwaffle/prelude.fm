@@ -17,19 +17,12 @@ import {
 import { filmScoreExclusions } from '../film-score-exclusions';
 import { within, without } from './scope';
 
-/**
- * ISRCs MusicBrainz maps to more than one recording.
- *
- * Not our gap but an upstream error, and one that costs us real links: a
- * label attached Sony's ISRC for Haydn's Symphony 87 to a recording of
- * Symphony 82, and our matcher could only refuse to choose. We find these, so
- * we can report them.
- */
+// An upstream error that costs us links (Haydn 87's ISRC on a recording of 82); found so we can
+// report them.
 export type ContestedIsrc = {
   isrc: string;
   recordings: number;
   titles: string;
-  /** Every recording MusicBrainz currently maps this ISRC to. */
   recordingMbids: string[];
 };
 
@@ -66,11 +59,6 @@ export type ContestedIsrcJudgement = {
   verdict: ContestedIsrcVerdict;
 };
 
-/**
- * What the library says about which recording each contested ISRC belongs
- * to. Kept apart from `contestedIsrcs`, which also serves counts and
- * rechecks that have no use for it.
- */
 export async function judgeContestedIsrcs(
   rows: ContestedIsrc[],
 ): Promise<Map<string, ContestedIsrcJudgement>> {
@@ -91,8 +79,8 @@ export async function judgeContestedIsrcs(
         .innerJoin(mbRecording, eq(mbRecording.mbid, mbRecordingIsrc.recordingMbid))
         .where(inArray(mbRecordingIsrc.isrc, chunk)),
     ),
-    // A code is confirmed as a recording's own when a library track anchored
-    // to that recording carries it too.
+    // A code is confirmed as a recording's own when a library track anchored to that recording
+    // carries it too.
     forChunks(recordingMbids, (chunk) =>
       db
         .selectDistinct({

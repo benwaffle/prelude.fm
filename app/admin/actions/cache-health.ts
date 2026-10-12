@@ -13,19 +13,11 @@ export type UnsettledWorkLevel = {
 
 export type CacheHealth = {
   invariants: InvariantResult[];
-  /**
-   * Works whose place in the tree the rules could not settle.
-   *
-   * Each is a childless, untyped work whose title does not name its parent.
-   * It is either a movement whose parent is titled differently or a piece
-   * inside a collection, and those want opposite answers. They are left where
-   * they are and counted here rather than guessed at, because collapsing a
-   * piece into its collection is invisible once done.
-   */
+  // Left in place and counted rather than guessed at: collapsing a piece into its collection is
+  // invisible once done.
   unsettled: { count: number; samples: UnsettledWorkLevel[] };
 };
 
-/** Whether the MusicBrainz cache is sound. */
 export async function getCacheHealth(): Promise<CacheHealth> {
   await checkAuth();
 

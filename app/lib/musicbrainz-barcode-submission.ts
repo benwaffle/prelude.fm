@@ -1,14 +1,3 @@
-/**
- * Building a barcode submission for MusicBrainz.
- *
- * Same separation as ISRC submission: payload and eligibility live apart from
- * anything that sends them, so both can be tested without credentials.
- *
- * MusicBrainz accepts barcodes as an XML document listing releases and the
- * barcode to attach to each. One request can carry many; the bot code of
- * conduct counts each barcode as one edit.
- */
-
 import type { BarcodeGap } from './gaps/barcodes';
 import { BOT_SIGNATURE, describeDelta, escapeXml, metadataDocument } from './musicbrainz-xml';
 
@@ -17,14 +6,8 @@ export type BarcodeSubmissionItem = {
   barcode: string;
 };
 
-/**
- * The XML document MusicBrainz expects for release barcodes.
- *
- * The note is sent although MusicBrainz currently drops it: its barcode
- * handler never reads <edit-note> (MBS-14476), unlike the ISRC one. Until that
- * ships, the Inbox shows the note on the row so it can be added to the edit
- * by hand.
- */
+// The note is sent though MusicBrainz's barcode handler ignores <edit-note> (MBS-14476); the Inbox
+// shows it for adding by hand.
 export function buildBarcodeSubmission(items: BarcodeSubmissionItem[], editNote = ''): string {
   const releases = items
     .map(
@@ -37,12 +20,10 @@ export function buildBarcodeSubmission(items: BarcodeSubmissionItem[], editNote 
   return metadataDocument('release-list', releases, editNote);
 }
 
-/** How many edits a submission costs, which is what the daily cap counts. */
 export function editCount(items: BarcodeSubmissionItem[]): number {
   return new Set(items.map((item) => `${item.releaseMbid}:${item.barcode.trim()}`)).size;
 }
 
-/** The note attached to every barcode edit. */
 export function editNoteFor(gaps: BarcodeGap[]): string {
   if (gaps.length === 0) return '';
 

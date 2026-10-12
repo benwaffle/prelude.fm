@@ -14,23 +14,12 @@ import {
 } from '@/lib/prelude';
 import { locate, workTimeline, type WorkTimeline } from '@/lib/work-timeline';
 
-/** A movement with audio, which the player can start from. */
 type Heard = Movement & { uri: string };
 
-/**
- * What the player shows for what's playing: the recording it belongs to
- * when we can place it, or the bare track when we can't. Either way it is
- * played as a programme of movements — an unplaced track is just a
- * programme of one.
- */
 export interface Programme {
-  /** The work, when the track is placed in one; null for an unplaced track. */
   work: LibraryWork | null;
-  /** Stable per recording (or track), for keying what should restart with it. */
   key: string;
-  /** The movements this recording plays, in order. */
   heard: Heard[];
-  /** The one playing. */
   movement: Movement;
   timeline: WorkTimeline;
   tint: string;
@@ -38,16 +27,11 @@ export interface Programme {
   cover: string | null;
   album: string;
   detailHref: string | null;
-  /** Seek within the recording; elsewhere than the playing movement starts that one. */
   seekToRatio: (ratio: number) => void;
-  /** Start the recording from one of its movements. */
   playFrom: (movement: Movement) => void;
 }
 
-/**
- * The one movement an unplaced track is. Its name is Spotify's title, so it
- * is marked unnamed: nothing here came from MusicBrainz.
- */
+/** Its name is Spotify's title, so it is marked unnamed: nothing here came from MusicBrainz. */
 function unplacedMovement(track: NowPlayingTrack, liked: boolean): Heard {
   return {
     n: 1,

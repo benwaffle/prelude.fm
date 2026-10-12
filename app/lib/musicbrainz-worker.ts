@@ -7,26 +7,14 @@ import type { MusicBrainzSource } from './musicbrainz-source';
 import type { TrackClassificationState } from './musicbrainz-library-facts';
 import type { PipelineOutcome, TrackClassificationProvenance } from './track-classification';
 
-/**
- * An album pass that asks MusicBrainz, not a language model.
- *
- * The order is the whole design. Write down what Spotify said; identify the
- * release; anchor each track to a recording; read the works and artists
- * those recordings reach. Only then is there anything to classify, and the
- * classification is read off MusicBrainz's own evidence rather than
- * guessed at from a track title.
- *
- * No language model is called. Where MusicBrainz cannot settle something, the
- * track keeps a stated reason and stays visible.
- */
+// Classification is read off MusicBrainz's evidence, not guessed from a title; no language model is
+// called.
 
 export type TrackPassOutcome = {
   spotifyTrackId: string;
-  /** What the reader will be able to do with this track. */
   state: PipelineOutcome;
   classification: TrackClassificationState;
   classificationProvenance: TrackClassificationProvenance;
-  /** Why, in words an editor can act on. */
   reason: string;
 };
 
@@ -34,21 +22,14 @@ export type AlbumPassReport = {
   albumId: string;
   providerTracks: number;
   releaseMbid: string | null;
-  /** Why no release, when there is none. */
   releaseReason: string | null;
   anchored: number;
   requests: number;
   tracks: TrackPassOutcome[];
 };
 
-/**
- * Run one album through the MusicBrainz stages.
- *
- * `trackIds` narrows the report to the tracks a caller cares about; every
- * track on the album is hydrated and anchored either way, because the
- * release is identified from the whole tracklist and a half-read album
- * would identify it worse.
- */
+// Every track on the album is anchored even when `trackIds` narrows the report: the release is
+// identified from the whole tracklist.
 export async function runMusicBrainzAlbumPass(
   source: MusicBrainzSource,
   albumId: string,
@@ -59,9 +40,7 @@ export async function runMusicBrainzAlbumPass(
     readAlbum?: typeof getSpotifyAlbumTracks;
   } = {},
 ): Promise<AlbumPassReport> {
-  // Every track asked about is already anchored, so there is nothing for
-  // MusicBrainz or Spotify to tell us that we have not already written down.
-  // Classifying is a local read.
+  // Every track asked about is already anchored, so classifying is a local read.
   if (options.alreadyAnchored && trackIds) {
     return classifyOnly(albumId, trackIds);
   }
@@ -72,9 +51,8 @@ export async function runMusicBrainzAlbumPass(
   let requests = ingest.requests;
   let anchored = ingest.anchors?.anchored ?? 0;
 
-  // A release we could not identify does not put the album out of reach: an
-  // ISRC names a recording without one. This is the difference between an
-  // album MusicBrainz has not catalogued and an album nobody can play.
+  // An unidentified release does not put the album out of reach: an ISRC names a recording without
+  // one.
   if (!ingest.releaseMbid || (ingest.anchors?.unanchored ?? 0) > 0) {
     const byIsrc = await anchorTracksByIsrc(source, { albumId });
     requests += byIsrc.requests;
@@ -82,8 +60,8 @@ export async function runMusicBrainzAlbumPass(
   }
 
   const wanted = trackIds ?? tracks.map((track) => track.id);
-  // The pipeline weighs current MusicBrainz evidence, not a stored verdict:
-  // an old parser proposal must not hide stronger new evidence.
+  // Weighs current MusicBrainz evidence, not a stored verdict: an old parser proposal must not hide
+  // stronger new evidence.
   const [anchors, classifications] = await Promise.all([
     readTrackAnchors(wanted),
     classifyTracks(wanted, { preferStored: false }),
@@ -132,10 +110,8 @@ async function classifyOnly(albumId: string, trackIds: string[]): Promise<AlbumP
   };
 }
 
-/**
- * What one track's pass came to. A track MusicBrainz calls not classical says
- * so whether or not it is anchored; otherwise an `unanchored` reason wins.
- */
+// A track MusicBrainz calls not classical says so whether or not it is anchored; otherwise an
+// `unanchored` reason wins.
 function trackOutcome(
   spotifyTrackId: string,
   classification: Awaited<ReturnType<typeof classifyTracks>>[number] | undefined,
@@ -161,7 +137,6 @@ function trackOutcome(
   };
 }
 
-/** The release failures, said in a way an editor can act on. */
 export function describeReleaseFailure(reason: string | null): string | null {
   switch (reason) {
     case 'no_barcode_match':

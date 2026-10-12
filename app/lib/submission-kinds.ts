@@ -1,14 +1,5 @@
 /**
- * Has a submission landed? One answer per kind of edit.
- *
- * Every kind says two things: what to re-read from MusicBrainz before
- * deciding (`pull`), and which of its rows the cache then shows (`landed`).
- * `pullAndApply` serves both a single row's Recheck and Recheck all from
- * these, so the rule for "landed" exists once per kind rather than once per
- * button.
- *
- * Confirm writes the ledger and does not talk to MusicBrainz. Recheck fetches,
- * then observes, because the worker skips ingesting tracks already anchored.
+ * Recheck fetches before observing because the worker skips ingesting tracks already anchored.
  * It never submits anything, and a missing edit ID stays missing.
  */
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
@@ -24,28 +15,24 @@ import { pullAlbumFromMusicBrainz } from './musicbrainz-submission-pull';
 import type { SubmissionEvidence, SubmissionKind } from './submission-evidence';
 import type { LedgerRow } from './submission-ledger';
 
-/** A ledger row of one kind, with that kind's evidence. */
 type RowOf<K extends SubmissionKind> = LedgerRow & {
   kind: K;
   evidence: Extract<SubmissionEvidence, { kind: K }>;
 };
 
-/** What MusicBrainz must be re-read for. Shared targets are fetched once. */
+/** Shared targets are fetched once. */
 type PullTargets = {
   releases?: (string | null)[];
   recordings?: (string | null)[];
   works?: (string | null)[];
-  /** A Spotify album to match again, with the release MBID the person named, if any. */
   album?: { albumId: string; releaseMbid: string | null };
 };
 
 type KindSpec<K extends SubmissionKind> = {
   pull: (row: RowOf<K>) => PullTargets;
-  /** The ids, among `rows`, of the edits the cache now holds. */
   landed: (rows: RowOf<K>[]) => Promise<number[]>;
 };
 
-/** Rows whose `exists` check against the cache holds. */
 function landedWhere(exists: SQL) {
   return async (rows: LedgerRow[]) => {
     const landed = await forChunks(
@@ -162,7 +149,6 @@ async function landedOf<K extends SubmissionKind>(
   return own.length === 0 ? [] : KINDS[kind].landed(own);
 }
 
-/** Re-read every target behind `rows` from MusicBrainz, each once. Marks nothing. */
 async function pull(
   source: MusicBrainzSource,
   rows: readonly LedgerRow[],
@@ -200,17 +186,11 @@ async function pull(
 export type PullAndApplyResult = {
   requests: number;
   targets: number;
-  /** Rows the cache now shows, whatever their outcome was. */
   landed: Set<number>;
-  /** Pending rows this marked applied. */
   applied: number;
 };
 
-/**
- * Re-read what `rows` submitted, then mark applied every pending one the
- * cache now holds. Rows of any outcome may be passed (to re-read them);
- * only pending ones change.
- */
+/** Rows of any outcome may be passed (to re-read them); only pending ones change. */
 export async function pullAndApply(
   source: MusicBrainzSource,
   rows: readonly LedgerRow[],

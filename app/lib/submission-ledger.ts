@@ -1,11 +1,3 @@
-/**
- * The submission ledger, `mb_submission`: what we told MusicBrainz, read and
- * written in one place.
- *
- * A row is written when somebody confirms an edit (or the bot makes one) and
- * closed when the cache shows it landed (`submission-kinds`). Evidence is
- * parsed once here, so nothing downstream probes the JSON.
- */
 import { and, asc, eq, inArray, type SQL } from 'drizzle-orm';
 import { db } from './db';
 import { forChunks } from './db/chunked';
@@ -33,7 +25,6 @@ export type LedgerRow = {
   evidence: SubmissionEvidence;
 };
 
-/** Ledger rows matching `where`, oldest first, evidence parsed. */
 export async function readLedger(where: SQL | undefined): Promise<LedgerRow[]> {
   const rows = await db
     .select({
@@ -57,11 +48,6 @@ export async function readLedger(where: SQL | undefined): Promise<LedgerRow[]> {
 
 export type LedgerHistory = { current: LedgerRow | null; previous: LedgerRow | null };
 
-/**
- * One kind's ledger for the given keys, as the submission in hand and the
- * latest rejected or withdrawn one per key. `keyOf` names the key when it is
- * not the column read (an ISRC is keyed by recording and code together).
- */
 export async function ledgerIndex(
   kind: SubmissionKind,
   column: 'targetMbid' | 'subject' | 'value',
@@ -74,15 +60,8 @@ export async function ledgerIndex(
   return submissionHistoryBy(rows, keyOf);
 }
 
-/**
- * Write confirmed or accepted edits, in one statement.
- *
- * One multi-row insert rather than a row at a time: once MusicBrainz has an
- * edit, a failure part-way through would leave edits made but never
- * recorded, and an unrecorded gap is offered (and, by the bot, submitted)
- * again. The unique index skips an edit already in hand. A draft's own note
- * wins over the shared one.
- */
+// One multi-row insert: a part-way failure would leave edits made but unrecorded, and they'd be
+// submitted again.
 export async function insertSubmissions(
   drafts: readonly (SubmissionDraft & { note?: string | null })[],
   options: { submittedBy: string; note?: string | null; editId?: string | null },

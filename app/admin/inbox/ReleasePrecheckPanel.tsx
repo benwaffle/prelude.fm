@@ -35,7 +35,6 @@ function ago(date: Date): string {
   return `${Math.round(hours / 24)} days ago`;
 }
 
-/** One line for the row: the verdict and how much the checklist holds. */
 export function PrecheckSummary({ precheck }: { precheck: CachedPrecheck | null }) {
   if (!precheck) {
     return <span className="album-meta absent">Not pre-checked yet — run it before Harmony</span>;
@@ -135,7 +134,6 @@ function ArtistRows({ artists }: { artists: ArtistSuggestion[] }) {
   );
 }
 
-/** Everything the pre-check found, in the order it matters before Harmony. */
 export function ReleasePrecheckPanel({ precheck }: { precheck: CachedPrecheck }) {
   const { result } = precheck;
   const notes = [

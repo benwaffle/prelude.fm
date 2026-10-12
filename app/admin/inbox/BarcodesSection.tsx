@@ -17,10 +17,8 @@ import {
   useRowMutation,
 } from './LedgerGapRow';
 
-/**
- * MusicBrainz drops the note on barcode edits sent through its API
- * (MBS-14476), so the edit went in without one. Show it for adding by hand.
- */
+// MusicBrainz drops the note on barcode edits sent through its API (MBS-14476); show it for adding
+// by hand.
 function UnsentBarcodeNote({ releaseMbid, note }: { releaseMbid: string; note: string }) {
   return (
     <Notice intent="info">

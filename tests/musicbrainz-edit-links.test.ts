@@ -45,10 +45,8 @@ test('a MagicISRC link seeded from eligible gaps omits already-ledgered ISRCs', 
 });
 
 test('an ISRC is addressed by its position on the release, not its place in the list', () => {
-  // The bug this guards against put an ISRC on the first track of a release
-  // because it happened to be first in our list, when the track it belongs to
-  // is number three. That is an ISRC attached to the wrong recording — the
-  // exact error these submissions exist to correct.
+  // Guards a real bug: an ISRC went on the first track of a release because it was first in our
+  // list.
   const link = new URL(magicIsrcLink('rel-1', [gap({ isrc: 'GBAAA0000003', position: 3 })]));
   assert.equal(link.searchParams.get('isrc1-3'), 'GBAAA0000003');
   assert.equal(link.searchParams.get('isrc1-1'), null);

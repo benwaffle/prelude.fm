@@ -1,8 +1,3 @@
-/**
- * The typed gaps the MusicBrainz projection reports instead of filling in a
- * value it does not have, and the helpers that record them.
- */
-
 export type MusicBrainzGapCode =
   | 'provider-track-not-fetched'
   | 'provider-album-not-fetched'

@@ -1,12 +1,5 @@
-/**
- * Read into the cache every work a suggested work link names, so the player
- * can show it under its composer and parent.
- *
- *   pnpm metadata:cache-proposed-works
- *
- * Spends MusicBrainz requests on the backfill channel; works already read in
- * full cost nothing. Writes only the `mb_*` cache.
- */
+// Usage: pnpm metadata:cache-proposed-works
+// Spends backfill-channel requests; works already read in full cost nothing.
 import { defineScript } from './lib/cli';
 
 defineScript({ options: {} }, async () => {

@@ -49,37 +49,28 @@ import { useLocalPlayer, type LocalPlayer } from './spotify/use-local-player';
 export type { PlaybackDevice } from './spotify/web-api';
 export type { LocalPlayer } from './spotify/use-local-player';
 
-/** What is playing, where, and what is waiting. Changes as playback does. */
 export interface PlayerState {
-  /** True when there is a device to send playback to. */
   isReady: boolean;
   isPaused: boolean;
   currentTrack: NowPlayingTrack | null;
   volume: number;
-  /** Where playback goes: this browser, or a Connect device. */
   outputDevice: PlaybackDevice | null;
-  /** Devices from the last refresh. */
   devices: PlaybackDevice[];
-  /** Whether this browser can play, and why not when it can't. */
   local: LocalPlayer;
-  /** The last thing Spotify refused, in plain words. */
   playbackError: string | null;
-  /** Set when something was asked to play with nowhere to play it. */
   needsDevice: boolean;
   queue: QueueEntry[];
 }
 
-/** The controls. Stable for the life of the player, so holding them re-renders nothing. */
+/** Stable for the life of the player, so holding them re-renders nothing. */
 export interface PlayerActions {
   dismissDevicePrompt: () => void;
   refreshDevices: () => Promise<void>;
   chooseDevice: (device: PlaybackDevice) => Promise<void>;
-  /** Play these tracks, then whatever is queued. */
   play: (uris: string[]) => Promise<void>;
   addToQueue: (entry: Omit<QueueEntry, 'id'>) => void;
   removeFromQueue: (id: string) => void;
   clearQueue: () => void;
-  /** Start the first queued recording when nothing is playing. */
   playQueue: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
@@ -88,9 +79,7 @@ export interface PlayerActions {
   previousTrack: () => Promise<void>;
   nextTrack: () => Promise<void>;
   setVolume: (volume: number) => Promise<void>;
-  /** Where playback is now, extrapolated since Spotify last said. */
   getProgress: () => PlaybackProgress;
-  /** Hear of every progress report, from any source. */
   subscribeToProgress: (callback: (progress: PlaybackProgress) => void) => () => void;
 }
 
@@ -112,11 +101,8 @@ interface Playback {
   volume: number;
 }
 
-/**
- * State that callbacks read the moment it is set, not a render later. The
- * player's callbacks outlive renders (SDK listeners, timers, polls), so each
- * reads through the getter; components read the value.
- */
+// The player's callbacks outlive renders (SDK listeners, timers, polls), so they read through the
+// getter.
 function useCurrentState<T>(initial: T): [T, () => T, (next: T) => void] {
   const [value, setValue] = useState(initial);
   const ref = useRef(initial);
@@ -164,7 +150,6 @@ export function SpotifyPlayerProvider({
     [getQueue, setQueueState],
   );
 
-  /** Take on a report of what's playing; unchanged reports change nothing. */
   const report = useCallback(
     (next: Partial<Playback>) => {
       const now = getPlayback();
@@ -190,8 +175,8 @@ export function SpotifyPlayerProvider({
   } = useLocalPlayer(getToken, {
     onReady: (deviceId) => {
       setDevices((ds) => [localDevice(deviceId), ...ds.filter((d) => !d.isThisBrowser)]);
-      // Play here unless the listener already chose somewhere else. A device
-      // picked up only because this player was slow to start gives way.
+      // Play here unless the listener already chose; a device picked only because this player was
+      // slow gives way.
       const current = getOutput();
       setOutput(current && userChoseRef.current ? current : localDevice(deviceId));
     },
@@ -199,8 +184,8 @@ export function SpotifyPlayerProvider({
       if (getOutput()?.id === deviceId) setOutput(null);
     },
     onStateChange: (state) => {
-      // While a Connect device is playing, this browser's player is idle and
-      // its state says nothing about what the listener is hearing.
+      // While a Connect device is playing, this browser's player state says nothing about what the
+      // listener hears.
       const output = getOutput();
       if (output && !output.isThisBrowser) return;
       if (!state) {
@@ -220,7 +205,6 @@ export function SpotifyPlayerProvider({
     },
   });
 
-  /** Take on what a Connect device reports it is playing. */
   const applyRemoteState = useCallback(
     (remote: SpotifyApiPlaybackState | null) => {
       if (!remote) {
@@ -246,7 +230,6 @@ export function SpotifyPlayerProvider({
     [progress, report],
   );
 
-  /** Ask Spotify what is playing where, for a Connect device. */
   const pollRemote = useCallback(async () => {
     const output = getOutput();
     if (!output || output.isThisBrowser) return;
@@ -256,8 +239,7 @@ export function SpotifyPlayerProvider({
         applyRemoteState(null);
         return;
       }
-      // Playback moved — someone picked another device in the Spotify app.
-      // Follow it rather than keep showing a device that has gone quiet.
+      // Playback moved (someone picked another device in the Spotify app): follow it.
       const moved = toDevice(remote.device, localDeviceId());
       if (moved && moved.id !== output.id) {
         setOutput(moved.isThisBrowser ? localDevice(moved.id) : moved);
@@ -282,8 +264,7 @@ export function SpotifyPlayerProvider({
     }
   }, [getToken, localDeviceId]);
 
-  // When this browser can't play, pick up whatever the account is already
-  // playing on, so the bar shows what the Spotify app or speaker is doing.
+  // When this browser can't play, pick up whatever the account is already playing on.
   useEffect(() => {
     if (local.status !== 'unavailable' || getOutput()) return;
     let cancelled = false;
@@ -323,8 +304,6 @@ export function SpotifyPlayerProvider({
     };
   }, [outputDevice, pollRemote]);
 
-  // --- Actions ---
-
   const send: Send = useCallback(
     async (device, what, request) => {
       try {
@@ -347,10 +326,6 @@ export function SpotifyPlayerProvider({
     [player, send, progress, report],
   );
 
-  /**
-   * Hand Spotify these tracks with the whole queue after them, and remember
-   * the pieces so we can tell when a queued recording starts.
-   */
   const playWithQueue = useCallback(
     async (start: Segment, positionMs?: number) => {
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -373,12 +348,8 @@ export function SpotifyPlayerProvider({
     [playWithQueue],
   );
 
-  /**
-   * Spotify can't edit a list it is already playing, so after a queue change
-   * the rest of the current recording and the new queue go to it again, from
-   * where playback is now. That costs a moment's pause, so it waits while
-   * paused and happens on resume instead.
-   */
+  // Spotify can't edit a list it is already playing, so the rest is handed over again; that costs a
+  // pause, so it waits for resume while paused.
   const syncQueue = useCallback(async () => {
     const track = getPlayback().currentTrack;
     if (!track) return;
@@ -437,10 +408,9 @@ export function SpotifyPlayerProvider({
         await transportFor(device).play(pending);
         return;
       }
-      // With nothing loaded there is nothing to carry over; the device simply
-      // becomes where the next play goes.
+      // With nothing loaded there is nothing to carry over; the device becomes where the next play
+      // goes.
       if (previous?.id === device.id || progress.get().duration === 0) return;
-      // Carry on whatever was playing, on the new device.
       await send(device, 'Moving playback', (token) =>
         spotifyApi(token, '/me/player', {
           method: 'PUT',
@@ -546,14 +516,12 @@ export function SpotifyPlayerProvider({
   );
 }
 
-/** What is playing, where. Re-renders whenever playback changes. */
 export function usePlayer(): PlayerState {
   const context = useContext(PlayerStateContext);
   if (!context) throw new Error('usePlayer must be used within SpotifyPlayerProvider');
   return context;
 }
 
-/** The player's controls, which never change identity. */
 export function usePlayerActions(): PlayerActions {
   const context = useContext(PlayerActionsContext);
   if (!context) throw new Error('usePlayerActions must be used within SpotifyPlayerProvider');

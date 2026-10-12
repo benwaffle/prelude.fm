@@ -12,7 +12,6 @@ const PLAY_SIZES = {
   sheet: { button: 'h-[68px] w-[68px] transition-transform active:scale-95', icon: 28 },
 } as const;
 
-/** Play or pause, a disc in the bar's ink with the icon cut out in its tint. */
 export function PlayButton({ size, tint }: { size: keyof typeof PLAY_SIZES; tint: string }) {
   const { isPaused, isReady } = usePlayer();
   const { togglePlay } = usePlayerActions();
@@ -33,7 +32,6 @@ export function PlayButton({ size, tint }: { size: keyof typeof PLAY_SIZES; tint
   );
 }
 
-/** Previous movement, play or pause, next movement. */
 export function TransportButtons({ size, tint }: { size: 'bar' | 'sheet'; tint: string }) {
   const { isReady } = usePlayer();
   const { previousTrack, nextTrack } = usePlayerActions();
@@ -68,10 +66,6 @@ export function TransportButtons({ size, tint }: { size: 'bar' | 'sheet'; tint: 
   );
 }
 
-/**
- * The cover in the player, or the composer's initials on the bar's ink when
- * there is no art (none at all when the composer is unknown too).
- */
 export function PlayerCover({
   programme,
   className,

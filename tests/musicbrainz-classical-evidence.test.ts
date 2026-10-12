@@ -10,8 +10,8 @@ function tree(...works: ClassicalEvidenceWork[]) {
 }
 
 test('a work relation on its own says nothing', () => {
-  // MusicBrainz files works for popular songs too. This is the rule the
-  // reader must not have: it would put a chart single under a composer.
+  // MusicBrainz files works for popular songs too; a work relation alone must not make a chart
+  // single classical.
   const evidence = classicalEvidenceFor(
     ['work-song'],
     tree({ mbid: 'work-song', type: null, parentMbid: null }),
@@ -51,7 +51,7 @@ test('an art-music work type is evidence', () => {
 });
 
 test('the evidence may sit on an ancestor, where MusicBrainz files it', () => {
-  // BWV 988 is filed against the Goldberg Variations, not against its Aria.
+  // BWV 988 is filed against the Goldberg Variations, not its Aria.
   const evidence = classicalEvidenceFor(
     ['work-aria'],
     tree(

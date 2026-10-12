@@ -26,8 +26,8 @@ const bwv1067: MbWork = {
       'attribute-values': { number: 'BWV 1067' },
     },
     {
-      // A numbered *work* series, not a catalogue. Reading this as a catalogue
-      // number would file the second suite under catalogue number "2".
+      // A numbered work series, not a catalogue: must not file the second suite under catalogue
+      // number "2".
       type: 'part of',
       direction: 'backward',
       series: { id: 'series-suites', name: 'Orchestersuiten', type: 'Work series' },

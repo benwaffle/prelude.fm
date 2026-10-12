@@ -1,6 +1,5 @@
 import type { ReactElement } from 'react';
 
-/** The prototype's icon set, drawn on a 24×24 grid. */
 const PATHS: Record<string, ReactElement> = {
   search: (
     <path
@@ -109,7 +108,6 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   );
 }
 
-/** The five-bar equaliser that marks the movement currently playing. */
 export function Waveform({ bars = 4, className = '' }: { bars?: number; className?: string }) {
   const heights = ['40%', '80%', '55%', '95%', '35%'];
   return (

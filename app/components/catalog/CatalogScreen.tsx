@@ -27,14 +27,8 @@ import { Badge, RecordingTile } from '../work/RecordingTile';
 import { Missing } from '../work/WorkText';
 import { catalogHref, parseCatalogUrl } from './catalog-url';
 
-/** How long typing has to pause before the catalogue is searched. */
 const SEARCH_DELAY_MS = 180;
 
-/**
- * The catalogue: composers → works → recordings. Three columns on the desk,
- * one pane at a time on a phone with a back trail above it. Where you are is
- * in the URL, so the back gesture steps back up a level.
- */
 export function CatalogScreen() {
   const { likedTrackIds } = useLibrary();
   const { query } = useNavSearch();
@@ -45,7 +39,6 @@ export function CatalogScreen() {
   const composers = useServerQuery(getMusicBrainzCatalogComposers, []);
   const composerData = composers.status === 'ready' ? composers.data : null;
   const composerList = useMemo(() => composerData ?? [], [composerData]);
-  // The desk shows the first composer until one is chosen.
   const composerId = url.composerId ?? composerList[0]?.id ?? null;
 
   const works = useServerQuery(composerId ? () => getMusicBrainzCatalogWorks(composerId) : null, [
@@ -57,8 +50,8 @@ export function CatalogScreen() {
   const recordings = useServerQuery(
     workId
       ? () =>
-          // The liked set only changes the badges; refetching on every heart
-          // would be wasteful, so it's read when the work changes.
+          // The liked set only changes badges, so it's read when the work changes, not on every
+          // heart.
           Promise.all([
             getMusicBrainzCatalogWorkHeader(workId),
             getMusicBrainzCatalogRecordings(workId, Array.from(likedTrackIds)),
@@ -75,12 +68,8 @@ export function CatalogScreen() {
     );
   }, [composerList, query]);
 
-  /*
-   * Works are searched on the server rather than filtered here, because a
-   * catalogue reference has to reach every reference a work carries and only
-   * one of them is loaded with the card. A reader who knows a Scarlatti
-   * sonata as L 413 should find it even though its card says Kk. 9.
-   */
+  // Searched on the server: a work's card loads one catalogue reference, but the search must reach
+  // all of them (L 413 finds Kk. 9).
   const trimmed = query.trim();
   const searched = useSettled(trimmed, SEARCH_DELAY_MS);
   const hits = useServerQuery(
@@ -91,8 +80,7 @@ export function CatalogScreen() {
   const composer = composerList.find((c) => c.id === composerId) ?? null;
   const work = workList.find((w) => w.id === workId) ?? null;
 
-  // On phones each level replaces the last as one long page; start the new
-  // one at its top rather than wherever the previous list was scrolled to.
+  // On phones each level is one long page; start the new one at its top.
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [level]);
@@ -101,7 +89,6 @@ export function CatalogScreen() {
 
   return (
     <div className="relative z-[1] flex min-h-screen flex-col pb-[var(--player-h)] max-[900px]:pb-[calc(var(--player-h)+24px)]">
-      {/* Breadcrumb trail — mobile only */}
       <div className="hidden items-center gap-2 border-b border-rule bg-paper-2 px-5 py-[10px] font-meta text-[10px] tracking-[0.14em] text-muted uppercase max-[900px]:flex">
         {level > 0 ? (
           <Link
@@ -172,7 +159,6 @@ export function CatalogScreen() {
   );
 }
 
-/** `value`, once it has stayed the same for `delayMs`. */
 function useSettled<T>(value: T, delayMs: number): T {
   const [settled, setSettled] = useState(value);
   useEffect(() => {
@@ -184,13 +170,6 @@ function useSettled<T>(value: T, delayMs: number): T {
 
 const PANE_FAILURE = 'px-[18px] py-4 font-display text-[14px] text-accent italic';
 
-/**
- * What the query found, above the three panes.
- *
- * Shows every catalogue reference each work carries, not just the one that
- * matched, so it is clear why a search for L 413 returned something labelled
- * Kk. 9 — and so the reader learns the work's other names.
- */
 function SearchResults({
   query,
   hits: found,
@@ -266,7 +245,6 @@ function PaneEmpty({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ---------- Column 1: composers ---------- */
 function ComposerPane({
   list,
   failure,
@@ -280,7 +258,7 @@ function ComposerPane({
   onSelect: (c: CatalogComposer) => void;
   hidden: boolean;
 }) {
-  // A–Z by surname, locale-aware so Pärt files under P.
+  // Locale-aware so Pärt files under P.
   const groups = useMemo(() => {
     const sorted = [...list].sort((a, b) => a.sort.localeCompare(b.sort, 'en'));
     const out: { letter: string; items: CatalogComposer[] }[] = [];
@@ -301,8 +279,8 @@ function ComposerPane({
       <PaneHead title="Composers" count={`${list.length} · ${totalWorks} works`} />
       {failure}
       {groups.map((g) => (
-        // Keyed by the first composer in the run, not the letter: an accented
-        // surname can sort between two plain ones and split a letter in two.
+        // Keyed by the first composer, not the letter: an accented surname can split a letter in
+        // two.
         <Fragment key={g.items[0].id}>
           <div className="sticky top-[35px] bg-paper px-[18px] pt-3 pb-1 font-display text-[15px] text-accent italic max-[900px]:top-0 max-[900px]:px-4">
             {g.letter}
@@ -348,7 +326,6 @@ function ComposerPane({
   );
 }
 
-/** The composer's Spotify portrait, falling back to their initials. */
 function ComposerFace({ name, image }: { name: string; image: string | null }) {
   const [failed, setFailed] = useState(false);
   if (!image || failed) return <>{initialsOf(name)}</>;
@@ -364,7 +341,6 @@ function ComposerFace({ name, image }: { name: string; image: string | null }) {
   );
 }
 
-/* ---------- Column 2: works ---------- */
 function WorkPane({
   composer,
   works,
@@ -383,17 +359,15 @@ function WorkPane({
   hidden: boolean;
 }) {
   const byGenre = useMemo(() => {
-    // A null genre means `work.form` was never recorded — keep those works
-    // visible under a heading that says so, rather than filing them under a
-    // category name they didn't earn.
+    // A null genre means `work.form` was never recorded: keep those works visible under a heading
+    // that says so.
     const map = new Map<string | null, CatalogWork[]>();
     for (const w of works) {
       const bucket = map.get(w.genre);
       if (bucket) bucket.push(w);
       else map.set(w.genre, [w]);
     }
-    // Biggest groups first, so the composer's centre of gravity reads first;
-    // the unrecorded pile always sits last.
+    // Biggest groups first; the unrecorded pile always sits last.
     return Array.from(map).sort((a, b) => {
       if (a[0] === null) return 1;
       if (b[0] === null) return -1;
@@ -504,7 +478,6 @@ function Fact({ k, v }: { k: string; v: string }) {
   );
 }
 
-/* ---------- Column 3: recordings ---------- */
 function RecordingPane({
   query,
   hidden,

@@ -1,8 +1,6 @@
 import type { Track } from '@spotify/web-api-ts-sdk';
 import type { MbRelease, MusicBrainzSource } from '../../app/lib/musicbrainz-source';
 
-/** A MusicBrainz that knows nothing beyond `answers`. */
-
 export function fakeSource(answers: Partial<MusicBrainzSource>): MusicBrainzSource {
   return {
     name: 'fake',
@@ -19,11 +17,6 @@ export function fakeSource(answers: Partial<MusicBrainzSource>): MusicBrainzSour
   };
 }
 
-/**
- * One Mozart album as Spotify and MusicBrainz describe it, for the album-pass
- * tests: two tracks whose ISRCs a barcode-matched release carries, and the
- * work tree and artists those recordings reach.
- */
 const ALBUM = {
   id: 'album-1',
   name: 'Mozart: Piano Sonatas',
@@ -50,7 +43,6 @@ function spotifyTrack(index: number): Track {
 const SPOTIFY_ALBUM = { album: ALBUM, tracks: [spotifyTrack(1), spotifyTrack(2)] };
 export const readAlbum = async () => SPOTIFY_ALBUM;
 
-/** A release whose recordings carry the ISRCs Spotify gave us. */
 export function release(options = { works: true }): MbRelease {
   return {
     id: 'release-1',
@@ -85,7 +77,6 @@ export function release(options = { works: true }): MbRelease {
   };
 }
 
-/** The work tree above a part: its parent sonata and the Köchel catalogue. */
 export function workTree(id: string) {
   if (id === 'sonata') {
     return {
@@ -136,7 +127,6 @@ export const artist = async (id: string) =>
       }
     : { id, name: 'Mitsuko Uchida', 'sort-name': 'Uchida, Mitsuko', type: 'Person' };
 
-/** The database row the album pass expects for the album. */
 export const ALBUM_ROW = {
   spotifyId: 'album-1',
   title: 'Mozart: Piano Sonatas',
@@ -149,7 +139,6 @@ export const ALBUM_ROW = {
   mbCheckedAt: null,
 };
 
-/** Spotify's facts for the two tracks, as `spotify_track` rows. */
 export function providerTrackRows() {
   return SPOTIFY_ALBUM.tracks.map((track) => ({
     spotifyId: track.id,

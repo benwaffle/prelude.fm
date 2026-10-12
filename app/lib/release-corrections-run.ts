@@ -1,12 +1,4 @@
-/**
- * Measures what landed on MusicBrainz for a release somebody added through
- * Harmony, against the Spotify seed, and stores the result.
- *
- * Reads live MusicBrainz on the `interactive` channel: the release itself,
- * one browse for its release group, a search per twenty recordings for
- * where else they appear, and — only for recordings that search cannot see
- * yet — one browse each, up to `ORIGIN_BROWSE_LIMIT`.
- */
+/** Reads live MusicBrainz on the `interactive` channel. */
 import { eq, inArray } from 'drizzle-orm';
 import { db } from './db';
 import { mbRecordingWork, mbWork, spotifyAlbum, trackRecording, spotifyTrack } from './db/schema';
@@ -33,7 +25,6 @@ export const ORIGIN_BROWSE_LIMIT = 150;
 const landedArtists = (credit: { artistId: string; name: string }[]): LandedArtist[] =>
   credit.map((part) => ({ mbid: part.artistId, name: part.name }));
 
-/** The release as it now stands on MusicBrainz, or null if it does not exist. */
 async function fetchLandedRelease(
   mb: MbSession,
   releaseMbid: string,
@@ -76,15 +67,8 @@ async function fetchLandedRelease(
   };
 }
 
-/**
- * Whether each recording on the release existed before it.
- *
- * A recording the pre-check found by ISRC existed already. Otherwise a
- * recording on any other release is reused and one on this release alone was
- * created with it. Search is tried first because it answers twenty at once;
- * a recording it has not indexed yet — typically one created minutes ago —
- * is browsed directly.
- */
+// Search answers twenty at once; a recording it hasn't indexed yet (created minutes ago) is browsed
+// directly.
 async function recordingOrigins(
   mb: MbSession,
   releaseMbid: string,
@@ -118,8 +102,7 @@ async function recordingOrigins(
     }
   }
 
-  // Search saying "only this release" may just be stale, so those are
-  // browsed as well: the browse reads the database, not the index.
+  // Search saying "only this release" may just be stale, so those are browsed as well.
   for (const [index, mbid] of unseen.entries()) {
     if (index >= ORIGIN_BROWSE_LIMIT) {
       origins.set(mbid, 'unknown');
@@ -141,11 +124,7 @@ async function recordingOrigins(
   return origins;
 }
 
-/**
- * Distinct composers we can identify for the release: credited artists who
- * compose works in our cache, and composers of the works its recordings
- * perform. Null when there are none — not the same as "one".
- */
+/** Null when there are none, which is not the same as "one". */
 async function composerCount(albumId: string, landed: LandedRelease): Promise<number | null> {
   const credited = [
     ...new Set([
@@ -181,7 +160,6 @@ async function composerCount(albumId: string, landed: LandedRelease): Promise<nu
 
 export class CorrectionMeasureError extends Error {}
 
-/** Which release to measure: the one the album is matched to, or the one confirmed. */
 async function releaseFor(
   albumId: string,
   confirmedReleaseMbid: string | null,
@@ -193,7 +171,6 @@ async function releaseFor(
   return album?.mbReleaseId ?? confirmedReleaseMbid;
 }
 
-/** Measure the album's landed release against its seed and store the record. */
 export async function measureReleaseCorrection(
   albumId: string,
   confirmedReleaseMbid: string | null,
@@ -211,15 +188,14 @@ export async function measureReleaseCorrection(
   const stored = (await readMissingReleases([albumId])).get(albumId) ?? {};
   const precheck = stored.precheck?.value;
   const prepared = preparedSeedOf(stored);
-  // When our own seed was opened on MusicBrainz, that form is what the person
-  // corrected; otherwise it is the Spotify album Harmony reads.
+  // When our own seed was opened on MusicBrainz, that form is what the person corrected; otherwise
+  // the Spotify album.
   const usedSeed = prepared?.seededPlan ?? null;
   const seed = usedSeed
     ? seedPlanBaseline(usedSeed)
     : (precheck?.seed ?? (await loadReleaseSeed(albumId)));
   const baselineSource = usedSeed ? 'prelude-seed' : precheck ? 'precheck' : seed.source;
-  // Recordings we found before the release existed: by ISRC, or pre-filled
-  // into the seed (which only ever names existing recordings).
+  // Our seed only ever names existing recordings.
   const knownBefore = new Set([
     ...(precheck ? precheckHits(precheck.isrcs) : []).map((hit) => hit.recordingMbid),
     ...(prepared?.plan.tracks ?? []).flatMap((track) =>

@@ -7,20 +7,10 @@ import { mbWork, spotifyTrack, trackRecording, trackWorkLink } from './db/schema
 import { lineageOf, rootedSubtreeOf, subtreeOf } from './db/work-tree-sql';
 import { ancestry } from './musicbrainz-work-tree';
 
-/**
- * The reader's screens that start from a work rather than from a holding —
- * every recording of this work, more works by this composer, the collection
- * a work belongs to — and the joins that get from a work to the Spotify
- * tracks we can play of it. "Hold" is `heldWorkLinks`'s, everywhere.
- */
+/** "Hold" is `heldWorkLinks`'s, everywhere. */
 
-/**
- * Every track on the same Spotify albums as these, these included. Liking one
- * movement still puts the whole album's performance of the work on the card,
- * and the rest of it has to be read to be playable. Album-mates with neither a
- * recording nor one of our work links can't land on a card, so they're not
- * read.
- */
+// Liking one movement still puts the album's whole performance on the card. Album-mates with no
+// recording or work link can't land on a card, so they're not read.
 export async function findAlbumMateTrackIds(
   spotifyTrackIds: string[],
   database: DatabaseExecutor = db,
@@ -56,7 +46,6 @@ export async function findAlbumMateTrackIds(
   return Array.from(new Set([...spotifyTrackIds, ...mates.map((mate) => mate.spotifyId)]));
 }
 
-/** The Spotify tracks we hold of this work or of any of its parts. One statement. */
 export async function findProviderTracksForWork(
   workMbid: string,
   database: DatabaseExecutor = db,
@@ -66,10 +55,7 @@ export async function findProviderTracksForWork(
 }
 
 /**
- * Tracks of other works by the same composer that we hold, filed by the
- * top-level work they belong to and read until about `workLimit` works'
- * worth. Every work tree of the composer is walked in one statement rather
- * than one walk per work: a prolific composer has hundreds of top-level
+ * Every work tree of the composer is walked in one statement: a prolific composer has hundreds of
  * works.
  */
 export async function findProviderTracksForComposer(
@@ -98,15 +84,7 @@ export async function findProviderTracksForComposer(
   return Array.from(new Set(trackIds));
 }
 
-/**
- * Which of these works we hold something playable for, counting anything
- * filed beneath them.
- *
- * A collection's parts often have parts of their own — a prelude and fugue
- * is two recordings under one part of the Well-Tempered Clavier — so asking
- * only about the part's own recordings would report a collection as emptier
- * than it is. One statement for the whole set.
- */
+/** Counts anything filed beneath, since a collection's parts often have parts of their own. */
 export async function findHeldWorkMbids(
   workMbids: string[],
   database: DatabaseExecutor = db,
@@ -120,11 +98,7 @@ export async function findHeldWorkMbids(
   return new Set(rows.map((row) => row.root));
 }
 
-/**
- * The composer a work is shown under: its own, else the nearest ancestor's —
- * the rule `resolveDisplayWork` applies to a card, so a work page and its
- * card name the same composer.
- */
+/** The rule `resolveDisplayWork` applies, so a work page and its card name the same composer. */
 export async function readWorkComposerMbid(
   workMbid: string,
   database: DatabaseExecutor = db,
@@ -140,7 +114,6 @@ export async function readWorkComposerMbid(
   );
 }
 
-/** A work's parent and the parent's other parts, straight from the cache. One statement. */
 export async function readWorkCollection(
   workMbid: string,
   database: DatabaseExecutor = db,

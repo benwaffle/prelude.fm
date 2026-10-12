@@ -1,26 +1,6 @@
-/**
- * Our own track-to-work links, for library tracks with no MusicBrainz
- * recording (usually because their release is not on MusicBrainz yet).
- *
- *   pnpm metadata:track-work-links                 tracks never checked
- *   pnpm metadata:track-work-links --refresh       every such track, again
- *   pnpm metadata:track-work-links --unlinked      again, every album with a track left unlinked
- *   pnpm metadata:track-work-links --unlinked --checked-before <iso>
- *                                                  only tracks last checked before then, so a
- *                                                  rerun after a failure resumes
- *   pnpm metadata:track-work-links --album <id>    one Spotify album
- *   pnpm metadata:track-work-links --albums 5      stop after five albums
- *   pnpm metadata:track-work-links --no-store      store no links (works read are still cached)
- *   pnpm metadata:track-work-links --json
- *
- * Spends MusicBrainz requests on the backfill channel, through the gateway.
- * Writes `track_work_link`, the works it reads into the cache, and the
- * classification of linked tracks (unless --no-store). Submits nothing.
- *
- * Caching the works suggested links name, and re-deriving every track's
- * classification, are `metadata:cache-proposed-works` and
- * `metadata:reclassify`.
- */
+// Usage: pnpm metadata:track-work-links [--refresh] [--unlinked [--checked-before <iso>]]
+//   [--album <id>] [--albums N] [--no-store] [--json]
+// Spends backfill-channel requests. Submits nothing.
 import { defineScript, UsageError } from './lib/cli';
 import { runSweepCli, SWEEP_OPTIONS } from './lib/sweep-cli';
 

@@ -2,7 +2,6 @@ import type { AlbumRow } from './album-state';
 
 export type InboxFocus = { kind: 'release'; id: string } | { kind: 'album'; id: string };
 
-/** Which Inbox row an album pipeline state should jump to, if any. */
 export function inboxFocusForAlbum(
   album: Pick<AlbumRow, 'id' | 'state' | 'mbReleaseId'>,
 ): InboxFocus | null {

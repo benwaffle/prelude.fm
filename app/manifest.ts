@@ -1,10 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-/**
- * What a phone or desktop browser needs to offer "Add to Home Screen" /
- * "Install app". The colours are the ivory paper, so the splash screen and
- * title bar match the first screen the app draws.
- */
+/** Colours are the ivory paper so the splash screen matches the first screen. */
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'prelude.fm',

@@ -14,7 +14,6 @@ import type {
   MusicBrainzControl,
 } from '../app/lib/musicbrainz-budget';
 
-/** A store that counts in a Map, so the scheduler can be tested without a database. */
 function fakeStore(controls: Record<string, Partial<MusicBrainzControl>> = {}) {
   const spent = new Map<string, number>();
   let nextSlotAt = 0;
@@ -67,7 +66,6 @@ function prepare(controls: Record<string, Partial<MusicBrainzControl>> = {}) {
   return store;
 }
 
-/** A promise a test can settle by hand, to hold the gateway busy. */
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {
@@ -80,8 +78,7 @@ test('a busy gateway serves interactive before backfill before bot', async () =>
   prepare();
   const order: string[] = [];
 
-  // Occupy the gateway so the three below queue up rather than each being
-  // dispatched the moment it arrives.
+  // Occupy the gateway so the three below queue up.
   const blocker = deferred<void>();
   const held = scheduleMusicBrainzRequest('backfill', async () => {
     order.push('blocker');
@@ -136,13 +133,7 @@ test('requests are spaced by the interval and never overlap', async () => {
 
   assert.equal(maxInFlight, 1, 'the one-request-per-second rule requires serialisation');
   for (let i = 1; i < starts.length; i++) {
-    /*
-     * Generous slack. The assertion is that a wait happened at all, not that
-     * it was precisely 20ms — timers fire late under a loaded event loop, and
-     * a 2ms margin made this fail roughly one run in ten when the whole suite
-     * ran in parallel. A flaky test that guards a real property is worse than
-     * a loose one, because it teaches people to re-run rather than look.
-     */
+    // Generous slack: timers fire late under load, and a 2ms margin flaked about one run in ten.
     assert.ok(
       starts[i] - starts[i - 1] >= 10,
       `gap ${starts[i] - starts[i - 1]}ms was too short to be an interval`,
@@ -191,8 +182,7 @@ test('a channel stops at its daily cap and does not bank the refusal', async () 
     },
   );
 
-  // The refused attempt was counted and then given back, so the recorded usage
-  // is still the two requests that were actually made.
+  // The refused attempt was counted and given back.
   const status = await musicbrainzGatewayStatus();
   const bot = status.channels.find((c) => c.channel === 'bot');
   assert.equal(bot?.used, 2);
@@ -263,8 +253,7 @@ test('a control change takes effect once the cache is dropped', async () => {
 test.after(() => setMusicBrainzBudgetStore(null));
 
 test('spacing comes from the store, so every process shares one queue of slots', async () => {
-  // The gateway must not measure the interval itself: an in-process timer
-  // spaces out one lambda's requests while three others send their own.
+  // The gateway must not measure the interval itself: other lambdas send their own requests.
   const asked: number[] = [];
   let released = 0;
   setMusicBrainzBudgetStore({

@@ -1,17 +1,11 @@
-/**
- * The loop shared by the backfill sweeps (work proposals, track-work links):
- * walk the gaps a group at a time — an album, usually, so what one track
- * finds helps the next — and store each group's outcomes as it finishes, so
- * an interrupted sweep keeps what it did.
- */
+// Groups are usually albums, so what one track finds helps the next; each group is stored as it
+// finishes.
 import { inArray } from 'drizzle-orm';
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { db } from './db';
 
-/** Rows bound per `in (...)` query. */
 const KEY_CHUNK = 400;
 
-/** Items grouped by key, groups in first-seen order. */
 export function groupBy<T>(items: T[], key: (item: T) => string): T[][] {
   const groups = new Map<string, T[]>();
   for (const item of items) {
@@ -22,7 +16,6 @@ export function groupBy<T>(items: T[], key: (item: T) => string): T[][] {
   return [...groups.values()];
 }
 
-/** The gaps whose key has no row in `column` yet: not checked by an earlier sweep. */
 export async function unstored<G>(
   gaps: G[],
   key: (gap: G) => string,
@@ -44,13 +37,9 @@ export async function unstored<G>(
 export type Sweep<G, O extends { requests: number }, K extends string> = {
   groups: G[][];
   process: (group: G[]) => Promise<O[]>;
-  /** Writes one group's outcomes; null runs without storing anything. */
   store: ((outcomes: O[]) => Promise<void>) | null;
-  /** The summary bucket an outcome counts under. */
   tally: (outcome: O) => K;
-  /** Every bucket, in the order the summary lists them. */
   buckets: readonly K[];
-  /** Called after each group is processed and stored. */
   onGroup: (group: G[], outcomes: O[], index: number) => void;
 };
 

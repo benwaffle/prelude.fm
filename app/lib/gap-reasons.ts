@@ -1,9 +1,5 @@
 import type { MusicBrainzGapCode } from './musicbrainz-library';
 
-/**
- * What each gap means, in words a reader can act on. Shared by the library's
- * gap strip and the work cards, so a gap reads the same wherever it shows.
- */
 export const GAP_REASONS: Record<MusicBrainzGapCode, string> = {
   'provider-track-not-fetched': 'Spotify track not read yet',
   'provider-album-not-fetched': 'Spotify album not read yet',

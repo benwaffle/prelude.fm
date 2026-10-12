@@ -1,17 +1,11 @@
 import { formatDuration } from './prelude';
 
-/**
- * Progress through a whole recording rather than one track: the player's
- * bar spans every movement the recording plays, with a seam at each join.
- * Movements the recording lacks have no audio and take up none of it.
- */
+/** Movements the recording lacks have no audio and take up none of the bar. */
 export interface WorkTimeline {
-  /** Each heard movement's length; an unknown length counts as nothing. */
+  /** An unknown length counts as nothing. */
   durations: number[];
   totalMs: number;
-  /** Which heard movement is playing. */
   index: number;
-  /** Where the playing movement starts, in milliseconds into the recording. */
   beforeMs: number;
 }
 
@@ -32,12 +26,10 @@ export function workTimeline(
   };
 }
 
-/** How far into the recording playback is, given the position in the playing movement. */
 export function elapsedMs(timeline: WorkTimeline, positionMs: number): number {
   return Math.min(timeline.totalMs, timeline.beforeMs + positionMs);
 }
 
-/** Where each join between movements falls, as a fraction of the whole. */
 export function seams(timeline: WorkTimeline): number[] {
   const out: number[] = [];
   let at = 0;
@@ -48,7 +40,6 @@ export function seams(timeline: WorkTimeline): number[] {
   return out;
 }
 
-/** The movement a fraction of the way through falls in, and how far into it. */
 export function locate(
   timeline: WorkTimeline,
   ratio: number,
@@ -67,11 +58,7 @@ export function locate(
   return null;
 }
 
-/**
- * The readouts for a point in the recording, at the precision a reader can
- * see change: the bar by the tenth of a percent, the times by the second.
- * Drawing compares these, so an unchanged frame writes nothing to the page.
- */
+/** At the precision a reader can see change, so an unchanged frame writes nothing to the page. */
 export function readout(
   ms: number,
   totalMs: number,

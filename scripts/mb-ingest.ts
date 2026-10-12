@@ -1,28 +1,6 @@
-/**
- * MusicBrainz-first ingest.
- *
- * Fills the `mb_*` cache from the MusicBrainz web service and anchors Spotify
- * tracks to the recordings it describes. Nothing the reader sees changes; this
- * only builds the cache the reader will later be moved onto.
- *
- * Resumable, because the cache is the progress record: an album already
- * cached is skipped, a work already read is not read again, and an
- * interrupted run picks up where it stopped.
- *
- *   pnpm mb:ingest albums [--limit n]  cache releases and anchor their tracks
- *   pnpm mb:ingest anchor [--all]      anchor tracks; --all re-anchors ones already done
- *   pnpm mb:ingest report              what the cache holds and what it reaches
-  pnpm mb:ingest loose [--limit n]   anchor tracks by ISRC alone, no release needed
-  pnpm mb:ingest recordings [--limit n] read recordings an ISRC named but nobody has
-  pnpm mb:ingest works [--limit n]   read works a recording named but nobody has
-  pnpm mb:ingest artists [--limit n] read artist stubs, composers first
-  pnpm mb:ingest refresh [--limit n] re-read cached releases for newly stored fields
-  pnpm mb:ingest composers [--since iso] [--limit n] re-read works that may credit several composers
-  pnpm mb:ingest check               run the cache invariants
- *
- * The same `ingestAlbum` runs in the worker; this is for bulk backfill and for
- * looking at one album by hand.
- */
+// Usage: pnpm mb:ingest <albums|anchor|report|loose|recordings|works|artists|refresh|composers|check>
+//   [--limit n] [--all] [--since <iso>]
+// Resumable: the cache is the progress record.
 import { defineScript, UsageError } from './lib/cli';
 
 defineScript(
@@ -186,8 +164,8 @@ defineScript(
         }
         if (result.violations > 0 && result.severity === 'hard') broken++;
       }
-      // Upstream findings are contributions, not failures, so only our own
-      // broken invariants set a non-zero exit for CI.
+      // Upstream findings are contributions, not failures, so only our own broken invariants fail
+      // CI.
       return broken > 0 ? 1 : 0;
     }
 
@@ -267,8 +245,6 @@ defineScript(
     }
 
     if (options.step === 'works') {
-      // Works named by a recording but never read, so their parents and
-      // catalogue references are still unknown.
       const pending = await db.all<{ mbid: string }>(sql`
       select mbid from mb_work where detail = 'stub' limit ${Number.isFinite(options.limit) ? options.limit : 10_000}
     `);

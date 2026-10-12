@@ -3,10 +3,6 @@
 import { useState, type ReactNode } from 'react';
 import { initialsOf, type LibraryWork } from '@/lib/prelude';
 
-/**
- * Album art, or `children` when there is none or the image fails to load.
- * Spotify serves already-sized art, so this is a plain <img>.
- */
 export function CoverArt({
   src,
   alt,
@@ -16,7 +12,6 @@ export function CoverArt({
   src: string | null;
   alt: string;
   className?: string;
-  /** The stand-in, drawn where the art would be. */
   children: ReactNode;
 }) {
   // Keyed by the source, so a new cover gets its own chance to load.
@@ -28,11 +23,6 @@ export function CoverArt({
   );
 }
 
-/**
- * The typographic plate a work shows in place of missing art: the
- * composer's initials (none when the composer is unknown) over the
- * catalogue number, era or album — whichever we actually have.
- */
 export function WorkPlate({
   work,
   size,

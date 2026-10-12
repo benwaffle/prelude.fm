@@ -5,7 +5,6 @@ import { usePlayerActions } from '@/lib/spotify-player-context';
 import { playable, queueEntryFor, type LibraryWork } from '@/lib/prelude';
 import { Icon } from '../Icon';
 
-/** Queue a whole recording; says so for a moment once it's in. */
 export function AddToQueueButton({
   work,
   className = '',

@@ -56,19 +56,15 @@ import type { InboxClass } from '../lib/admin-url';
 import { tracksBlockedOnRelease } from '../lib/release-unblocks';
 import { checkAuth } from './auth';
 
-/** The submission in hand for a gap: its outcome, and the edit number or that it is missing. */
 export type LedgerView = {
   id: number;
   outcome: string;
   editId: string | null;
-  /** "pending · edit 123", or "rejected before (edit 123)" for history. */
   label: string;
 };
 
-/** An error report also says what the person did about the contradiction. */
 export type ErrorLedgerView = LedgerView & { disposition: string | null };
 
-/** The latest rejected or withdrawn attempt, kept so a returned gap shows its history. */
 export type SubmissionHistoryView = {
   id: number;
   outcome: string;
@@ -77,13 +73,11 @@ export type SubmissionHistoryView = {
   explicitOnly: boolean;
 };
 
-/** A gap row's ledger: the submission in hand, and the latest earlier attempt. */
 type Ledgered<L extends LedgerView = LedgerView> = {
   ledger: L | null;
   previous: SubmissionHistoryView | null;
 };
 
-/** One work confirmation, in hand or before, with the work it named. */
 export type WorkLedgerView = LedgerView & { workMbid: string | null };
 
 export type WorkLedgerHistory = {
@@ -98,14 +92,11 @@ export type ContributionView = {
     albumId: string;
     albumTitle: string;
     missing: number;
-    /** Tracks with no submission in hand, including ones rejected or withdrawn before. */
     eligible: number;
-    /** What the bot, MagicISRC and hand-confirm send: eligible minus rejected before. */
     batch: number;
-    /** Eligible tracks voters rejected before; each needs its own click. */
     rejected: number;
     link: string;
-    /** The release's barcode, and ours — identical by construction, shown anyway. */
+    /** Identical to ours by construction, shown anyway. */
     barcode: string | null;
     upc: string | null;
     tracks: ({
@@ -123,28 +114,19 @@ export type ContributionView = {
   workGaps: (WorkRelationshipGap & {
     recordingEdit: string;
     workCreate: string;
-    /** The new work confirmed for this recording, and the latest one rejected or withdrawn. */
     createdWork: WorkLedgerHistory;
-    /** Per candidate work MBID: its relationship confirmation and the latest earlier one. */
     links: Record<string, WorkLedgerHistory>;
-    /** Confirmations in hand (pending or applied), of either kind. */
     recorded: number;
-    /** Whether any of those lacks its edit ID. */
     recordedWithoutEditId: boolean;
-    /** Confirmations rejected or withdrawn before. */
     earlier: number;
   })[];
   contested: (ContestedIsrc & {
     isrcUrl: string;
-    /** Which recording the library's own evidence says the ISRC belongs to. */
     judgement: ContestedIsrcJudgement | null;
   } & Ledgered<ErrorLedgerView>)[];
   missing: (MissingRelease & {
-    /** Library tracks adding this release would unblock (the Overview's count); null if not counted. */
     libraryTracks: number | null;
-    /** The cached pre-check; null until somebody runs it. */
     precheck: CachedPrecheck | null;
-    /** Our prepared release-editor seed; null until somebody prepares it. */
     seed: PreparedSeed | null;
     harmony: string;
     barcodeHits: MbPickHit[];
@@ -153,7 +135,7 @@ export type ContributionView = {
     edit: string;
   } & Ledgered<
       LedgerView & {
-        /** The bot's note, which MusicBrainz did not attach to the edit. */
+        /** The bot's note, which MusicBrainz did not attach to the edit (MBS-14476). */
         unsentNote: string | null;
       }
     >)[];
@@ -192,7 +174,6 @@ function historyView(row: LedgerRow | null): SubmissionHistoryView | null {
   };
 }
 
-/** A gap's ledger fields, with any extra the section shows about the row in hand. */
 function ledgered<Extra extends object>(
   history: LedgerHistory | undefined,
   extra: (row: LedgerRow) => Extra,
@@ -214,10 +195,6 @@ function workView(row: LedgerRow | null): WorkLedgerView | null {
   return row ? { ...ledgerView(row), workMbid: row.value } : null;
 }
 
-/**
- * Both kinds of work confirmation for some recordings: a relationship is
- * keyed by its recording, a created work by the recording its evidence names.
- */
 async function workLedgerByRecording(
   gaps: WorkRelationshipGap[],
 ): Promise<Map<string, LedgerRow[]>> {
@@ -268,34 +245,24 @@ const isrcPairKey = (recordingMbid: string | null, isrc: string | null) =>
   recordingMbid && isrc ? `${recordingMbid}:${isrc}` : null;
 
 function recentSubmissions() {
-  return (
-    db
-      .select({
-        id: mbSubmission.id,
-        kind: mbSubmission.kind,
-        targetMbid: mbSubmission.targetMbid,
-        value: mbSubmission.value,
-        submittedBy: mbSubmission.submittedBy,
-        submittedAt: mbSubmission.submittedAt,
-        outcome: mbSubmission.outcome,
-        note: mbSubmission.note,
-      })
-      .from(mbSubmission)
-      // Applied edits are done; the count says how many without listing them.
-      .where(ne(mbSubmission.outcome, 'applied'))
-      .orderBy(desc(mbSubmission.submittedAt))
-      .limit(200)
-  );
+  return db
+    .select({
+      id: mbSubmission.id,
+      kind: mbSubmission.kind,
+      targetMbid: mbSubmission.targetMbid,
+      value: mbSubmission.value,
+      submittedBy: mbSubmission.submittedBy,
+      submittedAt: mbSubmission.submittedAt,
+      outcome: mbSubmission.outcome,
+      note: mbSubmission.note,
+    })
+    .from(mbSubmission)
+    .where(ne(mbSubmission.outcome, 'applied'))
+    .orderBy(desc(mbSubmission.submittedAt))
+    .limit(200);
 }
 
-/**
- * The Inbox rows. With `only`, the other sections come back empty so a page
- * showing one section does not build all of them; the counts are always whole.
- *
- * Every gap list is read once, whole: the counts are its lengths and the
- * section's page is its first rows. Then everything the page's rows need —
- * ledger, judgements, pre-checks, seeds — is read at once.
- */
+/** With `only`, other sections come back empty but the counts are always whole. */
 export async function getContributions(
   limits?: Partial<ContributionListLimits>,
   only?: InboxClass,

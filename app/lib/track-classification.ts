@@ -1,15 +1,7 @@
-/**
- * Shared contract for `track_classification` and match_queue pipeline completion.
- *
- * The integration owner defines the table; reader/pipeline code reads and
- * writes through these types and the precedence helper below.
- */
-
 export type TrackClassificationState = 'unreviewed' | 'classical' | 'not_classical' | 'uncertain';
 
 export type TrackClassificationProvenance = 'musicbrainz' | 'manual' | 'llm_proposal';
 
-/** Row shape of `track_classification`. */
 export type TrackClassificationRow = {
   spotifyTrackId: string;
   state: TrackClassificationState;
@@ -19,7 +11,6 @@ export type TrackClassificationRow = {
   decidedAt: Date;
 };
 
-/** MusicBrainz album-pass outcome stored on `match_queue.pipeline_outcome`. */
 export type PipelineOutcome = 'ready' | 'unanchored' | 'unclassified' | 'not_classical';
 
 export const PROVENANCE_RANK: Record<TrackClassificationProvenance, number> = {
@@ -36,7 +27,6 @@ export function classificationMayBeReplaced(
   return PROVENANCE_RANK[incoming.provenance] >= PROVENANCE_RANK[existing.provenance];
 }
 
-/** Count durable classification rows for a set of track ids (batch-safe). */
 export async function countTrackClassificationStates(
   trackIds: string[],
 ): Promise<
@@ -69,7 +59,7 @@ export async function countTrackClassificationStates(
   };
 }
 
-/** Anonymous import-run payload — no user id, no track membership. */
+/** No user id, no track membership. */
 export type AnonymousImportRunInput = {
   startedAt: Date;
   completedAt: Date;

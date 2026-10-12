@@ -1,16 +1,5 @@
-/**
- * Proposes works for library recordings MusicBrainz links to none, and
- * stores the proposals so that opening the Inbox never spends requests.
- *
- * Every request goes through the gateway on the `backfill` channel: nobody is
- * waiting on a sweep, and anything a person is waiting on should go first.
- * An album costs one request per family work (a parent of works its other
- * tracks perform, that parent's parent, and that collection's other members,
- * capped at `MAX_FAMILY_FETCHES`), plus one work search per track the family
- * does not answer with high confidence.
- *
- * Reads MusicBrainz and writes only `mb_work_proposal`. Submits nothing.
- */
+// Uses the gateway's `backfill` channel so anything a person is waiting on goes first. Writes only
+// `mb_work_proposal`; submits nothing.
 import { sql } from 'drizzle-orm';
 import { db } from './db';
 import { filmScoreExclusions } from './film-score-exclusions';
@@ -36,7 +25,7 @@ const MAX_SEARCH_ARTISTS = 4;
 export type ProposalGap = {
   recordingMbid: string;
   title: string;
-  /** The Spotify album the recording is grouped under (the first, when it is on several). */
+  /** The first album, when the recording is on several. */
   albumId: string;
   albumTitle: string;
   releaseMbid: string | null;
@@ -45,7 +34,6 @@ export type ProposalGap = {
   artistNames: string[];
 };
 
-/** Library recordings with no work relationship, one row per recording. */
 export async function loadProposalGaps(): Promise<ProposalGap[]> {
   // Film scores are not part of the catalogue (see `film-scores`).
   const film = await filmScoreExclusions();
@@ -116,7 +104,6 @@ type SiblingRow = {
   composerName: string | null;
 };
 
-/** Tracks on the release that already perform a cached work, with that work's place in its family. */
 async function loadSiblings(releaseMbid: string): Promise<SiblingRow[]> {
   const rows = await db.all<{
     medium: number;
@@ -145,14 +132,8 @@ async function loadSiblings(releaseMbid: string): Promise<SiblingRow[]> {
   }));
 }
 
-/**
- * Parts of the works the album's linked tracks belong to, and of their
- * collection's other members.
- *
- * The parent is read rather than trusted from the cache because the cache
- * holds only the parts somebody has recorded; the movement this track plays
- * is exactly the one that is missing.
- */
+// The parent is read rather than trusted from the cache: the cache only holds parts somebody has
+// recorded.
 async function familyCandidates(
   mb: MbSession,
   siblings: SiblingRow[],
@@ -205,16 +186,11 @@ async function familyCandidates(
 
 type SearchWork = MbWork & { aliases?: { name: string }[] };
 
-/**
- * The last word of each name, so the search matches however MusicBrainz
- * credits the artist: a quoted "Frédéric Chopin" finds nothing where the work
- * credits "Fryderyk Chopin". The surname is all the confirmation checks need.
- */
+// Surnames only: a quoted "Frédéric Chopin" finds nothing where the work credits "Fryderyk Chopin".
 function surnames(names: string[]): string[] {
   return [...new Set(names.flatMap((name) => titleWords(name).slice(-1)))];
 }
 
-/** MusicBrainz works whose title words and composer fit the track. */
 export async function searchCandidates(
   mb: MbSession,
   title: string,
@@ -249,11 +225,9 @@ export type ProposalOutcome = {
   releaseMbid: string | null;
   proposal: WorkProposal | null;
   requests: number;
-  /** The album's family was larger than one run reads; some parts were not considered. */
   familyCapped: boolean;
 };
 
-/** Proposals for every gap on one release (or for one release-less gap). */
 export async function proposeForGroup(gaps: ProposalGap[]): Promise<ProposalOutcome[]> {
   const releaseMbid = gaps[0]?.releaseMbid ?? null;
   const mb = createMbSession('backfill');
@@ -314,15 +288,10 @@ export async function proposeForGroup(gaps: ProposalGap[]): Promise<ProposalOutc
   return outcomes;
 }
 
-/** The key gaps are grouped by: the album's release; a release-less gap stands alone. */
 export const proposalGroupKey = (gap: ProposalGap) =>
   gap.releaseMbid ?? `recording:${gap.recordingMbid}`;
 
-/**
- * Store outcomes, in one statement. A decision survives a re-run that
- * proposes the same work; a different work is a new question, so it returns
- * to `proposed`.
- */
+// A decision survives a re-run that proposes the same work; a different work returns to `proposed`.
 export async function storeProposals(outcomes: ProposalOutcome[]): Promise<void> {
   if (outcomes.length === 0) return;
   await db

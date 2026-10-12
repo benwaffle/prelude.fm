@@ -1,30 +1,12 @@
-/**
- * Album coverage vocabulary.
- *
- * Kept out of the server-action file because a `"use server"` module may only
- * export async functions — a constant there fails at runtime, not at build.
- */
+/** Not in the server-action file: a "use server" module may only export async functions. */
 
-/**
- * Why an album is, or is not, anchored to MusicBrainz.
- *
- * Ordered by what each costs to fix, because that is the only thing that
- * decides what to do next. An album MusicBrainz already holds needs ISRCs
- * submitting, which is minutes; one it has never heard of needs the release
- * entering, which is an evening.
- */
+/** Ordered by what each costs to fix. */
 export type AlbumState =
-  /** Every track resolves to a MusicBrainz recording. MusicBrainz can speak for it. */
   | 'anchored'
-  /** Some tracks resolve; the rest have no ISRC registered. */
   | 'partial'
-  /** MusicBrainz has the release but none of our ISRCs reach it. */
   | 'needs_isrcs'
-  /** No release carries this barcode. Someone has to add it. */
   | 'absent'
-  /** Several releases carry the barcode, so none identifies this album. */
   | 'ambiguous'
-  /** Nobody has asked MusicBrainz about this barcode yet. */
   | 'unchecked';
 
 export const STATE_LABEL: Record<AlbumState, string> = {
@@ -36,7 +18,6 @@ export const STATE_LABEL: Record<AlbumState, string> = {
   unchecked: 'Not checked',
 };
 
-/** What each album state costs to fix, said plainly. */
 export const WHAT_IT_NEEDS: Record<AlbumState, string> = {
   anchored: 'MusicBrainz can describe every track. Nothing to do.',
   partial:
@@ -59,9 +40,7 @@ export type AlbumRow = {
   classified: number;
   classical: number;
   tracksReachingWork: number;
-  /** Distinct work MBIDs stated by MusicBrainz recording-work relationships. */
   works: number;
-  /** Those related works whose MusicBrainz cache row is present. */
   worksCached: number;
   upc: string | null;
   mbReleaseId: string | null;
@@ -70,7 +49,6 @@ export type AlbumRow = {
 };
 
 export type AlbumTrackWork = {
-  /** The work MBID from MusicBrainz's recording-work relationship. */
   mbid: string;
   title: string | null;
   detail: 'stub' | 'full' | null;
@@ -92,9 +70,6 @@ export type AlbumTrackRow = {
     provenance: 'musicbrainz' | 'manual' | 'llm_proposal';
     reason: string | null;
   } | null;
-  /**
-   * Cached direct MusicBrainz recording-work relationships. An empty list is
-   * authoritative only when the recording itself has full detail.
-   */
+  /** An empty list is authoritative only when the recording itself has full detail. */
   works: AlbumTrackWork[];
 };

@@ -1,16 +1,5 @@
-/**
- * Building an ISRC submission for MusicBrainz.
- *
- * The payload and the eligibility rule live apart from anything that sends
- * them, so both can be tested without credentials and without the risk of a
- * test posting to somebody else's database.
- *
- * MusicBrainz takes ISRCs as an XML document listing recordings and the ISRCs
- * to attach to each. One request can carry many, which matters for the daily
- * cap: the bot code of conduct limits a bot to 1,000 *edits* a day, and each
- * ISRC is an edit even when fifty of them travel in one request. Counting
- * requests would let one POST spend fifty times its share.
- */
+// Pure, so payloads can be tested without credentials. The daily cap counts edits, and each ISRC is
+// one edit even when fifty share a request.
 
 import type { IsrcGap } from './musicbrainz-edit-links';
 import { BOT_SIGNATURE, describeDelta, escapeXml, metadataDocument } from './musicbrainz-xml';
@@ -27,13 +16,7 @@ export function isWellFormedIsrc(isrc: string): boolean {
   return ISRC_PATTERN.test(isrc.trim().toUpperCase());
 }
 
-/**
- * The XML document MusicBrainz expects.
- *
- * Grouped by recording, because a recording can legitimately carry several
- * ISRCs — the same performance issued in two territories — and the format
- * nests them under one `<recording>` element.
- */
+/** Grouped by recording: one performance can carry several ISRCs (two territories). */
 export function buildIsrcSubmission(items: IsrcSubmissionItem[], editNote = ''): string {
   const byRecording = new Map<string, Set<string>>();
   for (const item of items) {
@@ -58,7 +41,6 @@ export function buildIsrcSubmission(items: IsrcSubmissionItem[], editNote = ''):
   return metadataDocument('recording-list', recordings, editNote);
 }
 
-/** How many edits a submission costs, which is what the daily cap counts. */
 export function editCount(items: IsrcSubmissionItem[]): number {
   const pairs = new Set(
     items
@@ -68,13 +50,7 @@ export function editCount(items: IsrcSubmissionItem[]): number {
   return pairs.size;
 }
 
-/**
- * The note attached to every edit.
- *
- * The code of conduct asks that a bot be identifiable, say where its data
- * comes from, and give a way to reach whoever runs it — and that somebody
- * answers when an editor replies.
- */
+/** The code of conduct asks a bot to be identifiable, cite its source and be reachable. */
 export function editNoteFor(gaps: IsrcGap[]): string {
   const [first] = gaps;
   if (!first) return '';
@@ -82,12 +58,8 @@ export function editNoteFor(gaps: IsrcGap[]): string {
   const worst = Math.max(...gaps.map((gap) => gap.durationDeltaMs));
   const source = `https://open.spotify.com/album/${first.albumId}`;
 
-  /*
-   * The two barcodes are the same number written two ways — Spotify pads a
-   * UPC-12 to thirteen digits — so the note says both rather than picking
-   * one and calling it the other. An editor comparing the Spotify page
-   * against this release should find the difference already explained.
-   */
+  // Spotify pads a UPC-12 to thirteen digits, so the note gives both rather than calling one the
+  // other.
   const ours = first.upc ?? 'unknown';
   const theirs = first.barcode ?? 'none';
   const barcodes =
@@ -95,17 +67,7 @@ export function editNoteFor(gaps: IsrcGap[]): string {
       ? `barcode ${ours} (this release: ${theirs} — the same barcode without the leading zero)`
       : `barcode ${ours}`;
 
-  /*
-   * Written so another editor can check the claim rather than take it. The
-   * barcode is what ties the two releases together, the Spotify link is the
-   * source the ISRCs came from, the release link is the MusicBrainz side of
-   * that pairing, and the worst duration difference bounds the
-   * whole batch — an editor who disagrees can open all three and see.
-   *
-   * It deliberately does not restate which ISRC went where: the edit itself
-   * shows that, and a note repeating it is noise in somebody else's review
-   * queue.
-   */
+  // Enough for another editor to check the claim; which ISRC went where is in the edit itself.
   return [
     `${gaps.length} ISRC(s) from the Spotify release with ${barcodes}.`,
     `Source: ${source}`,

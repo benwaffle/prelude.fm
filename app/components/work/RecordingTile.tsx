@@ -5,12 +5,8 @@ import { initialsOf, workHref } from '@/lib/prelude';
 import { Icon } from '../Icon';
 import { CoverArt } from './CoverArt';
 
-/**
- * One recording of a work, linking to its page: a square tile in a grid
- * (the recording page's "other recordings"), or a row in a list (the
- * catalogue). A missing performer is said, not left blank; a recording
- * whose tracks aren't mapped says so instead of a duration.
- */
+// A missing performer is said, not left blank; a recording without mapped tracks says so instead of
+// a duration.
 export function RecordingTile({
   workId,
   recording: r,
@@ -21,9 +17,7 @@ export function RecordingTile({
   workId: string;
   recording: RecordingSummary;
   layout: 'grid' | 'row';
-  /** A label over the performer ("Your reference"). */
   badge?: ReactNode;
-  /** How many of its movements the listener has saved. */
   liked?: number;
 }) {
   const href = workHref({ workId, recordingId: r.recordingId });
@@ -110,7 +104,6 @@ export function RecordingTile({
   );
 }
 
-/** A small accent label above a recording's performer. */
 export function Badge({ children }: { children: ReactNode }) {
   return (
     <span className="mb-[3px] block font-meta text-[8px] tracking-[0.2em] text-accent uppercase">

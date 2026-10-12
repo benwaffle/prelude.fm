@@ -4,15 +4,8 @@ import { prepareMatchQueue, runMatchQueueWorker } from '@/lib/match-queue-proces
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-/**
- * How many times the worker may hand off to itself from one trigger.
- *
- * The chain is what makes processing continuous: a daily cron cannot serve a
- * signup, and each link does a few albums or slices of the MusicBrainz sweep
- * before passing on. The cap exists so that a bug which always reports
- * progress cannot invoke this route forever — the daily cron and the next
- * submission both start a fresh chain, so a cap costs a delay, not the work.
- */
+// Caps self-hand-offs so a bug that always reports progress can't loop forever; the daily cron and
+// next submission restart the chain.
 const MAX_CHAIN_LENGTH = 200;
 const CHAIN_HEADER = 'x-prelude-chain';
 
@@ -26,35 +19,24 @@ function chainDepth(request: Request) {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
 }
 
-/**
- * How long one invocation keeps starting passes before handing off.
- *
- * Each pass is one album or one slice of the MusicBrainz sweep, so running
- * several here does not depend on the hand-off arriving. Well under
- * `maxDuration`, because a pass started just before the line still has to
- * finish inside it.
- */
+// Well under `maxDuration`, because a pass started just before the line still has to finish inside
+// it.
 const PASS_BUDGET_MS = 120_000;
 
 type WorkerResult = Awaited<ReturnType<typeof runMatchQueueWorker>>;
 
-/** Whether this pass gives a reason to stop rather than run another. */
 function shouldStop(result: WorkerResult): boolean {
-  // A retryable failure means the far end is unhappy; chaining straight into
-  // another attempt would make that worse. The daily run and the next
-  // submission both restart the chain.
+  // A retryable failure means the far end is unhappy; chaining straight into another attempt would
+  // make that worse.
   if (result.albums.some((album) => album.errors.some((error) => error.retryable))) {
     return true;
   }
-  // The budget being spent or the gateway being paused is a reason to stop
-  // the chain, not a reason to retry it.
+  // Spent budget or a paused gateway stops the chain rather than retrying it.
   if (result.musicbrainz.stopped) return true;
-  // A broken cache invariant stops the chain rather than writing more on top
-  // of it. Admin shows what broke.
+  // A broken cache invariant stops the chain rather than writing more on top of it.
   if (result.brokenInvariants.length > 0) return true;
 
-  // Asking again for works MusicBrainz no longer returns is not progress, or
-  // a cache holding only those would be asked for them link after link.
+  // Re-asking for works MusicBrainz no longer returns is not progress.
   const progressed =
     result.albums.length > 0 ||
     result.musicbrainz.worksRead > 0 ||
@@ -63,15 +45,8 @@ function shouldStop(result: WorkerResult): boolean {
   return !progressed;
 }
 
-/**
- * Where the next link is sent.
- *
- * In production, the production domain rather than the URL this request
- * arrived on: a cron is delivered to the deployment's own URL, which
- * deployment protection can refuse, and a refused hand-off ends the chain
- * after one album. Elsewhere, back to wherever this one ran, so a preview
- * never hands work to production.
- */
+// In production, the production domain: deployment protection can refuse the deployment URL a cron
+// arrives on. Elsewhere, back to this host so a preview never hands work to production.
 function nextLinkUrl(requestUrl: string) {
   const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
   if (process.env.VERCEL_ENV === 'production' && production) {
@@ -116,10 +91,8 @@ export async function POST(request: Request) {
   if (!isAuthorized(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  // The worker chains itself through this handler, so a claim stranded by an
-  // earlier link in the chain is recovered by the next one rather than waiting
-  // for tomorrow's scheduled run. Only claims older than the stale window are
-  // touched, so this cannot take work away from a worker that is still going.
+  // Recovers claims stranded by an earlier link; only claims past the stale window, so a live
+  // worker keeps its work.
   const prepared = await prepareMatchQueue({ maxAttempts: 5, staleMinutes: 30 });
   scheduleWorker(request);
   return Response.json({ scheduled: true, ...prepared }, { status: 202 });

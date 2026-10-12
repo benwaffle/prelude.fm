@@ -17,11 +17,8 @@ function albumFocus(context: GapRouteContext): InboxFocus | undefined {
   return context.spotifyAlbumId ? { kind: 'album', id: context.spotifyAlbumId } : undefined;
 }
 
-/**
- * A gap gets a route only when the destination has a real matching action.
- * Explicit nulls are intentional: they keep cache/classification gaps from
- * masquerading as MusicBrainz contribution forms.
- */
+// Explicit nulls keep cache/classification gaps from masquerading as MusicBrainz contribution
+// forms.
 export function gapRoute(
   code: MusicBrainzGapCode,
   context: GapRouteContext,
@@ -69,8 +66,8 @@ export function gapRoute(
     case 'work-hierarchy-parent-missing':
     case 'work-hierarchy-cycle':
     case 'work-level-ambiguous':
-    // Our own link stands in for a MusicBrainz one; the gap that says what
-    // MusicBrainz lacks (a release, a work relation) carries the route.
+    // Our own link stands in for a MusicBrainz one; the gap naming what MusicBrainz lacks carries
+    // the route.
     case 'work-linked-by-us':
     case 'recording-credits-missing':
     case 'recording-credit-artist-missing':

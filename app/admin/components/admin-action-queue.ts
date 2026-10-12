@@ -1,12 +1,5 @@
-/**
- * The admin's actions, run one at a time in click order.
- *
- * Next.js dispatches a client's server actions one at a time anyway (its
- * router action queue), and the MusicBrainz gateway sends bot edits at
- * 1/sec. Queueing here as well lets a row say honestly whether its action is
- * still waiting ("queued") or is the one running, instead of every row
- * claiming to submit at once.
- */
+// Next.js already serialises server actions; queueing here too lets a row say honestly whether it
+// is queued or running.
 
 type Task = { start: () => void; work: () => Promise<void>; done: () => void };
 type Owed = { work: () => Promise<void>; onError: (error: unknown) => void };
@@ -15,7 +8,6 @@ const tasks: Task[] = [];
 const owed = new Map<string, Owed>();
 let draining = false;
 
-/** Queue `work`; `start` fires when its turn comes. Resolves when it has run. */
 export function enqueueAdminAction(start: () => void, work: () => Promise<void>): Promise<void> {
   return new Promise((done) => {
     tasks.push({ start, work, done });
@@ -53,12 +45,8 @@ async function drain() {
   }
 }
 
-/**
- * Follow-up work, such as reloading the Inbox, that only the last action of
- * a burst needs. With actions still queued it is owed, once per `key`, and
- * runs when the queue drains, reporting any failure to `onError`. Otherwise
- * it runs now and its failure is the caller's.
- */
+// With actions still queued, follow-up work runs once per `key` when the queue drains; otherwise it
+// runs now.
 export async function afterAdminBurst(
   key: string,
   work: () => Promise<void>,

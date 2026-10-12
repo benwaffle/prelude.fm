@@ -1,9 +1,4 @@
-/**
- * A load that failed, shown where its data would have been — never as an
- * empty list, which would read as "there is nothing here".
- *
- * The listening screens' look by default; the admin passes its notice style.
- */
+// Shown where the data would have been, never as an empty list, which would read as "nothing here".
 export function LoadFailure({
   what,
   error,

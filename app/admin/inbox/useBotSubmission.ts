@@ -9,11 +9,6 @@ import {
   type BotSubmissionMessages,
 } from './bot-submission';
 
-/**
- * prelude_fm_bot submissions from one Inbox section, each run as its
- * release's row action. Each outcome stays on its release's row until that
- * row is submitted again or the outcome is dismissed.
- */
 export function useBotSubmission({
   runRow,
   onBotChange,

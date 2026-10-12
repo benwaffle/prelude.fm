@@ -1,11 +1,5 @@
-/**
- * The database-backed MusicBrainz budget.
- *
- * Kept apart from the scheduler so that `musicbrainz-gateway.ts` — which every
- * MusicBrainz read imports — does not drag a database client behind it, and so
- * the scheduler's own tests need no database at all. The gateway loads this
- * module lazily and falls back to counting in memory if it cannot.
- */
+// Kept apart so the gateway, imported by every MusicBrainz read, does not pull in a database
+// client.
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { mbGatewayControl, mbRateSlot, mbRequestBudget } from '@/lib/db/schema';
@@ -21,9 +15,8 @@ const DB_NOW = sql`cast(unixepoch('subsecond') * 1000 as integer)`;
 export function createMusicBrainzBudgetStore(): MusicBrainzBudgetStore {
   return {
     async claimSlot(intervalMs: number) {
-      // One statement, so two processes asking at once take consecutive slots
-      // rather than the same one. `max` with the current time keeps an idle
-      // gateway from banking credit for a burst.
+      // One statement, so concurrent processes take consecutive slots. `max` with now keeps an idle
+      // gateway from banking a burst.
       const rows = await db.all<{ slot: number; now: number }>(sql`
         insert into ${mbRateSlot} (id, next_slot_at)
         values (1, ${DB_NOW} + ${intervalMs})

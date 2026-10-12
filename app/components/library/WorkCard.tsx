@@ -9,7 +9,6 @@ import { CoverArt, WorkPlate } from '../work/CoverArt';
 import { MovementList } from '../work/MovementList';
 import { GapNotes, Missing, WorkTitle } from '../work/WorkText';
 
-/** Movements beyond this fold behind a "+ n more" link into the detail view. */
 const CAP = 8;
 
 interface WorkCardProps {
@@ -22,13 +21,8 @@ interface WorkCardProps {
   onToggleLike: (trackId: string) => void;
 }
 
-/**
- * One library entry: cover, work, and the movement column where liking
- * actually happens. Single click selects a movement, double click plays it.
- *
- * Memoised: the library holds over a thousand of these, and the player
- * changes state several times a track.
- */
+// Memoised: the library holds over a thousand cards and the player changes state several times a
+// track.
 export const WorkCard = memo(function WorkCard({
   work,
   playingTrackId,
@@ -47,14 +41,10 @@ export const WorkCard = memo(function WorkCard({
     : null;
 
   return (
-    /* Off screen, a card skips layout and paint until it scrolls near: the
-       library runs to over a thousand cards, and without this every change
-       anywhere on the page (the playing time, a scroll) redoes all of them.
-       The wrapper reaches into the page margin so the colour bleed isn't
-       clipped. */
+    // content-visibility skips layout and paint off screen across 1000+ cards; the negative margin
+    // keeps the colour bleed unclipped.
     <div className="-mx-6 px-6 [contain-intrinsic-size:auto_220px] [content-visibility:auto] max-[900px]:-mx-4 max-[900px]:px-4">
       <div className="group relative grid grid-cols-[132px_minmax(0,1fr)_300px] gap-[26px] border-b border-rule py-5 max-[900px]:grid-cols-[76px_minmax(0,1fr)] max-[900px]:gap-[14px] max-[900px]:pt-4 max-[900px]:pb-[14px]">
-        {/* The album's colour, bled in from the left margin. */}
         <div
           className="pointer-events-none absolute inset-y-0 -left-6 w-[300px] opacity-[0.07] transition-opacity group-hover:opacity-[0.13] max-[900px]:-left-4 max-[900px]:w-[180px]"
           style={{ background: `linear-gradient(90deg, ${work.tint}, transparent)` }}
@@ -157,8 +147,6 @@ export const WorkCard = memo(function WorkCard({
           </div>
         </div>
 
-        {/* The left rule is the only line this column needs: the rows inside
-          are set by rhythm, not ruled off one from the next. */}
         <div className="flex min-w-0 flex-col border-l border-rule pl-[18px] max-[900px]:col-span-full max-[900px]:mt-1 max-[900px]:border-t max-[900px]:border-l-0 max-[900px]:pt-1 max-[900px]:pl-0">
           <MovementList
             variant="card"

@@ -10,25 +10,16 @@ import {
 } from './musicbrainz-work-queries';
 import { stripCollectionPrefix } from './prelude';
 
-/**
- * One recording of one work in full, and the two neighbourhoods under it:
- * the other recordings of the same work, and more by the composer.
- *
- * Both neighbourhoods start from MusicBrainz — every recording MusicBrainz
- * relates to this work or its parts, and every other work it attributes to
- * this composer — and are then narrowed to what the provider can actually
- * play. A recording MusicBrainz knows and Spotify does not is not a
- * recording this reader can offer.
- */
+// Narrowed to what the provider can play: a recording Spotify lacks is not one this reader can
+// offer.
 export async function getMusicBrainzWorkDetail(
   workMbid: string,
   recordingMbid: string | null,
   likedTrackIds: string[] = [],
 ): Promise<WorkDetail | null> {
   const liked = new Set(likedTrackIds);
-  // The card for this work names its composer by the same rule
-  // `readWorkComposerMbid` reads, so "more by the composer" can be read
-  // alongside the work's own recordings instead of after them.
+  // The card names its composer by the same rule `readWorkComposerMbid` reads, so both can be read
+  // in parallel.
   const [forThisWork, moreByComposer] = await Promise.all([
     findProviderTracksForWork(workMbid).then(async (trackIds) =>
       trackIds.length === 0
@@ -43,8 +34,8 @@ export async function getMusicBrainzWorkDetail(
   ]);
   if (forThisWork.length === 0) return null;
 
-  // The recording asked for, or the fullest holding of the work — a choice
-  // between things we actually have, not a guess at which is best.
+  // The recording asked for, or the fullest holding of the work: a choice between things we
+  // actually have.
   const chosen =
     forThisWork.find((card) => card.recordingId === recordingMbid) ??
     [...forThisWork].sort(
@@ -105,14 +96,8 @@ async function worksByComposer(
   }));
 }
 
-/**
- * The collection a work belongs to, as MusicBrainz files it, and which of
- * its parts we can play.
- *
- * Parts MusicBrainz lists that we hold nothing for come back with a null
- * identity. A collection showing twenty-three of its forty-eight parts
- * should say so rather than looking like a complete list of twenty-three.
- */
+// Parts we hold nothing for come back with a null identity, so a partial collection reads as
+// partial.
 export async function getMusicBrainzWorkParent(workMbid: string): Promise<WorkParent | null> {
   const collection = await readWorkCollection(workMbid);
   if (!collection) return null;

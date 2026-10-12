@@ -156,10 +156,7 @@ export async function getSpotifyAlbumTracks(albumId: string) {
   return { album, tracks };
 }
 
-/**
- * The album as Harmony reads it: title, barcode, album artists in credit
- * order, and every track with its artists in credit order and its ISRC.
- */
+/** Artists in credit order, as Harmony reads them. */
 export async function getSpotifyAlbumSeed(albumId: string) {
   const album = await spotifyFetch<{
     id: string;

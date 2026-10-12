@@ -1,13 +1,5 @@
-/**
- * What the reader must be handed before it can project anything.
- *
- * This is the boundary between the query adapter and the projection: every
- * classical identity and descriptive field below comes from a cached `mb_*`
- * fact, and the provider fields describe playback occurrences only. There is
- * deliberately no place for a legacy work row, a parser title, or a parser
- * form — an adapter that cannot fill a field leaves it null and the
- * projection reports the gap.
- */
+// Every classical field comes from a cached `mb_*` fact; there is no place for parser data. An
+// adapter that cannot fill a field leaves it null and the projection reports the gap.
 
 export type TrackClassificationState = 'unreviewed' | 'classical' | 'not_classical' | 'uncertain';
 
@@ -99,7 +91,6 @@ export type MbArtistFact = {
   type: string | null;
   beginYear: number | null;
   endYear: number | null;
-  /** The linked Spotify artist's image, when MusicBrainz links one we hold. */
   portrait?: string | null;
 };
 
@@ -115,10 +106,8 @@ export type MbReleaseFact = {
   title: string | null;
   date: string | null;
   country: string | null;
-  /**
-   * Unknown means this cached release predates authoritative `url-rels`
-   * ingestion. Missing is only valid after that fetch completed.
-   */
+  // Unknown means this cached release predates authoritative `url-rels` ingestion. Missing is only
+  // valid after that fetch completed.
   spotifyFreeStreamingUrlState: 'unknown' | 'present' | 'missing';
 };
 
@@ -131,14 +120,7 @@ export type MbReleaseTrackFact = {
   lengthMs: number | null;
 };
 
-/**
- * A work prelude.fm links itself, where MusicBrainz has no link yet. Never a
- * MusicBrainz fact, and never used once MusicBrainz has its own link.
- *
- * `track`: a Spotify track with no MusicBrainz recording, matched to a work
- * by `track_work_link`. `recording`: a MusicBrainz recording MusicBrainz
- * relates to no work, given the work `mb_work_proposal` suggests.
- */
+/** Never a MusicBrainz fact, and never used once MusicBrainz has its own link. */
 export type OwnWorkLinkFact =
   | {
       subject: 'track';
@@ -167,12 +149,7 @@ export type MusicBrainzLibraryFacts = {
   mbRecordingCredits: MbRecordingCreditFact[];
   mbReleases: MbReleaseFact[];
   mbReleaseTracks: MbReleaseTrackFact[];
-  /** Our own work links, for what MusicBrainz does not link yet. */
   ownWorkLinks: OwnWorkLinkFact[];
-  /**
-   * Of the composers of `mbWorks`, those MusicBrainz catalogues at least one
-   * work by (any work in the cache, not only these). Special-purpose artists
-   * such as [traditional] are never in it.
-   */
+  /** Special-purpose artists such as [traditional] are never in it. */
   mbCatalogedComposerMbids: string[];
 };

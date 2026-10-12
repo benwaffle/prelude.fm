@@ -12,10 +12,6 @@ type FailureContext = {
 
 const Context = createContext<FailureContext | null>(null);
 
-/**
- * The failure of the last admin action. Written only through
- * `useAdminAction`; loads and polls use `LoadFailure` (app/components) instead.
- */
 export function AdminFailureProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState<string | null>(null);
 

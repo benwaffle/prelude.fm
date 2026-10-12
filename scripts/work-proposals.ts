@@ -1,16 +1,5 @@
-/**
- * Proposed works for library recordings MusicBrainz links to none.
- *
- *   pnpm metadata:work-proposals                  recordings with no stored proposal
- *   pnpm metadata:work-proposals --refresh        every recording, again
- *   pnpm metadata:work-proposals --release <mbid> one album
- *   pnpm metadata:work-proposals --albums 5       stop after five albums
- *   pnpm metadata:work-proposals --no-store       run without writing anything
- *   pnpm metadata:work-proposals --json
- *
- * Spends MusicBrainz requests on the backfill channel, through the gateway.
- * Writes only `mb_work_proposal` (unless --no-store); submits nothing.
- */
+// Usage: pnpm metadata:work-proposals [--refresh] [--release <mbid>] [--albums N] [--no-store] [--json]
+// Spends backfill-channel requests; writes only `mb_work_proposal`. Submits nothing.
 import { defineScript } from './lib/cli';
 import { runSweepCli, SWEEP_OPTIONS } from './lib/sweep-cli';
 

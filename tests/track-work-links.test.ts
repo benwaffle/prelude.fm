@@ -151,9 +151,7 @@ test('a catalogue number alone, or a different one, confirms nothing', () => {
 
 test('a confirmed work still needs the track to pick out exactly one part', () => {
   const confirmed = confirmWork('Concerto, BWV 1042: Adagio', ['Johann Sebastian Bach'], konzert)!;
-  // No movement number: nothing picks a part out.
   assert.equal(confirmedPart(target('Concerto, BWV 1042: Adagio'), confirmed, parts), null);
-  // A movement number the work does not have.
   assert.equal(confirmedPart(target('Concerto, BWV 1042: IV. Gigue'), confirmed, parts), null);
 });
 
@@ -185,7 +183,6 @@ test('a part titled with its tempo is still picked out by its number and key', (
   assert.ok(confirmed);
   const match = confirmedPart({ ...target(title), artistNames: artists }, confirmed, nocturneParts);
   assert.equal(match?.workMbid, 'op-9-3');
-  // A number the work's parts disagree with still picks out nothing.
   assert.equal(
     confirmedPart(
       { ...target('Nocturnes, Op. 9: No. 4 in B Major'), artistNames: artists },

@@ -4,16 +4,7 @@ import { spotifyAlbum, spotifyArtist, spotifyTrack, trackArtists } from './db/sc
 import { normalizeIsrc } from './isrc';
 import type { SpotifyAlbumMetadata } from './spotify-app-client';
 
-/**
- * Writing down what Spotify said, and nothing else.
- *
- * Provider facts — the album, its tracks, their artists, durations, ISRCs —
- * are global and uncontroversial: they are what Spotify is for. They get
- * their own pass so that reading an album into the cache never requires
- * deciding anything about the music on it.
- *
- * No classical table is touched here. That is the point.
- */
+/** Provider facts only; no classical table is touched here. */
 export type ProviderHydration = {
   tracks: number;
   artists: number;
@@ -56,8 +47,8 @@ export async function hydrateProviderAlbum(
   }
 
   for (const track of tracks) {
-    // Only write the ISRC when Spotify gave us one, so a payload that omits
-    // it cannot erase a value an earlier read stored.
+    // Only write the ISRC when Spotify gave one, so a payload that omits it cannot erase a stored
+    // value.
     const spotifyIsrc = normalizeIsrc(track.external_ids?.isrc);
     const isrc = spotifyIsrc ? { isrc: spotifyIsrc } : {};
     const values = {

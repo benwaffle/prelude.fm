@@ -1,11 +1,4 @@
-/**
- * The stored stages of adding a missing album — pre-check, seed, the seed as
- * opened on MusicBrainz, correction record — in `mb_missing_release`.
- *
- * One table and one reader, because every stage is keyed by the same album
- * and the Inbox wants them together. This module owns which value type goes
- * with which stage.
- */
+/** This module owns which value type goes with which stage. */
 import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from './db';
 import { mbMissingRelease, spotifyAlbum } from './db/schema';
@@ -24,15 +17,14 @@ export type MissingReleaseStage = keyof StageValues;
 
 export type StoredStage<T> = {
   value: T;
-  /** MusicBrainz requests the stage spent; null for corrections measured before they were counted. */
+  /** Null for corrections measured before they were counted. */
   requests: number | null;
   recordedAt: Date;
 };
 
-/** Whatever stages an album has stored. */
 export type MissingRelease = { [S in MissingReleaseStage]?: StoredStage<StageValues[S]> };
 
-/** The stored stages of these albums, in one query. Spends no MusicBrainz requests. */
+/** Spends no MusicBrainz requests. */
 export async function readMissingReleases(
   albumIds: string[],
 ): Promise<Map<string, MissingRelease>> {
@@ -55,7 +47,6 @@ export async function readMissingReleases(
   return out;
 }
 
-/** Store one stage for an album, replacing what it held. */
 export async function writeMissingRelease<S extends MissingReleaseStage>(
   albumId: string,
   stage: S,
@@ -72,10 +63,7 @@ export async function writeMissingRelease<S extends MissingReleaseStage>(
     });
 }
 
-/**
- * The person opened the album's seed on MusicBrainz: keep the stored seed as
- * the `seeded` stage, in one statement so it is exactly the plan they opened.
- */
+/** One statement, so `seeded` is exactly the plan they opened. */
 export async function markReleaseSeeded(albumId: string): Promise<void> {
   await db.run(sql`
     insert into ${mbMissingRelease} (spotify_album_id, stage, value, requests, recorded_at)
@@ -94,7 +82,6 @@ export type CorrectionRow = {
   record: ReleaseCorrectionRecord;
 };
 
-/** Every stored correction record with its album's title, newest first. */
 export async function correctionRecords(): Promise<CorrectionRow[]> {
   const rows = await db
     .select({

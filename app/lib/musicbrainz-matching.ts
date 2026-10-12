@@ -1,12 +1,5 @@
-/**
- * Deciding which MusicBrainz release an album is.
- *
- * Kept apart from the database so the rules can be read, tested and argued
- * with on their own. Every one of them exists to refuse rather than to
- * accept: a wrong release attaches every track on the album to the wrong
- * recording, and nothing downstream can see that it happened, because the
- * titles and the works all look plausible.
- */
+// Kept apart from the DB so the rules can be tested. Every rule exists to refuse: a wrong release
+// silently attaches every track to the wrong recording.
 import type { MbRelease, MusicBrainzSource } from './musicbrainz-source';
 
 export type AlbumIdentity = {
@@ -25,31 +18,15 @@ export type AlbumTrack = {
   isrc: string | null;
 };
 
-/**
- * How far a duration may differ and still be the same performance.
- *
- * Five seconds when identifying a release, where the question is whether an
- * unknown tracklist lines up and a wrong answer is expensive.
- *
- * Fifteen when anchoring tracks to a release already identified. The evidence
- * there is the whole tracklist agreeing, not any one track, and a CD master
- * and its Spotify transfer routinely differ by several seconds of lead-in and
- * fade — one album measured here ran from three to ten seconds out on five of
- * its twelve tracks, all of them plainly the same performances. A per-track
- * cut at three seconds rejected them and left the album ragged, anchoring
- * seven tracks and abandoning five that sat between the two it kept.
- */
+// 5s when identifying a release. 15s when anchoring to an identified one: the whole tracklist is
+// the evidence, and CD masters and Spotify transfers routinely differ by several seconds of lead-in
+// and fade.
 const RELEASE_TOLERANCE_MS = 5_000;
 export const POSITION_TOLERANCE_MS = 15_000;
 
-/**
- * A release whose durations MusicBrainz mostly does not record cannot be
- * confirmed by duration, and title plus track count alone is not enough — two
- * editions of the same album share both.
- */
+/** Title plus track count alone is not enough: two editions of the same album share both. */
 const MIN_TIMED_FRACTION = 0.8;
 
-/** At most this many candidates are fetched before a search is called ambiguous. */
 const MAX_CANDIDATES = 4;
 
 export type ReleaseMatch = {
@@ -68,16 +45,7 @@ export type ReleaseMatchFailure = {
 const normaliseBarcode = (value: string | null | undefined) =>
   (value ?? '').trim().replace(/^0+/, '');
 
-/* ------------------------------------------------- which release is it --- */
-
-/**
- * Does this MusicBrainz release plausibly hold the same recordings, in the
- * same order, as the Spotify album?
- *
- * Track count must be exact and every comparable duration must agree. The
- * fraction rule is what stops a release with no durations at all from passing
- * on title and count, which two editions of the same album would also do.
- */
+/** The fraction rule stops a release with no durations from passing on title and count alone. */
 export function releaseFitsAlbum(
   tracks: AlbumTrack[],
   release: MbRelease,
@@ -103,18 +71,9 @@ export function releaseFitsAlbum(
   return timed >= Math.ceil(ordered.length * MIN_TIMED_FRACTION);
 }
 
-/**
- * Find the MusicBrainz release for an album.
- *
- * Barcode first: it is the release's own identifier and an exact match needs
- * no corroboration. Several releases sharing a barcode is usually one record
- * issued in several territories, which for our purposes — recordings and
- * ISRCs — are interchangeable, so they are only ambiguous when their recording
- * sets actually differ.
- *
- * Failing that, title and track count narrow the field and durations decide,
- * which reaches the releases MusicBrainz holds without a barcode.
- */
+// Barcode first. Releases sharing a barcode are usually territories with the same recordings, so
+// only ambiguous when their recording sets differ. Then title and track count narrow, and durations
+// decide.
 export async function findReleaseForAlbum(
   source: MusicBrainzSource,
   album: AlbumIdentity,
@@ -162,8 +121,7 @@ export async function findReleaseForAlbum(
     const release = await source.releaseWithRecordings(candidate);
     requests++;
     if (release && releaseFitsAlbum(tracks, release)) fits.push(candidate);
-    // Two releases that both fit are two editions of the same record, and
-    // choosing between them here would be a coin toss.
+    // Two releases that both fit are two editions; choosing between them would be a coin toss.
     if (fits.length > 1) break;
   }
 
@@ -181,22 +139,11 @@ export async function findReleaseForAlbum(
   };
 }
 
-/* ------------------------------------------------------ track alignment --- */
-
 export type PositionedTrack = { discNumber: number; trackNumber: number; durationMs: number };
 export type PositionedReleaseTrack = { medium: number; position: number; length: number | null };
 
-/**
- * Does the album's tracklist line up with the release's, position for
- * position?
- *
- * Asked once per album rather than once per track, because that is the shape
- * of the evidence. Either this release has the same tracks in the same order —
- * in which case every position is trustworthy — or it does not, in which case
- * none of them is. Answering per track produces an album anchored in patches,
- * which is the worst of both: the gaps look like missing data rather than like
- * the doubt about the whole tracklist that they really are.
- */
+// Asked per album, not per track: either every position is trustworthy or none is; per-track
+// answers anchor in patches.
 export function tracklistAligns(
   tracks: PositionedTrack[],
   releaseTracks: PositionedReleaseTrack[],
@@ -204,14 +151,7 @@ export function tracklistAligns(
 ): boolean {
   if (tracks.length === 0) return false;
 
-  /*
-   * A Spotify album is one edition; a MusicBrainz release can be several
-   * mediums of the same content. A hybrid SACD is three — a CD layer and two
-   * SACD layers — so an eighteen-track album meets a fifty-four-track
-   * release and nothing lines up, even though the album is exactly medium
-   * one. Where the whole release does not match, a single medium that does
-   * is tried instead.
-   */
+  // A hybrid SACD release repeats the album on three mediums, so try a single matching medium.
   if (tracks.length !== releaseTracks.length) {
     const mediums = new Set(releaseTracks.map((track) => track.medium));
     if (mediums.size < 2) return false;
@@ -229,20 +169,11 @@ export function tracklistAligns(
 
   if (alignsByPosition(tracks, releaseTracks, toleranceMs)) return true;
 
-  /*
-   * Spotify flattens a multi-disc release into one numbered run: a release
-   * MusicBrainz holds as 9 tracks then 12 becomes a single album of 21. The
-   * totals agree, so the counts look fine, but track 10 goes looking for
-   * disc 1 position 10 and there is no such thing.
-   *
-   * Comparing them in order rather than by disc and position handles that,
-   * and is safe because every duration still has to agree: a genuinely
-   * reordered tracklist fails this exactly as it fails the other.
-   */
+  // Spotify flattens multi-disc releases into one run (9 + 12 becomes 21), so compare in order;
+  // durations still have to agree, so a reordered tracklist fails this too.
   return alignsInOrder(tracks, releaseTracks, toleranceMs);
 }
 
-/** Both tracklists read straight through, ignoring how they are divided. */
 function alignsInOrder(
   tracks: PositionedTrack[],
   releaseTracks: PositionedReleaseTrack[],
@@ -280,24 +211,11 @@ function alignsByPosition(
   return true;
 }
 
-/**
- * The tolerance for a track we hold in isolation.
- *
- * Three seconds, not fifteen. When the whole tracklist lines up, one track
- * being seconds out is explained by the rest; a single track out of a
- * hundred-track box set has nothing standing behind it but its own duration,
- * so it has to carry the weight on its own.
- */
+/** Three seconds, not fifteen: a lone track has no tracklist standing behind it. */
 export const LONE_TRACK_TOLERANCE_MS = 3_000;
 
-/**
- * Does this one track sit at this position on the release?
- *
- * Used where the album is a fragment of the release rather than the whole of
- * it — a liked track from a box set, which is most of what a personal library
- * is made of. There is no tracklist to corroborate the position, so the
- * duration has to agree closely and an untimed release track is not enough.
- */
+// For a liked track from a box set: no tracklist corroborates the position, so an untimed release
+// track is not enough.
 export function loneTrackFits(
   track: PositionedTrack,
   releaseTrack: PositionedReleaseTrack | undefined,
@@ -308,8 +226,6 @@ export function loneTrackFits(
   return Math.abs(releaseTrack.length - track.durationMs) <= toleranceMs;
 }
 
-/* ------------------------------------------------------ misalignment --- */
-
 export type TracklistDiagnosis =
   /** Same recordings, different order. Somebody's tracklist is wrong. */
   | { kind: 'reordered'; matched: number }
@@ -319,19 +235,8 @@ export type TracklistDiagnosis =
   | { kind: 'different-recordings'; matched: number }
   | { kind: 'aligned' };
 
-/**
- * Why an album and a release do not line up.
- *
- * Refusing to anchor is the right behaviour, but "did not align" is not a
- * useful thing to show a person: a release with an extra disc and a release
- * whose tracklist is in the wrong order need completely different work, and
- * one of them is an error worth reporting upstream.
- *
- * Reordering is detected by matching durations as a set rather than in
- * sequence. Three tracks whose durations pair off to the millisecond but sit
- * at different positions are the same three recordings in a different order,
- * which is a real case: one release here lists them rotated by one.
- */
+// Reordering is detected by pairing durations as a set; one release here lists its tracks rotated
+// by one.
 export function diagnoseTracklist(
   tracks: PositionedTrack[],
   releaseTracks: PositionedReleaseTrack[],
@@ -343,7 +248,6 @@ export function diagnoseTracklist(
     return { kind: 'different-length', ours: tracks.length, theirs: releaseTracks.length };
   }
 
-  // Pair each of ours with an unused release track of about the same length.
   const unused = releaseTracks.filter((track) => track.length != null);
   const taken = new Set<number>();
   let matched = 0;
@@ -358,8 +262,8 @@ export function diagnoseTracklist(
     }
   }
 
-  // Nearly all of them pairing off means the same recordings in another
-  // order; only some pairing off means these are different performances.
+  // Nearly all pairing off means the same recordings reordered; only some means different
+  // performances.
   return matched >= Math.ceil(tracks.length * 0.8)
     ? { kind: 'reordered', matched }
     : { kind: 'different-recordings', matched };

@@ -9,19 +9,8 @@ import {
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-/**
- * The full invariant sweep, on a schedule.
- *
- * The worker runs the cheap checks after every album, which catches the
- * damage a pass can do to itself. The expensive ones — the whole-table scans
- * — only ever ran when somebody typed a command, which means in practice
- * they ran when somebody already suspected a problem.
- *
- * Same definitions as the CLI and the admin page, so there is one answer to
- * the question rather than three. The response carries the health state, so
- * whatever calls this can tell a clean sweep from a sweep that did not
- * happen.
- */
+// Same definitions as the CLI and admin page. The response carries health state so callers can tell
+// a clean sweep from a missed one.
 function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
   return Boolean(cronSecret && request.headers.get('authorization') === `Bearer ${cronSecret}`);
@@ -48,8 +37,7 @@ export async function GET(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const report = await sweep();
-  // A hard failure is a 500 so that whatever is watching the schedule sees
-  // it, rather than a 200 carrying bad news nobody reads.
+  // A hard failure is a 500 so whatever watches the schedule sees it.
   return Response.json(report, { status: report.health.state === 'red' ? 500 : 200 });
 }
 

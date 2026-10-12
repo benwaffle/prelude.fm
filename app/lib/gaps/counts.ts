@@ -9,7 +9,6 @@ import { missingReleases } from './missing-releases';
 import { streamingUrlGaps } from './streaming-urls';
 import { workRelationshipGaps } from './work-relationships';
 
-/** Every gap class, read whole: the counts and each section's page come from one read. */
 export async function gapLists() {
   const [isrc, work, contested, missing, barcodes, streaming, misaligned] = await Promise.all([
     isrcGaps(),
@@ -25,7 +24,6 @@ export async function gapLists() {
 
 export type GapLists = Awaited<ReturnType<typeof gapLists>>;
 
-/** How many ledger rows have each outcome. */
 export async function submissionCounts(): Promise<Record<string, number>> {
   const rows = await db
     .select({ outcome: mbSubmission.outcome, n: sql<number>`count(*)` })
@@ -34,7 +32,6 @@ export async function submissionCounts(): Promise<Record<string, number>> {
   return Object.fromEntries(rows.map((row) => [row.outcome, row.n]));
 }
 
-/** How much of each kind of contribution is waiting, from lists already read. */
 export function countContributions(lists: GapLists, submissions: Record<string, number>) {
   return {
     isrc: lists.isrc.length,
@@ -51,7 +48,6 @@ export function countContributions(lists: GapLists, submissions: Record<string, 
 
 export type ContributionCounts = ReturnType<typeof countContributions>;
 
-/** How much of each kind of contribution is waiting. */
 export async function contributionCounts(): Promise<ContributionCounts> {
   const [lists, submissions] = await Promise.all([gapLists(), submissionCounts()]);
   return countContributions(lists, submissions);

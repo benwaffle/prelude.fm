@@ -9,17 +9,8 @@ import {
 import { GAP_REASONS } from '@/lib/gap-reasons';
 import type { MusicBrainzGapCode } from '@/lib/musicbrainz-library';
 
-/**
- * The words every screen uses to name a work and its movements. Each shows
- * a gap as a gap: a field MusicBrainz has not filled is labelled, not left
- * blank and not filled with something that reads like data.
- */
-
-/**
- * A field MusicBrainz has not filled. Shown rather than left blank, because
- * a blank reads as "nothing to say" and this is "nobody has said it yet" —
- * the difference is the whole point of the gap vocabulary.
- */
+// A field MusicBrainz has not filled: labelled, because a blank reads as "nothing to say" rather
+// than "nobody has said it yet".
 export function Missing({
   children,
   className = 'text-muted',
@@ -34,7 +25,6 @@ export function Missing({
   );
 }
 
-/** The work's title and nickname, as a heading sets them. */
 export function WorkTitle({ work }: { work: Pick<LibraryWork, 'title' | 'nickname'> }) {
   return (
     <>
@@ -48,11 +38,6 @@ export function WorkTitle({ work }: { work: Pick<LibraryWork, 'title' | 'nicknam
   );
 }
 
-/**
- * A movement's name, marked when MusicBrainz has none. Under a heading that
- * already names the work, pass `workTitle` and the repeated prefix and
- * numeral are left out.
- */
 export function MovementName({
   movement,
   workTitle,
@@ -60,7 +45,6 @@ export function MovementName({
 }: {
   movement: Pick<Movement, 'name' | 'unnamed' | 'roman'>;
   workTitle?: string | null;
-  /** For the name itself, e.g. to truncate it without truncating the marker. */
   className?: string;
 }) {
   const name =
@@ -82,7 +66,6 @@ export function MovementName({
   );
 }
 
-/** What a card or page cannot show, and where its work link came from. */
 export function GapNotes({ work }: { work: Pick<LibraryWork, 'gaps' | 'ownLink'> }) {
   return (
     <>
@@ -111,10 +94,6 @@ function Gaps({ codes }: { codes: MusicBrainzGapCode[] }) {
   );
 }
 
-/**
- * "Composer · Title “Nickname”" for the player, colour taken from its
- * surroundings. The title links to the recording when `href` is given.
- */
 export function WorkCredit({
   work,
   href,
