@@ -26,6 +26,18 @@ test('a movement titled after its parent belongs to the parent', () => {
   assert.equal(level.reason, 'titled-as-part');
 });
 
+test('a movement belongs to a parent whose title extends its heading', () => {
+  const level = workLevelOf(
+    node({
+      title: 'The Four Seasons: Spring 1',
+      parentMbid: 'recomposed',
+      parentTitle: 'The Four Seasons Recomposed',
+    }),
+  );
+  assert.equal(level.mbid, 'recomposed');
+  assert.equal(level.reason, 'titled-as-part');
+});
+
 test('a movement belongs to a parent whose title adds a catalogue reference', () => {
   const level = workLevelOf(
     node({
