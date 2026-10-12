@@ -216,8 +216,8 @@ function CardRow({
         size={11}
         className={`flex w-4 translate-y-px cursor-pointer items-center justify-start transition-all duration-150 before:absolute before:-inset-3 before:content-[''] relative ${
           liked
-            ? 'text-accent hover:scale-110'
-            : 'text-rule group-hover:text-muted hover:text-muted'
+            ? 'text-accent hover:scale-110 active:scale-95'
+            : 'text-rule group-hover:text-muted hover:text-muted active:scale-95'
         }`}
       />
 
@@ -341,7 +341,7 @@ function ProgrammeRow({
           movement={m}
           onToggleLike={list.onToggleLike}
           size={12}
-          className={`flex cursor-pointer transition-all duration-150 hover:scale-110 ${
+          className={`flex cursor-pointer transition-all duration-150 hover:scale-110 active:scale-95 ${
             m.liked ? 'text-accent' : 'text-rule hover:text-muted'
           }`}
         />

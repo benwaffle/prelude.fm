@@ -281,7 +281,9 @@ function MoreByComposer({
         <Link
           key={w.workId}
           href={workHref(w)}
-          className="relative grid w-full grid-cols-[132px_1fr_240px] gap-7 border-t border-rule py-[26px] text-left no-underline last:border-b hover:bg-[linear-gradient(90deg,var(--paper-2),transparent_60%)] max-[900px]:grid-cols-[84px_minmax(0,1fr)] max-[900px]:gap-[14px]"
+          className={`relative grid w-full grid-cols-[132px_1fr_240px] gap-7 border-t border-rule py-[26px] text-left no-underline last:border-b hover:bg-[linear-gradient(90deg,var(--paper-2),transparent_60%)] max-[900px]:grid-cols-[84px_minmax(0,1fr)] max-[900px]:gap-[14px] ${
+            i >= MORE_BY_COMPOSER_SHOWN ? 'animate-rise' : ''
+          }`}
         >
           <div className="relative aspect-square self-start overflow-hidden bg-paper-2 shadow-soft">
             <CoverArt

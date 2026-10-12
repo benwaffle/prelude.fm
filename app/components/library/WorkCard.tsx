@@ -90,7 +90,7 @@ export const WorkCard = memo(function WorkCard({
               type="button"
               title={`Play ${work.title ?? 'this recording'}`}
               onClick={() => onPlayWork(work)}
-              className="flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center self-center rounded-full border max-[900px]:h-9 max-[900px]:w-9 border-rule text-muted transition-colors duration-150 group-hover:border-muted group-hover:text-ink-2 hover:border-ink hover:bg-ink hover:text-paper focus-visible:border-ink focus-visible:bg-ink focus-visible:text-paper"
+              className="flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center self-center rounded-full border max-[900px]:h-9 max-[900px]:w-9 border-rule text-muted transition duration-150 ease-out active:scale-95 group-hover:border-muted group-hover:text-ink-2 hover:border-ink hover:bg-ink hover:text-paper focus-visible:border-ink focus-visible:bg-ink focus-visible:text-paper"
             >
               <span className="ml-px">
                 <Icon name="play" size={11} />
