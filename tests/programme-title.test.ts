@@ -15,6 +15,13 @@ test('programme uses the work heading and numeral column without repeating eithe
   );
 });
 
+test('programme drops a heading the work title extends', () => {
+  assert.equal(
+    programmeMovementName('The Four Seasons: Spring 1', 'The Four Seasons Recomposed', 'II'),
+    'Spring 1',
+  );
+});
+
 test('programme leaves unrelated and missing MusicBrainz titles visible as given', () => {
   assert.equal(programmeMovementName('I. Allegro', work, 'II'), 'I. Allegro');
   assert.equal(
