@@ -117,10 +117,11 @@ export function workLevelOf(node: WorkNode): WorkLevel {
     // A section of a Mass or opera ("III. Sequenz", "Act II") is still a part of it; a prelude and
     // fugue in a book of 24 is a piece, so a parent's title alone is not enough.
     const sectionOf =
-      !node.type &&
       node.parentMbid &&
-      (numberedAsPart(node) ||
-        (WHOLES_OF_NUMBERS.has(node.parentType ?? '') && titledAsPartOf(node)));
+      (node.type
+        ? typedPartOf(node)
+        : numberedAsPart(node) ||
+          (WHOLES_OF_NUMBERS.has(node.parentType ?? '') && titledAsPartOf(node)));
     return sectionOf
       ? { mbid: node.parentMbid!, reason: 'titled-as-part', needsReview: false }
       : { mbid: node.mbid, reason: 'has-parts', needsReview: false };
