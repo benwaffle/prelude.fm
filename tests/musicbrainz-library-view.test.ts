@@ -172,10 +172,8 @@ test('names movements from MusicBrainz, never from the Spotify track title', asy
 
   assert.deepEqual(
     played.map((movement) => movement.name),
-    [
-      'Piano Sonata no. 16 in C major, K. 545: I. Allegro',
-      'Piano Sonata no. 16 in C major, K. 545: II. Andante',
-    ],
+    ['Allegro', 'Andante'],
+    'named within the work, which the card already titles',
   );
   assert.deepEqual(
     played.map((movement) => movement.trackId),
@@ -189,7 +187,7 @@ test('shows the movement this issue does not carry as missing, from MusicBrainz'
 
   assert.deepEqual(
     missing.map((movement) => movement.name),
-    ['Piano Sonata no. 16 in C major, K. 545: III. Rondo'],
+    ['Rondo'],
   );
   assert.equal(missing[0].trackId, null);
   assert.equal(missing[0].durationMs, null, 'we do not know how long a part we do not hold is');
