@@ -465,6 +465,24 @@
   white-space: nowrap;
 }
 
+/* Match debug: one dense row per track, under a row for its album. */
+.desk table.match-debug td {
+  padding: 4px 8px;
+}
+
+.desk table.match-debug tr.album-head td {
+  background: var(--slip-2);
+  border-top: 1px solid var(--rule-strong);
+}
+
+.desk table.match-debug .ok {
+  color: var(--viridian);
+}
+
+.desk table.match-debug .bad {
+  color: var(--gall);
+}
+
 /* A value we do not have. Saying so plainly beats inventing a
    placeholder that reads like real data. */
 .desk .absent {

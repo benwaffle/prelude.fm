@@ -67,6 +67,10 @@ const LISTS: {
 ];
 
 const TOOLS: { page: ToolPage; note: string }[] = [
+  {
+    page: 'matches',
+    note: 'Search an album, track or work: release, recording, work, composer and verdict per track.',
+  },
   { page: 'albums', note: 'Every album, filtered by how far MusicBrainz has it.' },
   { page: 'corrections', note: 'What we had to fix by hand after a Harmony import.' },
   { page: 'refresh-work', note: 'Read one work again, after you edit it on MusicBrainz.' },
