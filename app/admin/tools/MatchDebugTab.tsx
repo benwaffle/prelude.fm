@@ -25,6 +25,7 @@ export function MatchDebugTab() {
   const query = useSearchParams().get('q')?.trim() ?? '';
   const [input, setInput] = useState(query);
   const [heldOnly, setHeldOnly] = useState(false);
+  const [tip, setTip] = useState<{ text: string; left: number; top: number } | null>(null);
   const result = useServerQuery(query ? () => getMatchDebug(query) : null, [query]);
 
   const search = () =>
@@ -75,7 +76,11 @@ export function MatchDebugTab() {
           </p>
           {result.data.albums.length > 0 && (
             <div className="slip overflow-x-auto">
-              <table className="match-debug text-[11px]">
+              <table
+                className="match-debug text-[11px]"
+                onMouseOver={(event) => setTip(tipFor(event.target))}
+                onMouseLeave={() => setTip(null)}
+              >
                 <thead>
                   <tr>
                     <th>#</th>
@@ -93,12 +98,26 @@ export function MatchDebugTab() {
                   <AlbumRows key={album.spotifyAlbumId} album={album} heldOnly={heldOnly} />
                 ))}
               </table>
+              {tip && (
+                <div className="match-tip" style={{ left: tip.left, top: tip.top }}>
+                  {tip.text}
+                </div>
+              )}
             </div>
           )}
         </>
       )}
     </div>
   );
+}
+
+// The browser's own `title` tooltip waits about a second; this one shows at once, under the cell.
+function tipFor(target: EventTarget): { text: string; left: number; top: number } | null {
+  const cell = target instanceof Element ? target.closest('[data-tip]') : null;
+  const text = cell?.getAttribute('data-tip');
+  if (!cell || !text) return null;
+  const rect = cell.getBoundingClientRect();
+  return { text, left: rect.left, top: rect.bottom + 2 };
 }
 
 function AlbumRows({ album, heldOnly }: { album: MatchDebugAlbum; heldOnly: boolean }) {
@@ -171,7 +190,7 @@ function TrackRow({ track }: { track: MatchDebugTrack }) {
       <td className="mono">
         {track.disc}-{String(track.number).padStart(2, '0')}
       </td>
-      <td className="w-wide" title={`${track.title} · ${clock(track.durationMs)}`}>
+      <td className="w-wide" data-tip={`${track.title} · ${clock(track.durationMs)}`}>
         <a href={`https://open.spotify.com/track/${track.spotifyTrackId}`} target="_blank">
           {track.title}
         </a>
@@ -179,7 +198,7 @@ function TrackRow({ track }: { track: MatchDebugTrack }) {
       <td>
         <Mono value={track.isrc} />
       </td>
-      <td className="w-mid" title={recordingTitle(track)}>
+      <td className="w-mid" data-tip={recordingTitle(track)}>
         {recording.state === 'linked' && (
           <>
             <span className="tag">{MATCHED_BY[recording.matchedBy] ?? recording.matchedBy}</span>{' '}
@@ -206,7 +225,7 @@ function TrackRow({ track }: { track: MatchDebugTrack }) {
         )}
         {recording.state === 'none' && <span className="absent">no recording</span>}
       </td>
-      <td className="w-wide" title={track.works.map(workTitle).join('\n')}>
+      <td className="w-wide" data-tip={track.works.map(workTitle).join('\n')}>
         {track.works.length === 0 && <span className="absent">no work</span>}
         {track.works.map((work, index) => (
           <span key={work.relatedWorkMbid}>
@@ -215,7 +234,7 @@ function TrackRow({ track }: { track: MatchDebugTrack }) {
           </span>
         ))}
       </td>
-      <td className="w-narrow" title={composers.join(', ')}>
+      <td className="w-narrow" data-tip={composers.join(', ')}>
         {track.works.map((work, index) => (
           <span key={work.relatedWorkMbid}>
             {index > 0 && ', '}
@@ -231,7 +250,7 @@ function TrackRow({ track }: { track: MatchDebugTrack }) {
       </td>
       <td
         className="w-narrow"
-        title={[
+        data-tip={[
           classification?.reason ?? 'no reason stored',
           `MusicBrainz evidence alone: ${track.musicBrainzSaysClassical ? 'classical' : 'not enough'}`,
         ].join('\n')}
@@ -249,7 +268,7 @@ function TrackRow({ track }: { track: MatchDebugTrack }) {
       </td>
       <td
         className="w-mid"
-        title={[
+        data-tip={[
           verdict.state === 'held' ? verdict.detail : null,
           ...track.gaps.map((gap) => `• ${gap.reason}`),
         ]
@@ -272,7 +291,7 @@ function TrackRow({ track }: { track: MatchDebugTrack }) {
       </td>
       <td
         className="w-narrow"
-        title={
+        data-tip={
           queue
             ? [
                 queue.reason,
