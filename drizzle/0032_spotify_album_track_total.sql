@@ -1,0 +1,1 @@
+ALTER TABLE `spotify_album` ADD `spotify_track_total` integer;

@@ -128,6 +128,11 @@ export const spotifyAlbum = sqliteTable(
     >(),
     /** The release barcode Spotify reports; the key MusicBrainz indexes releases by. */
     upc: text('upc'),
+    /**
+     * How many tracks Spotify says the album has. Null until the album is read again: albums
+     * cached before this was stored can't show whether they are missing tracks.
+     */
+    spotifyTrackTotal: integer('spotify_track_total'),
     mbReleaseId: text('mb_release_id'),
     // Releases carrying this barcode: tells "MusicBrainz has none" from "several, none identifying
     // this album".

@@ -133,6 +133,23 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
     `,
   },
   {
+    // Queued rather than stored, so a track queued but not yet processed doesn't count as missing.
+    name: 'album-is-fully-queued',
+    severity: 'hard',
+    describes:
+      'Spotify lists more tracks on an album than we ever queued, so the album reads shorter than it is.',
+    cheap: false,
+    query: sql`
+      select a.spotify_id as id,
+             (select count(*) from match_queue q where q.spotify_album_id = a.spotify_id)
+               || ' of ' || a.spotify_track_total as detail
+      from spotify_album a
+      where a.spotify_track_total is not null
+        and a.spotify_track_total >
+            (select count(*) from match_queue q where q.spotify_album_id = a.spotify_id)
+    `,
+  },
+  {
     name: 'isrc-disagrees-with-position',
     severity: 'review',
     describes:

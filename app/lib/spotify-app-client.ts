@@ -19,6 +19,7 @@ export interface SpotifyAlbumMetadata {
   release_date: string;
   popularity: number | null;
   images: { url: string; width: number; height: number }[];
+  total_tracks?: number;
 }
 
 export interface SpotifyArtistMetadata {
@@ -126,6 +127,7 @@ export async function getSpotifyAlbumMetadata(albumId: string): Promise<SpotifyA
     release_date: album.release_date,
     popularity: album.popularity ?? null,
     images: album.images,
+    total_tracks: album.total_tracks,
   };
 }
 
