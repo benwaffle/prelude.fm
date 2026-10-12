@@ -411,10 +411,9 @@
   min-width: 0;
 }
 
-/* An action is a link, but it should read as the button it behaves like. */
+/* An action link stays on one line. */
 .desk a.act {
   display: inline-block;
-  text-decoration: none;
 }
 
 /* -------------------------------------------------------- tables --- */
@@ -534,7 +533,7 @@
   }
 }
 
-.desk a:not(.act, .no-underline) {
+.desk a:not(.no-underline) {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
