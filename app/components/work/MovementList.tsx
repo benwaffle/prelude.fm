@@ -12,7 +12,7 @@ export type MovementListProps =
       variant: 'card';
       movements: Movement[];
       workTitle: string | null;
-      /** Head the tracks with the section their titles share (album cards). */
+      /** Head each run of tracks with the section their titles share (album cards). */
       sectionHeadings?: boolean;
       playingTrackId: string | null;
       selectedN: number | null;

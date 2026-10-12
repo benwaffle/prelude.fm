@@ -4,7 +4,7 @@ import test, { before, beforeEach } from 'node:test';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 import { projectMusicBrainzLibrary } from '../app/lib/musicbrainz-library';
 import {
-  albumHeading,
+  albumSections,
   keepLikedHoldings,
   musicBrainzLibraryView,
 } from '../app/lib/musicbrainz-library-view';
@@ -728,21 +728,19 @@ test('a proposal stands in for a recording MusicBrainz relates to no work, unles
   assert.ok(!(await findProviderTracksForWork('sonata')).includes('track-iii'));
 });
 
-test('an album heading is only the part every track title shares, up to a colon', () => {
-  assert.equal(
-    albumHeading([
-      'Paganini: 24 Caprices, Op. 1: No. 1 in E Major',
-      'Paganini: 24 Caprices, Op. 1: No. 20 in D Major',
+test('album tracks next to each other that share a heading up to a colon are listed under it', () => {
+  const jc =
+    'Bach, JC: Harpsichord Concerto No. 6 in F Minor, W. C73 (formerly attrib. W. F. Bach)';
+  const cpe = 'Bach, CPE: Harpsichord Concerto in D Minor, H. 427';
+  assert.deepEqual(
+    albumSections([
+      `${jc}: I. Allegro di molto`,
+      `${jc}: II. Andante`,
+      'Bach, WF / Orch Rondeau: Keyboard Sonata in G Major, F. 7: II. Lamento',
+      `${cpe}: I. Allegro`,
+      `${cpe}: II. Poco andante`,
+      'Minuet in B Minor',
     ]),
-    'Paganini: 24 Caprices, Op. 1',
+    [jc, jc, null, cpe, cpe, null],
   );
-  assert.equal(
-    albumHeading([
-      'Stabat Mater in G Minor: I. Stabat Mater',
-      'Stabat Mater in G Minor: IV. Pro peccatis suae gentis',
-      'Sanctus et Agnus Dei: I. Sanctus',
-    ]),
-    null,
-  );
-  assert.equal(albumHeading(['Stabat Mater in G Minor: I. Stabat Mater']), null);
 });
