@@ -8,6 +8,7 @@ import {
   eraFor,
   formatDuration,
   lifespan,
+  programmeMovementName,
   shortName,
   tintFor,
   roman,
@@ -246,14 +247,21 @@ export function musicBrainzLibraryView(
       const title = whole
         ? (member.recording.title ?? leaf?.title)
         : (leaf?.title ?? member.recording.title);
+      const numeral = whole ? '' : roman(position);
+      // "Sequenz" for the part under the work, so a sub-part can be named within it.
+      const section =
+        !whole && movement && movement !== leaf && movement.title
+          ? programmeMovementName(movement.title, head.work.title, numeral)
+          : null;
       return {
         n: index + 1,
         position,
-        roman: whole ? '' : roman(position),
-        // Never the Spotify track name, which is a label for the file, not a movement name.
-        name: title ?? '',
+        roman: numeral,
+        // Never the Spotify track name, which is a label for the file, not a movement name. Named
+        // within the card's work: "Introitus", not "Requiem in D minor, K. 626: I. Introitus".
+        name: title ? programmeMovementName(title, head.work.title, numeral) : '',
         unnamed: title == null,
-        section: !whole && movement && movement !== leaf ? movement.title : null,
+        section,
         missing: false,
         durationMs: member.occurrence.durationMs,
         duration: formatDuration(member.occurrence.durationMs),
@@ -273,7 +281,7 @@ export function musicBrainzLibraryView(
         n: 0,
         position,
         roman: roman(position),
-        name: part.title ?? '',
+        name: part.title ? programmeMovementName(part.title, head.work.title, roman(position)) : '',
         unnamed: part.title === null,
         missing: true,
         durationMs: null,

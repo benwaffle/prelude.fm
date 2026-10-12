@@ -10,6 +10,7 @@ export type ContributionListLimits = {
   barcodes: number;
   streamingUrls: number;
   misaligned: number;
+  wholeWork: number;
 };
 
 export const DEFAULT_CONTRIBUTION_LIMITS: ContributionListLimits = {
@@ -20,6 +21,7 @@ export const DEFAULT_CONTRIBUTION_LIMITS: ContributionListLimits = {
   barcodes: CONTRIBUTION_PAGE_SIZE,
   streamingUrls: CONTRIBUTION_PAGE_SIZE,
   misaligned: CONTRIBUTION_PAGE_SIZE,
+  wholeWork: CONTRIBUTION_PAGE_SIZE,
 };
 
 export function resolveContributionLimits(

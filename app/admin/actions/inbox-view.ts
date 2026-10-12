@@ -22,6 +22,7 @@ import { cachedReleasesSharingBarcodes, type MissingRelease } from '@/lib/gaps/m
 import type { BarcodeGap } from '@/lib/gaps/barcodes';
 import type { StreamingUrlGap } from '@/lib/gaps/streaming-urls';
 import { withWorkCandidates, type WorkRelationshipGap } from '@/lib/gaps/work-relationships';
+import type { WholeWorkLink } from '@/lib/gaps/whole-work-links';
 import {
   harmonyImportLink,
   magicIsrcLink,
@@ -141,6 +142,7 @@ export type ContributionView = {
     >)[];
   streamingUrls: (StreamingUrlGap & { edit: string; spotifyUrl: string } & Ledgered)[];
   misaligned: (MisalignedAlbum & Ledgered<ErrorLedgerView>)[];
+  wholeWork: (WholeWorkLink & { recordingEdit: string })[];
   recent: {
     id: number;
     kind: string;
@@ -286,6 +288,7 @@ export async function getContributions(
   const barcodes = take('barcodes', lists.barcodes, page.barcodes);
   const streamingUrls = take('streaming', lists.streaming, page.streamingUrls);
   const misaligned = take('misaligned', lists.misaligned, page.misaligned);
+  const wholeWork = take('whole-work', lists.wholeWork, page.wholeWork);
   const workGaps = await withWorkCandidates(take('work', lists.work, page.workGaps));
 
   const missingAlbumIds = missing.map((album) => album.albumId);
@@ -415,6 +418,10 @@ export async function getContributions(
     misaligned: misaligned.map((album) => ({
       ...album,
       ...ledgered(misalignedLedger.get(album.albumId), errorDisposition),
+    })),
+    wholeWork: wholeWork.map((link) => ({
+      ...link,
+      recordingEdit: recordingEditLink(link.recordingMbid),
     })),
     recent,
   };

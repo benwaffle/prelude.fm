@@ -46,6 +46,7 @@ const LISTS: {
     holdsBack: true,
   },
   { page: 'contested', rows: (counts) => plural(counts.contestedIsrcs, 'ISRC'), holdsBack: true },
+  { page: 'whole-work', rows: (counts) => plural(counts.wholeWork, 'track'), holdsBack: false },
   {
     page: 'isrc',
     rows: (counts) =>
