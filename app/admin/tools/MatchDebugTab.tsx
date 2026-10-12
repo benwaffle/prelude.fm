@@ -14,8 +14,8 @@ import { Spinner } from '../components/Spinner';
 
 const MATCHED_BY: Record<string, string> = {
   isrc: 'ISRC',
-  release_position: 'release position',
-  reordered_title_duration: 'title + length',
+  release_position: 'position',
+  reordered_title_duration: 'title+length',
 };
 
 const MB = 'https://musicbrainz.org';
@@ -80,6 +80,7 @@ export function MatchDebugTab() {
                   <tr>
                     <th>#</th>
                     <th>Spotify track</th>
+                    <th>ISRC</th>
                     <th>Recording</th>
                     <th>Work</th>
                     <th>Composer</th>
@@ -109,7 +110,7 @@ function AlbumRows({ album, heldOnly }: { album: MatchDebugAlbum; heldOnly: bool
   return (
     <tbody>
       <tr className="album-head">
-        <td colSpan={8}>
+        <td colSpan={9}>
           <a href={`https://open.spotify.com/album/${album.spotifyAlbumId}`} target="_blank">
             <b>{album.title}</b>
           </a>
@@ -159,125 +160,141 @@ function AlbumRows({ album, heldOnly }: { album: MatchDebugAlbum; heldOnly: bool
   );
 }
 
+// One line per track: the long text (reasons, gaps, errors) sits in each cell's hover title.
 function TrackRow({ track }: { track: MatchDebugTrack }) {
   const { recording, classification, verdict, queue } = track;
+  const composers = track.works.map((work) =>
+    work.composer ? (work.composer.name ?? 'composer has no name') : 'no composer',
+  );
   return (
     <tr>
-      <td className="mono whitespace-nowrap">
+      <td className="mono">
         {track.disc}-{String(track.number).padStart(2, '0')}
       </td>
-      <td className="min-w-[180px]">
+      <td className="w-wide" title={`${track.title} · ${clock(track.durationMs)}`}>
         <a href={`https://open.spotify.com/track/${track.spotifyTrackId}`} target="_blank">
           {track.title}
         </a>
-        <div className="text-[var(--faint)]">
-          <Mono value={track.isrc} /> · <span className="mono">{clock(track.durationMs)}</span>
-        </div>
       </td>
-      <td className="min-w-[160px]">
+      <td>
+        <Mono value={track.isrc} />
+      </td>
+      <td className="w-mid" title={recordingTitle(track)}>
         {recording.state === 'linked' && (
           <>
             <span className="tag">{MATCHED_BY[recording.matchedBy] ?? recording.matchedBy}</span>{' '}
             {!recording.read && <span className="tag">name only</span>}{' '}
+            {recording.lengthMs !== null && (
+              <span className="mono text-[var(--faint)]">
+                {delta(recording.lengthMs - track.durationMs)}{' '}
+              </span>
+            )}
             <a href={`${MB}/recording/${recording.mbid}`} target="_blank">
               {recording.title ?? <span className="absent">not in cache</span>}
             </a>
-            <div className="mono text-[var(--faint)]">
-              {recording.lengthMs === null ? (
-                <span className="absent">no length</span>
-              ) : (
-                <>
-                  {clock(recording.lengthMs)} ({delta(recording.lengthMs - track.durationMs)})
-                </>
-              )}
-            </div>
           </>
         )}
         {recording.state === 'contested' && (
           <>
-            <span className="tag bad">contested</span> {recording.reason}
+            <span className="tag bad">contested</span>{' '}
             {recording.candidates.map((mbid) => (
-              <div key={mbid}>
-                <a className="mono" href={`${MB}/recording/${mbid}`} target="_blank">
-                  {mbid.slice(0, 8)}
-                </a>
-              </div>
+              <a key={mbid} className="mono" href={`${MB}/recording/${mbid}`} target="_blank">
+                {mbid.slice(0, 8)}{' '}
+              </a>
             ))}
           </>
         )}
         {recording.state === 'none' && <span className="absent">no recording</span>}
       </td>
-      <td className="min-w-[220px]">
+      <td className="w-wide" title={track.works.map(workTitle).join('\n')}>
         {track.works.length === 0 && <span className="absent">no work</span>}
-        {track.works.map((work) => (
-          <WorkCell key={work.relatedWorkMbid} work={work} />
+        {track.works.map((work, index) => (
+          <span key={work.relatedWorkMbid}>
+            {index > 0 && <span className="text-[var(--faint)]"> + </span>}
+            <WorkChain work={work} />
+          </span>
         ))}
       </td>
-      <td>
-        {track.works.map((work) =>
-          work.composer ? (
-            <div key={work.relatedWorkMbid}>
+      <td className="w-narrow" title={composers.join(', ')}>
+        {track.works.map((work, index) => (
+          <span key={work.relatedWorkMbid}>
+            {index > 0 && ', '}
+            {work.composer ? (
               <a href={`${MB}/artist/${work.composer.mbid}`} target="_blank">
                 {work.composer.name ?? <span className="absent">no name</span>}
               </a>
-            </div>
-          ) : (
-            <div key={work.relatedWorkMbid} className="absent">
-              no composer
-            </div>
-          ),
-        )}
+            ) : (
+              <span className="absent">no composer</span>
+            )}
+          </span>
+        ))}
       </td>
-      <td className="min-w-[160px]">
+      <td
+        className="w-narrow"
+        title={[
+          classification?.reason ?? 'no reason stored',
+          `MusicBrainz evidence alone: ${track.musicBrainzSaysClassical ? 'classical' : 'not enough'}`,
+        ].join('\n')}
+      >
         {classification ? (
           <>
             <span className={`tag ${classification.state === 'classical' ? 'ok' : 'bad'}`}>
               {classification.state.replace('_', ' ')}
             </span>{' '}
             <span className="text-[var(--faint)]">{classification.provenance}</span>
-            <div className="text-[var(--ink-2)]">
-              {classification.reason ?? <span className="absent">no reason stored</span>}
-            </div>
           </>
         ) : (
           <span className="absent">not classified</span>
         )}
-        <div className="text-[var(--faint)]">
-          MusicBrainz evidence alone: {track.musicBrainzSaysClassical ? 'classical' : 'not enough'}
-        </div>
       </td>
-      <td className="min-w-[180px]">
+      <td
+        className="w-mid"
+        title={[
+          verdict.state === 'held' ? verdict.detail : null,
+          ...track.gaps.map((gap) => `• ${gap.reason}`),
+        ]
+          .filter(Boolean)
+          .join('\n')}
+      >
+        {track.gaps.length > 0 && (
+          <span className="mono text-[var(--faint)]">{track.gaps.length} gaps </span>
+        )}
         {verdict.state === 'ready' && (
           <span className="ok">Ready{verdict.viaOwnLink ? ' (our own work link)' : ''}</span>
         )}
         {verdict.state === 'not_classical' && <span>Not classical, left out</span>}
         {verdict.state === 'held' && (
-          <span className="bad" title={verdict.detail}>
+          <span className="bad">
             {verdict.label}
             {verdict.waiting && ' (edit sent, waiting)'}
           </span>
         )}
-        {track.gaps.map((gap) => (
-          <div key={gap.code} className="text-[var(--faint)]" title={gap.code}>
-            {gap.reason}
-          </div>
-        ))}
       </td>
-      <td className="min-w-[120px]">
+      <td
+        className="w-narrow"
+        title={
+          queue
+            ? [
+                queue.reason,
+                queue.error,
+                queue.processedAt !== null
+                  ? `processed ${new Date(queue.processedAt).toISOString().slice(0, 10)}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join('\n')
+            : undefined
+        }
+      >
         {queue ? (
           <>
-            <span className="tag">{queue.status.replace('_', ' ')}</span>{' '}
+            <span className={`tag ${queue.error ? 'bad' : ''}`}>
+              {queue.status.replace('_', ' ')}
+            </span>{' '}
             <span className="text-[var(--faint)]">
-              {queue.attempts} {queue.attempts === 1 ? 'try' : 'tries'}
+              ×{queue.attempts}
+              {queue.outcome && ` · ${queue.outcome}`}
             </span>
-            {queue.outcome && <div>MB pass: {queue.outcome}</div>}
-            {queue.reason && <div className="text-[var(--ink-2)]">{queue.reason}</div>}
-            {queue.error && <div className="bad">{queue.error}</div>}
-            {queue.processedAt !== null && (
-              <div className="text-[var(--faint)]">
-                {new Date(queue.processedAt).toISOString().slice(0, 10)}
-              </div>
-            )}
           </>
         ) : (
           <span className="absent">not queued</span>
@@ -287,12 +304,34 @@ function TrackRow({ track }: { track: MatchDebugTrack }) {
   );
 }
 
-function WorkCell({ work }: { work: MatchDebugWork }) {
+function recordingTitle(track: MatchDebugTrack): string {
+  const { recording } = track;
+  if (recording.state === 'contested') return recording.reason;
+  if (recording.state === 'none') return 'No MusicBrainz recording';
+  const length =
+    recording.lengthMs === null
+      ? 'no length'
+      : `${clock(recording.lengthMs)} vs Spotify ${clock(track.durationMs)}`;
+  return `${recording.title ?? 'not in cache'} · ${length}`;
+}
+
+function workTitle(work: MatchDebugWork): string {
+  const chain = work.chain
+    .map((node) => `${node.title ?? 'untitled'}${node.type ? ` (${node.type})` : ''}`)
+    .join(' › ');
+  const linked = work.linkedBy === 'prelude' ? ` [our link, ${work.confidence ?? '?'}]` : '';
+  return `${chain || 'work not in cache'}${work.catalogues.length ? ` · ${work.catalogues.join(', ')}` : ''}${linked}`;
+}
+
+function WorkChain({ work }: { work: MatchDebugWork }) {
   return (
-    <div>
+    <>
       {work.linkedBy === 'prelude' && (
         <span className="tag">ours{work.confidence ? `, ${work.confidence}` : ''}</span>
       )}{' '}
+      {work.catalogues.length > 0 && (
+        <span className="mono text-[var(--ink-2)]">{work.catalogues.join(', ')} </span>
+      )}
       {work.chain.length === 0 ? (
         <a className="absent" href={`${MB}/work/${work.relatedWorkMbid}`} target="_blank">
           work not in cache
@@ -305,18 +344,13 @@ function WorkCell({ work }: { work: MatchDebugWork }) {
               href={`${MB}/work/${node.mbid}`}
               target="_blank"
               className={node.filed ? 'font-semibold' : undefined}
-              title={node.filed ? 'The player files the track under this work' : undefined}
             >
               {node.title ?? <span className="absent">untitled</span>}
             </a>
-            {node.type && <span className="text-[var(--faint)]"> ({node.type})</span>}
           </span>
         ))
       )}
-      {work.catalogues.length > 0 && (
-        <span className="mono text-[var(--ink-2)]"> {work.catalogues.join(', ')}</span>
-      )}
-    </div>
+    </>
   );
 }
 
