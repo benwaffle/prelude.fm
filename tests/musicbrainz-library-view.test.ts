@@ -3,7 +3,11 @@ import { eq } from 'drizzle-orm';
 import test, { before, beforeEach } from 'node:test';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 import { projectMusicBrainzLibrary } from '../app/lib/musicbrainz-library';
-import { keepLikedHoldings, musicBrainzLibraryView } from '../app/lib/musicbrainz-library-view';
+import {
+  albumSections,
+  keepLikedHoldings,
+  musicBrainzLibraryView,
+} from '../app/lib/musicbrainz-library-view';
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
@@ -722,4 +726,27 @@ test('a proposal stands in for a recording MusicBrainz relates to no work, unles
     .set({ status: 'dismissed' })
     .where(eq(schema.mbWorkProposal.recordingMbid, 'rec-iii'));
   assert.ok(!(await findProviderTracksForWork('sonata')).includes('track-iii'));
+});
+
+test('album tracks that share a heading up to a colon are listed under it', () => {
+  assert.deepEqual(
+    albumSections([
+      'Stabat Mater in G Minor: I. Stabat Mater',
+      'Stabat Mater in G Minor: IV. Pro peccatis suae gentis',
+      'Paganini: 24 Caprices, Op. 1: No. 1 in E Major',
+      'Paganini: 24 Caprices, Op. 1: No. 20 in D Major',
+      'Minuet in B Minor',
+      'Interstellar Suite: Part 2 - Live',
+      'Gladiator Suite: Part 2 - Live',
+    ]),
+    [
+      'Stabat Mater in G Minor',
+      'Stabat Mater in G Minor',
+      'Paganini: 24 Caprices, Op. 1',
+      'Paganini: 24 Caprices, Op. 1',
+      null,
+      null,
+      null,
+    ],
+  );
 });

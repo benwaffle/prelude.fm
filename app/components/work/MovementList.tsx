@@ -12,6 +12,8 @@ export type MovementListProps =
       variant: 'card';
       movements: Movement[];
       workTitle: string | null;
+      /** Head each run of tracks with the section their titles shared (album cards). */
+      sectionHeadings?: boolean;
       playingTrackId: string | null;
       selectedN: number | null;
       onSelect: (movement: Movement) => void;
@@ -45,8 +47,17 @@ export function MovementList(props: MovementListProps) {
     case 'card':
       return (
         <>
-          {props.movements.map((m) => (
-            <CardRow key={m.n} movement={m} list={props} />
+          {props.movements.map((m, i) => (
+            <Fragment key={m.n}>
+              {props.sectionHeadings &&
+                m.section &&
+                m.section !== props.movements[i - 1]?.section && (
+                  <div className="truncate pt-[6px] pb-[1px] pl-[61px] font-display text-[13px] text-muted italic">
+                    {m.section}
+                  </div>
+                )}
+              <CardRow movement={m} list={props} />
+            </Fragment>
           ))}
         </>
       );

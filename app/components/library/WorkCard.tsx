@@ -158,6 +158,7 @@ export const WorkCard = memo(function WorkCard({
             variant="card"
             movements={shown}
             workTitle={work.title}
+            sectionHeadings={work.unmatched}
             playingTrackId={playingTrackId}
             selectedN={selectedN}
             onSelect={(m) => onSelect(`${selectedPrefix}${m.n}`)}
