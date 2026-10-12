@@ -176,9 +176,11 @@ function separatePerformances(
   const separated = new Map<string, CardMember[]>();
   for (const [cardKey, all] of cards) {
     const members = onePerRecording(all, likedTrackIds);
-    const parts = members.map(
-      (member) => member.work.hierarchy.at(-1)?.mbid ?? member.work.relatedWorkMbid,
-    );
+    // Tracks filed under a whole act are each a piece of it, not repeats of it.
+    const sections = new Set(all[0].work.parts.map((part) => part.parentMbid));
+    const parts = members
+      .map((member) => member.work.hierarchy.at(-1)?.mbid ?? member.work.relatedWorkMbid)
+      .filter((part) => !sections.has(part));
     if (new Set(parts).size === parts.length) {
       separated.set(cardKey, members);
       continue;

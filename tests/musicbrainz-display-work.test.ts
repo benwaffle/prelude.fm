@@ -180,3 +180,41 @@ test('a Mass whose sections are typed "Mass" too still resolves to the whole Mas
   );
   assert.equal(resolved.display?.mbid, 'mass');
 });
+
+test('an aria filed under an act of an opera resolves to the whole opera', () => {
+  const opera = 'Bajazet, RV 703';
+  const index = indexWorks(
+    [
+      node({ mbid: 'opera', title: opera, type: 'Opera' }),
+      node({ mbid: 'act-i', title: `${opera}: Atto I`, parentMbid: 'opera', orderingKey: 2 }),
+      node({
+        mbid: 'aria',
+        title: 'Il Bajazet, Atto I, Scena 1: Aria. «Del destin non dee lagnarsi» (Bajazet)',
+        parentMbid: 'act-i',
+        orderingKey: 2,
+      }),
+      node({
+        mbid: 'typed-aria',
+        title: 'Il Bajazet, Atto I, Scena 11: Aria. «Qual guerriero in campo armato» (Irene)',
+        type: 'Aria',
+        parentMbid: 'act-i',
+        orderingKey: 14,
+      }),
+    ],
+    [],
+  );
+  assert.equal(resolveDisplayWork('aria', index).display?.mbid, 'opera');
+  assert.equal(resolveDisplayWork('typed-aria', index).display?.mbid, 'opera');
+});
+
+test('a suite filed under an opera keeps its own movements', () => {
+  const index = indexWorks(
+    [
+      node({ mbid: 'opera', title: 'Carmen', type: 'Opera' }),
+      node({ mbid: 'suite', title: 'Carmen Suite no. 1', type: 'Suite', parentMbid: 'opera' }),
+      node({ mbid: 'prelude', title: 'Carmen Suite no. 1: Prélude', parentMbid: 'suite' }),
+    ],
+    [],
+  );
+  assert.equal(resolveDisplayWork('prelude', index).display?.mbid, 'suite');
+});

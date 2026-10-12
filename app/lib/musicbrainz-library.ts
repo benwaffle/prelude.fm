@@ -1,4 +1,5 @@
 import { indexWorks, resolveDisplayWork, type WorkIndex } from './musicbrainz-display-work';
+import type { WorkLevel } from './musicbrainz-work-level';
 import type {
   AcceptedAnchorFact,
   MbArtistFact,
@@ -79,7 +80,7 @@ export type ProjectedRecordingWork = {
   linkedBy: 'musicbrainz' | 'prelude';
   linkConfidence: 'high' | 'medium' | 'low' | null;
   displayWorkMbid: string | null;
-  workLevelReason: 'has-parts' | 'typed' | 'no-parent' | 'titled-as-part' | 'unresolved' | null;
+  workLevelReason: WorkLevel['reason'] | null;
   hierarchy: ProjectedWorkNode[];
   /**
    * Every part under the work, each before its own parts, so a reader can show a partial holding
