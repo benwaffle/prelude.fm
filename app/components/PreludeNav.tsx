@@ -21,9 +21,9 @@ export function PreludeNav({ current, query, setQuery, placeholder }: PreludeNav
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && inputRef.current) {
         e.preventDefault();
-        inputRef.current?.focus();
+        inputRef.current.focus();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -67,7 +67,7 @@ export function PreludeNav({ current, query, setQuery, placeholder }: PreludeNav
             className="w-full rounded-[2px] border border-rule bg-paper-2 py-2 pr-3 pl-8 font-body text-[13px] text-ink outline-none transition-colors duration-150 placeholder:text-muted placeholder:italic focus:border-ink-2"
           />
           <kbd className="absolute top-1/2 right-[9px] -translate-y-1/2 rounded-[2px] border border-rule bg-paper px-[5px] py-px font-meta text-[9.5px] text-muted max-[900px]:hidden">
-            ⌘K
+            ⌘F
           </kbd>
         </div>
       )}
