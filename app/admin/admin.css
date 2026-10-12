@@ -523,6 +523,18 @@
   color: var(--gall);
 }
 
+.desk .match-tip {
+  position: fixed;
+  z-index: 40;
+  max-width: 480px;
+  padding: 4px 8px;
+  white-space: pre-line;
+  pointer-events: none;
+  font-size: 11px;
+  background: var(--ink);
+  color: var(--slip);
+}
+
 /* A value we do not have. Saying so plainly beats inventing a
    placeholder that reads like real data. */
 .desk .absent {
