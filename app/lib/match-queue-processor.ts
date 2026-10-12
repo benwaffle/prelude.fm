@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { matchQueue, spotifyAlbum, trackRecording } from '@/lib/db/schema';
+import { matchQueue, trackRecording } from '@/lib/db/schema';
 import {
   getSpotifyAlbumMetadata,
   getSpotifyAlbumTrackIds,
@@ -37,7 +37,6 @@ export interface AlbumProcessResult {
   errors: Array<{ trackId?: string; message: string; retryable?: boolean }>;
   musicbrainz?: {
     releaseCached: boolean;
-    alreadyCached: boolean;
     anchored: number;
     requests: number;
   };
@@ -364,7 +363,6 @@ export async function runMatchQueueWorker(
     musicbrainz?: boolean;
   } = {},
 ): Promise<QueueWorkerResult> {
-  const startedAt = now();
   const maxAlbums = options.maxAlbums ?? 1;
   const maxAttempts = options.maxAttempts ?? 5;
   const prepared = options.recover
@@ -399,21 +397,13 @@ export async function runMatchQueueWorker(
   if (options.musicbrainz !== false) {
     const [
       { drainArtistStubs, drainRecordingStubs, drainWorkStubs },
-      { recordAnonymousImportRun },
       { musicBrainzApi },
       { MusicBrainzBudgetError },
     ] = await Promise.all([
       import('@/lib/musicbrainz-cache'),
-      import('@/lib/musicbrainz-cache-metrics'),
       import('@/lib/musicbrainz'),
       import('@/lib/musicbrainz-gateway'),
     ]);
-    const albumsAlreadyCached = albums.filter(
-      (album) => album.musicbrainz?.releaseCached && album.musicbrainz.alreadyCached,
-    ).length;
-    const albumsNew = albums.filter(
-      (album) => album.musicbrainz?.releaseCached && !album.musicbrainz.alreadyCached,
-    ).length;
 
     try {
       if (albums.length === 0) {
@@ -448,26 +438,6 @@ export async function runMatchQueueWorker(
         console.error('MusicBrainz ingest failed:', error);
         musicbrainz.stopped = error instanceof Error ? error.message : String(error);
       }
-    }
-
-    if (albums.length > 0) {
-      const albumIds = albums.map((album) => album.albumId);
-      const trackRows = await db
-        .select({ spotifyId: matchQueue.spotifyId })
-        .from(matchQueue)
-        .where(inArray(matchQueue.spotifyAlbumId, albumIds));
-      const trackIds = trackRows.map((row) => row.spotifyId);
-      const { countTrackClassificationStates } = await import('@/lib/track-classification');
-      const classification = await countTrackClassificationStates(trackIds);
-      await recordAnonymousImportRun({
-        startedAt,
-        completedAt: now(),
-        inputTrackCount: albums.reduce((total, album) => total + album.claimed, 0),
-        ...classification,
-        albumsAlreadyCached,
-        albumsNew,
-        requestsCaused: musicbrainz.requests,
-      });
     }
   }
 
@@ -560,21 +530,12 @@ async function processAlbumThroughMusicBrainz(
     dependencies.musicBrainzSource ??
     (await import('@/lib/musicbrainz')).musicBrainzApi('interactive');
   const anchored = await getAnchoredTrackIds(trackIds);
-  const [before] = await db
-    .select({ releaseMbid: spotifyAlbum.mbReleaseId })
-    .from(spotifyAlbum)
-    .where(eq(spotifyAlbum.spotifyId, albumId))
-    .limit(1);
-  const alreadyCached = before?.releaseMbid
-    ? await (await import('@/lib/musicbrainz-cache')).releaseIsCached(before.releaseMbid)
-    : false;
   const report = await runMusicBrainzAlbumPass(source, albumId, trackIds, {
     alreadyAnchored: trackIds.length > 0 && trackIds.every((trackId) => anchored.has(trackId)),
     readAlbum: dependencies.readAlbum,
   });
   result.musicbrainz = {
     releaseCached: report.releaseMbid !== null,
-    alreadyCached,
     anchored: report.anchored,
     requests: report.requests,
   };

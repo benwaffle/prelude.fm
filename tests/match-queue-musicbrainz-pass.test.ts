@@ -71,7 +71,6 @@ test('a track MusicBrainz places and calls classical is matched', async () => {
 
   assert.equal(result.matched, 2);
   assert.equal(result.musicbrainz?.releaseCached, true);
-  assert.equal(result.musicbrainz?.alreadyCached, false);
   assert.equal(result.musicbrainz?.anchored, 2);
   assert.ok((result.musicbrainz?.requests ?? 0) > 0);
   assert.equal(result.unresolved, 0);

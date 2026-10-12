@@ -18,7 +18,6 @@ import {
   mbWorkCatalogue,
   spotifyArtist,
 } from './db/schema';
-import { bumpCacheLookup, recordMusicBrainzRequest } from './musicbrainz-cache-metrics';
 import { normalizeIsrc } from './isrc';
 import { cataloguesOf, composerOf, parentPartOf, spotifyArtistIdsOf, yearOf } from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
@@ -333,8 +332,6 @@ async function cacheArtistNames(tx: Transaction, recordings: MbReleaseRecording[
 export async function worksNeedingDetail(mbids: string[]): Promise<string[]> {
   if (mbids.length === 0) return [];
   const known = new Set<string>();
-  let hits = 0;
-  let misses = 0;
   for (const batch of chunksOf(mbids, INSERT_CHUNK)) {
     const rows = await db
       .select({ mbid: mbWork.mbid })
@@ -343,9 +340,6 @@ export async function worksNeedingDetail(mbids: string[]): Promise<string[]> {
     for (const row of rows) known.add(row.mbid);
   }
   const pending = mbids.filter((mbid) => !known.has(mbid));
-  hits = known.size;
-  misses = pending.length;
-  await bumpCacheLookup('work', hits, misses);
   return pending;
 }
 
@@ -372,7 +366,6 @@ export async function ingestWorkTree(
     }
 
     const work = await source.work(next);
-    await recordMusicBrainzRequest(source, 'work');
     requests++;
     if (!work) break;
 
@@ -388,7 +381,6 @@ export async function readAndCacheWork(
   workMbid: string,
 ): Promise<MbWork | null> {
   const work = await source.work(workMbid);
-  await recordMusicBrainzRequest(source, 'work');
   if (work) await cacheWork(work);
   return work;
 }
@@ -412,7 +404,6 @@ export async function ingestRelease(
   options: { fetchWorks?: boolean } = {},
 ): Promise<ReleaseIngestReport> {
   const release = await source.releaseWithRecordings(releaseMbid);
-  await recordMusicBrainzRequest(source, 'release');
   let requests = 1;
 
   if (!release) {
@@ -458,7 +449,6 @@ export async function ingestRecording(
   recordingMbid: string,
 ): Promise<{ found: boolean; requests: number }> {
   const detail = await source.recordingDetail(recordingMbid);
-  await recordMusicBrainzRequest(source, 'recording');
   if (!detail) return { found: false, requests: 1 };
 
   const workLinks = dedupe(
@@ -535,9 +525,7 @@ export async function drainRecordingStubs(
   let reachedWork = 0;
 
   for (const stub of stubs) {
-    await bumpCacheLookup('recording', 0, 1);
     const detail = await source.recordingDetail(stub.mbid);
-    await recordMusicBrainzRequest(source, 'recording');
     requests++;
     if (!detail) continue;
 
@@ -741,9 +729,7 @@ export async function drainArtistStubs(
   let artists = 0;
 
   for (const mbid of pending) {
-    await bumpCacheLookup('artist', 0, 1);
     const artist = await source.artist(mbid);
-    await recordMusicBrainzRequest(source, 'artist');
     requests++;
     if (!artist) continue;
     await cacheArtist(artist);

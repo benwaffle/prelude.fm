@@ -4,7 +4,6 @@ const DB_VERSION = 2;
 const STORE_NAME = 'likedSongs';
 const META_STORE = 'metadata';
 const CACHE_TTL = 60 * 60 * 1000;
-let legacyCleanupStarted = false;
 
 export function likedSongsDatabaseName(userId: string) {
   return `SpotifyCache:${userId}`;
@@ -16,10 +15,6 @@ export interface CachedLikedSongs {
 }
 
 function openDB(userId: string): Promise<IDBDatabase> {
-  if (!legacyCleanupStarted) {
-    legacyCleanupStarted = true;
-    indexedDB.deleteDatabase('SpotifyCache');
-  }
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(likedSongsDatabaseName(userId), DB_VERSION);
     request.onerror = () => reject(request.error);
