@@ -1,6 +1,15 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { createSpotifySdk } from '@/lib/spotify-sdk';
 import { useLikedSongs } from '@/lib/use-liked-songs';
 import { useServerQuery } from '@/lib/use-server-query';
@@ -133,6 +142,19 @@ export function LibraryProvider({
   const rememberWork = useCallback((work: LibraryWork) => {
     setKnown((prev) => (prev.has(work.id) ? prev : new Map(prev).set(work.id, work)));
   }, []);
+
+  // A track played from outside the library (Spotify's own app, a queue run past it) is looked up
+  // once, so the player names its work rather than showing Spotify's whole title.
+  const { currentTrack } = usePlayer();
+  const lookedUp = useRef(new Set<string>());
+  const unplacedId = currentTrack?.id && !placements.has(currentTrack.id) ? currentTrack.id : null;
+  useEffect(() => {
+    if (!unplacedId || lookedUp.current.has(unplacedId)) return;
+    lookedUp.current.add(unplacedId);
+    getMusicBrainzLibrary([unplacedId])
+      .then(({ works: cards }) => cards.forEach(rememberWork))
+      .catch((err) => console.error('Failed to look up the playing track:', err));
+  }, [unplacedId, rememberWork]);
 
   const failedWith = match.status === 'error' ? match.message : null;
   const retryMatch = match.status === 'error' ? match.retry : null;

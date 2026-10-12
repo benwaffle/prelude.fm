@@ -9,7 +9,6 @@ import { hexToRgba, numeralPrefix } from '@/lib/prelude';
 import { Icon } from './Icon';
 import { QueueList } from './queue/QueueList';
 import { Credit } from './player/Credit';
-import { MovementName } from './work/WorkText';
 import { MovementList } from './work/MovementList';
 import { useProgramme } from './player/use-programme';
 import { WorkProgress } from './player/WorkProgress';
@@ -52,7 +51,7 @@ export function NowPlayingSheet({
       {movement.roman && (
         <span className="mr-2 italic opacity-70">{numeralPrefix(movement.roman)}</span>
       )}
-      <MovementName movement={movement} />
+      {movement.name}
     </>
   );
 

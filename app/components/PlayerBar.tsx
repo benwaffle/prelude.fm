@@ -10,7 +10,6 @@ import { Icon } from './Icon';
 import { DevicePicker } from './DevicePicker';
 import { QueuePanel } from './queue/QueuePanel';
 import { NowPlayingSheet } from './NowPlayingSheet';
-import { MovementName } from './work/WorkText';
 import { Credit } from './player/Credit';
 import { Marquee } from './player/Marquee';
 import { useProgramme, type Programme } from './player/use-programme';
@@ -157,9 +156,7 @@ export function PlayerBar() {
                         {numeralPrefix(movement.roman)}
                       </span>
                     )}
-                    <Marquee>
-                      <MovementName movement={movement} />
-                    </Marquee>
+                    <Marquee>{movement.name}</Marquee>
                   </span>
                   <span className="block truncate font-display text-[12.5px] italic opacity-75">
                     {remote ? `On ${remote.name}` : <Credit programme={programme} />}
@@ -194,15 +191,11 @@ export function PlayerBar() {
                         {numeralPrefix(movement.roman)}
                       </span>
                     )}
-                    <Marquee>
-                      <MovementName movement={movement} />
-                    </Marquee>
+                    <Marquee>{movement.name}</Marquee>
                   </Link>
                 ) : (
                   <span className="flex min-w-0 items-baseline">
-                    <Marquee>
-                      <MovementName movement={movement} />
-                    </Marquee>
+                    <Marquee>{movement.name}</Marquee>
                   </span>
                 )}
                 {movement.trackId && (
