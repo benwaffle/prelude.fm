@@ -113,7 +113,18 @@ function typedPartOf(node: WorkNode): boolean {
 }
 
 export function workLevelOf(node: WorkNode): WorkLevel {
-  if (node.hasChildren) return { mbid: node.mbid, reason: 'has-parts', needsReview: false };
+  if (node.hasChildren) {
+    // A section of a Mass or opera ("III. Sequenz", "Act II") is still a part of it; a prelude and
+    // fugue in a book of 24 is a piece, so a parent's title alone is not enough.
+    const sectionOf =
+      !node.type &&
+      node.parentMbid &&
+      (numberedAsPart(node) ||
+        (WHOLES_OF_NUMBERS.has(node.parentType ?? '') && titledAsPartOf(node)));
+    return sectionOf
+      ? { mbid: node.parentMbid!, reason: 'titled-as-part', needsReview: false }
+      : { mbid: node.mbid, reason: 'has-parts', needsReview: false };
+  }
 
   // MusicBrainz types works, not movements: this keeps 24 Chopin études from collapsing into "12
   // Études, Op. 10".

@@ -103,9 +103,14 @@ function issueOf(occurrence: ProjectedProviderOccurrence): string {
   return occurrence.releaseMbid ?? `spotify:${occurrence.spotifyAlbumId}`;
 }
 
+// The part directly under the card's work: "III. Sequenz" for its "a. Dies irae".
+function movementOf(work: ProjectedRecordingWork) {
+  const display = work.hierarchy.findIndex((node) => node.mbid === work.displayWorkMbid);
+  return (display === -1 ? undefined : work.hierarchy[display + 1]) ?? work.hierarchy.at(-1);
+}
+
 function partPosition(work: ProjectedRecordingWork, fallback: number): number {
-  const leaf = work.hierarchy.at(-1);
-  return leaf?.orderingKey ?? fallback;
+  return movementOf(work)?.orderingKey ?? fallback;
 }
 
 const CONFIDENCE_RANK = { high: 0, medium: 1, low: 2 } as const;
@@ -173,10 +178,13 @@ function separatePerformances(
     };
     for (const member of byTrack) {
       const previous = run.at(-1)?.occurrence;
+      // An opera runs on from one disc to the next.
       const adjacent =
         previous &&
-        previous.discNumber === member.occurrence.discNumber &&
-        member.occurrence.trackNumber - previous.trackNumber <= 1;
+        ((previous.discNumber === member.occurrence.discNumber &&
+          member.occurrence.trackNumber - previous.trackNumber <= 1) ||
+          (member.occurrence.discNumber === previous.discNumber + 1 &&
+            member.occurrence.trackNumber === 1));
       if (!adjacent) flush();
       run.push(member);
     }
@@ -218,7 +226,7 @@ export function musicBrainzLibraryView(
     );
     const head = ordered[0];
     const heldPartMbids = new Set(
-      ordered.map((member) => member.work.hierarchy.at(-1)?.mbid).filter(Boolean),
+      ordered.map((member) => movementOf(member.work)?.mbid).filter(Boolean),
     );
     const credits = performingCredits(storedCredits(head.recording));
     const { performer, ensemble } = hasPerformingCredits(credits)

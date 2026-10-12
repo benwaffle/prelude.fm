@@ -124,17 +124,14 @@ export function resolveDisplayWork<N extends DisplayWorkNode, R extends DisplayW
     };
   }
   const { chain, stopped } = climb(relatedMbid, index.workById);
-  const parent = related.parentMbid ? index.workById.get(related.parentMbid) : undefined;
-  const level = workLevelOf({
-    mbid: related.mbid,
-    title: related.title ?? '',
-    type: related.type,
-    parentMbid: related.parentMbid,
-    parentTitle: parent?.title ?? null,
-    parentType: parent?.type ?? null,
-    hasChildren: index.parentMbids.has(related.mbid),
-    orderingKey: related.orderingKey,
-  });
+  // A movement of a section ("III. Sequenz: a. Dies irae") belongs to the whole Requiem, so keep
+  // climbing while each level is a part of the next.
+  let level = levelOf(related, index);
+  for (let step = 1; step < chain.length && chain[step].mbid === level.mbid; step++) {
+    const next = levelOf(chain[step], index);
+    if (next.mbid === chain[step].mbid) break;
+    level = next;
+  }
   const start = chain.findIndex((work) => work.mbid === level.mbid);
   return {
     related,
@@ -144,4 +141,21 @@ export function resolveDisplayWork<N extends DisplayWorkNode, R extends DisplayW
     display: index.workById.get(level.mbid) ?? null,
     ...workAttributes(start === -1 ? [] : chain.slice(start), index),
   };
+}
+
+function levelOf<N extends DisplayWorkNode, R extends DisplayWorkReference>(
+  work: N,
+  index: WorkIndex<N, R>,
+): WorkLevel {
+  const parent = work.parentMbid ? index.workById.get(work.parentMbid) : undefined;
+  return workLevelOf({
+    mbid: work.mbid,
+    title: work.title ?? '',
+    type: work.type,
+    parentMbid: work.parentMbid,
+    parentTitle: parent?.title ?? null,
+    parentType: parent?.type ?? null,
+    hasChildren: index.parentMbids.has(work.mbid),
+    orderingKey: work.orderingKey,
+  });
 }
