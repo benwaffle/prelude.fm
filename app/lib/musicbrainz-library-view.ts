@@ -16,6 +16,7 @@ import {
   type Movement,
 } from './prelude';
 import type {
+  AlbumTrack,
   MusicBrainzGapCode,
   MusicBrainzLibraryProjection,
   ProjectedProviderOccurrence,
@@ -381,6 +382,8 @@ export function musicBrainzLibraryView(
     });
   }
 
+  works.push(...albumCards(projection.albumTracks, likedTrackIds, addedAtByTrackId));
+
   works.sort(
     (left, right) =>
       (left.composerFull ?? '').localeCompare(right.composerFull ?? '', 'en') ||
@@ -392,6 +395,78 @@ export function musicBrainzLibraryView(
     unresolvedTracks: projection.unresolvedTracks,
     accounting: projection.accounting,
   };
+}
+
+// Classical tracks with no MusicBrainz work, one card per Spotify album: titled by the album,
+// tracks named by Spotify and in album order, never numbered as movements.
+function albumCards(
+  tracks: AlbumTrack[],
+  likedTrackIds: Set<string>,
+  addedAtByTrackId: Map<string, string>,
+): LibraryWork[] {
+  const byAlbum = new Map<string, AlbumTrack[]>();
+  for (const track of tracks) {
+    const albumId = track.occurrence.spotifyAlbumId;
+    byAlbum.set(albumId, [...(byAlbum.get(albumId) ?? []), track]);
+  }
+  return Array.from(byAlbum, ([albumId, members]): LibraryWork => {
+    const ordered = [...members].sort(
+      (left, right) =>
+        left.occurrence.discNumber - right.occurrence.discNumber ||
+        left.occurrence.trackNumber - right.occurrence.trackNumber,
+    );
+    const head = ordered[0].occurrence;
+    // Only a composer every track agrees on; a compilation of several stays blank.
+    const composers = new Set(ordered.map((member) => member.listedComposer));
+    const composer = composers.size === 1 ? [...composers][0] : null;
+    const { tint, ink } = tintFor(albumId);
+    const addedAt = ordered
+      .map((member) => addedAtByTrackId.get(member.occurrence.spotifyTrackId))
+      .filter((value): value is string => value !== undefined)
+      .sort()
+      .at(-1);
+    return {
+      id: `album:${albumId}`,
+      workId: '',
+      recordingId: '',
+      composer: composer ? shortName(composer) : null,
+      composerFull: composer,
+      composerId: null,
+      composerImage: null,
+      era: null,
+      years: '',
+      title: head.providerAlbumTitle,
+      nickname: null,
+      catalog: null,
+      year: null,
+      performer: null,
+      ensemble: null,
+      album: head.providerAlbumTitle ?? '',
+      albumId,
+      cover: head.imageUrl,
+      tint,
+      ink,
+      movements: ordered.map(({ occurrence }, index) => ({
+        n: index + 1,
+        position: index + 1,
+        roman: '',
+        // The card says these are Spotify's titles; marking every row would only repeat it.
+        name: occurrence.providerTitle,
+        unnamed: false,
+        section: null,
+        missing: false,
+        durationMs: occurrence.durationMs,
+        duration: formatDuration(occurrence.durationMs),
+        liked: likedTrackIds.has(occurrence.spotifyTrackId),
+        trackId: occurrence.spotifyTrackId,
+        uri: `spotify:track:${occurrence.spotifyTrackId}`,
+      })),
+      unmatched: true,
+      addedAt: addedAt ?? null,
+      gaps: Array.from(new Set(ordered.flatMap((member) => member.gaps.map((item) => item.code)))),
+      ownLink: null,
+    };
+  });
 }
 
 // Cards carry the whole album's movements; this narrows back to cards with a liked track, and gaps

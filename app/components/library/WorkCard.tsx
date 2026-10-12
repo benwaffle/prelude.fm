@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { memo } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import { Icon } from '../Icon';
 import { workHref, type LibraryWork, type Movement } from '@/lib/prelude';
 import { AddToQueueButton } from '../queue/AddToQueueButton';
@@ -10,6 +10,8 @@ import { MovementList } from '../work/MovementList';
 import { GapNotes, Missing, WorkTitle } from '../work/WorkText';
 
 const CAP = 8;
+const MORE =
+  'mt-[9px] inline-block cursor-pointer self-start border-b border-transparent font-meta text-[9px] tracking-[0.16em] text-muted uppercase no-underline transition-colors duration-150 hover:border-muted';
 
 interface WorkCardProps {
   work: LibraryWork;
@@ -32,9 +34,19 @@ export const WorkCard = memo(function WorkCard({
   onPlayWork,
   onToggleLike,
 }: WorkCardProps) {
-  const shown = work.movements.slice(0, CAP);
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? work.movements : work.movements.slice(0, CAP);
   const extra = work.movements.length - shown.length;
-  const href = workHref(work);
+  // An album card has no MusicBrainz work, so no page to open.
+  const href = work.unmatched ? null : workHref(work);
+  const linked = (className: string, children: ReactNode, label?: string) =>
+    href ? (
+      <Link prefetch={false} href={href} aria-label={label} className={className}>
+        {children}
+      </Link>
+    ) : (
+      <span className={className}>{children}</span>
+    );
   const selectedPrefix = `${work.id}-`;
   const selectedN = selectedId?.startsWith(selectedPrefix)
     ? Number(selectedId.slice(selectedPrefix.length))
@@ -50,12 +62,8 @@ export const WorkCard = memo(function WorkCard({
           style={{ background: `linear-gradient(90deg, ${work.tint}, transparent)` }}
         />
 
-        <Link
-          prefetch={false}
-          href={href}
-          aria-label={`${work.title ?? 'Untitled in MusicBrainz'} — recording detail`}
-          className="relative block self-start no-underline"
-        >
+        {linked(
+          'relative block self-start no-underline',
           <span className="relative block aspect-square overflow-hidden shadow-soft">
             <CoverArt
               src={work.cover}
@@ -65,8 +73,9 @@ export const WorkCard = memo(function WorkCard({
               <WorkPlate work={work} size="card" />
             </CoverArt>
             <span className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" />
-          </span>
-        </Link>
+          </span>,
+          `${work.title ?? 'Untitled in MusicBrainz'} — recording detail`,
+        )}
 
         <div className="flex min-w-0 flex-col pt-[2px]">
           <div className="flex items-baseline gap-[9px] text-ink-2 max-[900px]:flex-wrap max-[900px]:gap-x-2 max-[900px]:gap-y-[3px]">
@@ -96,13 +105,10 @@ export const WorkCard = memo(function WorkCard({
                 <Icon name="play" size={11} />
               </span>
             </button>
-            <Link
-              prefetch={false}
-              href={href}
-              className="border-b border-transparent no-underline transition-colors duration-150 hover:border-rule"
-            >
-              <WorkTitle work={work} />
-            </Link>
+            {linked(
+              'border-b border-transparent no-underline transition-colors duration-150 hover:border-rule',
+              <WorkTitle work={work} />,
+            )}
           </h2>
 
           <div className="mt-[6px] flex flex-wrap items-baseline gap-x-[9px] gap-y-1 font-display text-[13px] text-muted italic max-[900px]:text-[12px]">
@@ -158,15 +164,16 @@ export const WorkCard = memo(function WorkCard({
             onPlay={(m) => onPlayMovement(work, m)}
             onToggleLike={onToggleLike}
           />
-          {extra > 0 && (
-            <Link
-              prefetch={false}
-              href={href}
-              className="mt-[9px] inline-block self-start border-b border-transparent font-meta text-[9px] tracking-[0.16em] text-muted uppercase no-underline transition-colors duration-150 hover:border-muted"
-            >
-              + {extra} more movement{extra !== 1 ? 's' : ''}
-            </Link>
-          )}
+          {extra > 0 &&
+            (href ? (
+              <Link prefetch={false} href={href} className={MORE}>
+                + {extra} more movement{extra !== 1 ? 's' : ''}
+              </Link>
+            ) : (
+              <button type="button" onClick={() => setExpanded(true)} className={MORE}>
+                + {extra} more track{extra !== 1 ? 's' : ''}
+              </button>
+            ))}
         </div>
       </div>
     </div>

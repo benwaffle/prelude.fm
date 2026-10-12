@@ -14,7 +14,7 @@ import {
   trackRecording,
 } from './db/schema';
 import { readWorkNeighbourhood } from './db/work-tree-sql';
-import { classicalComposerReason } from './classical-composers';
+import { classicalComposerReason, listedComposerOf } from './classical-composers';
 import { filmScoreInputs } from './film-score-inputs';
 import { filmScoreReason } from './film-scores';
 import { classicalEvidenceFor, type ClassicalEvidenceWork } from './musicbrainz-classical-evidence';
@@ -116,10 +116,17 @@ export async function classifyTracks(
           catalogedComposers,
           queueStatusByTrack.get(spotifyTrackId) ?? null,
         );
-    const listed = classicalComposerReason(inputs.spotifyArtistIds);
-    return decided.state === 'classical' || !listed
-      ? decided
-      : { spotifyTrackId, state: 'classical', provenance: 'manual', reason: listed };
+    const composer = listedComposerOf(inputs.spotifyArtistIds);
+    if (!composer) return decided;
+    return decided.state === 'classical'
+      ? { ...decided, listedComposer: composer }
+      : {
+          spotifyTrackId,
+          state: 'classical',
+          provenance: 'manual',
+          reason: classicalComposerReason(composer),
+          listedComposer: composer,
+        };
   });
 }
 
