@@ -226,20 +226,12 @@ export interface LibraryWork {
   addedAt: string | null;
 }
 
-// MusicBrainz titles a part with its collection in front; repeating it under the collection heading
-// is noise.
+// MusicBrainz names a part after its parent: the parent's title, though not always spelled the same
+// ("Children’s Corner, L. 113: I. …" under "Children’s Corner, L. 113, CD 119"), then its own name
+// after one more colon. Repeating the parent under its own heading is noise.
 export function stripCollectionPrefix(title: string, parentTitle: string): string {
-  // The collection's title may also extend its parts' heading, or case it differently: "The Four
-  // Seasons Recomposed", "Children’s Corner, L. 113, CD 119".
-  const head = title.slice(0, Math.max(title.indexOf(':'), 0)).toLowerCase();
-  const parent = parentTitle.toLowerCase();
-  const prefix = title.startsWith(`${parentTitle}:`)
-    ? `${parentTitle}:`
-    : head && (parent === head || parent.startsWith(`${head} `) || parent.startsWith(`${head},`))
-      ? `${head}:`
-      : null;
-  if (!prefix) return title;
-  return title.slice(prefix.length).trim() || title;
+  const cut = [...title.matchAll(/ ?: /g)][parentTitle.split(/ ?: /).length - 1];
+  return cut ? title.slice(cut.index + cut[0].length) : title;
 }
 
 export function workHref(work: Pick<LibraryWork, 'workId' | 'recordingId'>): string {

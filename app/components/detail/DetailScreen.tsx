@@ -224,7 +224,6 @@ function Hero({
         <MovementList
           variant="programme"
           movements={work.movements}
-          workTitle={work.title}
           playingTrackId={currentTrackId}
           onPlay={onPlay}
           onToggleLike={onToggleLike}

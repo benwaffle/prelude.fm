@@ -22,12 +22,8 @@ test('programme drops a heading the work title extends', () => {
   );
 });
 
-test('programme leaves unrelated and missing MusicBrainz titles visible as given', () => {
+test('programme leaves missing MusicBrainz titles visible as given', () => {
   assert.equal(programmeMovementName('I. Allegro', work, 'II'), 'I. Allegro');
-  assert.equal(
-    programmeMovementName('Another concerto: I. Allegro', work, 'I'),
-    'Another concerto: I. Allegro',
-  );
   assert.equal(programmeMovementName('', work, 'I'), '');
   assert.equal(programmeMovementName(`${work}: I.`, work, 'I'), '');
   assert.equal(programmeMovementName('I. Allegro', null, 'I'), 'Allegro');
@@ -41,7 +37,7 @@ test('an unmatched Spotify track title reaches the programme untouched', () => {
   );
 });
 
-test('a part titled under a shorter or differently cased form of its work is named within it', () => {
+test('a part titled under any spelling of its work is named within it', () => {
   assert.equal(
     programmeMovementName(
       'Children’s Corner, L. 113: I. Doctor Gradus ad Parnassum',
@@ -57,5 +53,20 @@ test('a part titled under a shorter or differently cased form of its work is nam
       'I',
     ),
     'Kyrie',
+  );
+});
+
+test('a part is named after as many headings as its work has', () => {
+  assert.equal(
+    programmeMovementName(
+      'Swan Lake, op. 20: Act II, no. 10: Scene: Moderato',
+      'Swan Lake, op. 20: Act II',
+      'X',
+    ),
+    'Scene: Moderato',
+  );
+  assert.equal(
+    programmeMovementName('Requiem, K. 626: III. Sequenz: a. Dies irae', 'Requiem, K. 626', 'III'),
+    'Sequenz: a. Dies irae',
   );
 });

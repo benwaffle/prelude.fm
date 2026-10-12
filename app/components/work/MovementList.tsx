@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useRef } from 'react';
-import { numeralPrefix, programmeMovementName, type Movement } from '@/lib/prelude';
+import { numeralPrefix, type Movement } from '@/lib/prelude';
 import { Icon, Waveform } from '../Icon';
 import { MovementName } from './WorkText';
 
@@ -23,7 +23,6 @@ export type MovementListProps =
   | {
       variant: 'programme';
       movements: Movement[];
-      workTitle: string | null;
       playingTrackId: string | null;
       onPlay: (movement: Movement) => void;
       onToggleLike: (trackId: string) => void;
@@ -73,7 +72,7 @@ export function MovementList(props: MovementListProps) {
               !(previous && !previous.section && previous.position === m.position);
             return (
               <Fragment key={m.n}>
-                {opensSection && <SectionHeading movement={m} workTitle={props.workTitle} />}
+                {opensSection && <SectionHeading movement={m} />}
                 <ProgrammeRow movement={m} list={props} />
               </Fragment>
             );
@@ -265,21 +264,13 @@ function CardRow({
   );
 }
 
-function SectionHeading({
-  movement: m,
-  workTitle,
-}: {
-  movement: Movement;
-  workTitle: string | null;
-}) {
+function SectionHeading({ movement: m }: { movement: Movement }) {
   return (
     <li className="grid grid-cols-[36px_1fr] items-baseline gap-4 pt-[14px] pb-[2px]">
       <span className="onum text-right font-display text-[22px] text-muted italic">
         {numeralPrefix(m.roman)}
       </span>
-      <span className="font-display text-[20px] font-medium">
-        {programmeMovementName(m.section!, workTitle, m.roman)}
-      </span>
+      <span className="font-display text-[20px] font-medium">{m.section}</span>
     </li>
   );
 }
@@ -303,11 +294,7 @@ function ProgrammeRow({
             {numeralPrefix(m.roman)}
           </span>
           <span className="font-display text-[20px] font-medium text-muted">
-            <MovementName
-              movement={m}
-              workTitle={list.workTitle}
-              className="line-through decoration-rule"
-            />
+            <MovementName movement={m} className="line-through decoration-rule" />
           </span>
           <span className="font-meta text-[12px] text-muted tabular-nums">—</span>
           <span
@@ -344,7 +331,15 @@ function ProgrammeRow({
             playing ? 'text-accent' : ''
           } ${m.section ? 'pl-5' : ''}`}
         >
-          <MovementName movement={m} workTitle={m.section ?? list.workTitle} />
+          {/* The section heads its parts, so "Sequenz: a. Dies irae" reads "a. Dies irae" under it. */}
+          <MovementName
+            movement={m}
+            name={
+              m.section && m.name.startsWith(`${m.section}: `)
+                ? m.name.slice(m.section.length + 2)
+                : m.name
+            }
+          />
           {playing && <Waveform bars={5} className="ml-[10px] h-3 align-middle" />}
         </button>
         <span className="font-meta text-[12px] text-muted tabular-nums">{m.duration}</span>

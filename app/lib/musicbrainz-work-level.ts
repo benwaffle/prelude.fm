@@ -24,22 +24,6 @@ export type WorkLevel = {
   needsReview: boolean;
 };
 
-function shortenings(title: string, drops: (segment: string) => boolean): string[] {
-  const stages = [title];
-  for (;;) {
-    const current = stages[stages.length - 1];
-    const cut = current.lastIndexOf(', ');
-    if (cut <= 0 || !drops(current.slice(cut + 2))) return stages;
-    stages.push(current.slice(0, cut));
-  }
-}
-
-/** Any segment with a number and no colon ("W. C12", "op. 6 no. 6"). */
-const parentTrailer = (segment: string) => /\d/.test(segment) && !segment.includes(':');
-
-/** Never a piece number: "no. 5" tells one piece in a collection from the next. */
-const childTrailer = (segment: string) => /^[A-Z]{1,4}\.? ?[A-Z]?\d[\w./–-]*$/.test(segment);
-
 // Spellings MusicBrainz editors vary between a parent and its parts ("in e minor" / "in E minor",
 // "E‐flat" / "E-flat").
 function spelling(title: string): string {
@@ -50,21 +34,14 @@ function spelling(title: string): string {
     .toLowerCase();
 }
 
-/** Either side may carry a catalogue reference the other leaves out. */
 function titledAsPartOf(node: WorkNode): boolean {
   if (!node.parentTitle) return false;
   const parentTitle = spelling(node.parentTitle);
-  // Only one side may lose a reference: RV 522 is not a movement of RV 523.
-  const parentStages = shortenings(node.parentTitle, parentTrailer).map(spelling);
   const title = node.title;
   for (let colon = title.indexOf(':'); colon !== -1; colon = title.indexOf(':', colon + 1)) {
-    const head = title.slice(0, colon);
-    if (parentStages.includes(spelling(head))) return true;
+    const head = spelling(title.slice(0, colon));
     // A parent may extend its parts' heading: "The Four Seasons Recomposed" / "The Four Seasons: Spring 1".
-    if (parentTitle.startsWith(`${spelling(head)} `)) return true;
-    if (shortenings(head, childTrailer).some((stage) => spelling(stage) === parentTitle)) {
-      return true;
-    }
+    if (parentTitle === head || parentTitle.startsWith(`${head} `)) return true;
   }
   return false;
 }
@@ -121,22 +98,18 @@ export function isWholeOfNumbers(type: string | null | undefined): boolean {
 }
 
 export function workLevelOf(node: WorkNode): WorkLevel {
-  // "Il Bajazet, Atto I, Scena 1: Aria" sits under "Atto I": anything filed below a section of an
-  // opera or Mass is a number of it, however it is titled or typed. A typed piece with its own
+  // Anything filed in an opera or Mass, or in one of its acts ("Il Bajazet, Atto I, Scena 1: Aria"
+  // under "Atto I"), is a number of it, however it is titled or typed. A typed piece with its own
   // parts (a suite drawn from the opera) still decides for itself.
-  if (node.parentMbid && node.wholeAbove && !(node.type && node.hasChildren)) {
+  const inWhole = node.wholeAbove || WHOLES_OF_NUMBERS.has(node.parentType ?? '');
+  if (node.parentMbid && inWhole && !(node.type && node.hasChildren)) {
     return { mbid: node.parentMbid, reason: 'filed-in-whole', needsReview: false };
   }
 
   if (node.hasChildren) {
-    // A section of a Mass or opera ("III. Sequenz", "Act II") is still a part of it; a prelude and
-    // fugue in a book of 24 is a piece, so a parent's title alone is not enough.
-    const sectionOf =
-      node.parentMbid &&
-      (node.type
-        ? typedPartOf(node)
-        : numberedAsPart(node) ||
-          (WHOLES_OF_NUMBERS.has(node.parentType ?? '') && titledAsPartOf(node)));
+    // A numbered section ("III. Sequenz") is still a part; a prelude and fugue in a book of 24 is a
+    // piece, so a parent's title alone is not enough.
+    const sectionOf = node.parentMbid && (node.type ? typedPartOf(node) : numberedAsPart(node));
     return sectionOf
       ? { mbid: node.parentMbid!, reason: 'titled-as-part', needsReview: false }
       : { mbid: node.mbid, reason: 'has-parts', needsReview: false };
