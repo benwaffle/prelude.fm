@@ -52,7 +52,7 @@ export function MovementList(props: MovementListProps) {
               {props.sectionHeadings &&
                 m.section &&
                 m.section !== props.movements[i - 1]?.section && (
-                  <div className="truncate pt-[6px] pb-[1px] pl-[61px] font-display text-[13px] text-muted italic">
+                  <div className="truncate pt-[6px] pb-[1px] pl-[61px] hover:whitespace-normal font-display text-[13px] text-muted italic">
                     {m.section}
                   </div>
                 )}
@@ -214,7 +214,7 @@ function CardRow({
       onKeyDown={(e) => {
         if (e.key === 'Enter') play();
       }}
-      className={`relative grid cursor-pointer grid-cols-[15px_22px_minmax(0,1fr)_auto] items-baseline gap-3 rounded-[2px] py-[3px] pr-[2px] select-none hover:bg-paper-2 max-[900px]:py-[9px] focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-ink-2 ${
+      className={`group/row relative grid cursor-pointer grid-cols-[15px_22px_minmax(0,1fr)_auto] items-baseline gap-3 rounded-[2px] py-[3px] pr-[2px] select-none hover:bg-paper-2 max-[900px]:py-[9px] focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-ink-2 ${
         list.selectedN === movement.n ? 'bg-paper-3 shadow-[inset_0_0_0_1px_var(--rule)]' : ''
       }`}
     >
@@ -245,7 +245,7 @@ function CardRow({
           isPlaying ? 'text-accent' : liked ? 'font-medium text-ink' : 'text-muted opacity-[0.62]'
         }`}
       >
-        <MovementName movement={movement} className="truncate" />
+        <MovementName movement={movement} className="truncate group-hover/row:whitespace-normal" />
         {isPlaying && (
           <span className="ml-[9px]">
             <Waveform />

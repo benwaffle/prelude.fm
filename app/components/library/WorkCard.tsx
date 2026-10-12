@@ -56,7 +56,7 @@ export const WorkCard = memo(function WorkCard({
     // content-visibility skips layout and paint off screen across 1000+ cards; the negative margin
     // keeps the colour bleed unclipped.
     <div className="-mx-6 px-6 [contain-intrinsic-size:auto_220px] [content-visibility:auto] max-[900px]:-mx-4 max-[900px]:px-4">
-      <div className="group relative grid grid-cols-[132px_minmax(0,1fr)_300px] gap-[26px] border-b border-rule py-5 max-[900px]:grid-cols-[76px_minmax(0,1fr)] max-[900px]:gap-[14px] max-[900px]:pt-4 max-[900px]:pb-[14px]">
+      <div className="group relative grid grid-cols-[132px_minmax(0,1fr)_380px] gap-[26px] border-b border-rule py-5 max-[900px]:grid-cols-[76px_minmax(0,1fr)] max-[900px]:gap-[14px] max-[900px]:pt-4 max-[900px]:pb-[14px]">
         <div
           className="pointer-events-none absolute inset-y-0 -left-6 w-[300px] opacity-[0.07] transition-opacity group-hover:opacity-[0.13] max-[900px]:-left-4 max-[900px]:w-[180px]"
           style={{ background: `linear-gradient(90deg, ${work.tint}, transparent)` }}
