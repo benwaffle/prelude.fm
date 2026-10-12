@@ -14,13 +14,15 @@ import {
   trackRecording,
 } from './db/schema';
 import { readWorkNeighbourhood } from './db/work-tree-sql';
+import { classicalComposerReason } from './classical-composers';
 import { filmScoreInputs } from './film-score-inputs';
 import { filmScoreReason } from './film-scores';
 import { classicalEvidenceFor, type ClassicalEvidenceWork } from './musicbrainz-classical-evidence';
 import type { TrackClassification } from './musicbrainz-library-facts';
 
 // Precedence: the film-score rule, then (with `preferStored`) the stored row, then MusicBrainz
-// evidence. The pipeline omits `preferStored` so new evidence can upgrade an old parser proposal.
+// evidence; a track still not classical is classical when Spotify credits a listed composer. The
+// pipeline omits `preferStored` so new evidence can upgrade an old parser proposal.
 export async function classifyTracks(
   spotifyTrackIds: string[],
   options: { preferStored: boolean },
@@ -93,31 +95,31 @@ export async function classifyTracks(
 
   return requested.map((spotifyTrackId): TrackClassification => {
     const workMbids = workMbidsOf(spotifyTrackId);
-    const filmScore = filmScoreReason(
-      { workMbids, ...filmScoreInputOf(spotifyTrackId) },
-      workByMbid,
-      catalogedWorkMbids,
-    );
+    const inputs = filmScoreInputOf(spotifyTrackId);
+    const filmScore = filmScoreReason({ workMbids, ...inputs }, workByMbid, catalogedWorkMbids);
     if (filmScore) {
       return { spotifyTrackId, state: 'not_classical', provenance: 'manual', reason: filmScore };
     }
     const stored = storedByTrack.get(spotifyTrackId);
-    if (stored) {
-      return {
-        spotifyTrackId,
-        state: stored.state,
-        provenance: stored.provenance,
-        reason: stored.reason,
-      };
-    }
-    return classify(
-      spotifyTrackId,
-      workMbids,
-      workByMbid,
-      catalogedWorkMbids,
-      catalogedComposers,
-      queueStatusByTrack.get(spotifyTrackId) ?? null,
-    );
+    const decided: TrackClassification = stored
+      ? {
+          spotifyTrackId,
+          state: stored.state,
+          provenance: stored.provenance,
+          reason: stored.reason,
+        }
+      : classify(
+          spotifyTrackId,
+          workMbids,
+          workByMbid,
+          catalogedWorkMbids,
+          catalogedComposers,
+          queueStatusByTrack.get(spotifyTrackId) ?? null,
+        );
+    const listed = classicalComposerReason(inputs.spotifyArtistIds);
+    return decided.state === 'classical' || !listed
+      ? decided
+      : { spotifyTrackId, state: 'classical', provenance: 'manual', reason: listed };
   });
 }
 
