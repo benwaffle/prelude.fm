@@ -39,6 +39,7 @@ function shouldStop(result: WorkerResult): boolean {
   // Re-asking for works MusicBrainz no longer returns is not progress.
   const progressed =
     result.albums.length > 0 ||
+    result.albumsRechecked > 0 ||
     result.musicbrainz.worksRead > 0 ||
     result.musicbrainz.recordingsRead > 0 ||
     result.musicbrainz.artistsRead > 0;

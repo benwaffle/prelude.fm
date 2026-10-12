@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { matchQueue, trackRecording } from '@/lib/db/schema';
+import { matchQueue, spotifyAlbum, trackRecording } from '@/lib/db/schema';
 import {
   getSpotifyAlbumMetadata,
   getSpotifyAlbumTrackIds,
@@ -52,6 +52,8 @@ export interface QueueWorkerResult {
   recovered: number;
   retried: number;
   exhausted: number;
+  /** Cached albums read again from Spotify for their track total, queueing any tracks we lacked. */
+  albumsRechecked: number;
   musicbrainz: {
     albumsCached: number;
     tracksAnchored: number;
@@ -168,6 +170,13 @@ async function enqueueAlbumTracks(albumId: string, submittedBy: string) {
       .update(matchQueue)
       .set({ spotifyAlbumId: album.id })
       .where(inArray(matchQueue.spotifyId, missingAlbumIds));
+  }
+
+  if (album.total_tracks != null) {
+    await db
+      .update(spotifyAlbum)
+      .set({ spotifyTrackTotal: album.total_tracks })
+      .where(eq(spotifyAlbum.spotifyId, album.id));
   }
 
   return {
@@ -351,6 +360,36 @@ const ARTIST_SWEEP_SIZE = 20;
 
 const RECORDING_SWEEP_SIZE = 30;
 
+/** Spotify reads only, two or three per album. */
+const ALBUM_RECHECK_SIZE = 25;
+
+/**
+ * Reads albums cached before their Spotify track total was stored, recording the total and queueing
+ * any track we never held. Old passes queued only the liked track, or skipped tracks they judged not
+ * classical, so an album could sit in the cache short of what Spotify lists with nothing to say so.
+ */
+async function recheckAlbumTotals(limit: number) {
+  const rows = await db.all<{ albumId: string; submittedBy: string }>(sql`
+    select a.spotify_id as albumId,
+           coalesce((select min(q.submitted_by) from match_queue q
+                     where q.spotify_album_id = a.spotify_id), 'album-recheck') as submittedBy
+    from spotify_album a
+    where a.spotify_track_total is null
+    order by random()
+    limit ${limit}
+  `);
+  let rechecked = 0;
+  for (const row of rows) {
+    try {
+      await enqueueAlbumTracks(row.albumId, row.submittedBy);
+      rechecked++;
+    } catch (error) {
+      console.error(`Album recheck failed for ${row.albumId}:`, error);
+    }
+  }
+  return rechecked;
+}
+
 // Release caching runs on the interactive channel for every album touched; the work tree runs on
 // backfill, in bounded slices, only when no albums are left.
 export async function runMatchQueueWorker(
@@ -382,6 +421,9 @@ export async function runMatchQueueWorker(
     if (!result) break;
     albums.push(result);
   }
+
+  // Only with the queue empty: a recheck that finds tracks queues them for the next pass.
+  const albumsRechecked = albums.length === 0 ? await recheckAlbumTotals(ALBUM_RECHECK_SIZE) : 0;
 
   const musicbrainz = {
     albumsCached: albums.filter((album) => album.musicbrainz?.releaseCached).length,
@@ -462,7 +504,7 @@ export async function runMatchQueueWorker(
     }
   }
 
-  return { albums, ...prepared, musicbrainz, brokenInvariants };
+  return { albums, ...prepared, albumsRechecked, musicbrainz, brokenInvariants };
 }
 
 export async function claimPendingAlbum(

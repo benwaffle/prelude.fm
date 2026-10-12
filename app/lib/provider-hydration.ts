@@ -16,6 +16,8 @@ export async function hydrateProviderAlbum(
   database: DatabaseExecutor = db,
 ): Promise<ProviderHydration> {
   const year = album.release_date ? Number.parseInt(album.release_date.split('-')[0]) : null;
+  // Only written when Spotify gave one, so a payload without it can't erase a stored total.
+  const total = album.total_tracks != null ? { spotifyTrackTotal: album.total_tracks } : {};
   await database
     .insert(spotifyAlbum)
     .values({
@@ -24,6 +26,7 @@ export async function hydrateProviderAlbum(
       year: Number.isFinite(year) ? year : null,
       images: album.images,
       popularity: album.popularity ?? null,
+      ...total,
     })
     .onConflictDoUpdate({
       target: spotifyAlbum.spotifyId,
@@ -32,6 +35,7 @@ export async function hydrateProviderAlbum(
         year: Number.isFinite(year) ? year : null,
         images: album.images,
         popularity: album.popularity ?? null,
+        ...total,
       },
     });
 
