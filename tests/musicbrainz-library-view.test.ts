@@ -4,7 +4,7 @@ import test, { before, beforeEach } from 'node:test';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 import { projectMusicBrainzLibrary } from '../app/lib/musicbrainz-library';
 import {
-  albumSections,
+  albumHeading,
   keepLikedHoldings,
   musicBrainzLibraryView,
 } from '../app/lib/musicbrainz-library-view';
@@ -728,25 +728,21 @@ test('a proposal stands in for a recording MusicBrainz relates to no work, unles
   assert.ok(!(await findProviderTracksForWork('sonata')).includes('track-iii'));
 });
 
-test('album tracks that share a heading up to a colon are listed under it', () => {
-  assert.deepEqual(
-    albumSections([
-      'Stabat Mater in G Minor: I. Stabat Mater',
-      'Stabat Mater in G Minor: IV. Pro peccatis suae gentis',
+test('an album heading is only the part every track title shares, up to a colon', () => {
+  assert.equal(
+    albumHeading([
       'Paganini: 24 Caprices, Op. 1: No. 1 in E Major',
       'Paganini: 24 Caprices, Op. 1: No. 20 in D Major',
-      'Minuet in B Minor',
-      'Interstellar Suite: Part 2 - Live',
-      'Gladiator Suite: Part 2 - Live',
     ]),
-    [
-      'Stabat Mater in G Minor',
-      'Stabat Mater in G Minor',
-      'Paganini: 24 Caprices, Op. 1',
-      'Paganini: 24 Caprices, Op. 1',
-      null,
-      null,
-      null,
-    ],
+    'Paganini: 24 Caprices, Op. 1',
   );
+  assert.equal(
+    albumHeading([
+      'Stabat Mater in G Minor: I. Stabat Mater',
+      'Stabat Mater in G Minor: IV. Pro peccatis suae gentis',
+      'Sanctus et Agnus Dei: I. Sanctus',
+    ]),
+    null,
+  );
+  assert.equal(albumHeading(['Stabat Mater in G Minor: I. Stabat Mater']), null);
 });

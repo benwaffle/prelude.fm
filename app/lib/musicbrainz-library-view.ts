@@ -397,18 +397,17 @@ export function musicBrainzLibraryView(
   };
 }
 
-// Spotify repeats the work in each part's title ("Stabat Mater in G Minor: I. Stabat Mater"). A
-// heading, up to a colon, that a track shares with the track before or after it becomes its section.
-export function albumSections(titles: string[]): (string | null)[] {
-  const shared = (title: string, other: string | undefined): string | null => {
-    let heading = null;
-    for (let at = title.indexOf(': '); at > 0; at = title.indexOf(': ', at + 1)) {
-      if (!other?.startsWith(title.slice(0, at + 2))) break;
-      heading = title.slice(0, at);
-    }
-    return heading;
-  };
-  return titles.map((title, i) => shared(title, titles[i - 1]) ?? shared(title, titles[i + 1]));
+// Spotify repeats the work in each part's title ("Stabat Mater in G Minor: I. Stabat Mater"). The
+// longest heading, up to a colon, that every track on the album shares; null when they share none.
+export function albumHeading(titles: string[]): string | null {
+  let heading = null;
+  const [first, ...rest] = titles;
+  if (rest.length === 0) return null;
+  for (let at = first.indexOf(': '); at > 0; at = first.indexOf(': ', at + 1)) {
+    if (!rest.every((title) => title.startsWith(first.slice(0, at + 2)))) break;
+    heading = first.slice(0, at);
+  }
+  return heading;
 }
 
 // Classical tracks with no MusicBrainz work, one card per Spotify album: titled by the album,
@@ -434,7 +433,7 @@ function albumCards(
     const composers = new Set(ordered.map((member) => member.listedComposer));
     const composer = composers.size === 1 ? [...composers][0] : null;
     const { tint, ink } = tintFor(albumId);
-    const sections = albumSections(ordered.map(({ occurrence }) => occurrence.providerTitle));
+    const heading = albumHeading(ordered.map(({ occurrence }) => occurrence.providerTitle));
     const addedAt = ordered
       .map((member) => addedAtByTrackId.get(member.occurrence.spotifyTrackId))
       .filter((value): value is string => value !== undefined)
@@ -466,9 +465,11 @@ function albumCards(
         position: index + 1,
         roman: '',
         // The card says these are Spotify's titles; marking every row would only repeat it.
-        name: occurrence.providerTitle.slice(sections[index] ? sections[index].length + 2 : 0),
+        name: heading
+          ? occurrence.providerTitle.slice(heading.length + 2)
+          : occurrence.providerTitle,
         unnamed: false,
-        section: sections[index],
+        section: heading,
         missing: false,
         durationMs: occurrence.durationMs,
         duration: formatDuration(occurrence.durationMs),
