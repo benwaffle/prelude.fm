@@ -5,7 +5,11 @@ import CLASSICAL_COMPOSERS from './classical-composers.json';
 
 const NAMES: Record<string, string> = CLASSICAL_COMPOSERS;
 
-export function classicalComposerReason(spotifyArtistIds: string[]): string | null {
+export function listedComposerOf(spotifyArtistIds: string[]): string | null {
   const id = spotifyArtistIds.find((artistId) => artistId in NAMES);
-  return id ? `Spotify credits ${NAMES[id]}, on our list of classical composers` : null;
+  return id ? NAMES[id] : null;
+}
+
+export function classicalComposerReason(composer: string): string {
+  return `Spotify credits ${composer}, on our list of classical composers`;
 }

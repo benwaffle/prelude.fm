@@ -68,7 +68,7 @@ export function useProgramme(): Programme | null {
         ink: work.ink,
         cover: work.cover,
         album: work.album,
-        detailHref: workHref(work),
+        detailHref: work.unmatched ? null : workHref(work),
       };
     }
     const { track } = nowPlaying;

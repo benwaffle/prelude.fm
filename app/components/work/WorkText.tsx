@@ -66,9 +66,14 @@ export function MovementName({
   );
 }
 
-export function GapNotes({ work }: { work: Pick<LibraryWork, 'gaps' | 'ownLink'> }) {
+export function GapNotes({ work }: { work: Pick<LibraryWork, 'gaps' | 'ownLink' | 'unmatched'> }) {
   return (
     <>
+      {work.unmatched && (
+        <p className="mt-[6px] font-meta text-[10px] tracking-[0.12em] text-accent uppercase">
+          Spotify album, not on MusicBrainz yet
+        </p>
+      )}
       {work.ownLink && (
         <p className="mt-[6px] font-meta text-[10px] tracking-[0.12em] text-accent uppercase">
           Work matched by prelude.fm, not MusicBrainz ({work.ownLink} confidence)

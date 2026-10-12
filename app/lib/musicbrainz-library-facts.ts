@@ -8,6 +8,8 @@ export type TrackClassification = {
   state: TrackClassificationState;
   provenance: 'musicbrainz' | 'manual' | 'llm_proposal';
   reason: string | null;
+  /** The composer on our own list that Spotify credits, if any. */
+  listedComposer?: string;
 };
 
 export type ReleaseResolution =

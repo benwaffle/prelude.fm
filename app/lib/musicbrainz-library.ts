@@ -23,7 +23,6 @@ import {
 import {
   compareOccurrences,
   projectOccurrence,
-  releaseGaps,
   type OccurrenceIndex,
   type ProjectedProviderOccurrence,
 } from './musicbrainz-library-occurrence';
@@ -138,9 +137,17 @@ export type UnresolvedLibraryTrack = {
   gaps: MusicBrainzGap[];
 };
 
+/** A classical track with no work to file it under; shown on its Spotify album's card. */
+export type AlbumTrack = {
+  occurrence: ProjectedProviderOccurrence;
+  listedComposer: string | null;
+  gaps: MusicBrainzGap[];
+};
+
 export type MusicBrainzLibraryProjection = {
   requestedTrackIds: string[];
   recordings: ProjectedRecording[];
+  albumTracks: AlbumTrack[];
   unresolvedTracks: UnresolvedLibraryTrack[];
   accounting: AccountedTrack[];
 };
@@ -256,6 +263,7 @@ export function projectMusicBrainzLibrary(
   // that resolved.
   const heldByRecording = new Map<string, Set<string>>();
   const unresolvedTracks: UnresolvedLibraryTrack[] = [];
+  const albumTracks: AlbumTrack[] = [];
   const accountingByTrack = new Map<string, AccountedTrack>();
 
   const addUnresolved = (
@@ -336,9 +344,20 @@ export function projectMusicBrainzLibrary(
       continue;
     }
     if (!anchor) {
-      const gaps = releaseGaps(providerTrack, index, null);
+      const occurrence = projectOccurrence(providerTrack, new Set([spotifyTrackId]), index, null);
+      const gaps = [...occurrence.gaps];
       pushGap(gaps, gap('recording-unanchored', 'track', spotifyTrackId));
-      addUnresolved(spotifyTrackId, 'unmatched', classification, gaps);
+      albumTracks.push({
+        occurrence,
+        listedComposer: classification?.listedComposer ?? null,
+        gaps,
+      });
+      accountingByTrack.set(spotifyTrackId, {
+        spotifyTrackId,
+        status: 'unmatched',
+        recordingMbid: null,
+        gapCodes: gaps.map((item) => item.code),
+      });
       continue;
     }
     if (anchor.state === 'conflicting') {
@@ -361,6 +380,16 @@ export function projectMusicBrainzLibrary(
   const recordings = projected.map((entry) => entry.recording);
   for (const { recording, allGaps } of projected) {
     const gapCodes = Array.from(new Set(allGaps.map((item) => item.code)));
+    if (recording.works.length === 0) {
+      for (const occurrence of recording.occurrences.filter((candidate) => candidate.held)) {
+        albumTracks.push({
+          occurrence,
+          listedComposer:
+            classificationByTrack.get(occurrence.spotifyTrackId)?.listedComposer ?? null,
+          gaps: allGaps,
+        });
+      }
+    }
     for (const spotifyTrackId of recording.heldTrackIds) {
       accountingByTrack.set(spotifyTrackId, {
         spotifyTrackId,
@@ -390,7 +419,7 @@ export function projectMusicBrainzLibrary(
     };
   });
 
-  return { requestedTrackIds, recordings, unresolvedTracks, accounting };
+  return { requestedTrackIds, recordings, albumTracks, unresolvedTracks, accounting };
 }
 
 /** Other occurrences are real alternatives we keep but do not claim the reader holds. */
