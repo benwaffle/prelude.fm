@@ -159,3 +159,24 @@ test('a prelude and fugue in a book stays itself', () => {
   );
   assert.equal(resolved.display?.mbid, 'bwv846');
 });
+
+test('a Mass whose sections are typed "Mass" too still resolves to the whole Mass', () => {
+  const mass = 'Missa Ultimarum Sextorum Omnia Sanctorum';
+  const resolved = resolveDisplayWork(
+    'kyrie-1',
+    indexWorks(
+      [
+        node({ mbid: 'mass', title: `${mass}, ZWV 21`, type: 'Mass' }),
+        node({ mbid: 'kyrie', title: `${mass}, ZWV 21: Kyrie`, type: 'Mass', parentMbid: 'mass' }),
+        node({
+          mbid: 'kyrie-1',
+          title: `${mass}: Kyrie - Kyrie eleison I`,
+          type: 'Mass',
+          parentMbid: 'kyrie',
+        }),
+      ],
+      [],
+    ),
+  );
+  assert.equal(resolved.display?.mbid, 'mass');
+});
