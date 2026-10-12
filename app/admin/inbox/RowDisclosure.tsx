@@ -1,17 +1,14 @@
 'use client';
 
-import { useState, type HTMLAttributes, type ReactNode } from 'react';
+import { useState, type HTMLAttributes, type MouseEvent, type ReactNode } from 'react';
 import { InboxRow } from './InboxRow';
 
-export function ConfirmDisclosure({
+/** Clicking the row opens it; links and buttons inside it keep their own clicks. */
+export function RowDisclosure({
   evidence,
   links,
   extraAction,
   children,
-  label = 'Confirm…',
-  disabled = false,
-  primary = true,
-  initiallyOpen = false,
   ...props
 }: {
   evidence: ReactNode;
@@ -19,29 +16,33 @@ export function ConfirmDisclosure({
   /** Shown beside the toggle, so it stays reachable while the row is closed. */
   extraAction?: ReactNode;
   children: ReactNode;
-  label?: string;
-  disabled?: boolean;
-  primary?: boolean;
-  initiallyOpen?: boolean;
 } & HTMLAttributes<HTMLDivElement>) {
-  const [open, setOpen] = useState(initiallyOpen);
+  const [open, setOpen] = useState(false);
+
+  function onRowClick(event: MouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest('a, button, input, select, textarea, label')) return;
+    if (window.getSelection()?.toString()) return;
+    setOpen((current) => !current);
+  }
 
   return (
     <div className="inbox-row-wrap" {...props}>
       <InboxRow
+        className="inbox-row-toggle"
+        onClick={onRowClick}
         evidence={evidence}
         links={links}
         action={
           <>
             {extraAction}
             <button
-              className="act shrink-0"
-              data-variant={primary ? 'primary' : undefined}
-              disabled={disabled}
+              className="inbox-chevron"
               aria-expanded={open}
+              aria-label={open ? 'Hide details' : 'Show details'}
               onClick={() => setOpen((current) => !current)}
             >
-              {open ? 'Close' : label}
+              ▸
             </button>
           </>
         }

@@ -23,7 +23,7 @@ import {
   barcodeReleaseSearchUrl,
   type MbPickHit,
 } from '@/lib/musicbrainz-pick';
-import { ConfirmDisclosure } from './ConfirmDisclosure';
+import { RowDisclosure } from './RowDisclosure';
 import { InboxRow } from './InboxRow';
 import { PreviousSubmission } from './PreviousSubmission';
 import { PrecheckSummary, ReleasePrecheckPanel } from './ReleasePrecheckPanel';
@@ -238,12 +238,11 @@ export function MissingReleasesSection({
         }
 
         return (
-          <ConfirmDisclosure
+          <RowDisclosure
             key={album.albumId}
             data-inbox-album={album.albumId}
             evidence={evidence}
             links={links}
-            label={ambiguous ? 'Pick…' : 'Confirm…'}
             extraAction={
               <>
                 <button
@@ -342,7 +341,7 @@ export function MissingReleasesSection({
                 Confirm submission
               </button>
             </div>
-          </ConfirmDisclosure>
+          </RowDisclosure>
         );
       })}
       <LoadMoreRows shown={rows.length} total={total} busy={busy} onMore={onLoadMore} />

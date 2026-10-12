@@ -8,7 +8,7 @@ import {
   recordIsrcResubmission,
   recordIsrcSubmission,
 } from '../actions/submissions';
-import { ConfirmDisclosure } from './ConfirmDisclosure';
+import { RowDisclosure } from './RowDisclosure';
 import { InboxSection } from './InboxSection';
 import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
@@ -231,7 +231,7 @@ export function IsrcSection({
 
         if (release.eligible === 0) {
           return (
-            <ConfirmDisclosure
+            <RowDisclosure
               key={release.releaseMbid}
               data-inbox-release={release.releaseMbid}
               evidence={
@@ -246,8 +246,6 @@ export function IsrcSection({
                 </>
               }
               links={links}
-              label="Tracks"
-              primary={false}
               extraAction={
                 submitted ? (
                   <button
@@ -261,12 +259,12 @@ export function IsrcSection({
               }
             >
               <IsrcTrackTable tracks={release.tracks} />
-            </ConfirmDisclosure>
+            </RowDisclosure>
           );
         }
 
         return (
-          <ConfirmDisclosure
+          <RowDisclosure
             key={release.releaseMbid}
             data-inbox-release={release.releaseMbid}
             evidence={evidence}
@@ -346,7 +344,7 @@ export function IsrcSection({
                 onDismiss={() => dismissFeedback(release.releaseMbid)}
               />
             )}
-          </ConfirmDisclosure>
+          </RowDisclosure>
         );
       })}
       <LoadMoreRows shown={rows.length} total={releaseTotal} busy={busy} onMore={onLoadMore} />

@@ -3,7 +3,7 @@
 import { useState, type HTMLAttributes, type ReactNode } from 'react';
 import { useAdminAction, type RowActionState } from '../components/useAdminAction';
 import type { LedgerView, SubmissionHistoryView } from '../actions/inbox-view';
-import { ConfirmDisclosure } from './ConfirmDisclosure';
+import { RowDisclosure } from './RowDisclosure';
 import { InboxRow } from './InboxRow';
 import { PreviousSubmission } from './PreviousSubmission';
 import { RowActionStatus } from './RowActionStatus';
@@ -105,8 +105,8 @@ export function LedgerGapRow({
     );
   }
   return (
-    <ConfirmDisclosure {...props} evidence={evidence} links={links}>
+    <RowDisclosure {...props} evidence={evidence} links={links}>
       {children}
-    </ConfirmDisclosure>
+    </RowDisclosure>
   );
 }

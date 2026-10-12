@@ -401,6 +401,20 @@
   gap: 6px;
 }
 
+.desk .inbox-row-toggle {
+  cursor: pointer;
+}
+
+.desk .inbox-chevron {
+  width: 22px;
+  color: var(--ink-2);
+  transition: transform 120ms;
+}
+
+.desk .inbox-chevron[aria-expanded='true'] {
+  transform: rotate(90deg);
+}
+
 .desk .inbox-disclosure {
   padding: 12px 14px;
   border-top: 1px solid var(--rule);
