@@ -397,6 +397,20 @@ export function musicBrainzLibraryView(
   };
 }
 
+// Spotify repeats the work in each part's title ("Stabat Mater in G Minor: I. Stabat Mater"). A
+// heading, up to a colon, that a track shares with the track before or after it becomes its section.
+export function albumSections(titles: string[]): (string | null)[] {
+  const shared = (title: string, other: string | undefined): string | null => {
+    let heading = null;
+    for (let at = title.indexOf(': '); at > 0; at = title.indexOf(': ', at + 1)) {
+      if (!other?.startsWith(title.slice(0, at + 2))) break;
+      heading = title.slice(0, at);
+    }
+    return heading;
+  };
+  return titles.map((title, i) => shared(title, titles[i - 1]) ?? shared(title, titles[i + 1]));
+}
+
 // Classical tracks with no MusicBrainz work, one card per Spotify album: titled by the album,
 // tracks named by Spotify and in album order, never numbered as movements.
 function albumCards(
@@ -420,6 +434,7 @@ function albumCards(
     const composers = new Set(ordered.map((member) => member.listedComposer));
     const composer = composers.size === 1 ? [...composers][0] : null;
     const { tint, ink } = tintFor(albumId);
+    const sections = albumSections(ordered.map(({ occurrence }) => occurrence.providerTitle));
     const addedAt = ordered
       .map((member) => addedAtByTrackId.get(member.occurrence.spotifyTrackId))
       .filter((value): value is string => value !== undefined)
@@ -451,9 +466,9 @@ function albumCards(
         position: index + 1,
         roman: '',
         // The card says these are Spotify's titles; marking every row would only repeat it.
-        name: occurrence.providerTitle,
+        name: occurrence.providerTitle.slice(sections[index] ? sections[index].length + 2 : 0),
         unnamed: false,
-        section: null,
+        section: sections[index],
         missing: false,
         durationMs: occurrence.durationMs,
         duration: formatDuration(occurrence.durationMs),

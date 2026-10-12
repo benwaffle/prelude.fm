@@ -3,7 +3,11 @@ import { eq } from 'drizzle-orm';
 import test, { before, beforeEach } from 'node:test';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 import { projectMusicBrainzLibrary } from '../app/lib/musicbrainz-library';
-import { keepLikedHoldings, musicBrainzLibraryView } from '../app/lib/musicbrainz-library-view';
+import {
+  albumSections,
+  keepLikedHoldings,
+  musicBrainzLibraryView,
+} from '../app/lib/musicbrainz-library-view';
 
 let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
@@ -722,4 +726,21 @@ test('a proposal stands in for a recording MusicBrainz relates to no work, unles
     .set({ status: 'dismissed' })
     .where(eq(schema.mbWorkProposal.recordingMbid, 'rec-iii'));
   assert.ok(!(await findProviderTracksForWork('sonata')).includes('track-iii'));
+});
+
+test('album tracks next to each other that share a heading up to a colon are listed under it', () => {
+  const jc =
+    'Bach, JC: Harpsichord Concerto No. 6 in F Minor, W. C73 (formerly attrib. W. F. Bach)';
+  const cpe = 'Bach, CPE: Harpsichord Concerto in D Minor, H. 427';
+  assert.deepEqual(
+    albumSections([
+      `${jc}: I. Allegro di molto`,
+      `${jc}: II. Andante`,
+      'Bach, WF / Orch Rondeau: Keyboard Sonata in G Major, F. 7: II. Lamento',
+      `${cpe}: I. Allegro`,
+      `${cpe}: II. Poco andante`,
+      'Minuet in B Minor',
+    ]),
+    [jc, jc, null, cpe, cpe, null],
+  );
 });
