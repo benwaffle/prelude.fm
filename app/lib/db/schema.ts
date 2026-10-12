@@ -322,6 +322,8 @@ export const mbWork = sqliteTable(
     /** Position among the parent's parts, from the relation's ordering-key. */
     orderingKey: integer('ordering_key'),
     composerMbid: text('composer_mbid'),
+    /** The work's IMSLP page, from its MusicBrainz URL links; null when MusicBrainz lists none. */
+    imslpUrl: text('imslp_url'),
     /** 'stub': named by a recording. 'full': fetched with its relations. */
     detail: text('detail', { enum: ['stub', 'full'] })
       .default('stub')

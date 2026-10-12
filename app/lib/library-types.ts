@@ -41,6 +41,8 @@ export interface WorkDetail {
   work: LibraryWork;
   others: RecordingSummary[];
   moreByComposer: WorkSummary[];
+  /** Null when MusicBrainz links no IMSLP page to the work or a work it is part of. */
+  imslpUrl: string | null;
 }
 
 export interface CatalogComposer {
