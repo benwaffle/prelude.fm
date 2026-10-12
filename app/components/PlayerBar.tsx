@@ -311,13 +311,14 @@ function SeamLabels({ programme }: { programme: Programme }) {
           className={`truncate border-l border-current pr-[6px] pl-[5px] first:border-l-0 first:pl-0 ${
             m.n === movement.n ? 'font-semibold opacity-100' : ''
           }`}
+          title={m.name}
           style={{
             width: `${(timeline.durations[i] / timeline.totalMs) * 100}%`,
             opacity: m.liked ? 1 : 0.45,
           }}
         >
           {m.liked && <span className="mr-1">♥</span>}
-          {numeralPrefix(m.roman)} {m.name.length > 12 ? `${m.name.slice(0, 12)}…` : m.name}
+          {numeralPrefix(m.roman)} {m.name}
         </span>
       ))}
     </div>
