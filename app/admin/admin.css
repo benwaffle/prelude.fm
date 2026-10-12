@@ -516,6 +516,11 @@
   }
 }
 
+.desk a:not(.act, .no-underline) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* External links: a service icon in front (Spotify, MusicBrainz) and an
    outgoing arrow after, so a click that leaves the admin is never a surprise.
    Icons from Simple Icons (CC0). */
