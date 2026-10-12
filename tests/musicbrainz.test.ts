@@ -106,6 +106,47 @@ test('prefers the main composer over an additional one', () => {
   assert.equal(composerOf(onlyAdditional)?.name, 'Franz Xaver Süßmayr');
 });
 
+test('credits a recomposition to its arranger, but a completion to the original composer', () => {
+  const richter = { id: 'richter', name: 'Max Richter' };
+  const recomposed: MbWork = {
+    id: 'recomposed',
+    title: 'The Four Seasons Recomposed',
+    relations: [
+      { type: 'arranger', direction: 'backward', artist: richter },
+      { type: 'composer', direction: 'backward', attributes: ['additional'], artist: richter },
+      {
+        type: 'composer',
+        direction: 'backward',
+        artist: { id: 'vivaldi', name: 'Antonio Vivaldi' },
+      },
+      {
+        type: 'arrangement',
+        direction: 'backward',
+        work: { id: 'seasons', title: 'Le quattro stagioni' },
+      },
+    ],
+  };
+  assert.equal(composerOf(recomposed)?.name, 'Max Richter');
+
+  // Süßmayr's Requiem is a revision Süßmayr orchestrated, not an arrangement.
+  const sussmayr = { id: 'sussmayr', name: 'Franz Xaver Süßmayr' };
+  const requiem: MbWork = {
+    id: 'requiem',
+    title: 'Requiem in D minor, K. 626',
+    relations: [
+      { type: 'composer', direction: 'backward', attributes: ['additional'], artist: sussmayr },
+      { type: 'orchestrator', direction: 'backward', attributes: ['additional'], artist: sussmayr },
+      {
+        type: 'composer',
+        direction: 'backward',
+        artist: { id: 'mozart', name: 'Wolfgang Amadeus Mozart' },
+      },
+      { type: 'revision of', direction: 'backward', work: { id: 'k626', title: 'Requiem' } },
+    ],
+  };
+  assert.equal(composerOf(requiem)?.name, 'Wolfgang Amadeus Mozart');
+});
+
 test('reads a year from a MusicBrainz life-span date', () => {
   assert.equal(yearOf('1845-05-12'), 1845);
   assert.equal(yearOf('1845'), 1845);

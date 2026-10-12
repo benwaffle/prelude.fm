@@ -58,6 +58,8 @@ function titledAsPartOf(node: WorkNode): boolean {
   for (let colon = title.indexOf(':'); colon !== -1; colon = title.indexOf(':', colon + 1)) {
     const head = title.slice(0, colon);
     if (parentStages.includes(spelling(head))) return true;
+    // A parent may extend its parts' heading: "The Four Seasons Recomposed" / "The Four Seasons: Spring 1".
+    if (parentTitle.startsWith(`${spelling(head)} `)) return true;
     if (shortenings(head, childTrailer).some((stage) => spelling(stage) === parentTitle)) {
       return true;
     }

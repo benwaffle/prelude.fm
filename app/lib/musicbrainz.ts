@@ -458,12 +458,20 @@ export function childPartsOf(work: MbWork): MbWorkPart[] {
 
 // MusicBrainz marks completers as `additional` composers (Süßmayr on the Requiem) and returns
 // relations unordered. A composer without that mark wins; when every credit carries it, the first
-// is still a real credit.
+// is still a real credit. The exception is a recomposition: an arrangement of another work whose
+// arranger is also an additional composer (Richter's Four Seasons) is the arranger's piece.
 export function composerOf(work: MbWork): { id: string; name: string } | null {
-  const credits = (work.relations ?? []).filter(
-    (relation) => relation.type === 'composer' && relation.artist,
+  const relations = work.relations ?? [];
+  const credits = relations.filter((relation) => relation.type === 'composer' && relation.artist);
+  const isArrangement = relations.some(
+    (relation) => relation.type === 'arrangement' && relation.direction === 'backward',
   );
-  const main = credits.find((relation) => !relation.attributes?.includes('additional'));
+  const arrangerIds = relations
+    .filter((relation) => relation.type === 'arranger')
+    .map((relation) => relation.artist?.id);
+  const main =
+    (isArrangement && credits.find((relation) => arrangerIds.includes(relation.artist!.id))) ||
+    credits.find((relation) => !relation.attributes?.includes('additional'));
   return (main ?? credits[0])?.artist ?? null;
 }
 
