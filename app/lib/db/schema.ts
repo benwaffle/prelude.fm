@@ -268,45 +268,6 @@ export const mbRequestBudget = sqliteTable(
   (table) => [primaryKey({ columns: [table.day, table.channel] })],
 );
 
-export const mbRequestOperationMetric = sqliteTable(
-  'mb_request_operation_metric',
-  {
-    day: text('day').notNull(),
-    channel: text('channel').notNull(),
-    operation: text('operation').notNull(),
-    requests: integer('requests').default(0).notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.day, table.channel, table.operation] })],
-);
-
-/** A hit means the local `mb_*` row sufficed; a miss means a fetch followed or will. */
-export const mbCacheLookupMetric = sqliteTable(
-  'mb_cache_lookup_metric',
-  {
-    day: text('day').notNull(),
-    operation: text('operation').notNull(),
-    lookups: integer('lookups').default(0).notNull(),
-    hits: integer('hits').default(0).notNull(),
-    misses: integer('misses').default(0).notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.day, table.operation] })],
-);
-
-/** No user id and no track ids: only counts and timing. */
-export const mbImportRun = sqliteTable('mb_import_run', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
-  completedAt: integer('completed_at', { mode: 'timestamp_ms' }).notNull(),
-  inputTrackCount: integer('input_track_count').notNull(),
-  classicalCount: integer('classical_count').notNull(),
-  uncertainCount: integer('uncertain_count').notNull(),
-  notClassicalCount: integer('not_classical_count').notNull(),
-  unreviewedCount: integer('unreviewed_count').notNull(),
-  albumsAlreadyCached: integer('albums_already_cached').notNull(),
-  albumsNew: integer('albums_new').notNull(),
-  requestsCaused: integer('requests_caused').notNull(),
-});
-
 // One row shared by every process: a claim atomically moves the marker one interval forward on the
 // DB clock.
 export const mbRateSlot = sqliteTable('mb_rate_slot', {
