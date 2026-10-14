@@ -214,6 +214,34 @@ function separatePerformances(
   return separated;
 }
 
+// One track can play several parts ("I. Largo – II. Fantasmi"): MusicBrainz relates its recording
+// to each. That is one row, or the card shows the same track twice and plays both at once.
+function joinPartsOfOneTrack(movements: Movement[]) {
+  const partsOfTrack = new Map<string, Movement[]>();
+  for (const movement of movements) {
+    if (!movement.trackId) continue;
+    partsOfTrack.set(movement.trackId, [...(partsOfTrack.get(movement.trackId) ?? []), movement]);
+  }
+  for (const parts of partsOfTrack.values()) {
+    if (parts.length === 1) continue;
+    const [row, ...rest] = parts;
+    const numerals = parts.map((part) => part.roman).filter(Boolean);
+    const consecutive = parts.every(
+      (part, index) => index === 0 || part.position === parts[index - 1].position + 1,
+    );
+    row.roman =
+      consecutive && numerals.length === parts.length
+        ? `${numerals[0]}–${numerals.at(-1)}`
+        : numerals.join(', ');
+    row.name = parts
+      .map((part) => part.name)
+      .filter(Boolean)
+      .join(' – ');
+    row.unnamed = parts.some((part) => part.unnamed);
+    for (const part of rest) movements.splice(movements.indexOf(part), 1);
+  }
+}
+
 export function musicBrainzLibraryView(
   projection: MusicBrainzLibraryProjection,
   likedTrackIds: Set<string>,
@@ -332,6 +360,7 @@ export function musicBrainzLibraryView(
       movements.push(row);
     }
     movements.sort((left, right) => byPlaceInWork(placeInWork.get(left)!, placeInWork.get(right)!));
+    joinPartsOfOneTrack(movements);
     movements.forEach((movement, index) => {
       movement.n = index + 1;
     });
