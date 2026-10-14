@@ -292,6 +292,25 @@ test('a second performance of a movement on the same album is its own card', asy
   }
 });
 
+test('one track playing two movements is one row, not two rows of the same track', async () => {
+  // Karajan's RV 439: Spotify's "III. Largo – IV. Presto" is one recording related to both parts.
+  await db.insert(schema.mbRecordingWork).values({ recordingMbid: 'rec-ii', workMbid: 'part-iii' });
+  const { works } = await view(['track-i', 'track-ii']);
+
+  assert.deepEqual(
+    works[0].movements.map((movement) => [
+      movement.n,
+      movement.roman,
+      movement.name,
+      movement.trackId,
+    ]),
+    [
+      [1, 'I', 'Allegro', 'track-i'],
+      [2, 'II–III', 'Andante – Rondo', 'track-ii'],
+    ],
+  );
+});
+
 test('a track related only to the whole work is not doubled by a missing part', async () => {
   await seedExtraTrack('track-whole', 3, 'rec-whole', 'sonata');
   const { works } = await view(['track-whole']);
