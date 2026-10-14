@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useRef } from 'react';
+import { Fragment, useRef, type CSSProperties } from 'react';
 import { numeralPrefix, type Movement } from '@/lib/prelude';
 import { Icon, Waveform } from '../Icon';
 import { MovementName } from './WorkText';
@@ -41,11 +41,24 @@ export type MovementListProps =
 
 const NOT_ON_RECORDING = "This recording doesn't include this movement";
 
+// One track can play several parts ("III–IV."): the numeral column fits the longest numeral, so
+// no numeral wraps and every row of the list stays aligned.
+function numeralColumn(
+  movements: Pick<Movement, 'roman'>[],
+  minPx: number,
+  fontPx: number,
+): CSSProperties {
+  const longest = Math.max(0, ...movements.map((m) => numeralPrefix(m.roman).length));
+  return {
+    '--numeral': `${Math.max(minPx, Math.ceil(longest * fontPx * 0.5))}px`,
+  } as CSSProperties;
+}
+
 export function MovementList(props: MovementListProps) {
   switch (props.variant) {
     case 'card':
       return (
-        <>
+        <div className="contents" style={numeralColumn(props.movements, 22, 13)}>
           {props.movements.map((m, i) => (
             <Fragment key={m.n}>
               {props.sectionHeadings &&
@@ -58,11 +71,14 @@ export function MovementList(props: MovementListProps) {
               <CardRow movement={m} list={props} />
             </Fragment>
           ))}
-        </>
+        </div>
       );
     case 'programme':
       return (
-        <ol className="m-0 flex list-none flex-col border-y border-rule p-0">
+        <ol
+          className="m-0 flex list-none flex-col border-y border-rule p-0"
+          style={numeralColumn(props.movements, 36, 22)}
+        >
           {props.movements.map((m, i) => {
             const previous = props.movements[i - 1];
             // The section's own track ("V. Sanctus") already heads its sub-parts.
@@ -81,16 +97,16 @@ export function MovementList(props: MovementListProps) {
       );
     case 'summary':
       return (
-        <>
+        <div className="contents" style={numeralColumn(props.movements, 18, 12)}>
           {props.movements.map((m, i) => (
             <div
               key={i}
               title={m.missing ? NOT_ON_RECORDING : undefined}
-              className={`grid grid-cols-[18px_1fr_auto] items-baseline gap-[10px] py-[3px] ${
+              className={`grid grid-cols-[var(--numeral)_1fr_auto] items-baseline gap-[10px] py-[3px] ${
                 m.missing ? 'opacity-40' : ''
               }`}
             >
-              <span className="text-right font-display text-[12px] text-muted italic">
+              <span className="whitespace-nowrap text-right font-display text-[12px] text-muted italic">
                 {numeralPrefix(m.roman)}
               </span>
               <span
@@ -105,11 +121,14 @@ export function MovementList(props: MovementListProps) {
               </span>
             </div>
           ))}
-        </>
+        </div>
       );
     case 'sheet':
       return (
-        <ol className="m-0 list-none border-t border-white/15 p-0">
+        <ol
+          className="m-0 list-none border-t border-white/15 p-0"
+          style={numeralColumn(props.movements, 30, 14)}
+        >
           {props.movements.map((m) => {
             const current = m.trackId !== null && m.trackId === props.playingTrackId;
             return (
@@ -117,9 +136,9 @@ export function MovementList(props: MovementListProps) {
                 <button
                   type="button"
                   onClick={() => props.onPlay(m)}
-                  className="grid w-full cursor-pointer grid-cols-[30px_minmax(0,1fr)_auto] items-baseline gap-3 py-3 text-left"
+                  className="grid w-full cursor-pointer grid-cols-[var(--numeral)_minmax(0,1fr)_auto] items-baseline gap-3 py-3 text-left"
                 >
-                  <span className="text-right font-display text-[14px] italic opacity-70">
+                  <span className="whitespace-nowrap text-right font-display text-[14px] italic opacity-70">
                     {numeralPrefix(m.roman)}
                   </span>
                   <span
@@ -182,10 +201,10 @@ function CardRow({
     return (
       <div
         title={NOT_ON_RECORDING}
-        className="grid grid-cols-[15px_22px_minmax(0,1fr)_auto] items-baseline gap-3 py-[3px] pr-[2px] opacity-40 select-none"
+        className="grid grid-cols-[15px_var(--numeral)_minmax(0,1fr)_auto] items-baseline gap-3 py-[3px] pr-[2px] opacity-40 select-none"
       >
         <span aria-hidden />
-        <span className="onum text-right font-display text-[13px] text-muted italic">
+        <span className="onum whitespace-nowrap text-right font-display text-[13px] text-muted italic">
           {numeralPrefix(movement.roman)}
         </span>
         <div className="flex min-w-0 items-baseline font-display text-[14px] leading-[1.3] text-muted">
@@ -213,7 +232,7 @@ function CardRow({
       onKeyDown={(e) => {
         if (e.key === 'Enter') play();
       }}
-      className={`group/row relative grid cursor-pointer grid-cols-[15px_22px_minmax(0,1fr)_auto] items-baseline gap-3 rounded-[2px] py-[3px] pr-[2px] select-none hover:bg-paper-2 max-[900px]:py-[9px] focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-ink-2 ${
+      className={`group/row relative grid cursor-pointer grid-cols-[15px_var(--numeral)_minmax(0,1fr)_auto] items-baseline gap-3 rounded-[2px] py-[3px] pr-[2px] select-none hover:bg-paper-2 max-[900px]:py-[9px] focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-ink-2 ${
         list.selectedN === movement.n ? 'bg-paper-3 shadow-[inset_0_0_0_1px_var(--rule)]' : ''
       }`}
     >
@@ -232,7 +251,7 @@ function CardRow({
       />
 
       <span
-        className={`onum text-right font-display text-[13px] ${
+        className={`onum whitespace-nowrap text-right font-display text-[13px] ${
           liked ? 'font-bold text-accent not-italic' : 'text-muted italic opacity-55'
         }`}
       >
@@ -266,8 +285,8 @@ function CardRow({
 
 function SectionHeading({ movement: m }: { movement: Movement }) {
   return (
-    <li className="grid grid-cols-[36px_1fr] items-baseline gap-4 pt-[14px] pb-[2px]">
-      <span className="onum text-right font-display text-[22px] text-muted italic">
+    <li className="grid grid-cols-[var(--numeral)_1fr] items-baseline gap-4 pt-[14px] pb-[2px]">
+      <span className="onum whitespace-nowrap text-right font-display text-[22px] text-muted italic">
         {numeralPrefix(m.roman)}
       </span>
       <span className="font-display text-[20px] font-medium">{m.section}</span>
@@ -288,9 +307,9 @@ function ProgrammeRow({
       <li className="relative">
         <div
           title={NOT_ON_RECORDING}
-          className="grid w-full grid-cols-[36px_1fr_auto_auto] items-baseline gap-4 py-[10px] text-left opacity-40 select-none"
+          className="grid w-full grid-cols-[var(--numeral)_1fr_auto_auto] items-baseline gap-4 py-[10px] text-left opacity-40 select-none"
         >
-          <span className="onum text-right font-display text-[22px] text-muted italic">
+          <span className="onum whitespace-nowrap text-right font-display text-[22px] text-muted italic">
             {numeralPrefix(m.roman)}
           </span>
           <span className="font-display text-[20px] font-medium text-muted">
@@ -314,11 +333,11 @@ function ProgrammeRow({
       {playing && (
         <span className="absolute top-1/2 -left-3 h-1 w-1 -translate-y-1/2 rounded-full bg-accent" />
       )}
-      <div className="grid w-full grid-cols-[36px_1fr_auto_auto] items-baseline gap-4 py-[10px] text-left hover:bg-paper-2">
+      <div className="grid w-full grid-cols-[var(--numeral)_1fr_auto_auto] items-baseline gap-4 py-[10px] text-left hover:bg-paper-2">
         <button
           type="button"
           onClick={() => list.onPlay(m)}
-          className={`onum cursor-pointer text-right font-display text-[22px] ${
+          className={`onum cursor-pointer whitespace-nowrap text-right font-display text-[22px] ${
             playing ? 'font-bold text-accent not-italic' : 'text-muted italic'
           }`}
         >
