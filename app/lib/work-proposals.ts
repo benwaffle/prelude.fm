@@ -40,6 +40,8 @@ export type ProposalSignals = {
   albumSiblings: number;
   orderFits: boolean;
   movementMatch: boolean;
+  /** The track's quoted opening words, which the work's title also quotes. */
+  incipit?: string;
 };
 
 export type WorkProposal = {
@@ -171,6 +173,23 @@ export function movementNumber(title: string): number | null {
   const match = MOVEMENT.exec(last);
   if (!match) return null;
   return /^\d+$/.test(match[1]) ? Number(match[1]) : romanToNumber(match[1].toLowerCase());
+}
+
+const QUOTED = /["“”„«»]([^"“”„«»]+)["“”„«»]/g;
+
+/** Quoted opening words of an aria or song ("Son nata a lagrimar"), three words or more. */
+export function quotedIncipits(title: string): string[] {
+  return [...title.matchAll(QUOTED)]
+    .map((match) => match[1].trim())
+    .filter((quote) => nameWords(quote).length >= 3);
+}
+
+function sharedIncipit(target: string, candidateNames: string[]): string | undefined {
+  const theirs = candidateNames.flatMap(quotedIncipits).map((quote) => nameWords(quote).join(' '));
+  return quotedIncipits(target).find((quote) => {
+    const words = nameWords(quote).join(' ');
+    return theirs.some((other) => other === words || other.startsWith(`${words} `));
+  });
 }
 
 function lastSection(title: string): string {
@@ -341,6 +360,7 @@ export function candidateSignals(
     }
   }
 
+  const incipit = sharedIncipit(target.title, names);
   return {
     titleScore: Math.round(titleScore * 100) / 100,
     sharedNumbers,
@@ -348,6 +368,7 @@ export function candidateSignals(
     albumSiblings: family.length,
     orderFits,
     movementMatch,
+    ...(incipit ? { incipit } : {}),
   };
 }
 
@@ -366,6 +387,8 @@ function confidenceOf(
   if (album && movementMatch && titleScore >= 0.7) return 'high';
   if (album && titleScore >= 0.8) return 'high';
   if (titleScore >= 0.85 && composerMatch && sharedNumbers.length > 0) return 'high';
+  // An opera number's title wording varies by label, but its quoted opening words don't.
+  if (signals.incipit && composerMatch && sharedNumbers.length > 0) return 'high';
   if (album && titleScore >= 0.5) return 'medium';
   if (titleScore >= 0.65 && composerMatch) return 'medium';
   if (titleScore >= 0.55 && (composerMatch || album)) return 'low';
@@ -406,6 +429,7 @@ function reasonsFor(scored: ScoredCandidate): string[] {
   if (signals.sharedNumbers.length > 0) {
     reasons.push(`Both titles say ${signals.sharedNumbers.join(', ')}.`);
   }
+  if (signals.incipit) reasons.push(`Both titles quote “${signals.incipit}”.`);
   reasons.push(
     signals.titleScore >= 0.8
       ? 'The titles agree closely.'
