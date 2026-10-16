@@ -149,6 +149,25 @@ test('a search hit with matching numbers, title and composer is high confidence'
   assert.ok(proposal?.reasons.some((reason) => reason.includes('no. 1')));
 });
 
+test('an opera number is high confidence when both titles quote its opening words', () => {
+  const duet = candidate({
+    workMbid: 'duet',
+    title:
+      'Giulio Cesare in Egitto, HWV 17: Atto I, Scena XI, 16. Duetto “Son nata a lagrimar (Son nato a sospirar)” (Cornelia e Sesto)',
+    composerName: 'George Frideric Handel',
+  });
+  const track = target({
+    title:
+      'Giulio Cesare in Egitto, HWV 17, Act 1: Duetto. "Son nata a lagrimar" (Cornelia, Sesto)',
+    artistNames: ['Handel', 'Emmanuelle Haïm'],
+  });
+  const proposal = proposeWork(track, [duet]);
+  assert.equal(proposal?.confidence, 'high');
+  assert.ok(proposal?.reasons.includes('Both titles quote “Son nata a lagrimar”.'));
+  // Without the composer the quote alone proposes nothing.
+  assert.equal(proposeWork({ ...track, artistNames: ['Emmanuelle Haïm'] }, [duet]), null);
+});
+
 test('a near tie is downgraded and says which other work fits', () => {
   const proposal = proposeWork(
     target({ title: 'Prelude No. 3', artistNames: ['Gottlieb Muffat'] }),

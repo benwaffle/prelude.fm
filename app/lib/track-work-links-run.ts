@@ -12,6 +12,7 @@ import {
   cleanTrackTitle,
   confirmedPart,
   confirmWork,
+  titledComposer,
   unlinkSharedMatches,
   type TrackWorkMatch,
 } from './track-work-links';
@@ -21,6 +22,7 @@ import {
   nameWords,
   numberRefs,
   proposeWork,
+  quotedIncipits,
   surnameOf,
   titleTokens,
   type AlbumSibling,
@@ -179,15 +181,17 @@ export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
     return parent;
   };
 
-  for (const gap of gaps) {
+  for (const { artistNames: credited, ...gap } of gaps) {
     const before = mb.requests;
-    const title = cleanTrackTitle(gap.title, gap.artistNames);
+    const titled = titledComposer(gap.title);
+    const artistNames = titled ? [titled.composer, ...credited] : credited;
+    const title = cleanTrackTitle(titled?.title ?? gap.title, artistNames);
     const target: ProposalTarget = {
       recordingMbid: gap.spotifyTrackId,
       title,
       medium: gap.discNumber,
       position: gap.trackNumber,
-      artistNames: gap.artistNames,
+      artistNames,
       // Composers of other tracks are our own guesses here, not MusicBrainz links.
       releaseComposers: [],
       siblings: [...siblings],
@@ -200,7 +204,7 @@ export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
       const matches = new Map<string, TrackWorkMatch>();
       for (const work of read.values()) {
         if (!work) continue;
-        const confirmation = confirmWork(title, gap.artistNames, {
+        const confirmation = confirmWork(title, artistNames, {
           workMbid: work.id,
           title: work.title,
           composerName: composerOf(work)?.name ?? null,
@@ -215,7 +219,7 @@ export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
     let match = propose(family);
     if (!match?.linked) match = confirmed() ?? match;
     if (!match?.linked) {
-      const unread = (await cachedCatalogueWorks(title, gap.artistNames)).filter(
+      const unread = (await cachedCatalogueWorks(title, artistNames)).filter(
         (mbid) => !read.has(mbid),
       );
       for (const mbid of unread) await openWork(mbid);
@@ -223,8 +227,15 @@ export async function linkAlbum(gaps: LinkGap[]): Promise<LinkOutcome[]> {
     }
     let found: ProposalCandidate[] = [];
     if (!match?.linked) {
-      found = await searchCandidates(mb, title, gap.artistNames);
+      found = await searchCandidates(mb, title, artistNames);
       match = propose([...family, ...found]) ?? match;
+    }
+    // A search on a whole opera-number title finds the opera; its quoted opening words find the
+    // number.
+    for (const incipit of match?.linked ? [] : quotedIncipits(title)) {
+      found = [...found, ...(await searchCandidates(mb, incipit, artistNames))];
+      match = propose([...family, ...found]) ?? match;
+      if (match?.linked) break;
     }
     if (!match?.linked && found.length > 0) {
       // MusicBrainz files composer and catalogue number on the whole work, not its movements;

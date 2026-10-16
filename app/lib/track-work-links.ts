@@ -1,5 +1,6 @@
 // Same scoring as `work-proposals.ts`, but a link is used straight away, so only a high-confidence
 // match with a credited composer is linked; anything weaker stays a visible unlinked best guess.
+import CLASSICAL_COMPOSERS from './classical-composers.json';
 import {
   candidateSignals,
   movementNumber,
@@ -53,6 +54,28 @@ export function cleanTrackTitle(title: string, artistNames: readonly string[]): 
     return [...sections.slice(0, numbered), sections.slice(numbered).join(', ')].join(': ');
   }
   return sections.join(': ');
+}
+
+const LISTED_SURNAMES = new Set(
+  Object.values(CLASSICAL_COMPOSERS).flatMap((name) => surnameOf(name) ?? []),
+);
+
+/**
+ * Compilations often credit only performers and name the composer before the first colon
+ * ("Handel: Giulio Cesare…", "Bach, JS: …", "Mozart / Compl. Druce: …"). Returns that composer,
+ * surname last, and the title after it, when the surname is on our classical-composer list.
+ */
+export function titledComposer(title: string): { composer: string; title: string } | null {
+  const colon = title.indexOf(':');
+  if (colon <= 0) return null;
+  const [name, initials] = title
+    .slice(0, colon)
+    .split(/\s+\/\s+/)[0]
+    .split(',');
+  const composer = initials === undefined ? name.trim() : `${initials.trim()} ${name.trim()}`;
+  const words = nameWords(composer);
+  if (words.length === 0 || words.length > 3 || !LISTED_SURNAMES.has(words.at(-1)!)) return null;
+  return { composer, title: title.slice(colon + 1).trim() };
 }
 
 const MOVEMENT_HEAD = /^([ivxIVX]+|\d{1,2})[.)]\s/;

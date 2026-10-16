@@ -5,6 +5,7 @@ import {
   confirmedPart,
   confirmWork,
   linkDecision,
+  titledComposer,
   unlinkSharedMatches,
   type TrackWorkMatch,
 } from '../app/lib/track-work-links';
@@ -35,6 +36,20 @@ test('Spotify titles are read the way MusicBrainz writes them', () => {
     cleanTrackTitle('Carnaval, Op. 9: 15. Pantalon', ['Robert Schumann']),
     'Carnaval, Op. 9: 15. Pantalon',
   );
+});
+
+test('a listed composer named before the colon is read off the title', () => {
+  assert.deepEqual(titledComposer('Handel: Giulio Cesare in Egitto, HWV 17, Act 1: Duetto'), {
+    composer: 'Handel',
+    title: 'Giulio Cesare in Egitto, HWV 17, Act 1: Duetto',
+  });
+  assert.equal(titledComposer('Bach, JS: Cantata, BWV 198')?.composer, 'JS Bach');
+  assert.equal(
+    titledComposer('Mozart / Compl. Druce: Requiem, K. 626: VIII. Lacrimosa')?.composer,
+    'Mozart',
+  );
+  assert.equal(titledComposer('Carnaval, Op. 9: 15. Pantalon'), null);
+  assert.equal(titledComposer('Variations on a Theme by Haydn: Chorale'), null);
 });
 
 function proposal(overrides: Partial<WorkProposal> = {}): WorkProposal {
