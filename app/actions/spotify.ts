@@ -8,7 +8,8 @@ import { after } from 'next/server';
 import { inArray } from 'drizzle-orm';
 import { enqueueAlbumsForTracks } from '@/lib/match-queue-processor';
 
-export async function getSpotifyToken(): Promise<string> {
+/** Better Auth hands back the stored token until it has seconds left, so callers need its expiry. */
+export async function getSpotifyToken(): Promise<{ accessToken: string; expiresAt: number }> {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -25,11 +26,14 @@ export async function getSpotifyToken(): Promise<string> {
     headers: await headers(),
   });
 
-  if (!tokenResponse?.accessToken) {
+  if (!tokenResponse?.accessToken || !tokenResponse.accessTokenExpiresAt) {
     throw new Error('No Spotify access token');
   }
 
-  return tokenResponse.accessToken;
+  return {
+    accessToken: tokenResponse.accessToken,
+    expiresAt: new Date(tokenResponse.accessTokenExpiresAt).getTime(),
+  };
 }
 
 export async function submitToMatchQueue(trackIds: string[]): Promise<{
