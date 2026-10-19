@@ -75,6 +75,20 @@ test('a typed number of an oratorio belongs to the oratorio', () => {
   assert.equal(recitative.mbid, 'oratorio');
 });
 
+test('a numbered aria of an untyped work belongs to it', () => {
+  const level = workLevelOf(
+    node({
+      title: 'Dixit Dominus in G minor, HWV 232: II. Aria "Virgam virtutus tuae"',
+      type: 'Aria',
+      orderingKey: 2,
+      parentMbid: 'dixit',
+      parentTitle: 'Dixit Dominus in G minor, HWV 232',
+    }),
+  );
+  assert.equal(level.mbid, 'dixit');
+  assert.equal(level.reason, 'titled-as-part');
+});
+
 test('a movement typed like its parent belongs to it', () => {
   const level = workLevelOf(
     node({

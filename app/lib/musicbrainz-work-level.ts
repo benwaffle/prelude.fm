@@ -88,6 +88,8 @@ const WHOLES_OF_NUMBERS = new Set([
 
 /** MusicBrainz types a sonata's movements "Sonata", so a shared type doesn't make a piece. */
 function typedPartOf(node: WorkNode): boolean {
+  // An untyped psalm setting's numbered arias ("Dixit Dominus, HWV 232: II. Aria …") are movements.
+  if (node.type === 'Aria' && numberedAsPart(node)) return titledAsPartOf(node);
   if (!node.type || !node.parentType || node.type === 'Étude') return false;
   if (node.type !== node.parentType && !WHOLES_OF_NUMBERS.has(node.parentType)) return false;
   return titledAsPartOf(node) || continuesPartTitle(node);
