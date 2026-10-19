@@ -264,8 +264,12 @@ export function musicBrainzLibraryView(
     }
   }
 
+  const performances = separatePerformances(cards, likedTrackIds);
+  const { folded, albumTracks } = foldIntoWorkCards(performances, projection.albumTracks);
+
   const works: LibraryWork[] = [];
-  for (const [cardKey, members] of separatePerformances(cards, likedTrackIds)) {
+  for (const [cardKey, members] of performances) {
+    const { catalogue: foldedBy = null, tracks: unlinked = [] } = folded.get(cardKey) ?? {};
     const ordered = [...members].sort(
       (left, right) =>
         partPosition(left.work, left.occurrence.trackNumber) -
@@ -294,7 +298,8 @@ export function musicBrainzLibraryView(
       const title = whole
         ? (member.recording.title ?? leaf?.title)
         : (leaf?.title ?? member.recording.title);
-      const numeral = whole ? '' : roman(position);
+      // Only MusicBrainz's own order numbers a part; a track number would be our invention.
+      const numeral = whole || movement?.orderingKey == null ? '' : roman(position);
       // "Sequenz" for the part under the work, so a sub-part can be named within it.
       const section =
         !whole && movement && movement !== leaf && movement.title
@@ -316,9 +321,32 @@ export function musicBrainzLibraryView(
         trackId: member.occurrence.spotifyTrackId,
         uri: `spotify:track:${member.occurrence.spotifyTrackId}`,
       };
-      placeInWork.set(row, [position, ...partsBeneathMovement(member.work).map(orderOf)]);
+      placeInWork.set(
+        row,
+        unlinked.length > 0
+          ? albumPlace(member.occurrence)
+          : [position, ...partsBeneathMovement(member.work).map(orderOf)],
+      );
       return row;
     });
+    for (const track of unlinked) {
+      const row: Movement = {
+        n: 0,
+        position: 0,
+        roman: '',
+        name: trackNameWithin(track.occurrence.providerTitle, foldedBy),
+        unnamed: true,
+        section: null,
+        missing: false,
+        durationMs: track.occurrence.durationMs,
+        duration: formatDuration(track.occurrence.durationMs),
+        liked: likedTrackIds.has(track.occurrence.spotifyTrackId),
+        trackId: track.occurrence.spotifyTrackId,
+        uri: `spotify:track:${track.occurrence.spotifyTrackId}`,
+      };
+      placeInWork.set(row, albumPlace(track.occurrence));
+      movements.push(row);
+    }
 
     // Parts MusicBrainz lists that this issue lacks, at every level, shown as ghosts. Unknown
     // under a work or section a track is related to as a whole.
@@ -328,7 +356,8 @@ export function musicBrainzLibraryView(
     const relatedWhole = new Set(ordered.map((member) => member.work.relatedWorkMbid));
     const partByMbid = new Map(head.work.parts.map((part) => [part.mbid, part]));
     const unorderedPosition = new Map<string, number>();
-    for (const part of head.work.parts) {
+    // Any unlinked track could be one of them, so none is claimed missing.
+    for (const part of unlinked.length > 0 ? [] : head.work.parts) {
       const chain = [part];
       while (partByMbid.has(chain[0].parentMbid))
         chain.unshift(partByMbid.get(chain[0].parentMbid)!);
@@ -338,7 +367,7 @@ export function musicBrainzLibraryView(
         movement.orderingKey ??
         unorderedPosition.get(movement.mbid) ??
         unorderedPosition.set(movement.mbid, movements.length + 1).get(movement.mbid)!;
-      const numeral = roman(position);
+      const numeral = movement.orderingKey == null ? '' : roman(position);
       const row: Movement = {
         n: 0,
         position,
@@ -366,13 +395,14 @@ export function musicBrainzLibraryView(
     });
 
     const gaps = Array.from(
-      new Set<MusicBrainzGapCode>(
-        ordered.flatMap((member) => [
+      new Set<MusicBrainzGapCode>([
+        ...ordered.flatMap((member) => [
           ...member.recording.gaps.map((gap) => gap.code),
           ...member.work.gaps.map((gap) => gap.code),
           ...member.occurrence.gaps.map((gap) => gap.code),
         ]),
-      ),
+        ...unlinked.flatMap((track) => track.gaps.map((gap) => gap.code)),
+      ]),
     );
     const { tint, ink } = tintFor(head.occurrence.spotifyAlbumId);
     const addedAt = ordered
@@ -394,9 +424,7 @@ export function musicBrainzLibraryView(
       title: head.work.title,
       // A nickname is a MusicBrainz alias we do not read yet.
       nickname: null,
-      catalog: head.work.catalogues[0]
-        ? `${head.work.catalogues[0].system} ${head.work.catalogues[0].number}`
-        : null,
+      catalog: cardCatalogue(head.work),
       year: null,
       performer,
       ensemble,
@@ -413,7 +441,7 @@ export function musicBrainzLibraryView(
     });
   }
 
-  works.push(...albumCards(projection.albumTracks, likedTrackIds, addedAtByTrackId));
+  works.push(...albumCards(albumTracks, likedTrackIds, addedAtByTrackId));
 
   works.sort(
     (left, right) =>
@@ -426,6 +454,97 @@ export function musicBrainzLibraryView(
     unresolvedTracks: projection.unresolvedTracks,
     accounting: projection.accounting,
   };
+}
+
+function cardCatalogue(work: ProjectedRecordingWork): string | null {
+  return work.catalogues[0] ? `${work.catalogues[0].system} ${work.catalogues[0].number}` : null;
+}
+
+const albumPlace = (occurrence: ProjectedProviderOccurrence) => [
+  occurrence.discNumber,
+  occurrence.trackNumber,
+];
+
+// Where a catalogue number stands in a title as a whole token: "HWV 46a" in "…, HWV 46a, Pt. 1: …",
+// not in "HWV 46". Spaces are ignored, since Spotify and MusicBrainz space them differently.
+function catalogueEnd(title: string, catalogue: string): number | null {
+  const wanted = catalogue.replace(/\s+/g, '').toLowerCase();
+  const compact: string[] = [];
+  const endOf: number[] = [];
+  for (let at = 0; at < title.length; at++) {
+    if (/\s/.test(title[at])) continue;
+    compact.push(title[at].toLowerCase());
+    endOf.push(at + 1);
+  }
+  const text = compact.join('');
+  const word = /[\p{L}\p{N}]/u;
+  for (let at = text.indexOf(wanted); at !== -1; at = text.indexOf(wanted, at + 1)) {
+    const after = at + wanted.length;
+    if (!word.test(text[at - 1] ?? '') && !word.test(text[after] ?? '')) return endOf[after - 1];
+  }
+  return null;
+}
+
+// Spotify's title past the work's own name: "Pt. 1: Aria. "Fido speccihio!"".
+function trackNameWithin(title: string, catalogue: string | null): string {
+  const end = catalogue ? catalogueEnd(title, catalogue) : null;
+  const rest = end === null ? '' : title.slice(end).replace(/^[\s,:;.–—-]+/, '');
+  return rest || title;
+}
+
+// Opus numbers repeat from one composer to the next, so only a composer's own catalogue can tie a
+// Spotify title to a work.
+const SHARED_NUMBERING = new Set(['op', 'woo']);
+
+function foldingCatalogue(work: ProjectedRecordingWork): string | null {
+  const own = work.catalogues.find((entry) => !SHARED_NUMBERING.has(entry.normalizedSystem));
+  return own ? `${own.system} ${own.number}` : null;
+}
+
+type Folded = { catalogue: string; tracks: AlbumTrack[] };
+
+// An album track MusicBrainz knows no work for joins the card of the work its title names by
+// catalogue number on the same Spotify album, so one performance stays on one card. It keeps
+// Spotify's title, marked as such, and stays out of MusicBrainz's numbering.
+function foldIntoWorkCards(
+  performances: Map<string, CardMember[]>,
+  tracks: AlbumTrack[],
+): { folded: Map<string, Folded>; albumTracks: AlbumTrack[] } {
+  const cardsOnAlbum = new Map<string, { cardKey: string; catalogue: string }[]>();
+  for (const [cardKey, members] of performances) {
+    const catalogue = foldingCatalogue(members[0].work);
+    if (!catalogue) continue;
+    for (const albumId of new Set(members.map((member) => member.occurrence.spotifyAlbumId))) {
+      cardsOnAlbum.set(albumId, [...(cardsOnAlbum.get(albumId) ?? []), { cardKey, catalogue }]);
+    }
+  }
+  const folded = new Map<string, Folded>();
+  const albumTracks: AlbumTrack[] = [];
+  for (const track of tracks) {
+    const named = (cardsOnAlbum.get(track.occurrence.spotifyAlbumId) ?? []).filter(
+      ({ catalogue }) => catalogueEnd(track.occurrence.providerTitle, catalogue) !== null,
+    );
+    // Two performances, or two works, the title could belong to: no guess.
+    if (named.length !== 1) {
+      albumTracks.push(track);
+      continue;
+    }
+    const { cardKey, catalogue } = named[0];
+    const into = folded.get(cardKey) ?? { catalogue, tracks: [] };
+    into.tracks.push(track);
+    folded.set(cardKey, into);
+  }
+  // The same part named twice means several performances on the album, and which one the card's
+  // is would be a guess.
+  for (const [cardKey, { catalogue, tracks: candidates }] of folded) {
+    const names = candidates.map((track) =>
+      trackNameWithin(track.occurrence.providerTitle, catalogue).toLowerCase(),
+    );
+    if (new Set(names).size === names.length) continue;
+    folded.delete(cardKey);
+    albumTracks.push(...candidates);
+  }
+  return { folded, albumTracks };
 }
 
 // Spotify repeats the work in each part's title ("Stabat Mater in G Minor: I. Stabat Mater"). A

@@ -394,6 +394,63 @@ test('two performances of one work stay two cards', async () => {
   assert.equal(new Set(works.map((card) => card.id)).size, 2);
 });
 
+async function addUnlinkedRondo(title: string) {
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-iii',
+    title,
+    trackNumber: 3,
+    discNumber: 1,
+    durationMs: 180_000,
+    popularity: 10,
+    spotifyAlbumId: 'album-1',
+    isrc: null,
+  });
+  await db.insert(schema.trackClassification).values({
+    spotifyTrackId: 'track-iii',
+    state: 'classical',
+    provenance: 'musicbrainz',
+    reason: 'test',
+    evidenceMbid: null,
+    decidedAt: new Date('2026-10-19T00:00:00Z'),
+  });
+}
+
+test('an album track naming the work by catalogue number joins its card, in album order', async () => {
+  await addUnlinkedRondo('Piano Sonata No. 16 in C Major, K. 545: III. Rondo. Allegretto');
+  const { works } = await view(['track-i', 'track-ii', 'track-iii']);
+
+  assert.equal(works.length, 1, 'one performance, one card: no separate album card');
+  assert.deepEqual(
+    works[0].movements.map((movement) => [
+      movement.trackId,
+      movement.roman,
+      movement.name,
+      movement.unnamed,
+      movement.missing,
+    ]),
+    [
+      ['track-i', 'I', 'Allegro', false, false],
+      ['track-ii', 'II', 'Andante', false, false],
+      // Spotify's title, marked as such; and the Rondo is no longer claimed missing.
+      ['track-iii', '', 'III. Rondo. Allegretto', true, false],
+    ],
+  );
+  assert.ok(works[0].gaps.includes('recording-unanchored'));
+});
+
+test('an album track naming another catalogue number keeps its album card', async () => {
+  await addUnlinkedRondo('Piano Sonata No. 15 in C Major, K. 5450: III. Rondo');
+  const { works } = await view(['track-i', 'track-ii', 'track-iii']);
+
+  assert.deepEqual(
+    works.map((work) => [work.unmatched, work.movements.filter((m) => m.trackId).length]).sort(),
+    [
+      [false, 2],
+      [true, 1],
+    ],
+  );
+});
+
 test('a card carries the gap codes behind it rather than looking complete', async () => {
   await db.delete(schema.mbArtist).where(eq(schema.mbArtist.mbid, 'mozart'));
 

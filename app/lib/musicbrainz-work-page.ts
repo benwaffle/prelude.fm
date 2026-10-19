@@ -5,6 +5,7 @@ import {
   findProviderTracksForComposer,
   findProviderTracksForWork,
   readWorkLineage,
+  withUnlinkedAlbumMates,
 } from './musicbrainz-work-queries';
 
 // Narrowed to what the provider can play: a recording Spotify lacks is not one this reader can
@@ -22,9 +23,9 @@ export async function getMusicBrainzWorkDetail(
     findProviderTracksForWork(workMbid).then(async (trackIds) =>
       trackIds.length === 0
         ? []
-        : (await readLibraryCards(trackIds, liked)).works.filter(
-            (card) => card.workId === workMbid,
-          ),
+        : (
+            await readLibraryCards(await withUnlinkedAlbumMates(trackIds, workMbid), liked)
+          ).works.filter((card) => card.workId === workMbid),
     ),
     lineage.then(({ composerMbid }) =>
       composerMbid ? worksByComposer(composerMbid, workMbid, liked) : [],

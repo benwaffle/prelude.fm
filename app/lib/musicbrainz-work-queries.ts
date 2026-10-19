@@ -1,8 +1,8 @@
-import { and, eq, exists, isNotNull, or, sql } from 'drizzle-orm';
+import { and, eq, exists, isNotNull, notExists, notInArray, or, sql } from 'drizzle-orm';
 import { db, type DatabaseExecutor } from './db';
 import { jsonList } from './db/chunked';
 import { heldWorkLinks } from './db/held-work-links';
-import { mbWork, spotifyTrack, trackRecording, trackWorkLink } from './db/schema';
+import { mbWork, mbWorkCatalogue, spotifyTrack, trackRecording, trackWorkLink } from './db/schema';
 import { lineageOf, subtreeOf } from './db/work-tree-sql';
 import { ancestry } from './musicbrainz-work-tree';
 
@@ -39,6 +39,44 @@ export async function findAlbumMateTrackIds(
                 ),
               ),
           ),
+        ),
+      ),
+    );
+  return Array.from(new Set([...spotifyTrackIds, ...mates.map((mate) => mate.spotifyId)]));
+}
+
+// Album-mates MusicBrainz knows nothing of that name the work's catalogue number in their title: the
+// card folds them in, so the work page shows the whole performance as the library does.
+export async function withUnlinkedAlbumMates(
+  spotifyTrackIds: string[],
+  workMbid: string,
+  database: DatabaseExecutor = db,
+): Promise<string[]> {
+  if (spotifyTrackIds.length === 0) return [];
+  const compact = (value: unknown) => sql`replace(lower(${value}), ' ', '')`;
+  const mates = await database
+    .select({ spotifyId: spotifyTrack.spotifyId })
+    .from(spotifyTrack)
+    .where(
+      and(
+        sql`${spotifyTrack.spotifyAlbumId} in (select spotify_album_id from spotify_track where spotify_id in (${jsonList(spotifyTrackIds)}))`,
+        notExists(
+          database
+            .select({ one: sql`1` })
+            .from(trackRecording)
+            .where(eq(trackRecording.spotifyTrackId, spotifyTrack.spotifyId)),
+        ),
+        exists(
+          database
+            .select({ one: sql`1` })
+            .from(mbWorkCatalogue)
+            .where(
+              and(
+                eq(mbWorkCatalogue.workMbid, workMbid),
+                notInArray(mbWorkCatalogue.normalizedSystem, ['op', 'woo']),
+                sql`instr(${compact(spotifyTrack.title)}, ${compact(sql`${mbWorkCatalogue.system} || ${mbWorkCatalogue.number}`)}) > 0`,
+              ),
+            ),
         ),
       ),
     );
