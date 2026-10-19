@@ -10,8 +10,10 @@ import { PreludeNav } from './PreludeNav';
 import { PlayerBar } from './PlayerBar';
 import { MobileTabs } from './MobileTabs';
 
-// Spotify tokens last an hour; refresh with room to spare.
-const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000;
+// The token we get may be minutes from expiry, so renew from its own expiry time. Checking every
+// minute (rather than one long timer) catches up after the device sleeps or throttles the tab.
+const TOKEN_RENEW_BEFORE_MS = 5 * 60 * 1000;
+const TOKEN_CHECK_INTERVAL_MS = 60 * 1000;
 
 interface NavSearch {
   query: string;
@@ -59,25 +61,39 @@ export function AppShell({ children }: AppShellProps) {
     if (!session) return;
     let cancelled = false;
 
+    let expiresAt = 0;
+    let inFlight = false;
+
     const refresh = () => {
+      if (inFlight || Date.now() < expiresAt - TOKEN_RENEW_BEFORE_MS) return;
+      inFlight = true;
       getSpotifyToken()
         .then((token) => {
           if (cancelled) return;
-          setAccessToken(token);
+          expiresAt = token.expiresAt;
+          setAccessToken(token.accessToken);
           setTokenUserId(session.user.id);
           setTokenError(null);
         })
         .catch((err) => {
           console.error('Error fetching token:', err);
-          if (!cancelled) setTokenError(err instanceof Error ? err.message : 'Unknown error');
+          // Only the first token blocks the app; a failed renewal is retried on the next check.
+          if (!cancelled && expiresAt === 0) {
+            setTokenError(err instanceof Error ? err.message : 'Unknown error');
+          }
+        })
+        .finally(() => {
+          inFlight = false;
         });
     };
 
     refresh();
-    const interval = setInterval(refresh, TOKEN_REFRESH_INTERVAL_MS);
+    const interval = setInterval(refresh, TOKEN_CHECK_INTERVAL_MS);
+    document.addEventListener('visibilitychange', refresh);
     return () => {
       cancelled = true;
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', refresh);
     };
   }, [session]);
 
