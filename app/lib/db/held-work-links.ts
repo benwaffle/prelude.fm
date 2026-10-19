@@ -4,8 +4,9 @@ import { jsonList } from './chunked';
 import { mbRecordingWork, mbWorkProposal, trackRecording, trackWorkLink } from './schema';
 
 // MusicBrainz relations first; our own link (an undismissed `mb_work_proposal`, or
-// `track_work_link` for a track with no recording) only where MusicBrainz has none. Every reader
-// asks this, so none can disagree.
+// `track_work_link` for a track with no recording) only where MusicBrainz has none. An approved
+// proposal also replaces a MusicBrainz relation, for one MusicBrainz has wrong (a Handel recording
+// filed under Mozart). Every reader asks this, so none can disagree.
 
 export type HeldWorkLink = {
   spotifyTrackId: string;
@@ -22,6 +23,7 @@ export type HeldWorkLinkScope = { tracks: Iterable<string> } | { works: SQL };
 /** Indexed column; its confidence is still read from the JSON. */
 const proposedWorkMbid = sql<string>`${mbWorkProposal.workMbid}`;
 const proposedConfidence = sql`json_extract(${mbWorkProposal.proposal}, '$.confidence')`;
+const approved = sql`${mbWorkProposal.status} = 'approved' and ${proposedWorkMbid} is not null`;
 
 function inScope(
   scope: HeldWorkLinkScope | undefined,
@@ -67,7 +69,12 @@ export function heldWorkLinks(
     )
     .from(trackRecording)
     .innerJoin(mbRecordingWork, eq(mbRecordingWork.recordingMbid, trackRecording.recordingMbid))
-    .where(inScope(scope, trackRecording.spotifyTrackId, mbRecordingWork.workMbid));
+    .where(
+      and(
+        sql`not exists (select 1 from ${mbWorkProposal} where ${mbWorkProposal.recordingMbid} = ${trackRecording.recordingMbid} and ${approved})`,
+        inScope(scope, trackRecording.spotifyTrackId, mbRecordingWork.workMbid),
+      ),
+    );
 
   const byProposal = database
     .select(
@@ -85,7 +92,7 @@ export function heldWorkLinks(
       and(
         ne(mbWorkProposal.status, 'dismissed'),
         isNotNull(proposedWorkMbid),
-        sql`not exists (select 1 from ${mbRecordingWork} where ${mbRecordingWork.recordingMbid} = ${trackRecording.recordingMbid})`,
+        sql`(${approved} or not exists (select 1 from ${mbRecordingWork} where ${mbRecordingWork.recordingMbid} = ${trackRecording.recordingMbid}))`,
         inScope(scope, trackRecording.spotifyTrackId, proposedWorkMbid),
       ),
     );

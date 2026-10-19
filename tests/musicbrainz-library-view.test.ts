@@ -766,6 +766,27 @@ test('a proposal stands in for a recording MusicBrainz relates to no work, unles
   assert.ok(!(await findProviderTracksForWork('sonata')).includes('track-iii'));
 });
 
+test('an approved proposal replaces a MusicBrainz relation it disagrees with', async () => {
+  await db.insert(schema.mbWorkProposal).values({
+    recordingMbid: 'rec-ii',
+    workMbid: 'part-iii',
+    proposal: { workMbid: 'part-iii', confidence: 'high' } as never,
+    status: 'approved',
+    requests: 0,
+  });
+
+  const { heldWorkLinks } = await import('@/lib/db/held-work-links');
+  assert.deepEqual(await heldWorkLinks({ tracks: ['track-ii'] }), [
+    {
+      spotifyTrackId: 'track-ii',
+      recordingMbid: 'rec-ii',
+      workMbid: 'part-iii',
+      linkedBy: 'prelude',
+      confidence: 'high',
+    },
+  ]);
+});
+
 test('album tracks next to each other that share a heading up to a colon are listed under it', () => {
   const jc =
     'Bach, JC: Harpsichord Concerto No. 6 in F Minor, W. C73 (formerly attrib. W. F. Bach)';
