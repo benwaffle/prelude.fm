@@ -46,6 +46,10 @@ test('reads catalogue numbers, set members and keys from titles', () => {
   assert.deepEqual([...(numberRefs('Suite V in D minor: II. Allemande').get('no') ?? [])], ['5']);
   assert.deepEqual([...(numberRefs('Capriccio, Op. 1/24').get('op') ?? [])], ['1']);
   assert.deepEqual([...(numberRefs('Capriccio, Op. 1/24').get('no') ?? [])], ['24']);
+  assert.deepEqual(
+    [...(numberRefs('Suite in G Major, RCT 6: VI. Les Sauvages').get('rct') ?? [])],
+    ['6'],
+  );
   assert.equal(movementNumber('Suite V in D minor: II. Allemande'), 2);
   assert.equal(movementNumber('Suite VII in G major: Ciacona'), null);
   assert.equal(keyOf('Suite IV in Bb major'), 'b flat major');

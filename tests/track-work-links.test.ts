@@ -48,6 +48,10 @@ test('a listed composer named before the colon is read off the title', () => {
     titledComposer('Mozart / Compl. Druce: Requiem, K. 626: VIII. Lacrimosa')?.composer,
     'Mozart',
   );
+  assert.deepEqual(
+    titledComposer('J.P.Rameau - Nouvelles Suites De Pieces De Clavecin: "Les Sauvages".'),
+    { composer: 'J.P.Rameau', title: 'Nouvelles Suites De Pieces De Clavecin: "Les Sauvages".' },
+  );
   assert.equal(titledComposer('Carnaval, Op. 9: 15. Pantalon'), null);
   assert.equal(titledComposer('Variations on a Theme by Haydn: Chorale'), null);
 });

@@ -61,21 +61,26 @@ const LISTED_SURNAMES = new Set(
 );
 
 /**
- * Compilations often credit only performers and name the composer before the first colon
- * ("Handel: Giulio Cesare…", "Bach, JS: …", "Mozart / Compl. Druce: …"). Returns that composer,
- * surname last, and the title after it, when the surname is on our classical-composer list.
+ * Compilations often credit only performers and name the composer before the first colon or dash
+ * ("Handel: Giulio Cesare…", "Bach, JS: …", "Mozart / Compl. Druce: …", "J.P.Rameau - …").
+ * Returns that composer, surname last, and the title after it, when the surname is on our
+ * classical-composer list.
  */
 export function titledComposer(title: string): { composer: string; title: string } | null {
-  const colon = title.indexOf(':');
-  if (colon <= 0) return null;
-  const [name, initials] = title
-    .slice(0, colon)
-    .split(/\s+\/\s+/)[0]
-    .split(',');
-  const composer = initials === undefined ? name.trim() : `${initials.trim()} ${name.trim()}`;
-  const words = nameWords(composer);
-  if (words.length === 0 || words.length > 3 || !LISTED_SURNAMES.has(words.at(-1)!)) return null;
-  return { composer, title: title.slice(colon + 1).trim() };
+  for (const separator of [/:/, /\s[-–]\s/]) {
+    const at = separator.exec(title);
+    if (!at || at.index <= 0) continue;
+    const [name, initials] = title
+      .slice(0, at.index)
+      .split(/\s+\/\s+/)[0]
+      .split(',');
+    const composer = initials === undefined ? name.trim() : `${initials.trim()} ${name.trim()}`;
+    const words = nameWords(composer);
+    if (words.length > 0 && words.length <= 3 && LISTED_SURNAMES.has(words.at(-1)!)) {
+      return { composer, title: title.slice(at.index + at[0].length).trim() };
+    }
+  }
+  return null;
 }
 
 const MOVEMENT_HEAD = /^([ivxIVX]+|\d{1,2})[.)]\s/;

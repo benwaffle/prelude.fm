@@ -85,7 +85,7 @@ export function normalizeTitle(title: string): string {
 }
 
 const NUMBERED =
-  /\b(no|op|bwv|kv|k|hwv|rv|hob|d|zwv|wq|woo|ms|sz|bb|twv|s|l|kk|fwv|wab)\s*\.?\s*([0-9]+[a-z]?)((?:\s*\/\s*[0-9]+)?)/g;
+  /\b(no|op|bwv|kv|k|hwv|rv|hob|d|zwv|wq|woo|ms|sz|bb|twv|s|l|kk|fwv|wab|rct)\s*\.?\s*([0-9]+[a-z]?)((?:\s*\/\s*[0-9]+)?)/g;
 
 const SET_MEMBER =
   /\b(suite|symphony|symphonie|sinfonia|sonata|sonate|concerto|partita|quartet|quintet|trio|etude|nocturne|ballade|caprice|capriccio|psalm|cantata|ordre)\s+([ivx]+|\d{1,3})\b(?![.)]\s)/g;

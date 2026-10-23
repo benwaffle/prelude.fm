@@ -96,6 +96,7 @@ const CATALOGUE_SYSTEMS: Record<string, string[]> = {
   bb: ['bb'],
   fwv: ['fwv'],
   wab: ['wab'],
+  rct: ['rct'],
 };
 
 // "Op. 9" alone matches many composers' works, so a small cap can cut off the credited composer's.
