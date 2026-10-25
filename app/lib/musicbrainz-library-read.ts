@@ -80,31 +80,17 @@ export async function loadMusicBrainzLibraryFacts(
   // Settled here so a failure elsewhere cannot leave it as an unhandled rejection.
   classifications.catch(() => {});
 
-  // Every provider track anchored to these recordings, so the projection can coalesce one
-  // performance issued on several albums.
-  const requested = new Set(requestedTrackIds);
+  // Only the requested tracks' anchors. Other issues of the same performance on albums the caller
+  // didn't ask about are never shown, and once the crawl holds every compilation a recording is on
+  // they would multiply the read.
   const [anchorRows, links] = await Promise.all([
     forChunks(requestedTrackIds, (chunk) =>
-      database
-        .select()
-        .from(trackRecording)
-        .where(
-          inArray(
-            trackRecording.recordingMbid,
-            database
-              .select({ recordingMbid: trackRecording.recordingMbid })
-              .from(trackRecording)
-              .where(inArray(trackRecording.spotifyTrackId, chunk)),
-          ),
-        ),
+      database.select().from(trackRecording).where(inArray(trackRecording.spotifyTrackId, chunk)),
     ),
     heldWorkLinks({ tracks: requestedTrackIds }, database),
   ]);
-  const requestedAnchors = anchorRows.filter((anchor) => requested.has(anchor.spotifyTrackId));
-  const recordingMbids = new Set(requestedAnchors.map((anchor) => anchor.recordingMbid));
-  const anchorByTrackId = new Map(
-    [...requestedAnchors, ...anchorRows].map((anchor) => [anchor.spotifyTrackId, anchor]),
-  );
+  const recordingMbids = new Set(anchorRows.map((anchor) => anchor.recordingMbid));
+  const anchorByTrackId = new Map(anchorRows.map((anchor) => [anchor.spotifyTrackId, anchor]));
 
   // The precedence is `heldWorkLinks`'s.
   const recordingWorks = new Map<string, MbRecordingWorkFact>();
@@ -133,12 +119,11 @@ export async function loadMusicBrainzLibraryFacts(
   }
 
   // Tracks and their albums in one round trip.
-  const providerTrackIds = new Set([...requestedTrackIds, ...anchorByTrackId.keys()]);
   const [providerTrackRows, albumRows, recordingRows, creditRows, workRows] = await Promise.all([
-    forChunks(providerTrackIds, (chunk) =>
+    forChunks(requestedTrackIds, (chunk) =>
       database.select().from(spotifyTrack).where(inArray(spotifyTrack.spotifyId, chunk)),
     ),
-    forChunks(providerTrackIds, (chunk) =>
+    forChunks(requestedTrackIds, (chunk) =>
       database
         .select()
         .from(spotifyAlbum)

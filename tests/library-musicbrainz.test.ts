@@ -338,30 +338,29 @@ test('distinguishes unfetched release URLs from a known missing Spotify relation
   );
 });
 
-test('brings in the other Spotify issue of the same performance', async () => {
+test('reads only the issues asked for, not every album the recording is on', async () => {
+  // Once the crawl holds every compilation, a recording is on many albums; an issue nobody asked
+  // about is never shown, so it is not read.
   const facts = await loadMusicBrainzLibraryFacts(['held-1']);
-
-  assert.deepEqual(facts.providerTracks.map((track) => track.spotifyTrackId).sort(), [
-    'held-1',
-    'reissue-1',
-  ]);
+  assert.deepEqual(
+    facts.providerTracks.map((track) => track.spotifyTrackId),
+    ['held-1'],
+  );
   const projection = projectMusicBrainzLibrary(facts);
   assert.equal(projection.recordings.length, 1);
   assert.deepEqual(projection.recordings[0].heldTrackIds, ['held-1']);
-  assert.equal(projection.recordings[0].occurrences.length, 2);
-  // The reissue is a real alternative, not a second holding.
-  assert.deepEqual(projection.accounting, [
-    {
-      spotifyTrackId: 'held-1',
-      status: 'ready',
-      recordingMbid: 'recording-1',
-      gapCodes: [],
-    },
-  ]);
+  assert.equal(projection.recordings[0].occurrences.length, 1);
+
+  // Asked for together, the two issues are still one performance held twice.
+  const both = projectMusicBrainzLibrary(
+    await loadMusicBrainzLibraryFacts(['held-1', 'reissue-1']),
+  );
+  assert.equal(both.recordings.length, 1);
+  assert.deepEqual(both.recordings[0].heldTrackIds, ['held-1', 'reissue-1']);
 });
 
 test('states each album release resolution from what was actually checked', async () => {
-  const facts = await loadMusicBrainzLibraryFacts(['held-1', 'held-2', 'held-3']);
+  const facts = await loadMusicBrainzLibraryFacts(['held-1', 'reissue-1', 'held-2', 'held-3']);
   const resolutionOf = (id: string) =>
     facts.providerAlbums.find((album) => album.spotifyAlbumId === id)?.releaseResolution;
 
