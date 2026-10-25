@@ -568,9 +568,12 @@ async function processAlbumThroughMusicBrainz(
   claimOwnerId: string,
   dependencies: AlbumPassDependencies = {},
 ): Promise<AlbumProcessResult> {
+  // Cached releases, recordings and links answer locally; only what the tables lack is asked.
   const source =
     dependencies.musicBrainzSource ??
-    (await import('@/lib/musicbrainz')).musicBrainzApi('interactive');
+    (await import('@/lib/musicbrainz-mirror')).musicBrainzMirror(
+      (await import('@/lib/musicbrainz')).musicBrainzApi('interactive'),
+    );
   const anchored = await getAnchoredTrackIds(trackIds);
   const report = await runMusicBrainzAlbumPass(source, albumId, trackIds, {
     alreadyAnchored: trackIds.length > 0 && trackIds.every((trackId) => anchored.has(trackId)),
@@ -615,8 +618,14 @@ export async function processQueuedAlbum(
 
   if (trackIds.length === 0) return result;
 
+  // Read once: the pass below needs the same album, and a second read is three more requests.
+  const read = dependencies.readAlbum ?? getSpotifyAlbumTracks;
+  let album: ReturnType<typeof getSpotifyAlbumTracks> | null = null;
+  const readAlbum: typeof getSpotifyAlbumTracks = (id) =>
+    id === albumId ? (album ??= read(id)) : read(id);
+
   try {
-    const { tracks } = await (dependencies.readAlbum ?? getSpotifyAlbumTracks)(albumId);
+    const { tracks } = await readAlbum(albumId);
     const albumTracks = tracks.sort(compareTrackOrder);
     const albumTrackById = new Map(albumTracks.map((track) => [track.id, track]));
     const missingTrackIds = trackIds.filter((trackId) => !albumTrackById.has(trackId));
@@ -641,7 +650,7 @@ export async function processQueuedAlbum(
       processableTrackIds,
       result,
       claimOwnerId,
-      dependencies,
+      { ...dependencies, readAlbum },
     );
   } catch (error) {
     const message = errorMessage(error, 'Failed to process album');

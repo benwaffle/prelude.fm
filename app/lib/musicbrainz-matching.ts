@@ -1,6 +1,6 @@
 // Kept apart from the DB so the rules can be tested. Every rule exists to refuse: a wrong release
 // silently attaches every track to the wrong recording.
-import type { MbRelease, MusicBrainzSource } from './musicbrainz-source';
+import { requestsSpent, type MbRelease, type MusicBrainzSource } from './musicbrainz-source';
 
 export type AlbumIdentity = {
   spotifyId: string;
@@ -31,7 +31,7 @@ const MAX_CANDIDATES = 4;
 
 export type ReleaseMatch = {
   releaseMbid: string;
-  matchedBy: 'known' | 'barcode' | 'title_duration';
+  matchedBy: 'known' | 'spotify_link' | 'barcode' | 'title_duration';
   requests: number;
 };
 
@@ -71,9 +71,26 @@ export function releaseFitsAlbum(
   return timed >= Math.ceil(ordered.length * MIN_TIMED_FRACTION);
 }
 
-// Barcode first. Releases sharing a barcode are usually territories with the same recordings, so
-// only ambiguous when their recording sets differ. Then title and track count narrow, and durations
-// decide.
+// Releases sharing a barcode or a link are usually territories with the same recordings, so they
+// are one answer only when their recording sets agree.
+async function interchangeable(
+  source: MusicBrainzSource,
+  candidates: string[],
+): Promise<{ same: boolean; requests: number }> {
+  let requests = 0;
+  const sets: string[][] = [];
+  for (const candidate of candidates) {
+    const ids = await source.releaseRecordingIds(candidate);
+    requests += requestsSpent(ids);
+    sets.push(ids);
+  }
+  const first = sets[0].join('|');
+  return { same: sets[0].length > 0 && sets.every((set) => set.join('|') === first), requests };
+}
+
+// MusicBrainz's own link from a release to this Spotify album first: it states the identity, where
+// a barcode or a title only suggests it. Then barcode, then title and track count narrow, and
+// durations decide.
 export async function findReleaseForAlbum(
   source: MusicBrainzSource,
   album: AlbumIdentity,
@@ -85,24 +102,31 @@ export async function findReleaseForAlbum(
 
   let requests = 0;
 
+  // Several linked releases that differ fall through to the barcode, which may still tell them
+  // apart.
+  const linked = (await source.releasesLinkedToSpotifyAlbum?.(album.spotifyId)) ?? [];
+  if (linked.length === 1) {
+    return { releaseMbid: linked[0], matchedBy: 'spotify_link', requests };
+  }
+  if (linked.length > 1 && linked.length <= MAX_CANDIDATES) {
+    const check = await interchangeable(source, linked);
+    requests += check.requests;
+    if (check.same) return { releaseMbid: linked[0], matchedBy: 'spotify_link', requests };
+  }
+
   const barcode = normaliseBarcode(album.upc);
   if (barcode) {
     const candidates = await source.releasesByBarcode(barcode);
-    requests++;
+    requests += requestsSpent(candidates);
 
     if (candidates.length === 1) {
       return { releaseMbid: candidates[0], matchedBy: 'barcode', requests };
     }
 
     if (candidates.length > 1 && candidates.length <= MAX_CANDIDATES) {
-      const sets: string[][] = [];
-      for (const candidate of candidates) {
-        sets.push(await source.releaseRecordingIds(candidate));
-        requests++;
-      }
-      const first = sets[0].join('|');
-      const interchangeable = sets.every((set) => set.join('|') === first);
-      if (interchangeable && sets[0].length > 0) {
+      const check = await interchangeable(source, candidates);
+      requests += check.requests;
+      if (check.same) {
         return { releaseMbid: candidates[0], matchedBy: 'barcode', requests };
       }
       return { releaseMbid: null, reason: 'ambiguous', candidates, requests };
@@ -114,12 +138,12 @@ export async function findReleaseForAlbum(
   }
 
   const shortlist = await source.searchReleases(album.title, tracks.length);
-  requests++;
+  requests += requestsSpent(shortlist);
 
   const fits: string[] = [];
   for (const candidate of shortlist.slice(0, MAX_CANDIDATES)) {
     const release = await source.releaseWithRecordings(candidate);
-    requests++;
+    requests += requestsSpent(release);
     if (release && releaseFitsAlbum(tracks, release)) fits.push(candidate);
     // Two releases that both fit are two editions; choosing between them would be a coin toss.
     if (fits.length > 1) break;

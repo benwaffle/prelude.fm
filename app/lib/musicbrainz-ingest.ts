@@ -27,7 +27,7 @@ import {
   type ReleaseMatch,
   type ReleaseMatchFailure,
 } from './musicbrainz-matching';
-import type { MusicBrainzSource } from './musicbrainz-source';
+import { requestsSpent, type MusicBrainzSource } from './musicbrainz-source';
 
 export { findReleaseForAlbum, releaseFitsAlbum } from './musicbrainz-matching';
 export type {
@@ -220,6 +220,7 @@ async function writeAnchors(
             .select({
               spotifyTrackId: trackRecording.spotifyTrackId,
               recordingMbid: trackRecording.recordingMbid,
+              isrc: trackRecording.isrc,
               matchedBy: trackRecording.matchedBy,
             })
             .from(trackRecording)
@@ -231,6 +232,16 @@ async function writeAnchors(
   let written = 0;
   for (const row of rows) {
     const held = existing.get(row.spotifyTrackId);
+    // Already says exactly this: rewriting it would only move `matched_at`.
+    if (
+      held &&
+      held.recordingMbid === row.recordingMbid &&
+      held.matchedBy === row.matchedBy &&
+      held.isrc === row.isrc
+    ) {
+      written++;
+      continue;
+    }
     if (held && held.recordingMbid !== row.recordingMbid) {
       if (evidenceStrength(row.matchedBy) <= evidenceStrength(held.matchedBy)) {
         report.conflicts.push({
@@ -277,6 +288,7 @@ export async function ingestAlbum(
       title: spotifyAlbum.title,
       upc: spotifyAlbum.upc,
       mbReleaseId: spotifyAlbum.mbReleaseId,
+      mbReleaseCandidates: spotifyAlbum.mbReleaseCandidates,
     })
     .from(spotifyAlbum)
     .where(eq(spotifyAlbum.spotifyId, albumId));
@@ -320,14 +332,18 @@ export async function ingestAlbum(
     };
   }
 
-  await db
-    .update(spotifyAlbum)
-    .set({
-      mbReleaseId: match.releaseMbid,
-      mbCheckedAt: new Date(),
-      mbReleaseCandidates: 1,
-    })
-    .where(eq(spotifyAlbum.spotifyId, albumId));
+  // A release already recorded stays as it was, with the evidence it was first matched on.
+  if (match.matchedBy !== 'known' || album.mbReleaseCandidates !== 1) {
+    await db
+      .update(spotifyAlbum)
+      .set({
+        mbReleaseId: match.releaseMbid,
+        ...(match.matchedBy === 'known' ? {} : { mbReleaseMatchedBy: match.matchedBy }),
+        mbCheckedAt: new Date(),
+        mbReleaseCandidates: 1,
+      })
+      .where(eq(spotifyAlbum.spotifyId, albumId));
+  }
 
   const anchors = await anchorAlbumTracks(albumId, match.releaseMbid);
 
@@ -383,7 +399,7 @@ export async function anchorTracksByIsrc(
   for (let i = 0; i < isrcs.length; i += 20) {
     const batch = isrcs.slice(i, i + 20);
     const found = await source.recordingsByIsrc(batch);
-    requests++;
+    requests += requestsSpent(found);
 
     for (const [isrc, recordingMbid] of found) {
       // Remember the mapping so a later lookup of the same ISRC is a join.

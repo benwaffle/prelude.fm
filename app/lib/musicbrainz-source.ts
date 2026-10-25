@@ -1,5 +1,24 @@
-// One implementation today (the web service). The interface keeps a future local mirror a config
-// change; nothing above it may call `mbGet` directly.
+// Two implementations: the web service (`musicbrainz.ts`) and the local mirror over our own `mb_*`
+// tables (`musicbrainz-mirror.ts`), which asks the web service only for what the tables lack.
+// Nothing above this interface may call `mbGet` directly.
+
+const answeredFromCache = new WeakSet<object>();
+
+/** Marks an answer read from our own tables rather than from MusicBrainz. */
+export function markCachedAnswer<T extends object>(answer: T): T {
+  answeredFromCache.add(answer);
+  return answer;
+}
+
+/** An answer read from our own tables cost no request, and writing it back would change nothing. */
+export function isCachedAnswer(answer: unknown): boolean {
+  return typeof answer === 'object' && answer !== null && answeredFromCache.has(answer);
+}
+
+/** The MusicBrainz requests an answer cost: none when it came from our tables. */
+export function requestsSpent(answer: unknown): 0 | 1 {
+  return isCachedAnswer(answer) ? 0 : 1;
+}
 
 export type MbRelation = {
   type: string;
@@ -103,6 +122,11 @@ export interface MusicBrainzSource {
   readonly name: string;
 
   releasesByBarcode(barcode: string): Promise<string[]>;
+
+  // Releases whose MusicBrainz URL relationships name this Spotify album: MusicBrainz stating the
+  // identity. Optional, and answered from our tables only: asking the web service would add a
+  // request to every album for links the cached releases already carry.
+  releasesLinkedToSpotifyAlbum?(spotifyAlbumId: string): Promise<string[]>;
 
   // Track count goes in the query: a common title would otherwise return dozens of candidates to
   // rule out.

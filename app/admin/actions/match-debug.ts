@@ -81,6 +81,8 @@ export type MatchDebugAlbum = {
     barcode: string | null;
     candidates: number | null;
     checkedAt: number | null;
+    /** Null: matched before the evidence was recorded. */
+    matchedBy: 'spotify_link' | 'barcode' | 'title_duration' | 'picked' | null;
     tracklist: 'aligned' | 'misaligned' | 'not_read' | null;
   };
   tracks: MatchDebugTrack[];
@@ -162,13 +164,15 @@ export async function getMatchDebug(input: string): Promise<MatchDebugResult | n
       spotifyTrackTotal: number | null;
       candidates: number | null;
       checkedAt: number | null;
+      matchedBy: MatchDebugAlbum['release']['matchedBy'];
       releaseMbid: string | null;
       releaseTitle: string | null;
       releaseBarcode: string | null;
     }>(sql`
       select a.spotify_id as spotifyAlbumId, a.title, a.year, a.upc,
              a.spotify_track_total as spotifyTrackTotal, a.mb_release_candidates as candidates,
-             a.mb_checked_at as checkedAt, a.mb_release_id as releaseMbid,
+             a.mb_checked_at as checkedAt, a.mb_release_matched_by as matchedBy,
+             a.mb_release_id as releaseMbid,
              r.title as releaseTitle, r.barcode as releaseBarcode
         from spotify_album a left join mb_release r on r.mbid = a.mb_release_id
        where a.spotify_id in (select spotify_album_id from spotify_track where spotify_id in (${ids}))`),
@@ -221,6 +225,7 @@ export async function getMatchDebug(input: string): Promise<MatchDebugResult | n
         barcode: row.releaseBarcode,
         candidates: row.candidates,
         checkedAt: row.checkedAt,
+        matchedBy: row.matchedBy,
         tracklist: firstTrack?.tracklist ?? null,
       },
       tracks: [],

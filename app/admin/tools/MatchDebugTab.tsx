@@ -120,6 +120,13 @@ function tipFor(target: EventTarget): { text: string; left: number; top: number 
   return { text, left: rect.left, top: rect.bottom + 2 };
 }
 
+const RELEASE_MATCHED_BY: Record<NonNullable<MatchDebugAlbum['release']['matchedBy']>, string> = {
+  spotify_link: 'MusicBrainz’s Spotify link',
+  barcode: 'barcode',
+  title_duration: 'title and durations',
+  picked: 'hand pick',
+};
+
 function AlbumRows({ album, heldOnly }: { album: MatchDebugAlbum; heldOnly: boolean }) {
   const tracks = heldOnly
     ? album.tracks.filter((track) => track.verdict.state === 'held')
@@ -150,6 +157,12 @@ function AlbumRows({ album, heldOnly }: { album: MatchDebugAlbum; heldOnly: bool
                 {release.title ?? <span className="absent">not in cache</span>}
               </a>{' '}
               <BarcodeCheck upc={album.upc} barcode={release.barcode} cached={!!release.title} />
+              <Sep />
+              {release.matchedBy ? (
+                <>matched by {RELEASE_MATCHED_BY[release.matchedBy]}</>
+              ) : (
+                <span className="absent">match evidence not recorded</span>
+              )}
               <Sep />
               tracklist{' '}
               {release.tracklist ? (

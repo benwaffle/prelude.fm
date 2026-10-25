@@ -1,5 +1,5 @@
 // Ingest is idempotent: re-reading a release rewrites its rows so the cache converges on what
-// MusicBrainz says now. One request per release, then one per work never read; a work's parent is
+// MusicBrainz says now. An answer the mirror read from these tables is not written back. One request per release, then one per work never read; a work's parent is
 // only visible from the work itself.
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
@@ -28,12 +28,14 @@ import {
   yearOf,
 } from './musicbrainz';
 import { splitCatalogueReference } from './musicbrainz-catalogue';
-import type {
-  MbArtist,
-  MbRelease,
-  MbReleaseRecording,
-  MbWork,
-  MusicBrainzSource,
+import {
+  isCachedAnswer,
+  requestsSpent,
+  type MbArtist,
+  type MbRelease,
+  type MbReleaseRecording,
+  type MbWork,
+  type MusicBrainzSource,
 } from './musicbrainz-source';
 
 /** libSQL takes large statements, but not unbounded ones. */
@@ -170,6 +172,30 @@ export type CachedRelease = {
   isrcs: number;
   workMbids: string[];
 };
+
+function summariseRelease(release: MbRelease): CachedRelease {
+  const recordings = new Map(release.tracks.map((track) => [track.recording.id, track.recording]));
+  const works = [...recordings.values()].flatMap((recording) => recording.works);
+  return {
+    releaseMbid: release.id,
+    tracks: release.tracks.length,
+    recordings: recordings.size,
+    credits: new Set(
+      [...recordings.values()].flatMap((recording) =>
+        recording.credits.map(
+          (credit) =>
+            `${recording.id}:${credit.artistId}:${credit.role}:${credit.instrument ?? ''}`,
+        ),
+      ),
+    ).size,
+    isrcs: new Set(
+      [...recordings.values()].flatMap((recording) =>
+        recording.isrcs.map((isrc) => `${normalizeIsrc(isrc)}:${recording.id}`),
+      ),
+    ).size,
+    workMbids: [...new Set(works.map((work) => work.id))],
+  };
+}
 
 async function cacheRelease(release: MbRelease): Promise<CachedRelease> {
   const recordings = new Map(release.tracks.map((track) => [track.recording.id, track.recording]));
@@ -374,11 +400,12 @@ export async function ingestWorkTree(
     }
 
     const work = await source.work(next);
-    requests++;
+    requests += requestsSpent(work);
     if (!work) break;
 
-    const { parentMbid } = await cacheWork(work);
-    next = parentMbid;
+    next = isCachedAnswer(work)
+      ? (parentPartOf(work)?.id ?? null)
+      : (await cacheWork(work)).parentMbid;
   }
 
   return { requests };
@@ -389,7 +416,7 @@ export async function readAndCacheWork(
   workMbid: string,
 ): Promise<MbWork | null> {
   const work = await source.work(workMbid);
-  if (work) await cacheWork(work);
+  if (work && !isCachedAnswer(work)) await cacheWork(work);
   return work;
 }
 
@@ -412,7 +439,7 @@ export async function ingestRelease(
   options: { fetchWorks?: boolean } = {},
 ): Promise<ReleaseIngestReport> {
   const release = await source.releaseWithRecordings(releaseMbid);
-  let requests = 1;
+  let requests: number = requestsSpent(release);
 
   if (!release) {
     return {
@@ -428,7 +455,8 @@ export async function ingestRelease(
     };
   }
 
-  const cached = await cacheRelease(release);
+  // Read from these very tables: writing it back would rewrite every row to what it already says.
+  const cached = isCachedAnswer(release) ? summariseRelease(release) : await cacheRelease(release);
   const pending = options.fetchWorks === false ? [] : await worksNeedingDetail(cached.workMbids);
   let worksFetched = 0;
 
@@ -458,6 +486,7 @@ export async function ingestRecording(
 ): Promise<{ found: boolean; requests: number }> {
   const detail = await source.recordingDetail(recordingMbid);
   if (!detail) return { found: false, requests: 1 };
+  if (isCachedAnswer(detail)) return { found: true, requests: 0 };
 
   const workLinks = dedupe(
     detail.works.map((work) => ({ recordingMbid: detail.id, workMbid: work.id })),
@@ -534,8 +563,8 @@ export async function drainRecordingStubs(
 
   for (const stub of stubs) {
     const detail = await source.recordingDetail(stub.mbid);
-    requests++;
-    if (!detail) continue;
+    requests += requestsSpent(detail);
+    if (!detail || isCachedAnswer(detail)) continue;
 
     await db
       .update(mbRecording)
@@ -738,9 +767,9 @@ export async function drainArtistStubs(
 
   for (const mbid of pending) {
     const artist = await source.artist(mbid);
-    requests++;
+    requests += requestsSpent(artist);
     if (!artist) continue;
-    await cacheArtist(artist);
+    if (!isCachedAnswer(artist)) await cacheArtist(artist);
     artists++;
   }
 

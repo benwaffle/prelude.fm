@@ -28,6 +28,7 @@ export async function attachPickedRelease(
     .update(spotifyAlbum)
     .set({
       mbReleaseId: request.releaseMbid,
+      mbReleaseMatchedBy: 'picked',
       mbCheckedAt: new Date(),
       mbReleaseCandidates: 1,
     })

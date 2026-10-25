@@ -134,6 +134,12 @@ export const spotifyAlbum = sqliteTable(
      */
     spotifyTrackTotal: integer('spotify_track_total'),
     mbReleaseId: text('mb_release_id'),
+    // What identified `mbReleaseId`: MusicBrainz's own link to this Spotify album, the barcode,
+    // title and durations, or a person's pick. Null: matched before this was recorded, or not
+    // matched.
+    mbReleaseMatchedBy: text('mb_release_matched_by', {
+      enum: ['spotify_link', 'barcode', 'title_duration', 'picked'],
+    }),
     // Releases carrying this barcode: tells "MusicBrainz has none" from "several, none identifying
     // this album".
     mbReleaseCandidates: integer('mb_release_candidates'),
@@ -500,6 +506,8 @@ export const mbReleaseUrl = sqliteTable(
   (table) => [
     primaryKey({ columns: [table.releaseMbid, table.url, table.relationshipTypeId] }),
     index('mb_release_url_type_idx').on(table.relationshipTypeId),
+    // Which release links this Spotify album, and the crawl's walk over every Spotify album link.
+    index('mb_release_url_url_idx').on(table.url),
   ],
 );
 

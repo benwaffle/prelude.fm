@@ -20,6 +20,8 @@ export interface SpotifyAlbumMetadata {
   popularity: number | null;
   images: { url: string; width: number; height: number }[];
   total_tracks?: number;
+  /** The barcode, which is how MusicBrainz indexes releases. */
+  upc?: string | null;
 }
 
 export interface SpotifyArtistMetadata {
@@ -27,8 +29,9 @@ export interface SpotifyArtistMetadata {
   name: string;
 }
 
-interface SpotifyAlbumResponse extends SpotifyAlbumMetadata {
+interface SpotifyAlbumResponse extends Omit<SpotifyAlbumMetadata, 'upc'> {
   tracks: SpotifyAlbumTrackPage;
+  external_ids?: { upc?: string };
 }
 
 let cachedToken: { accessToken: string; expiresAt: number } | null = null;
@@ -118,8 +121,7 @@ export async function getSpotifyTracksByIds(trackIds: string[]) {
   return tracks;
 }
 
-export async function getSpotifyAlbumMetadata(albumId: string): Promise<SpotifyAlbumMetadata> {
-  const album = await spotifyFetch<SpotifyAlbumResponse>(`/albums/${albumId}`);
+function albumMetadataOf(album: SpotifyAlbumResponse): SpotifyAlbumMetadata {
   return {
     id: album.id,
     name: album.name,
@@ -128,7 +130,12 @@ export async function getSpotifyAlbumMetadata(albumId: string): Promise<SpotifyA
     popularity: album.popularity ?? null,
     images: album.images,
     total_tracks: album.total_tracks,
+    upc: album.external_ids?.upc?.trim() || null,
   };
+}
+
+export async function getSpotifyAlbumMetadata(albumId: string): Promise<SpotifyAlbumMetadata> {
+  return albumMetadataOf(await spotifyFetch<SpotifyAlbumResponse>(`/albums/${albumId}`));
 }
 
 export async function getSpotifyAlbumTrackIds(albumId: string) {

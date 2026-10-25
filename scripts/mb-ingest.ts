@@ -24,17 +24,21 @@ defineScript(
       since: flags.since,
     };
 
-    const [{ db }, ingest, cache, mb, gateway, invariants, drizzle] = await Promise.all([
+    const [{ db }, ingest, cache, mb, mirror, gateway, invariants, drizzle] = await Promise.all([
       import('@/lib/db'),
       import('@/lib/musicbrainz-ingest'),
       import('@/lib/musicbrainz-cache'),
       import('@/lib/musicbrainz'),
+      import('@/lib/musicbrainz-mirror'),
       import('@/lib/musicbrainz-gateway'),
       import('@/lib/musicbrainz-invariants'),
       import('drizzle-orm'),
     ]);
     const { sql } = drizzle;
+    // `refresh`, `composers` and `scores` re-read on purpose, and the stub steps only ask for what
+    // the tables lack, so only matching and anchoring answer from the cache first.
     const source = mb.musicBrainzApi('backfill');
+    const cachedFirst = mirror.musicBrainzMirror(source);
 
     async function report() {
       const rows = await db.all<{ label: string; n: number }>(sql`
@@ -77,7 +81,7 @@ defineScript(
     }
 
     if (options.step === 'loose') {
-      const result = await ingest.anchorTracksByIsrc(source, {
+      const result = await ingest.anchorTracksByIsrc(cachedFirst, {
         limit: Number.isFinite(options.limit) ? options.limit : 10_000,
       });
       console.log(
@@ -203,7 +207,7 @@ defineScript(
 
       for (const [index, albumId] of albumIds.entries()) {
         try {
-          const result = await ingest.ingestAlbum(source, albumId);
+          const result = await ingest.ingestAlbum(cachedFirst, albumId);
           requests += result.requests;
           const outcome = result.releaseMbid
             ? `matched:${result.matchedBy}`

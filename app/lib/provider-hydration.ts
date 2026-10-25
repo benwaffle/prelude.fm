@@ -18,6 +18,8 @@ export async function hydrateProviderAlbum(
   const year = album.release_date ? Number.parseInt(album.release_date.split('-')[0]) : null;
   // Only written when Spotify gave one, so a payload without it can't erase a stored total.
   const total = album.total_tracks != null ? { spotifyTrackTotal: album.total_tracks } : {};
+  // Likewise the barcode: albums read while it was not stored kept none.
+  const upc = album.upc ? { upc: album.upc } : {};
   await database
     .insert(spotifyAlbum)
     .values({
@@ -27,6 +29,7 @@ export async function hydrateProviderAlbum(
       images: album.images,
       popularity: album.popularity ?? null,
       ...total,
+      ...upc,
     })
     .onConflictDoUpdate({
       target: spotifyAlbum.spotifyId,
@@ -36,6 +39,7 @@ export async function hydrateProviderAlbum(
         images: album.images,
         popularity: album.popularity ?? null,
         ...total,
+        ...upc,
       },
     });
 
