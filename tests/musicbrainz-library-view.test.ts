@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import test, { before, beforeEach } from 'node:test';
 import { createTestDatabase, resetTestDatabase, type TestDatabase } from './helpers/test-database';
 import { projectMusicBrainzLibrary } from '../app/lib/musicbrainz-library';
@@ -561,7 +561,16 @@ test('a work lists every part MusicBrainz files under it, at every level, held o
 test('the catalogue lists only works we can play, under the same identity as a card', async () => {
   const { getMusicBrainzCatalogComposers, getMusicBrainzCatalogWorks } =
     await import('@/app/actions/catalog-mb');
-  const composers = await getMusicBrainzCatalogComposers();
+  const { refreshCatalogComposers } = await import('@/lib/musicbrainz-composer-catalogue');
+  // Not counted yet: the list says so rather than showing nobody as if there were nobody.
+  assert.deepEqual(await getMusicBrainzCatalogComposers(), {
+    composers: [],
+    withNothingPlayable: 0,
+    uncounted: 0,
+    countedSince: null,
+  });
+  await refreshCatalogComposers();
+  const { composers } = await getMusicBrainzCatalogComposers();
   assert.deepEqual(
     composers.map((entry) => [entry.id, entry.name, entry.workCount, entry.recordingCount]),
     [['mozart', 'Wolfgang Amadeus Mozart', 1, 2]],
@@ -569,7 +578,8 @@ test('the catalogue lists only works we can play, under the same identity as a c
   assert.equal(composers[0].era, 'Classical');
   assert.equal(composers[0].image, null, 'MusicBrainz has no portrait to show');
 
-  const works = await getMusicBrainzCatalogWorks('mozart');
+  const { works, composer } = await getMusicBrainzCatalogWorks('mozart');
+  assert.deepEqual([composer?.workCount, composer?.recordingCount], [1, 2]);
   assert.deepEqual(
     works.map((work) => [work.id, work.catalog, work.movementCount, work.recordingCount]),
     [['sonata', 'K. 545', 3, 2]],
@@ -666,7 +676,7 @@ test("a composer's works list the whole catalogue, each marked for what we hold"
 
   const { getMusicBrainzCatalogWorks, getMusicBrainzCatalogWorkHeader } =
     await import('@/app/actions/catalog-mb');
-  const works = await getMusicBrainzCatalogWorks('mozart');
+  const { works } = await getMusicBrainzCatalogWorks('mozart');
   assert.deepEqual(
     works.map((work) => [
       work.id,
@@ -718,7 +728,9 @@ test('a track linked to a work of ours plays from the catalogue', async () => {
   });
 
   const { getMusicBrainzCatalogWorks } = await import('@/app/actions/catalog-mb');
-  const lost = (await getMusicBrainzCatalogWorks('mozart')).find((work) => work.id === 'pfm-lost');
+  const lost = (await getMusicBrainzCatalogWorks('mozart')).works.find(
+    (work) => work.id === 'pfm-lost',
+  );
   assert.deepEqual(
     [lost?.availability, lost?.inMusicBrainz, lost?.recordingCount],
     ['playable', false, 1],
@@ -764,6 +776,95 @@ test('searching a composer finds their works, and one we cannot play does not ap
   assert.deepEqual(
     hits.map((hit) => hit.workId),
     ['sonata'],
+  );
+});
+
+test('the work search matches words in any order, accents aside, title and composer together', async () => {
+  await db.insert(schema.mbArtist).values({ mbid: 'dvorak', name: 'Antonín Dvořák' });
+  await db.insert(schema.mbWork).values({
+    mbid: 'new-world',
+    title: 'Symphony no. 9 in E minor, op. 95 “From the New World”',
+    type: 'Symphony',
+    parentMbid: null,
+    orderingKey: null,
+    composerMbid: 'dvorak',
+    detail: 'full',
+  });
+  const { workSearchQuery } = await import('@/lib/db/work-search');
+  const found = async (text: string) =>
+    (
+      await db.all<{ mbid: string }>(
+        sql`select mbid from mb_work_search where mb_work_search match ${workSearchQuery(text)}`,
+      )
+    ).map((row) => row.mbid);
+
+  assert.deepEqual(await found('dvorak new world'), ['new-world']);
+  assert.deepEqual(await found('world symph'), ['new-world']);
+  // The movements are titled under the sonata too.
+  assert.ok((await found('mozart sonat')).includes('sonata'));
+  assert.deepEqual(await found('dvořák mozart'), []);
+  assert.equal(workSearchQuery('“ ”'), null);
+
+  // A rename reaches the index, and so does a composer read after their works.
+  await db
+    .update(schema.mbWork)
+    .set({ title: 'Symphony no. 9 “New World”' })
+    .where(eq(schema.mbWork.mbid, 'new-world'));
+  assert.deepEqual(await found('symphony 9 new'), ['new-world']);
+  await db.insert(schema.mbWork).values({
+    mbid: 'humoresque',
+    title: 'Humoresque',
+    type: null,
+    parentMbid: null,
+    orderingKey: null,
+    composerMbid: 'late-composer',
+    detail: 'full',
+  });
+  assert.deepEqual(await found('humoresque glinka'), []);
+  await db.insert(schema.mbArtist).values({ mbid: 'late-composer', name: 'Mikhail Glinka' });
+  assert.deepEqual(await found('humoresque glinka'), ['humoresque']);
+  await db.delete(schema.mbWork).where(eq(schema.mbWork.mbid, 'humoresque'));
+  assert.deepEqual(await found('humoresque'), []);
+});
+
+test('a composer with nothing playable is counted, not listed, and found by name', async () => {
+  await db.insert(schema.mbArtist).values({ mbid: 'clementi', name: 'Muzio Clementi' });
+  await db.insert(schema.mbWork).values({
+    mbid: 'gradus',
+    title: 'Gradus ad Parnassum',
+    type: null,
+    parentMbid: null,
+    orderingKey: null,
+    composerMbid: 'clementi',
+    detail: 'full',
+  });
+  const { getMusicBrainzCatalogComposers, searchCatalogComposers, getMusicBrainzCatalogWorks } =
+    await import('@/app/actions/catalog-mb');
+  const { discoverCatalogComposers, refreshCatalogComposers } =
+    await import('@/lib/musicbrainz-composer-catalogue');
+  // Found before it is counted, and says so rather than showing nothing playable.
+  await discoverCatalogComposers();
+  const [early] = await searchCatalogComposers('muzio');
+  assert.deepEqual([early?.id, early?.workCount, early?.recordingCount], ['clementi', null, null]);
+  assert.equal((await getMusicBrainzCatalogComposers()).uncounted, 2);
+  await refreshCatalogComposers();
+
+  const list = await getMusicBrainzCatalogComposers();
+  assert.deepEqual(
+    list.composers.map((entry) => entry.id),
+    ['mozart'],
+  );
+  assert.equal(list.withNothingPlayable, 1);
+  assert.equal(list.uncounted, 0);
+  assert.ok(list.countedSince);
+
+  const [found] = await searchCatalogComposers('clementi');
+  assert.deepEqual([found?.id, found?.workCount, found?.recordingCount], ['clementi', 0, 0]);
+  const opened = await getMusicBrainzCatalogWorks('clementi');
+  assert.equal(opened.composer?.name, 'Muzio Clementi');
+  assert.deepEqual(
+    opened.works.map((work) => [work.id, work.availability]),
+    [['gradus', 'unrecorded']],
   );
 });
 
@@ -814,7 +915,7 @@ test('a medley appears under each work it performs, and is accounted for once', 
 test('the work heading reads the same values as the catalogue row', async () => {
   const { getMusicBrainzCatalogWorkHeader, getMusicBrainzCatalogWorks } =
     await import('@/app/actions/catalog-mb');
-  const [row] = await getMusicBrainzCatalogWorks('mozart');
+  const [row] = (await getMusicBrainzCatalogWorks('mozart')).works;
   const header = await getMusicBrainzCatalogWorkHeader('sonata');
 
   assert.ok(header);
@@ -885,10 +986,11 @@ test('a composer with more works than one statement can bind returns all of them
 
   const { getMusicBrainzCatalogWorks, getMusicBrainzCatalogComposers } =
     await import('@/app/actions/catalog-mb');
-  const listed = await getMusicBrainzCatalogWorks('mozart');
+  const listed = (await getMusicBrainzCatalogWorks('mozart')).works;
   // The fixture's own sonata is in there too.
   assert.equal(listed.length, total + 1);
-  const composers = await getMusicBrainzCatalogComposers();
+  // Opening the composer counted them for the list.
+  const { composers } = await getMusicBrainzCatalogComposers();
   assert.equal(composers.find((entry) => entry.id === 'mozart')?.workCount, total + 1);
 });
 

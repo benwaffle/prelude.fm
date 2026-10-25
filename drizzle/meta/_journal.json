@@ -267,6 +267,13 @@
       "when": 1792909557936,
       "tag": "0037_invariant_sweep",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1792910065366,
+      "tag": "0038_catalogue_search",
+      "breakpoints": true
     }
   ]
 }

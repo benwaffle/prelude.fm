@@ -28,6 +28,9 @@ export function createTestDatabase() {
       await generateSQLiteDrizzleJson(schema as never),
     );
     for (const statement of statements) await db.run(sql.raw(statement));
+    // What the schema can't describe, as migrations create it.
+    const { WORK_SEARCH_DDL } = await import('@/lib/db/work-search');
+    for (const statement of WORK_SEARCH_DDL) await db.run(sql.raw(statement));
     return db;
   })();
   return prepared;
@@ -35,7 +38,11 @@ export function createTestDatabase() {
 
 export async function resetTestDatabase(db: TestDatabase) {
   const tables = await db.all<{ name: string }>(
-    sql.raw("select name from sqlite_master where type = 'table' and name not like 'sqlite_%'"),
+    // Not a full-text index's own tables (`mb_work_search_data`, ...): emptying the index is how
+    // those are cleared.
+    sql.raw(
+      "select name from sqlite_master where type = 'table' and name not like 'sqlite_%' and name not like '%\\_search\\_%' escape '\\'",
+    ),
   );
   // Deferred keys let tables be emptied in any order; constraints are still checked at commit.
   await db.transaction(async (transaction) => {

@@ -14,6 +14,7 @@
     "metadata:validate": "tsx scripts/validate-metadata.ts",
     "admin:timings": "tsx scripts/admin-timings.ts",
     "metadata:readiness": "tsx scripts/catalogue-readiness.ts",
+    "catalog:count": "tsx scripts/catalog-count.ts",
     "metadata:work-proposals": "tsx scripts/work-proposals.ts",
     "metadata:track-work-links": "tsx scripts/track-work-links.ts",
     "metadata:cache-proposed-works": "tsx scripts/cache-proposed-works.ts",

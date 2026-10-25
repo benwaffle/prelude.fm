@@ -696,6 +696,28 @@ export const mbWorkProposal = sqliteTable(
   ],
 );
 
+// What the catalogue's composer list shows, counted ahead of time: counting it on each view would
+// read every held work link in the library. A row per composer of a work in the index (found by the
+// refresh), null counts until it is first counted. Written by the daily refresh, by
+// `pnpm catalog:count`, and whenever someone opens the composer.
+export const catalogComposer = sqliteTable(
+  'catalog_composer',
+  {
+    composerMbid: text('composer_mbid').primaryKey(),
+    /** Works in the index, at the library's level. */
+    works: integer('works'),
+    /** Of those, works with a playable recording. */
+    playableWorks: integer('playable_works'),
+    /** Distinct recordings (or unanchored tracks) across them. */
+    recordings: integer('recordings'),
+    countedAt: integer('counted_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    index('catalog_composer_playable_idx').on(table.playableWorks),
+    index('catalog_composer_counted_idx').on(table.countedAt),
+  ],
+);
+
 // Our own claim, kept apart so no MusicBrainz read overwrites it; ignored once the track is
 // anchored. `work_mbid` is set only for a confident match; a weaker guess stays in `match`. Null
 // `match`: nothing found.

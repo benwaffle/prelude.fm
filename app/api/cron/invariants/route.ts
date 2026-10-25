@@ -1,3 +1,4 @@
+import { refreshCatalogComposers } from '@/lib/musicbrainz-composer-catalogue';
 import {
   hardViolations,
   latestInvariantResults,
@@ -9,7 +10,10 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 // Same definitions as the CLI and admin page, read a slice a day (see `sweepMusicBrainzInvariants`).
-// The response carries health state so callers can tell a clean sweep from a missed one.
+// The response carries health state so callers can tell a clean sweep from a missed one. Then a
+// slice of the composer list's counts (`pnpm catalog:count` does them all at once).
+const COMPOSER_COUNT_BUDGET_ROWS = 300_000;
+const COMPOSER_COUNT_TIME_MS = 90_000;
 function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
   return Boolean(cronSecret && request.headers.get('authorization') === `Bearer ${cronSecret}`);
@@ -43,6 +47,10 @@ async function sweep() {
       ),
     ),
     health: musicBrainzInvariantHealth(await latestInvariantResults()),
+    composers: await refreshCatalogComposers({
+      budgetRows: COMPOSER_COUNT_BUDGET_ROWS,
+      timeMs: COMPOSER_COUNT_TIME_MS,
+    }),
   };
 }
 

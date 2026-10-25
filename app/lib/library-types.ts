@@ -55,8 +55,9 @@ export interface CatalogComposer {
   died: number | null;
   years: string;
   image: string | null;
-  workCount: number;
-  recordingCount: number;
+  /** Playable works, as last counted; null when the composer has not been counted yet. */
+  workCount: number | null;
+  recordingCount: number | null;
 }
 
 export interface CatalogWork {

@@ -14,9 +14,11 @@ import {
   getMusicBrainzCatalogRecordings,
   getMusicBrainzCatalogWorkHeader,
   getMusicBrainzCatalogWorks,
+  searchCatalogComposers,
   searchMusicBrainzWorks,
   type WorkSearchHit,
 } from '@/app/actions/catalog-mb';
+import type { CatalogComposerList } from '@/lib/musicbrainz-composer-catalogue';
 import { useLibrary } from '@/lib/library-context';
 import { useServerQuery, type ServerQuery } from '@/lib/use-server-query';
 import { useNavSearch } from '../AppShell';
@@ -38,13 +40,13 @@ export function CatalogScreen() {
 
   const composers = useServerQuery(getMusicBrainzCatalogComposers, []);
   const composerData = composers.status === 'ready' ? composers.data : null;
-  const composerList = useMemo(() => composerData ?? [], [composerData]);
+  const composerList = useMemo(() => composerData?.composers ?? [], [composerData]);
   const composerId = url.composerId ?? composerList[0]?.id ?? null;
 
   const works = useServerQuery(composerId ? () => getMusicBrainzCatalogWorks(composerId) : null, [
     composerId,
   ]);
-  const workList = works.status === 'ready' ? works.data : [];
+  const workList = works.status === 'ready' ? works.data.works : [];
   const workId = url.workId ?? workList[0]?.id ?? null;
 
   const recordings = useServerQuery(
@@ -76,8 +78,17 @@ export function CatalogScreen() {
     searched.length >= 2 ? () => searchMusicBrainzWorks(searched) : null,
     [searched],
   );
+  // The list holds only composers with something playable; the rest are found by name.
+  const composerHits = useServerQuery(
+    searched.length >= 2 ? () => searchCatalogComposers(searched) : null,
+    [searched],
+  );
 
-  const composer = composerList.find((c) => c.id === composerId) ?? null;
+  // Counted afresh with the works, and found even when the list doesn't hold the composer.
+  const composer =
+    (works.status === 'ready' ? works.data.composer : null) ??
+    composerList.find((c) => c.id === composerId) ??
+    null;
   const work = workList.find((w) => w.id === workId) ?? null;
 
   // On phones each level is one long page; start the new one at its top.
@@ -114,13 +125,18 @@ export function CatalogScreen() {
         <SearchResults
           query={trimmed}
           hits={searched === trimmed ? hits : { status: 'loading' }}
+          composers={
+            searched === trimmed && composerHits.status === 'ready' ? composerHits.data : []
+          }
           onPick={(hit) => go(catalogHref(hit.composerId, hit.workId))}
+          onPickComposer={(c) => go(catalogHref(c.id))}
         />
       )}
 
       <div className="grid flex-1 grid-cols-[264px_340px_minmax(0,1fr)] max-[900px]:grid-cols-[minmax(0,1fr)]">
         <ComposerPane
           list={filtered}
+          summary={composerData}
           failure={
             composers.status === 'error' && (
               <LoadFailure
@@ -173,15 +189,43 @@ const PANE_FAILURE = 'px-[18px] py-4 font-display text-[14px] text-accent italic
 function SearchResults({
   query,
   hits: found,
+  composers,
   onPick,
+  onPickComposer,
 }: {
   query: string;
   hits: ServerQuery<WorkSearchHit[]>;
+  composers: CatalogComposer[];
   onPick: (hit: WorkSearchHit) => void;
+  onPickComposer: (composer: CatalogComposer) => void;
 }) {
   const hits = found.status === 'ready' ? found.data : [];
   return (
     <div className="border-b border-rule bg-paper-2 px-5 py-3">
+      {composers.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="font-meta text-[9.5px] tracking-[0.2em] text-muted uppercase">
+            Composers
+          </span>
+          {composers.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onPickComposer(c)}
+              className="cursor-pointer text-left text-[13px] text-ink"
+            >
+              {c.name}
+              <span className="font-meta text-[10px] text-muted">
+                {' '}
+                {c.years || 'dates unknown'} ·{' '}
+                {c.workCount === null
+                  ? 'not counted yet'
+                  : `${c.workCount}w · ${c.recordingCount}r`}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="mb-2 font-meta text-[9.5px] tracking-[0.2em] text-muted uppercase">
         {found.status === 'loading'
           ? `Searching for “${query}”…`
@@ -247,12 +291,14 @@ function PaneEmpty({ children }: { children: React.ReactNode }) {
 
 function ComposerPane({
   list,
+  summary,
   failure,
   selectedId,
   onSelect,
   hidden,
 }: {
   list: CatalogComposer[];
+  summary: CatalogComposerList | null;
   failure: ReactNode;
   selectedId: string | null;
   onSelect: (c: CatalogComposer) => void;
@@ -272,7 +318,8 @@ function ComposerPane({
     return out;
   }, [list]);
 
-  const totalWorks = list.reduce((a, c) => a + c.workCount, 0);
+  // Every listed composer has been counted.
+  const totalWorks = list.reduce((a, c) => a + (c.workCount ?? 0), 0);
 
   return (
     <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
@@ -325,7 +372,25 @@ function ComposerPane({
         </Fragment>
       ))}
       {list.length === 0 && !failure && <PaneEmpty>No composer matches that search.</PaneEmpty>}
+      {summary && <UnlistedComposers summary={summary} />}
     </div>
+  );
+}
+
+// The list is counted ahead of time (`catalog_composer`): say what it leaves out and how old the
+// counts are, rather than let it pass for every composer.
+function UnlistedComposers({ summary }: { summary: CatalogComposerList }) {
+  const { withNothingPlayable, uncounted, countedSince } = summary;
+  if (withNothingPlayable === 0 && uncounted === 0 && !countedSince) return null;
+  return (
+    <p className="m-0 px-[18px] pt-3 pb-5 font-meta text-[10px] leading-[1.5] text-muted max-[900px]:px-4">
+      Only composers with a playable work are listed.
+      {withNothingPlayable > 0 &&
+        ` ${withNothingPlayable.toLocaleString()} more have works in the catalogue but nothing playable.`}
+      {uncounted > 0 && ` ${uncounted.toLocaleString()} have not been counted yet.`}
+      {(withNothingPlayable > 0 || uncounted > 0) && ' Search a name to find them.'}
+      {countedSince && ` Counts as of ${countedSince.toLocaleDateString()} or later.`}
+    </p>
   );
 }
 
@@ -408,8 +473,8 @@ function WorkPane({
         <div className="mt-[10px] flex flex-wrap gap-x-[14px] gap-y-1">
           <Fact k="Era" v={composer.era ?? '—'} />
           <Fact k="Works" v={loading ? '…' : String(works.length)} />
-          <Fact k="Playable" v={String(composer.workCount)} />
-          <Fact k="Recordings" v={String(composer.recordingCount)} />
+          <Fact k="Playable" v={String(composer.workCount ?? 'not counted')} />
+          <Fact k="Recordings" v={String(composer.recordingCount ?? 'not counted')} />
         </div>
       </div>
 
