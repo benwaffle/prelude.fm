@@ -14,15 +14,6 @@ const SNAPSHOT: HealthSnapshot = {
   reader: 'musicbrainz',
   pipeline: 'legacy',
   migrations: { count: 20, latest: 1 },
-  rows: {
-    spotifyTracks: 10201,
-    anchors: 6683,
-    releases: 1,
-    recordings: 6820,
-    works: 5693,
-    submissions: 0,
-    queued: 0,
-  },
   invariants: { state: 'green', failing: [], stale: [], neverRun: [] },
 };
 

@@ -253,6 +253,13 @@
       "when": 1792905134551,
       "tag": "0035_spotify_crawl",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1792905759738,
+      "tag": "0036_read_cost_indexes",
+      "breakpoints": true
     }
   ]
 }

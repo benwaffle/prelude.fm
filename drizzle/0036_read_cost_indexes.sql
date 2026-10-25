@@ -1,0 +1,2 @@
+CREATE INDEX `spotify_album_unread_total_idx` ON `spotify_album` (`spotify_id`) WHERE "spotify_album"."spotify_track_total" is null;--> statement-breakpoint
+CREATE INDEX `spotify_track_album_idx` ON `spotify_track` (`spotify_album_id`);

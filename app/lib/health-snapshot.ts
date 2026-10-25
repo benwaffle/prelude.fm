@@ -12,28 +12,12 @@ export type HealthSnapshot = {
   reader: string;
   pipeline: string;
   migrations: { count: number | null; latest: number | null };
-  rows: {
-    spotifyTracks: number | null;
-    anchors: number | null;
-    releases: number | null;
-    recordings: number | null;
-    works: number | null;
-    submissions: number | null;
-    queued: number | null;
-  };
   invariants: InvariantHealth;
 };
 
-async function count(database: Database, table: string): Promise<number | null> {
-  try {
-    const [row] = await database.all<{ n: number }>(
-      sql.raw(`select count(*) as n from "${table}"`),
-    );
-    return Number(row?.n ?? 0);
-  } catch {
-    return null;
-  }
-}
+// No row counts: Turso bills each row a `count(*)` reads, and with the MusicBrainz dump in, the
+// tables this once counted hold millions, on an endpoint anyone may probe. `pnpm mb:ingest report`
+// and `pnpm spotify:crawl report` count them on demand.
 
 async function appliedMigrations(database: Database) {
   try {
@@ -52,18 +36,10 @@ export async function buildHealthSnapshot(): Promise<HealthSnapshot> {
     import('@/lib/musicbrainz-invariants'),
   ]);
 
-  const [migrations, invariants, ...counts] = await Promise.all([
+  const [migrations, invariants] = await Promise.all([
     appliedMigrations(db),
     latestInvariantResults(),
-    count(db, 'spotify_track'),
-    count(db, 'track_recording'),
-    count(db, 'mb_release'),
-    count(db, 'mb_recording'),
-    count(db, 'mb_work'),
-    count(db, 'mb_submission'),
-    count(db, 'match_queue'),
   ]);
-  const [spotifyTracks, anchors, releases, recordings, works, submissions, queued] = counts;
 
   return {
     commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
@@ -72,7 +48,6 @@ export async function buildHealthSnapshot(): Promise<HealthSnapshot> {
     reader: 'musicbrainz',
     pipeline: 'musicbrainz',
     migrations,
-    rows: { spotifyTracks, anchors, releases, recordings, works, submissions, queued },
     invariants: musicBrainzInvariantHealth(invariants),
   };
 }

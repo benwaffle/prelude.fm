@@ -453,8 +453,8 @@ export async function runCrawl(
     limit: number;
     batchSize: number;
     onBatch?: (progress: CrawlProgress) => void;
-    /** Checked between batches; a broken invariant stops the run. */
-    checkInvariants?: () => Promise<string | null>;
+    /** Checked over the albums processed since the last check; a broken invariant stops the run. */
+    checkInvariants?: (albumIds: string[]) => Promise<string | null>;
     invariantEvery?: number;
   },
 ): Promise<CrawlProgress> {
@@ -475,6 +475,13 @@ export async function runCrawl(
   };
 
   let batches = 0;
+  let unchecked: string[] = [];
+  const check = async () => {
+    if (!options.checkInvariants || unchecked.length === 0) return null;
+    const albums = unchecked;
+    unchecked = [];
+    return options.checkInvariants(albums);
+  };
   while (progress.subjects < options.limit) {
     let batch: CrawlBatch | null;
     let result: CrawlAlbumsResult;
@@ -494,6 +501,7 @@ export async function runCrawl(
     progress.albumsRead += result.read.length;
     progress.albumsMissing += result.missing.length;
     for (const album of result.processed) {
+      unchecked.push(album.albumId);
       progress.tracksMatched += album.matched;
       progress.tracksUnresolved += album.unresolved;
       progress.tracksNotClassical += album.notClassical;
@@ -507,14 +515,15 @@ export async function runCrawl(
     if (result.stopped) break;
 
     batches++;
-    if (options.checkInvariants && batches % (options.invariantEvery ?? 10) === 0) {
-      const broken = await options.checkInvariants();
+    if (batches % (options.invariantEvery ?? 10) === 0) {
+      const broken = await check();
       if (broken) {
         progress.stopped = broken;
         break;
       }
     }
   }
+  progress.stopped ??= await check();
   progress.elapsedMs = Date.now() - started;
   return progress;
 }

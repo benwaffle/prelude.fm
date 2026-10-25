@@ -146,7 +146,13 @@ export const spotifyAlbum = sqliteTable(
     /** Null: nobody has asked MusicBrainz about this barcode yet. */
     mbCheckedAt: integer('mb_checked_at', { mode: 'timestamp_ms' }),
   },
-  (table) => [index('spotify_album_mb_release_idx').on(table.mbReleaseId)],
+  (table) => [
+    index('spotify_album_mb_release_idx').on(table.mbReleaseId),
+    // The worker's recheck reads only the albums still missing a total; without this it reads all.
+    index('spotify_album_unread_total_idx')
+      .on(table.spotifyId)
+      .where(sql`${table.spotifyTrackTotal} is null`),
+  ],
 );
 
 export const spotifyTrack = sqliteTable(
@@ -164,7 +170,11 @@ export const spotifyTrack = sqliteTable(
     /** Stored because it is the join key into MusicBrainz. */
     isrc: text('isrc'),
   },
-  (table) => [index('spotify_track_isrc_idx').on(table.isrc)],
+  (table) => [
+    index('spotify_track_isrc_idx').on(table.isrc),
+    // An album's tracks: every pass, the library's album mates, the admin views.
+    index('spotify_track_album_idx').on(table.spotifyAlbumId),
+  ],
 );
 
 export const spotifyArtist = sqliteTable('spotify_artist', {

@@ -1,7 +1,8 @@
 // A broken cache is our bug and fails; a wrong upstream (an ISRC on two recordings) is reported as
 // a contribution.
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { db } from './db';
+import { jsonList } from './db/chunked';
 import { mbInvariantResult } from './db/schema';
 import {
   invariantHealth,
@@ -21,7 +22,16 @@ export type Invariant = {
   describes: string;
   cheap: boolean;
   query: ReturnType<typeof sql>;
+  // The same check over what a pass just wrote for these albums: the whole table is millions of
+  // rows once the dump is in, and a pass runs the cheap checks after every album.
+  scoped?: (albums: SQL) => SQL;
 };
+
+// The rows a pass writes for its albums: their tracks' anchors, and their releases' tracklists.
+const tracksOf = (albums: SQL) =>
+  sql`select spotify_id from spotify_track where spotify_album_id in (${albums})`;
+const releasesOf = (albums: SQL) =>
+  sql`select mb_release_id from spotify_album where spotify_id in (${albums}) and mb_release_id is not null`;
 
 export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
   {
@@ -34,6 +44,12 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
       from track_recording tr
       where not exists (select 1 from mb_recording r where r.mbid = tr.recording_mbid)
     `,
+    scoped: (albums) => sql`
+      select tr.spotify_track_id as id, tr.recording_mbid as detail
+      from track_recording tr
+      where tr.spotify_track_id in (${tracksOf(albums)})
+        and not exists (select 1 from mb_recording r where r.mbid = tr.recording_mbid)
+    `,
   },
   {
     name: 'tracklist-recording-is-cached',
@@ -44,6 +60,12 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
       select rt.release_mbid as id, rt.recording_mbid as detail
       from mb_release_track rt
       where not exists (select 1 from mb_recording r where r.mbid = rt.recording_mbid)
+    `,
+    scoped: (albums) => sql`
+      select rt.release_mbid as id, rt.recording_mbid as detail
+      from mb_release_track rt
+      where rt.release_mbid in (${releasesOf(albums)})
+        and not exists (select 1 from mb_recording r where r.mbid = rt.recording_mbid)
     `,
   },
   {
@@ -102,6 +124,15 @@ export const MUSICBRAINZ_INVARIANTS: Invariant[] = [
       select i.isrc as id, i.recording_mbid as detail
       from mb_recording_isrc i
       where not exists (select 1 from mb_recording r where r.mbid = i.recording_mbid)
+    `,
+    scoped: (albums) => sql`
+      select i.isrc as id, i.recording_mbid as detail
+      from mb_recording_isrc i
+      where i.recording_mbid in (
+          select recording_mbid from mb_release_track where release_mbid in (${releasesOf(albums)})
+          union
+          select recording_mbid from track_recording where spotify_track_id in (${tracksOf(albums)}))
+        and not exists (select 1 from mb_recording r where r.mbid = i.recording_mbid)
     `,
   },
   {
@@ -193,23 +224,32 @@ export function musicBrainzInvariantHealth(
   return invariantHealth(MUSICBRAINZ_INVARIANTS, results, now);
 }
 
+// `albums`: only the cheap checks, over what a pass wrote for these albums. Its results say
+// nothing about the rest of the cache, so they are not a sweep's: record them only when they
+// found something.
 export async function runMusicBrainzInvariants(
-  options: { cheapOnly?: boolean; sampleSize?: number } = {},
+  options: { cheapOnly?: boolean; sampleSize?: number; albums?: string[] } = {},
 ): Promise<InvariantResult[]> {
   const sampleSize = options.sampleSize ?? 5;
-  const checks = options.cheapOnly
-    ? MUSICBRAINZ_INVARIANTS.filter((check) => check.cheap)
-    : MUSICBRAINZ_INVARIANTS;
+  const albums = options.albums;
+  const checks =
+    options.cheapOnly || albums
+      ? MUSICBRAINZ_INVARIANTS.filter((check) => check.cheap)
+      : MUSICBRAINZ_INVARIANTS;
+  if (albums?.length === 0) return [];
 
-  // Count each check and read only a sample of its rows.
+  // Count each check, then read a sample only of one that failed: on a clean cache a sample query
+  // reads the whole table again to find nothing.
   return Promise.all(
     checks.map(async (check): Promise<InvariantResult> => {
-      const [counted, samples] = await Promise.all([
-        db.get<{ n: number }>(sql`select count(*) as n from (${check.query})`),
-        db.all<{ id: string; detail: string | null }>(
-          sql`select * from (${check.query}) limit ${sampleSize}`,
-        ),
-      ]);
+      const query = albums && check.scoped ? check.scoped(jsonList(albums)) : check.query;
+      const counted = await db.get<{ n: number }>(sql`select count(*) as n from (${query})`);
+      const samples =
+        (counted?.n ?? 0) > 0
+          ? await db.all<{ id: string; detail: string | null }>(
+              sql`select * from (${query}) limit ${sampleSize}`,
+            )
+          : [];
       return {
         name: check.name,
         severity: check.severity,

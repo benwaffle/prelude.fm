@@ -508,8 +508,12 @@ export async function runMatchQueueWorker(
     try {
       const { runMusicBrainzInvariants, recordInvariantResults, hardViolations } =
         await import('@/lib/musicbrainz-invariants');
-      const results = await runMusicBrainzInvariants({ cheapOnly: true });
-      await recordInvariantResults(results);
+      // Over what this pass wrote; the daily sweep reads the whole cache.
+      const results = await runMusicBrainzInvariants({
+        cheapOnly: true,
+        albums: albums.map((album) => album.albumId),
+      });
+      await recordInvariantResults(results.filter((result) => result.violations > 0));
       brokenInvariants = hardViolations(results).map((result) => ({
         name: result.name,
         violations: result.violations,

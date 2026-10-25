@@ -76,9 +76,10 @@ defineScript(
     // The backfill channel, so the crawl yields to anything a person is waiting on.
     const musicBrainzSource = musicBrainzMirror(musicBrainzApi('backfill'));
 
-    const checkInvariants = async () => {
-      const results = await invariants.runMusicBrainzInvariants({ cheapOnly: true });
-      await invariants.recordInvariantResults(results);
+    // Over the albums just processed; `pnpm metadata:validate` reads the whole cache.
+    const checkInvariants = async (albums: string[]) => {
+      const results = await invariants.runMusicBrainzInvariants({ albums });
+      await invariants.recordInvariantResults(results.filter((result) => result.violations > 0));
       const broken = invariants.hardViolations(results);
       return broken.length > 0
         ? `cache invariants broken: ${broken.map((result) => `${result.name} (${result.violations})`).join(', ')}`
@@ -121,12 +122,6 @@ defineScript(
       console.log(
         `  done: ${progress.subjects} in ${(progress.elapsedMs / 60_000).toFixed(1)} min`,
       );
-    }
-
-    const broken = await checkInvariants();
-    if (broken) {
-      console.error(broken);
-      return 1;
     }
   },
 );
