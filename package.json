@@ -26,6 +26,7 @@
     "db:studio": "drizzle-kit studio",
     "mb:ingest": "tsx scripts/mb-ingest.ts",
     "mb:bot": "tsx scripts/mb-bot.ts",
+    "mb:dump": "tsx scripts/mb-dump.ts",
     "mb:authorise": "tsx scripts/mb-authorise.ts"
   },
   "dependencies": {
@@ -41,7 +42,7 @@
   "devDependencies": {
     "@next/env": "16.1.0",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^22.20.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/spotify-web-playback-sdk": "^0.1.19",
