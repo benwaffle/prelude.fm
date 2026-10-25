@@ -37,6 +37,21 @@ interface SpotifyAlbumResponse extends Omit<SpotifyAlbumMetadata, 'upc'> {
 let cachedToken: { accessToken: string; expiresAt: number } | null = null;
 let spotifyBlockedUntil = 0;
 
+// A bulk run keeps a steady pace instead of bursting into Spotify's rolling-window limit; the app
+// itself sends too few requests to need one.
+let minIntervalMs = 0;
+let nextRequestAt = 0;
+let requestsSent = 0;
+
+export function setSpotifyRequestInterval(ms: number) {
+  minIntervalMs = Math.max(0, ms);
+}
+
+/** Every request sent to the Web API in this process, retries included. */
+export function spotifyRequestsSent() {
+  return requestsSent;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -78,10 +93,12 @@ async function getSpotifyAppAccessToken() {
 
 async function spotifyFetch<T>(path: string): Promise<T> {
   for (let attempt = 0; attempt < 4; attempt++) {
-    const waitMs = spotifyBlockedUntil - Date.now();
+    const waitMs = Math.max(spotifyBlockedUntil, nextRequestAt) - Date.now();
     if (waitMs > 0) await sleep(waitMs);
+    nextRequestAt = Date.now() + minIntervalMs;
 
     const accessToken = await getSpotifyAppAccessToken();
+    requestsSent++;
     const response = await fetch(`https://api.spotify.com/v1${path}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -136,6 +153,47 @@ function albumMetadataOf(album: SpotifyAlbumResponse): SpotifyAlbumMetadata {
 
 export async function getSpotifyAlbumMetadata(albumId: string): Promise<SpotifyAlbumMetadata> {
   return albumMetadataOf(await spotifyFetch<SpotifyAlbumResponse>(`/albums/${albumId}`));
+}
+
+export type SpotifyAlbumWithTrackIds = SpotifyAlbumMetadata & {
+  /** The first page of the album's tracks. */
+  trackIds: string[];
+  /** The album has more tracks than the first page holds. */
+  moreTracks: boolean;
+};
+
+/** Twenty albums a request. Null where Spotify has no album with that ID. */
+export async function getSpotifyAlbumsByIds(
+  albumIds: string[],
+): Promise<(SpotifyAlbumWithTrackIds | null)[]> {
+  const albums: (SpotifyAlbumWithTrackIds | null)[] = [];
+  for (let i = 0; i < albumIds.length; i += 20) {
+    const batch = albumIds.slice(i, i + 20);
+    const result = await spotifyFetch<{ albums: (SpotifyAlbumResponse | null)[] }>(
+      `/albums?ids=${batch.join(',')}`,
+    );
+    for (const index of batch.keys()) {
+      const found = result.albums[index];
+      albums.push(
+        found
+          ? {
+              ...albumMetadataOf(found),
+              trackIds: found.tracks.items.map((track) => track.id).filter(Boolean),
+              moreTracks: found.tracks.next !== null,
+            }
+          : null,
+      );
+    }
+  }
+  return albums;
+}
+
+/** Tracks Spotify files under this ISRC; the search is fuzzy, so the caller checks the ISRC. */
+export async function searchSpotifyTracksByIsrc(isrc: string): Promise<Track[]> {
+  const result = await spotifyFetch<{ tracks?: { items: (Track | null)[] } }>(
+    `/search?type=track&limit=10&q=${encodeURIComponent(`isrc:${isrc}`)}`,
+  );
+  return (result.tracks?.items ?? []).filter((track): track is Track => track !== null);
 }
 
 export async function getSpotifyAlbumTrackIds(albumId: string) {

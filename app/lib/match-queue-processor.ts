@@ -6,6 +6,7 @@ import {
   getSpotifyAlbumTracks,
   getSpotifyTracksByIds,
 } from '@/lib/spotify-app-client';
+import type { SpotifyAlbumMetadata } from '@/lib/spotify-app-client';
 import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Track } from '@spotify/web-api-ts-sdk';
 import { runMusicBrainzAlbumPass } from '@/lib/musicbrainz-worker';
@@ -134,7 +135,16 @@ async function enqueueAlbumTracks(albumId: string, submittedBy: string) {
     getSpotifyAlbumMetadata(albumId),
     getSpotifyAlbumTrackIds(albumId),
   ]);
+  return enqueueReadAlbum(albumId, album, albumTrackIds, submittedBy);
+}
 
+/** Queues an album already read from Spotify, so a bulk reader can batch the reads. */
+export async function enqueueReadAlbum(
+  albumId: string,
+  album: SpotifyAlbumMetadata,
+  albumTrackIds: string[],
+  submittedBy: string,
+) {
   if (albumTrackIds.length === 0) {
     return { albumId, trackIds: [] as string[], submitted: 0, alreadyQueued: 0 };
   }
@@ -257,6 +267,13 @@ async function hydratePendingRowsWithoutAlbumIds(limit = 50) {
   return submitterByAlbumId.size;
 }
 
+/** Rows the bulk crawl queued; it processes them itself (`pnpm spotify:crawl`). */
+export const CRAWL_SUBMITTER_PREFIX = 'crawl:';
+
+// The worker leaves crawl rows to the crawl: on a Vercel function they would spend the month's
+// CPU on a bulk import.
+const notCrawled = sql`substr(${matchQueue.submittedBy}, 1, ${CRAWL_SUBMITTER_PREFIX.length}) <> ${CRAWL_SUBMITTER_PREFIX}`;
+
 async function getNextPendingAlbumId(maxAttempts?: number) {
   const next = async () => {
     const [row] = await db
@@ -267,6 +284,7 @@ async function getNextPendingAlbumId(maxAttempts?: number) {
           eq(matchQueue.status, 'pending'),
           isNotNull(matchQueue.spotifyAlbumId),
           maxAttempts === undefined ? undefined : lt(matchQueue.attempts, maxAttempts),
+          notCrawled,
         ),
       )
       .groupBy(matchQueue.spotifyAlbumId)
@@ -654,7 +672,9 @@ export async function processQueuedAlbum(
     );
   } catch (error) {
     const message = errorMessage(error, 'Failed to process album');
-    const status = isRetryableProcessingError(message) ? 'pending' : 'failed';
+    // A spent MusicBrainz budget or a paused gateway is not the album's failure.
+    const budget = error instanceof Error && error.name === 'MusicBrainzBudgetError';
+    const status = budget || isRetryableProcessingError(message) ? 'pending' : 'failed';
     const activeTrackIds = await getProcessingTrackIds(albumId, claimOwnerId);
 
     await setQueueStatus(activeTrackIds, status, {

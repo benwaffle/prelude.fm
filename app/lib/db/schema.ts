@@ -222,6 +222,34 @@ export const matchQueue = sqliteTable(
   ],
 );
 
+// What the bulk crawl asked Spotify, so a rerun doesn't ask again. "Spotify has no such album" and
+// "no Spotify track carries these ISRCs" are results, kept as `not_found`.
+export const spotifyCrawl = sqliteTable(
+  'spotify_crawl',
+  {
+    /** `mb_link`: a Spotify album MusicBrainz links to. `isrc_search`: a release searched by ISRC. */
+    kind: text('kind', { enum: ['mb_link', 'isrc_search'] }).notNull(),
+    /** The Spotify album ID (`mb_link`) or the MusicBrainz release MBID (`isrc_search`). */
+    subject: text('subject').notNull(),
+    /** The ISRCs searched for, in order; null for `mb_link`. */
+    isrcs: text('isrcs', { mode: 'json' }).$type<string[]>(),
+    /** The Spotify albums found. */
+    albumIds: text('album_ids', { mode: 'json' }).$type<string[]>().notNull(),
+    // `queued`: read and queued. `found`: the search named albums, queued unless already held.
+    // `held`: a track we hold already carries the ISRC, so nothing was searched.
+    outcome: text('outcome', { enum: ['queued', 'found', 'held', 'not_found'] }).notNull(),
+    /** Spotify requests this row cost. */
+    requests: integer('requests').notNull(),
+    checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.kind, table.subject] }),
+    index('spotify_crawl_outcome_idx').on(table.kind, table.outcome),
+  ],
+);
+
 /** Global, no user relation. Precedence enforced in code: manual > musicbrainz > llm_proposal. */
 export const trackClassification = sqliteTable(
   'track_classification',

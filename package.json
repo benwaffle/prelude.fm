@@ -27,7 +27,8 @@
     "mb:ingest": "tsx scripts/mb-ingest.ts",
     "mb:bot": "tsx scripts/mb-bot.ts",
     "mb:dump": "tsx scripts/mb-dump.ts",
-    "mb:authorise": "tsx scripts/mb-authorise.ts"
+    "mb:authorise": "tsx scripts/mb-authorise.ts",
+    "spotify:crawl": "tsx scripts/spotify-crawl.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.15.15",
