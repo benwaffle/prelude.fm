@@ -89,10 +89,11 @@ export function HealthTab() {
           <p className="eyebrow mb-2">Works whose place in the tree is unsettled</p>
           <div className="slip">
             <p className="px-4 pt-3 text-[var(--ink-2)]">
-              {health.unsettled.count} works are childless, untyped, and titled without naming their
-              parent. Each is either a movement whose parent is written differently or a piece
-              inside a collection, and those want opposite answers. They stay where they are:
-              folding a piece into its collection cannot be spotted afterwards.
+              {health.unsettled.count.toLocaleString()}
+              {health.unsettled.capped ? ' or more' : ''} works are childless, untyped, and titled
+              without naming their parent. Each is either a movement whose parent is written
+              differently or a piece inside a collection, and those want opposite answers. They stay
+              where they are: folding a piece into its collection cannot be spotted afterwards.
             </p>
             {health.unsettled.samples.map((work) => (
               <div key={work.mbid} className="row">

@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db';
+import { jsonList } from '../db/chunked';
 import { filmScoreExclusions } from '../film-score-exclusions';
 
 // A track related to a work that has parts is usually the whole piece in one track (a toccata, a
@@ -36,8 +37,10 @@ type Row = Omit<WholeWorkLink, 'reason'> & {
   partsOnAlbum: number;
 };
 
-export async function wholeWorkLinks(): Promise<WholeWorkLink[]> {
-  const film = new Set((await filmScoreExclusions()).trackIds);
+export async function wholeWorkLinks(
+  scope: { albumIds?: readonly string[] } = {},
+): Promise<WholeWorkLink[]> {
+  const film = new Set((await filmScoreExclusions(scope.albumIds)).trackIds);
   const rows = await db.all<Row>(sql`
     select t.spotify_id as trackId, t.title as trackTitle, t.duration_ms as durationMs,
       tr.recording_mbid as recordingMbid, w.mbid as workMbid, w.title as workTitle,
@@ -55,6 +58,7 @@ export async function wholeWorkLinks(): Promise<WholeWorkLink[]> {
     join spotify_track t on t.spotify_id = tr.spotify_track_id
     join spotify_album a on a.spotify_id = t.spotify_album_id
     where exists (select 1 from mb_work c where c.parent_mbid = w.mbid)
+      ${scope.albumIds ? sql`and t.spotify_album_id in (${jsonList(scope.albumIds)})` : sql``}
     order by w.title, a.title, t.disc_number, t.track_number`);
 
   // Several tracks of one album on one work are its movements when their lengths differ; three

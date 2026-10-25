@@ -14,6 +14,7 @@ import { failureMessage } from '@/lib/use-server-query';
 import { LoadFailure } from '@/app/components/LoadFailure';
 import { noticeClassName } from '../components/Notice';
 import { useAdminFailure } from '../components/AdminFailure';
+import { AlbumWindowBar, useAlbumWindow } from '../components/AlbumWindowBar';
 import type { InboxClass } from '../lib/admin-url';
 import type { InboxFocus } from '../lib/inbox-focus';
 import { BarcodesSection } from './BarcodesSection';
@@ -41,6 +42,9 @@ export function InboxSectionPage({
   const [botError, setBotError] = useState<string | null>(null);
   const [limits, setLimits] = useState<ContributionListLimits>(DEFAULT_CONTRIBUTION_LIMITS);
   const handledFocus = useRef<string | null>(null);
+  const nav = useAlbumWindow();
+  // A linked album opens on its own window, until the reader pages away.
+  const windowFocus = nav.moved ? null : focus;
 
   const { showFailure } = useAdminFailure();
 
@@ -51,17 +55,17 @@ export function InboxSectionPage({
       afterAdminBurst(
         'inbox-reload',
         async () => {
-          setView(await getContributions(limits, section));
+          setView(await getContributions(limits, section, nav.from, windowFocus));
           setLoadError(null);
         },
         showFailure,
       ),
-    [limits, section, showFailure],
+    [limits, section, showFailure, nav.from, windowFocus],
   );
 
   useEffect(() => {
     let cancelled = false;
-    void getContributions(limits, section)
+    void getContributions(limits, section, nav.from, windowFocus)
       .then((next) => {
         if (cancelled) return;
         setView(next);
@@ -74,7 +78,7 @@ export function InboxSectionPage({
       cancelled = true;
     };
     // loadAttempt is only a dependency: Retry bumps it to run this load again.
-  }, [limits, section, loadAttempt]);
+  }, [limits, section, loadAttempt, nav.from, windowFocus]);
 
   useEffect(() => {
     if (!usesBot) return;
@@ -127,6 +131,9 @@ export function InboxSectionPage({
           Opening a MusicBrainz, Harmony, or MagicISRC link writes nothing. Confirming records it as
           submitted. Recheck reads the cache.
         </p>
+      )}
+      {section !== 'submitted' && (
+        <AlbumWindowBar window={view.window} nav={nav} what="This list, its count and its order" />
       )}
 
       {usesBot && (
@@ -186,6 +193,7 @@ export function InboxSectionPage({
       )}
       {section === 'work' && (
         <WorkRelationshipsSection
+          from={view.window.from}
           rows={view.workGaps}
           total={view.counts.workRelationships}
           onReload={reload}

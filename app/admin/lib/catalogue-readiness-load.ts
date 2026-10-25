@@ -11,26 +11,30 @@ import {
 import { projectMusicBrainzLibrary } from '@/lib/musicbrainz-library';
 import { loadMusicBrainzLibraryFacts } from '@/lib/musicbrainz-library-read';
 
-/** Same facts loader and projection the player uses. */
+// Same facts loader and projection the player uses. `albumIds` is a window of albums (the admin
+// pages); undefined reads every track, which only the CLI asks for.
 export async function loadReadinessFunnel(
+  albumIds?: readonly string[],
   database: DatabaseExecutor = db,
 ): Promise<ReadinessFunnel> {
-  const { tracks, submissions } = await loadReadinessTracks(database);
+  const { tracks, submissions } = await loadReadinessTracks(database, albumIds);
   return readinessFunnel(tracks, submissions);
 }
 
 /** The Overview's own count, so the Inbox order and the funnel agree. */
 export async function loadTracksBlockedOnRelease(
+  albumIds: readonly string[],
   database: DatabaseExecutor = db,
 ): Promise<Map<string, number>> {
-  const { tracks, submissions } = await loadReadinessTracks(database);
+  const { tracks, submissions } = await loadReadinessTracks(database, albumIds);
   return tracksBlockedOnReleaseByAlbum(tracks, submissions);
 }
 
-async function loadReadinessTracks(database: DatabaseExecutor) {
+async function loadReadinessTracks(database: DatabaseExecutor, albumIds?: readonly string[]) {
   const trackRows = await database
     .select({ spotifyId: spotifyTrack.spotifyId, isrc: spotifyTrack.isrc })
-    .from(spotifyTrack);
+    .from(spotifyTrack)
+    .where(albumIds && inArray(spotifyTrack.spotifyAlbumId, [...albumIds]));
   const facts = await loadMusicBrainzLibraryFacts(
     trackRows.map((row) => row.spotifyId),
     database,

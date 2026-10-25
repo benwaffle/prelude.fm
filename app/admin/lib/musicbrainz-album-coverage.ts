@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { db, type DatabaseExecutor } from '@/lib/db';
 import {
@@ -29,9 +29,12 @@ function deriveState(row: {
   return 'absent';
 }
 
+/** These albums (a window, or search hits), never the whole library. */
 export async function loadMusicBrainzAlbumRows(
+  albumIds: readonly string[],
   database: DatabaseExecutor = db,
 ): Promise<AlbumRow[]> {
+  if (albumIds.length === 0) return [];
   const rows = await database
     .select({
       id: spotifyAlbum.spotifyId,
@@ -59,6 +62,7 @@ export async function loadMusicBrainzAlbumRows(
     .leftJoin(trackRecording, eq(trackRecording.spotifyTrackId, spotifyTrack.spotifyId))
     .leftJoin(mbRecordingWork, eq(mbRecordingWork.recordingMbid, trackRecording.recordingMbid))
     .leftJoin(mbWork, eq(mbWork.mbid, mbRecordingWork.workMbid))
+    .where(inArray(spotifyAlbum.spotifyId, [...albumIds]))
     .groupBy(spotifyAlbum.spotifyId);
 
   return rows.map((row) => ({ ...row, state: deriveState(row) }));

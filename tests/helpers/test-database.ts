@@ -30,7 +30,10 @@ export function createTestDatabase() {
     for (const statement of statements) await db.run(sql.raw(statement));
     // What the schema can't describe, as migrations create it.
     const { WORK_SEARCH_DDL } = await import('@/lib/db/work-search');
-    for (const statement of WORK_SEARCH_DDL) await db.run(sql.raw(statement));
+    const { ALBUM_SEARCH_DDL } = await import('@/lib/db/album-search');
+    for (const statement of [...WORK_SEARCH_DDL, ...ALBUM_SEARCH_DDL]) {
+      await db.run(sql.raw(statement));
+    }
     return db;
   })();
   return prepared;

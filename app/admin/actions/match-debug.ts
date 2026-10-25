@@ -5,6 +5,8 @@ import { db } from '@/lib/db';
 import { jsonList } from '@/lib/db/chunked';
 import { heldWorkLinks } from '@/lib/db/held-work-links';
 import { subtreeOf } from '@/lib/db/work-tree-sql';
+import { matchingAlbums } from '@/lib/db/album-search';
+import { matchingWorks, workSearchQuery } from '@/lib/db/work-search';
 import { BUCKETS, placeTrack, readinessTracksFrom } from '@/lib/catalogue-readiness';
 import { GAP_REASONS } from '@/lib/gap-reasons';
 import {
@@ -15,7 +17,11 @@ import {
 import { loadMusicBrainzLibraryFacts } from '@/lib/musicbrainz-library-read';
 import type { TrackClassification } from '@/lib/musicbrainz-library-facts';
 import { loadReadinessSubmissions } from '../lib/catalogue-readiness-load';
-import { parseMatchDebugQuery, type MatchDebugQuery } from '../lib/match-debug-query';
+import {
+  parseMatchDebugQuery,
+  TEXT_MATCH_LIMIT,
+  type MatchDebugQuery,
+} from '../lib/match-debug-query';
 import { checkAuth } from './auth';
 
 const TRACK_LIMIT = 400;
@@ -99,25 +105,43 @@ export type MatchDebugResult = {
 type SearchRow = { spotifyTrackId: string; isrc: string | null };
 
 function heldTracksUnder(works: SQL): SQL {
-  return sql`t.spotify_id in (select spotify_track_id from (${heldWorkLinks({ works })}))`;
+  return sql`select spotify_track_id from (${heldWorkLinks({ works })})`;
 }
 
-function whereFor(query: MatchDebugQuery): SQL {
+const tracksOnAlbums = (albums: SQL) =>
+  sql`select spotify_id from spotify_track where spotify_album_id in (${albums})`;
+
+// A barcode as Spotify or MusicBrainz may pad it: the same digits behind up to 14 leading zeros.
+function paddedBarcodes(digits: string): string[] {
+  const bare = digits.replace(/^0+/, '');
+  return Array.from({ length: Math.max(1, 15 - bare.length) }, (_, zeros) =>
+    '0'.repeat(zeros).concat(bare),
+  );
+}
+
+// The tracks a query names, as a select of their IDs, each part read through an index. Text matches
+// album and work titles (full-text, best matches first), not track titles: there is no index on
+// those, and the crawl makes them millions of rows.
+function tracksFor(query: MatchDebugQuery): SQL | null {
   switch (query.kind) {
     case 'spotify':
-      return sql`(t.spotify_id = ${query.id} or a.spotify_id = ${query.id})`;
+      return sql`select spotify_id from spotify_track where spotify_id = ${query.id}
+        union ${tracksOnAlbums(sql`select ${query.id}`)}`;
     case 'isrc':
-      return sql`t.isrc = ${query.isrc}`;
+      return sql`select spotify_id from spotify_track where isrc = ${query.isrc}`;
     case 'barcode':
-      return sql`ltrim(a.upc, '0') = ltrim(${query.digits}, '0')`;
+      return tracksOnAlbums(
+        sql`select spotify_id from spotify_album where upc in (${jsonList(paddedBarcodes(query.digits))})`,
+      );
     case 'mbid':
-      return sql`(a.mb_release_id = ${query.mbid}
-        or t.spotify_id in (select spotify_track_id from track_recording where recording_mbid = ${query.mbid})
-        or ${heldTracksUnder(subtreeOf(jsonList([query.mbid])))})`;
+      return sql`${tracksOnAlbums(sql`select spotify_id from spotify_album where mb_release_id = ${query.mbid}`)}
+        union select spotify_track_id from track_recording where recording_mbid = ${query.mbid}
+        union ${heldTracksUnder(subtreeOf(jsonList([query.mbid])))}`;
     case 'text': {
-      const matches = (column: SQL) => sql`instr(lower(${column}), lower(${query.text})) > 0`;
-      return sql`(${matches(sql`t.title`)} or ${matches(sql`a.title`)}
-        or ${heldTracksUnder(subtreeOf(sql`select mbid from mb_work where ${matches(sql`title`)}`))})`;
+      const words = workSearchQuery(query.text);
+      if (!words) return null;
+      return sql`${tracksOnAlbums(sql`select spotify_id from (${matchingAlbums(words, TEXT_MATCH_LIMIT)})`)}
+        union ${heldTracksUnder(subtreeOf(sql`select mbid from (${matchingWorks(words, TEXT_MATCH_LIMIT)})`))}`;
     }
   }
 }
@@ -129,12 +153,15 @@ export async function getMatchDebug(input: string): Promise<MatchDebugResult | n
   const query = parseMatchDebugQuery(input);
   if (!query) return null;
 
-  const found = await db.all<SearchRow>(sql`
+  const tracks = tracksFor(query);
+  const found = tracks
+    ? await db.all<SearchRow>(sql`
     select t.spotify_id as spotifyTrackId, t.isrc
       from spotify_track t join spotify_album a on a.spotify_id = t.spotify_album_id
-     where ${whereFor(query)}
+     where t.spotify_id in (${tracks})
      order by a.title, a.spotify_id, t.disc_number, t.track_number
-     limit ${TRACK_LIMIT + 1}`);
+     limit ${TRACK_LIMIT + 1}`)
+    : [];
   const shown = found.slice(0, TRACK_LIMIT);
   const trackIds = shown.map((row) => row.spotifyTrackId);
   if (trackIds.length === 0) return { query: query.kind, albums: [], tracks: 0, truncated: false };

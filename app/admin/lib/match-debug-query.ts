@@ -1,5 +1,8 @@
 import { findMbid } from '@/lib/musicbrainz-manual-submissions';
 
+/** A text search reads the tracks of this many best-matching albums, and of as many works. */
+export const TEXT_MATCH_LIMIT = 50;
+
 // What a pasted string names. Links and bare IDs are read first so a title search never has to
 // guess at one.
 export type MatchDebugQuery =

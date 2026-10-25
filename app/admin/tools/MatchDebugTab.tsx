@@ -10,6 +10,7 @@ import {
   type MatchDebugWork,
 } from '../actions/match-debug';
 import { adminHref } from '../lib/admin-url';
+import { TEXT_MATCH_LIMIT } from '../lib/match-debug-query';
 import { Spinner } from '../components/Spinner';
 
 const MATCHED_BY: Record<string, string> = {
@@ -42,7 +43,7 @@ export function MatchDebugTab() {
           onKeyDown={(event) => {
             if (event.key === 'Enter' && input.trim()) search();
           }}
-          placeholder="Album, track or work title; Spotify link; MusicBrainz link; ISRC; barcode"
+          placeholder="Album or work title; Spotify link; MusicBrainz link; ISRC; barcode"
           className="min-w-[260px] flex-1"
         />
         <button className="act" onClick={search} disabled={!input.trim()}>
@@ -73,6 +74,8 @@ export function MatchDebugTab() {
               ? `First ${result.data.tracks} matching tracks`
               : `${result.data.tracks} tracks`}{' '}
             on {result.data.albums.length} albums (searched as {result.data.query}).
+            {result.data.query === 'text' &&
+              ` Text finds the tracks of the ${TEXT_MATCH_LIMIT} best-matching album titles and the held tracks of the ${TEXT_MATCH_LIMIT} best-matching works. Track titles are not searched: paste a Spotify link or ISRC for one track.`}
           </p>
           {result.data.albums.length > 0 && (
             <div className="slip overflow-x-auto">

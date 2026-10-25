@@ -101,7 +101,7 @@ beforeEach(async () => {
 });
 
 test('Albums counts only provider, classification, anchor, and MusicBrainz facts', async () => {
-  const [album] = await loadMusicBrainzAlbumRows(db);
+  const [album] = await loadMusicBrainzAlbumRows(['album-1'], db);
 
   assert.deepEqual(album, {
     id: 'album-1',

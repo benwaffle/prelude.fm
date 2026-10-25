@@ -28,7 +28,7 @@ export type MissingRelease = {
 export async function missingReleases(
   scope: { albumIds?: readonly string[] } = {},
 ): Promise<MissingRelease[]> {
-  const film = await filmScoreExclusions();
+  const film = await filmScoreExclusions(scope.albumIds);
   return db
     .select({
       albumId: spotifyAlbum.spotifyId,

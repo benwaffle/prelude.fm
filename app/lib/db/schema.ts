@@ -148,6 +148,8 @@ export const spotifyAlbum = sqliteTable(
   },
   (table) => [
     index('spotify_album_mb_release_idx').on(table.mbReleaseId),
+    // The Matches tab finds an album by barcode (`ltrim` would read every album).
+    index('spotify_album_upc_idx').on(table.upc),
     // The worker's recheck reads only the albums still missing a total; without this it reads all.
     index('spotify_album_unread_total_idx')
       .on(table.spotifyId)

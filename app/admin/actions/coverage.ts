@@ -2,6 +2,14 @@
 
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { matchingAlbums } from '@/lib/db/album-search';
+import { workSearchQuery } from '@/lib/db/work-search';
+import {
+  albumWindowView,
+  ALBUM_WINDOW_SIZE,
+  readAlbumWindow,
+  type AlbumWindowView,
+} from '@/lib/gaps/album-window';
 import { spotifyTrack } from '@/lib/db/schema';
 import { musicBrainzApi } from '@/lib/musicbrainz';
 import { anchorTracksByIsrc } from '@/lib/musicbrainz-ingest';
@@ -14,14 +22,39 @@ import {
   loadMusicBrainzAlbumTracks,
 } from '../lib/musicbrainz-album-coverage';
 
-export async function getAlbums(state?: AlbumState, search?: string): Promise<AlbumRow[]> {
+export type AlbumList = {
+  albums: AlbumRow[];
+  /** Browsing: the window of albums read. Null when searching. */
+  window: AlbumWindowView | null;
+  /** Searching: the title search stopped at this many albums, so there may be more. */
+  searchLimited: boolean;
+};
+
+// A window of albums (`from`, in Spotify ID order), or the best title matches for `search`; the
+// state filter applies to those, never the whole library.
+export async function getAlbums(
+  state?: AlbumState,
+  search?: string,
+  from: string | null = null,
+): Promise<AlbumList> {
   await checkAuth();
-  const albums = await loadMusicBrainzAlbumRows();
-  const needle = search?.trim().toLocaleLowerCase();
-  return albums
-    .filter((album) => (state ? album.state === state : true))
-    .filter((album) => (needle ? album.title.toLocaleLowerCase().includes(needle) : true))
-    .sort((a, b) => b.tracks - a.tracks);
+  const words = search ? workSearchQuery(search) : null;
+  const window = words ? null : await readAlbumWindow(from);
+  const albumIds = words
+    ? (
+        await db.all<{ spotifyId: string }>(
+          sql`select spotify_id as spotifyId from (${matchingAlbums(words, ALBUM_WINDOW_SIZE)})`,
+        )
+      ).map((row) => row.spotifyId)
+    : window!.albumIds;
+  const albums = await loadMusicBrainzAlbumRows(albumIds);
+  return {
+    albums: albums
+      .filter((album) => (state ? album.state === state : true))
+      .sort((a, b) => b.tracks - a.tracks),
+    window: window && albumWindowView(window),
+    searchLimited: words !== null && albumIds.length >= ALBUM_WINDOW_SIZE,
+  };
 }
 
 export async function getAlbumTracks(albumId: string): Promise<AlbumTrackRow[]> {
@@ -37,10 +70,8 @@ export async function getIsrcSubmissionLinks(
   await checkAuth();
   if (albumIds.length === 0) return {};
 
-  const wanted = new Set(albumIds);
   const links: Record<string, { href: string; missing: number }> = {};
-  for (const release of isrcGapReleases(await isrcEligibleGaps())) {
-    if (!wanted.has(release.albumId)) continue;
+  for (const release of isrcGapReleases(await isrcEligibleGaps({ albumIds }))) {
     links[release.albumId] = {
       href: magicIsrcLink(release.releaseMbid, release.gaps),
       missing: release.missing,

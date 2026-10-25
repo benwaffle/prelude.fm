@@ -29,7 +29,7 @@ export type MisalignedAlbum = {
 export async function misalignedAlbums(
   scope: { albumIds?: readonly string[] } = {},
 ): Promise<MisalignedAlbum[]> {
-  const film = await filmScoreExclusions();
+  const film = await filmScoreExclusions(scope.albumIds);
   const albums = await db
     .select({
       albumId: spotifyAlbum.spotifyId,

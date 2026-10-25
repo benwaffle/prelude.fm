@@ -50,6 +50,7 @@ async function sweep() {
     composers: await refreshCatalogComposers({
       budgetRows: COMPOSER_COUNT_BUDGET_ROWS,
       timeMs: COMPOSER_COUNT_TIME_MS,
+      concurrency: 8,
     }),
   };
 }

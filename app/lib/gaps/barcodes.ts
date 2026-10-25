@@ -15,7 +15,7 @@ import {
   type SpotifyBarcodeEvidence,
 } from '../musicbrainz-contribution-safety';
 import { BATCH_BLOCKING_OUTCOMES, BLOCKING_OUTCOMES } from '../musicbrainz-manual-submissions';
-import { within, without } from './scope';
+import { albumsOfReleases, within, without } from './scope';
 
 // A submitted barcode stays listed until the cache holds one; hiding it would look like MusicBrainz
 // accepted it.
@@ -28,10 +28,10 @@ export type BarcodeGap = {
   maxDurationDeltaMs: number;
 };
 
-export type BarcodeGapScope = { releaseMbids?: readonly string[] };
+export type BarcodeGapScope = { releaseMbids?: readonly string[]; albumIds?: readonly string[] };
 
 export async function barcodeGaps(scope: BarcodeGapScope = {}): Promise<BarcodeGap[]> {
-  const film = await filmScoreExclusions();
+  const film = await filmScoreExclusions(scope.albumIds ?? albumsOfReleases(scope.releaseMbids));
   const candidates = await db
     .select({
       releaseMbid: mbRelease.mbid,
@@ -44,6 +44,7 @@ export async function barcodeGaps(scope: BarcodeGapScope = {}): Promise<BarcodeG
     .where(
       and(
         within(mbRelease.mbid, scope.releaseMbids),
+        within(spotifyAlbum.spotifyId, scope.albumIds),
         without(spotifyAlbum.spotifyId, film.albumIds),
         sql`${mbRelease.barcode} is null or ${mbRelease.barcode} = ''`,
         sql`${spotifyAlbum.upc} is not null and ${spotifyAlbum.upc} <> ''`,

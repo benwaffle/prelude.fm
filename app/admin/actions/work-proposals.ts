@@ -12,6 +12,7 @@ import {
 } from '@/lib/musicbrainz-manual-submissions';
 import { insertSubmissions } from '@/lib/submission-ledger';
 import { loadProposalGaps } from '@/lib/work-proposals-run';
+import { readAlbumWindow } from '@/lib/gaps/album-window';
 import {
   proposalAlbums,
   type ProposalAlbumView,
@@ -25,8 +26,9 @@ export type WorkProposalsView = {
   counts: ProposalCounts;
 };
 
-async function loadView(): Promise<WorkProposalsView> {
-  const gaps = await loadProposalGaps();
+// The Inbox's window of albums (`from`, in Spotify ID order), like the list beside it.
+async function loadView(from: string | null): Promise<WorkProposalsView> {
+  const gaps = await loadProposalGaps((await readAlbumWindow(from)).albumIds);
   const recordingMbids = gaps.map((gap) => gap.recordingMbid);
   const [stored, recorded] =
     recordingMbids.length === 0
@@ -60,15 +62,16 @@ async function loadView(): Promise<WorkProposalsView> {
   );
 }
 
-export async function getWorkProposals(): Promise<WorkProposalsView> {
+export async function getWorkProposals(from: string | null = null): Promise<WorkProposalsView> {
   await checkAuth();
-  return loadView();
+  return loadView(from);
 }
 
 /** Deciding writes nothing outside this table. */
 export async function decideWorkProposals(
   recordingMbidsInput: string[],
   status: ProposalStatus,
+  from: string | null = null,
 ): Promise<WorkProposalsView> {
   await checkAuth();
   if (!['proposed', 'approved', 'dismissed'].includes(status)) {
@@ -88,13 +91,16 @@ export async function decideWorkProposals(
         ),
       );
   }
-  return loadView();
+  return loadView(from);
 }
 
 /** Submits nothing; Recheck reads MusicBrainz to see whether each link landed. */
-export async function recordEnteredWorkLinks(albumId: string): Promise<WorkProposalsView> {
+export async function recordEnteredWorkLinks(
+  albumId: string,
+  from: string | null = null,
+): Promise<WorkProposalsView> {
   const session = await checkAuth();
-  const view = await loadView();
+  const view = await loadView(from);
   const album = view.albums.find((candidate) => candidate.albumId === albumId);
   const approved = album?.rows.filter((row) => row.state === 'approved' && row.proposal) ?? [];
   if (!album || approved.length === 0) {
@@ -124,5 +130,5 @@ export async function recordEnteredWorkLinks(albumId: string): Promise<WorkPropo
     }),
     { submittedBy: `human:${session.user.name}` },
   );
-  return loadView();
+  return loadView(from);
 }

@@ -12,6 +12,12 @@ import {
 } from '@/lib/contribution-list';
 import { countContributions, gapLists, submissionCounts } from '@/lib/gaps/counts';
 import {
+  albumOfRelease,
+  albumWindowView,
+  readAlbumWindow,
+  type AlbumWindowView,
+} from '@/lib/gaps/album-window';
+import {
   judgeContestedIsrcs,
   type ContestedIsrc,
   type ContestedIsrcJudgement,
@@ -54,6 +60,7 @@ import {
   type LedgerRow,
 } from '@/lib/submission-ledger';
 import type { InboxClass } from '../lib/admin-url';
+import type { InboxFocus } from '../lib/inbox-focus';
 import { tracksBlockedOnRelease } from '../lib/release-unblocks';
 import { checkAuth } from './auth';
 
@@ -87,6 +94,8 @@ export type WorkLedgerHistory = {
 };
 
 export type ContributionView = {
+  /** The albums every list and count covers. */
+  window: AlbumWindowView;
   counts: ReturnType<typeof countContributions>;
   isrcReleases: {
     releaseMbid: string;
@@ -264,10 +273,13 @@ function recentSubmissions() {
     .limit(200);
 }
 
-/** With `only`, other sections come back empty but the counts are always whole. */
+// With `only`, other sections come back empty but the counts are whole for the window: the albums
+// from `from` on (Spotify ID order), or from the focused album or release's album.
 export async function getContributions(
   limits?: Partial<ContributionListLimits>,
   only?: InboxClass,
+  from: string | null = null,
+  focus: InboxFocus | null = null,
 ): Promise<ContributionView> {
   await checkAuth();
   const page = resolveContributionLimits(limits);
@@ -275,10 +287,18 @@ export async function getContributions(
   const take = <T>(section: InboxClass, rows: T[], limit: number): T[] =>
     shows(section) ? pageSlice(rows, limit) : [];
 
+  const start =
+    from ??
+    (focus?.kind === 'album'
+      ? focus.id
+      : focus?.kind === 'release'
+        ? await albumOfRelease(focus.id)
+        : null);
+  const window = await readAlbumWindow(start);
   const [lists, submissions, unblocks, recent] = await Promise.all([
-    gapLists(),
+    gapLists(window.albumIds),
     submissionCounts(),
-    shows('missing') ? tracksBlockedOnRelease() : null,
+    shows('missing') ? tracksBlockedOnRelease(window.albumIds) : null,
     shows('submitted') ? recentSubmissions() : [],
   ]);
 
@@ -343,6 +363,7 @@ export async function getContributions(
   ]);
 
   return {
+    window: albumWindowView(window),
     counts: countContributions(lists, submissions),
     isrcReleases: releases.map((release) => {
       const tracks = release.gaps.map((gap) => ({

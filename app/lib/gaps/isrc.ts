@@ -23,11 +23,11 @@ import {
   type SpotifyReleaseEvidence,
 } from '../musicbrainz-contribution-safety';
 import { BATCH_BLOCKING_OUTCOMES, BLOCKING_OUTCOMES } from '../musicbrainz-manual-submissions';
-import { within, without } from './scope';
+import { albumsOfReleases, within, without } from './scope';
 
 export type { IsrcGap } from '../musicbrainz-edit-links';
 
-export type IsrcGapScope = { releaseMbids?: readonly string[] };
+export type IsrcGapScope = { releaseMbids?: readonly string[]; albumIds?: readonly string[] };
 
 // Evidence: barcode matches exactly, full tracklists map one-to-one with durations within 3s, and
 // MusicBrainz has no ISRC yet. Ledgered rows stay listed until the cache holds the ISRC;
@@ -86,7 +86,7 @@ async function isrcGapRows(
   ledger: 'all' | 'eligible' | 'batch',
   scope: IsrcGapScope,
 ): Promise<IsrcGap[]> {
-  const film = await filmScoreExclusions();
+  const film = await filmScoreExclusions(scope.albumIds ?? albumsOfReleases(scope.releaseMbids));
   const delta = sql<number>`abs(coalesce(${mbReleaseTrack.length}, ${mbRecording.length}) - ${spotifyTrack.durationMs})`;
 
   return db
@@ -121,6 +121,7 @@ async function isrcGapRows(
     .where(
       and(
         within(mbRelease.mbid, scope.releaseMbids),
+        within(spotifyAlbum.spotifyId, scope.albumIds),
         without(spotifyTrack.spotifyId, film.trackIds),
         sql`${spotifyTrack.isrc} is not null`,
         // Ignore the zero padding that distinguishes a UPC-12 from the same EAN-13.

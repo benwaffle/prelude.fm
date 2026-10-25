@@ -17,11 +17,14 @@ import { EditIdInput, useRowForms, useRowMutation } from './LedgerGapRow';
 import { WorkProposalsPanel } from './WorkProposalsPanel';
 
 export function WorkRelationshipsSection({
+  from,
   rows,
   total,
   onReload,
   onLoadMore,
 }: {
+  /** The window of albums the list covers; the proposals cover the same. */
+  from: string | null;
   rows: ContributionView['workGaps'];
   total: number;
   onReload: () => Promise<void>;
@@ -41,7 +44,7 @@ export function WorkRelationshipsSection({
       pending={pending}
       description="Candidates come from sibling recordings on the same cached MusicBrainz release. They are possibilities, not inferred relationships."
     >
-      <WorkProposalsPanel onRecorded={onReload} />
+      <WorkProposalsPanel from={from} onRecorded={onReload} />
       {rows.map((gap) => {
         const { current: created, previous: createdBefore } = gap.createdWork;
         const createForm = createForms.formOf(gap.recordingMbid);

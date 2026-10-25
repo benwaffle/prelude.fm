@@ -26,7 +26,14 @@ function workUrl(workMbid: string) {
 }
 
 /** Approving records only agreement; the edit is made in MusicBrainz's relationship editor. */
-export function WorkProposalsPanel({ onRecorded }: { onRecorded: () => Promise<void> }) {
+/** Covers the same window of albums as the list beside it (`from`). */
+export function WorkProposalsPanel({
+  from,
+  onRecorded,
+}: {
+  from: string | null;
+  onRecorded: () => Promise<void>;
+}) {
   const [view, setView] = useState<WorkProposalsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -35,7 +42,7 @@ export function WorkProposalsPanel({ onRecorded }: { onRecorded: () => Promise<v
 
   useEffect(() => {
     let cancelled = false;
-    getWorkProposals()
+    getWorkProposals(from)
       .then((next) => {
         if (cancelled) return;
         setView(next);
@@ -47,7 +54,7 @@ export function WorkProposalsPanel({ onRecorded }: { onRecorded: () => Promise<v
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [from]);
 
   async function decide(recordingMbids: string[], status: 'approved' | 'dismissed' | 'proposed') {
     if (recordingMbids.length === 0) return;
@@ -58,14 +65,14 @@ export function WorkProposalsPanel({ onRecorded }: { onRecorded: () => Promise<v
           ? `Dismissing ${recordingMbids.length}…`
           : `Reopening ${recordingMbids.length}…`;
     await run(label, async () => {
-      setView(await decideWorkProposals(recordingMbids, status));
+      setView(await decideWorkProposals(recordingMbids, status, from));
       setSelected(new Set());
     });
   }
 
   async function recordEntered(album: ProposalAlbumView) {
     await run(`Recording ${album.albumTitle}…`, async () => {
-      setView(await recordEnteredWorkLinks(album.albumId));
+      setView(await recordEnteredWorkLinks(album.albumId, from));
       await onRecorded();
     });
   }

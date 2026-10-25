@@ -6,7 +6,9 @@ import {
   getAlbums,
   getIsrcSubmissionLinks,
   recheckAlbum,
+  type AlbumList,
 } from '../actions/coverage';
+import { AlbumWindowBar, useAlbumWindow } from '../components/AlbumWindowBar';
 import {
   STATE_LABEL,
   WHAT_IT_NEEDS,
@@ -84,7 +86,9 @@ export function AlbumsTab({
 }) {
   const { run } = useAdminAction();
   const [search, setSearch] = useState('');
-  const [albums, setAlbums] = useState<AlbumRow[] | null>(null);
+  const [list, setList] = useState<AlbumList | null>(null);
+  const albums: AlbumRow[] | null = list?.albums ?? null;
+  const nav = useAlbumWindow();
   const [albumsError, setAlbumsError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [tracks, setTracks] = useState<Record<string, AlbumTrackRow[]>>({});
@@ -97,12 +101,12 @@ export function AlbumsTab({
 
   useEffect(() => {
     let cancelled = false;
-    void getAlbums(state, search)
-      .then(async (rows) => {
+    void getAlbums(state, search, nav.from)
+      .then(async (next) => {
         if (cancelled) return;
-        setAlbums(rows);
+        setList(next);
         setAlbumsError(null);
-        const needSeeds = rows
+        const needSeeds = next.albums
           .filter(
             (row) => row.mbReleaseId && (row.state === 'partial' || row.state === 'needs_isrcs'),
           )
@@ -120,7 +124,7 @@ export function AlbumsTab({
     return () => {
       cancelled = true;
     };
-  }, [state, search]);
+  }, [state, search, nav.from]);
 
   async function recheck(albumId: string) {
     setRechecking(albumId);
@@ -133,7 +137,7 @@ export function AlbumsTab({
             ? `linked ${result.resolved} more — ${result.anchored}/${result.tracks} linked to a recording`
             : `no change — ${result.anchored}/${result.tracks} linked to a recording`,
       }));
-      setAlbums(await getAlbums(state, search));
+      setList(await getAlbums(state, search, nav.from));
     });
     setRechecking(null);
   }
@@ -175,7 +179,7 @@ export function AlbumsTab({
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Find an album"
+            placeholder="Find an album by title"
             className="min-w-[220px] flex-1"
           />
           <button className="act" onClick={() => onStateChange(undefined)} disabled={!state}>
@@ -195,6 +199,16 @@ export function AlbumsTab({
         </div>
       </div>
 
+      {list?.window && (
+        <AlbumWindowBar window={list.window} nav={nav} what="The rows and filters" />
+      )}
+      {list && !list.window && (
+        <p className="text-[11px] text-[var(--ink-2)]">
+          {list.searchLimited
+            ? 'The best title matches, as many as the search reads: there may be more, so narrow the search. The state filter applies to these.'
+            : 'Every album whose title matches, best first; the state filter applies to these.'}
+        </p>
+      )}
       {albumsError !== null && (
         <LoadFailure className={noticeClassName('error')} what="albums" error={albumsError} />
       )}

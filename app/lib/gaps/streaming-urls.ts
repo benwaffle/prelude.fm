@@ -9,7 +9,7 @@ import {
   type ReleaseUrlRelation,
   type SpotifyFreeStreamingUrlState,
 } from '../musicbrainz-manual-submissions';
-import { within, without } from './scope';
+import { albumsOfReleases, within, without } from './scope';
 
 // Unfetched stays unknown: an empty `mb_release_url` result is not evidence MusicBrainz has no
 // External Links.
@@ -73,9 +73,9 @@ export async function streamingUrlStates(
 }
 
 export async function streamingUrlGaps(
-  scope: { releaseMbids?: readonly string[] } = {},
+  scope: { releaseMbids?: readonly string[]; albumIds?: readonly string[] } = {},
 ): Promise<StreamingUrlGap[]> {
-  const film = await filmScoreExclusions();
+  const film = await filmScoreExclusions(scope.albumIds ?? albumsOfReleases(scope.releaseMbids));
   const candidates = await db
     .select({
       releaseMbid: mbRelease.mbid,
@@ -89,6 +89,7 @@ export async function streamingUrlGaps(
     .where(
       and(
         within(mbRelease.mbid, scope.releaseMbids),
+        within(spotifyAlbum.spotifyId, scope.albumIds),
         isNotNull(mbRelease.urlRelationsFetchedAt),
         without(spotifyAlbum.spotifyId, film.albumIds),
       ),

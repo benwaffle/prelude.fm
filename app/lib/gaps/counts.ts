@@ -10,17 +10,19 @@ import { streamingUrlGaps } from './streaming-urls';
 import { workRelationshipGaps } from './work-relationships';
 import { wholeWorkLinks } from './whole-work-links';
 
-export async function gapLists() {
+// Every gap on these albums (a window: `album-window`), never the whole library.
+export async function gapLists(albumIds: readonly string[]) {
+  const scope = { albumIds };
   const [isrc, work, contested, missing, barcodes, streaming, misaligned, wholeWork] =
     await Promise.all([
-      isrcGaps(),
-      workRelationshipGaps(),
-      contestedIsrcs(),
-      missingReleases(),
-      barcodeGaps(),
-      streamingUrlGaps(),
-      misalignedAlbums(),
-      wholeWorkLinks(),
+      isrcGaps(scope),
+      workRelationshipGaps(scope),
+      contestedIsrcs(scope),
+      missingReleases(scope),
+      barcodeGaps(scope),
+      streamingUrlGaps(scope),
+      misalignedAlbums(scope),
+      wholeWorkLinks(scope),
     ]);
   return { isrc, work, contested, missing, barcodes, streaming, misaligned, wholeWork };
 }
@@ -52,7 +54,7 @@ export function countContributions(lists: GapLists, submissions: Record<string, 
 
 export type ContributionCounts = ReturnType<typeof countContributions>;
 
-export async function contributionCounts(): Promise<ContributionCounts> {
-  const [lists, submissions] = await Promise.all([gapLists(), submissionCounts()]);
+export async function contributionCounts(albumIds: readonly string[]): Promise<ContributionCounts> {
+  const [lists, submissions] = await Promise.all([gapLists(albumIds), submissionCounts()]);
   return countContributions(lists, submissions);
 }

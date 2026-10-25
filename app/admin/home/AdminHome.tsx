@@ -9,6 +9,7 @@ import { useServerQuery } from '@/lib/use-server-query';
 import { LoadFailure } from '@/app/components/LoadFailure';
 import { noticeClassName } from '../components/Notice';
 import { Spinner } from '../components/Spinner';
+import { AlbumWindowBar, useAlbumWindow } from '../components/AlbumWindowBar';
 import { adminHref, PAGE_TITLE, type InboxClass, type ToolPage } from '../lib/admin-url';
 
 type Counts = ContributionView['counts'];
@@ -69,9 +70,12 @@ const LISTS: {
 const TOOLS: { page: ToolPage; note: string }[] = [
   {
     page: 'matches',
-    note: 'Search an album, track or work: release, recording, work, composer and verdict per track.',
+    note: 'Search an album or work: release, recording, work, composer and verdict per track.',
   },
-  { page: 'albums', note: 'Every album, filtered by how far MusicBrainz has it.' },
+  {
+    page: 'albums',
+    note: 'Albums a window at a time, or by title, filtered by how far MusicBrainz has them.',
+  },
   { page: 'corrections', note: 'What we had to fix by hand after a Harmony import.' },
   { page: 'refresh-work', note: 'Read one work again, after you edit it on MusicBrainz.' },
   { page: 'checks', note: 'Cache checks, and which commit is live.' },
@@ -80,7 +84,8 @@ const TOOLS: { page: ToolPage; note: string }[] = [
 export function AdminHome() {
   // Retry asks again: a part of the page can fail while the read succeeds.
   const [attempt, setAttempt] = useState(0);
-  const home = useServerQuery(getAdminHome, [attempt]);
+  const nav = useAlbumWindow();
+  const home = useServerQuery(() => getAdminHome(nav.from), [attempt, nav.from]);
   const retry = () => setAttempt((n) => n + 1);
   const part = <T,>(pick: (data: AdminHomeData) => { value: T | null; error: string | null }) =>
     home.status === 'ready'
@@ -105,6 +110,13 @@ export function AdminHome() {
 
   return (
     <div className="flex flex-col gap-6 pb-16">
+      {home.status === 'ready' && (
+        <AlbumWindowBar
+          window={home.data.window}
+          nav={nav}
+          what="The track counts and list counts on this page"
+        />
+      )}
       <ReadyPanel funnel={funnel} error={funnelError} onRetry={retry} />
 
       <section className="panel">

@@ -13,7 +13,7 @@ import {
   trackRecording,
 } from '../db/schema';
 import { filmScoreExclusions } from '../film-score-exclusions';
-import { within, without } from './scope';
+import { albumsOfRecordings, within, without } from './scope';
 
 // Sibling recordings may suggest works; they are candidates for a human to verify, not inferred
 // links.
@@ -41,9 +41,11 @@ export type WorkCandidate = {
 };
 
 export async function workRelationshipGaps(
-  scope: { recordingMbids?: readonly string[] } = {},
+  scope: { recordingMbids?: readonly string[]; albumIds?: readonly string[] } = {},
 ): Promise<WorkRelationshipGapRow[]> {
-  const film = await filmScoreExclusions();
+  const film = await filmScoreExclusions(
+    scope.albumIds ?? albumsOfRecordings(scope.recordingMbids),
+  );
   return db
     .select({
       recordingMbid: trackRecording.recordingMbid,
@@ -61,6 +63,7 @@ export async function workRelationshipGaps(
     .where(
       and(
         within(trackRecording.recordingMbid, scope.recordingMbids),
+        within(spotifyAlbum.spotifyId, scope.albumIds),
         without(spotifyTrack.spotifyId, film.trackIds),
         sql`not exists (
           select 1 from mb_recording_work

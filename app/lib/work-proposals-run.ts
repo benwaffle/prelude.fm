@@ -2,6 +2,7 @@
 // `mb_work_proposal`; submits nothing.
 import { sql } from 'drizzle-orm';
 import { db } from './db';
+import { jsonList } from './db/chunked';
 import { filmScoreExclusions } from './film-score-exclusions';
 import { mbWorkProposal } from './db/schema';
 import { childPartsOf, composerOf, type MbWork } from './musicbrainz';
@@ -34,9 +35,11 @@ export type ProposalGap = {
   artistNames: string[];
 };
 
-export async function loadProposalGaps(): Promise<ProposalGap[]> {
+// With `albumIds`, the gaps on those albums (the Inbox's window); without, the whole library.
+export async function loadProposalGaps(albumIds?: readonly string[]): Promise<ProposalGap[]> {
   // Film scores are not part of the catalogue (see `film-scores`).
-  const film = await filmScoreExclusions();
+  const film = await filmScoreExclusions(albumIds);
+  const onAlbums = albumIds ? sql`and t.spotify_album_id in (${jsonList(albumIds)})` : sql``;
   const notFilm =
     film.trackIds.length === 0
       ? sql``
@@ -62,6 +65,7 @@ export async function loadProposalGaps(): Promise<ProposalGap[]> {
         select 1 from mb_recording_work w where w.recording_mbid = tr.recording_mbid
       )
       ${notFilm}
+      ${onAlbums}
       group by tr.recording_mbid
     ),
     gap as (

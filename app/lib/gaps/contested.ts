@@ -15,7 +15,7 @@ import {
   trackRecording,
 } from '../db/schema';
 import { filmScoreExclusions } from '../film-score-exclusions';
-import { within, without } from './scope';
+import { albumsOfIsrcs, within, without } from './scope';
 
 // An upstream error that costs us links (Haydn 87's ISRC on a recording of 82); found so we can
 // report them.
@@ -26,10 +26,11 @@ export type ContestedIsrc = {
   recordingMbids: string[];
 };
 
+// With `albumIds`, the ISRCs of those albums' tracks.
 export async function contestedIsrcs(
-  scope: { isrcs?: readonly string[] } = {},
+  scope: { isrcs?: readonly string[]; albumIds?: readonly string[] } = {},
 ): Promise<ContestedIsrc[]> {
-  const film = await filmScoreExclusions();
+  const film = await filmScoreExclusions(scope.albumIds ?? albumsOfIsrcs(scope.isrcs));
   const groups = await db
     .select({
       isrc: mbRecordingIsrc.isrc,
@@ -40,7 +41,12 @@ export async function contestedIsrcs(
     .from(mbRecordingIsrc)
     .innerJoin(mbRecording, eq(mbRecording.mbid, mbRecordingIsrc.recordingMbid))
     .where(
-      and(within(mbRecordingIsrc.isrc, scope.isrcs), without(mbRecordingIsrc.isrc, film.isrcs)),
+      and(
+        within(mbRecordingIsrc.isrc, scope.isrcs),
+        scope.albumIds &&
+          sql`${mbRecordingIsrc.isrc} in (select isrc from spotify_track where ${within(spotifyTrack.spotifyAlbumId, scope.albumIds)})`,
+        without(mbRecordingIsrc.isrc, film.isrcs),
+      ),
     )
     .groupBy(mbRecordingIsrc.isrc)
     .having(sql`count(*) > 1`)

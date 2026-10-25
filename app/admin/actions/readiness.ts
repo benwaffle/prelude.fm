@@ -2,6 +2,7 @@
 
 import type { ReadinessFunnel } from '@/lib/catalogue-readiness';
 import { contributionCounts } from '@/lib/gaps/counts';
+import { albumWindowView, readAlbumWindow, type AlbumWindowView } from '@/lib/gaps/album-window';
 import { loadReadinessFunnel } from '../lib/catalogue-readiness-load';
 import { checkAuth } from './auth';
 
@@ -17,15 +18,18 @@ function settle<T>(read: Promise<T>): Promise<Loaded<T>> {
   );
 }
 
-/** One action, not two: Next runs a page's server actions serially. Each half fails on its own. */
-export async function getAdminHome(): Promise<{
+// One action, not two: Next runs a page's server actions serially. Each half fails on its own.
+// Both cover one window of albums (`from`, in Spotify ID order), never the whole library.
+export async function getAdminHome(from: string | null = null): Promise<{
+  window: AlbumWindowView;
   funnel: Loaded<ReadinessFunnel>;
   counts: Loaded<Awaited<ReturnType<typeof contributionCounts>>>;
 }> {
   await checkAuth();
+  const window = await readAlbumWindow(from);
   const [funnel, counts] = await Promise.all([
-    settle(loadReadinessFunnel()),
-    settle(contributionCounts()),
+    settle(loadReadinessFunnel(window.albumIds)),
+    settle(contributionCounts(window.albumIds)),
   ]);
-  return { funnel, counts };
+  return { window: albumWindowView(window), funnel, counts };
 }
