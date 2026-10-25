@@ -360,6 +360,49 @@ export const mbWorkCatalogue = sqliteTable(
   ],
 );
 
+// A work we know of that MusicBrainz lacks: ours, never written into `mb_work`. Its id is
+// `pfm-<uuid>`, and `parent_id` names either kind of work. Readers take both kinds through
+// `app/lib/db/work-tree-sql.ts`. Once MusicBrainz has it, `mb_work_mbid` says which work it is and
+// readers skip it; whoever sets that re-points its parts and links to the MusicBrainz work.
+export const ownWork = sqliteTable(
+  'own_work',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    type: text('type'),
+    parentId: text('parent_id'),
+    orderingKey: integer('ordering_key'),
+    composerMbid: text('composer_mbid'),
+    /** Where we learned of it. */
+    source: text('source', { enum: ['prelude', 'imslp', 'apple'] }).notNull(),
+    mbWorkMbid: text('mb_work_mbid').unique(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index('own_work_parent_idx').on(table.parentId),
+    index('own_work_composer_idx').on(table.composerMbid),
+  ],
+);
+
+export const ownWorkCatalogue = sqliteTable(
+  'own_work_catalogue',
+  {
+    workId: text('work_id')
+      .notNull()
+      .references(() => ownWork.id),
+    system: text('system').notNull(),
+    number: text('number').notNull(),
+    normalizedSystem: text('normalized_system').notNull(),
+    normalizedNumber: text('normalized_number').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workId, table.system, table.number] }),
+    index('own_work_catalogue_lookup_idx').on(table.normalizedSystem, table.normalizedNumber),
+  ],
+);
+
 export const mbRecording = sqliteTable('mb_recording', {
   mbid: text('mbid').primaryKey(),
   title: text('title').notNull(),

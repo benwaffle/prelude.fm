@@ -276,7 +276,7 @@ function ComposerPane({
 
   return (
     <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
-      <PaneHead title="Composers" count={`${list.length} · ${totalWorks} works`} />
+      <PaneHead title="Composers" count={`${list.length} · ${totalWorks} playable works`} />
       {failure}
       {groups.map((g) => (
         // Keyed by the first composer, not the letter: an accented surname can split a letter in
@@ -314,7 +314,10 @@ function ComposerPane({
                   {c.era ? ` · ${c.era}` : ''}
                 </span>
               </span>
-              <span className="font-meta text-[10px] text-muted tabular-nums">
+              <span
+                className="font-meta text-[10px] text-muted tabular-nums"
+                title="Playable works · recordings"
+              >
                 {c.workCount}w · {c.recordingCount}r
               </span>
             </button>
@@ -404,7 +407,8 @@ function WorkPane({
         </div>
         <div className="mt-[10px] flex flex-wrap gap-x-[14px] gap-y-1">
           <Fact k="Era" v={composer.era ?? '—'} />
-          <Fact k="Works" v={String(composer.workCount)} />
+          <Fact k="Works" v={loading ? '…' : String(works.length)} />
+          <Fact k="Playable" v={String(composer.workCount)} />
           <Fact k="Recordings" v={String(composer.recordingCount)} />
         </div>
       </div>
@@ -458,8 +462,17 @@ function WorkPane({
                   )}
                 </span>
               </span>
-              <span className="font-display text-[12px] whitespace-nowrap text-muted italic">
-                <b className="font-semibold text-ink-2 not-italic">{w.recordingCount}</b> rec.
+              <span className="flex flex-col items-end font-display text-[12px] whitespace-nowrap text-muted italic">
+                {w.availability === 'playable' ? (
+                  <span>
+                    <b className="font-semibold text-ink-2 not-italic">{w.recordingCount}</b> rec.
+                  </span>
+                ) : (
+                  <span>
+                    {w.availability === 'unmatched' ? 'not on Spotify yet' : 'no recording known'}
+                  </span>
+                )}
+                {!w.inMusicBrainz && <span className="text-accent">not in MusicBrainz</span>}
               </span>
             </button>
           ))}
@@ -563,7 +576,7 @@ function RecordingPane({
 
       <div className="pt-1 pb-10">
         {recordings.length === 0 && (
-          <PaneEmpty>No recordings are recorded for this work yet.</PaneEmpty>
+          <PaneEmpty>No recording of this work is matched to a Spotify track yet.</PaneEmpty>
         )}
         {recordings.map((r) => (
           <RecordingTile

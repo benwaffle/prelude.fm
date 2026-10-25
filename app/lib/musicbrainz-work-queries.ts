@@ -2,8 +2,8 @@ import { and, eq, exists, isNotNull, notExists, notInArray, or, sql } from 'driz
 import { db, type DatabaseExecutor } from './db';
 import { jsonList } from './db/chunked';
 import { heldWorkLinks } from './db/held-work-links';
-import { mbWork, mbWorkCatalogue, spotifyTrack, trackRecording, trackWorkLink } from './db/schema';
-import { lineageOf, subtreeOf } from './db/work-tree-sql';
+import { mbWorkCatalogue, spotifyTrack, trackRecording, trackWorkLink } from './db/schema';
+import { lineageOf, selectWorks, subtreeOf } from './db/work-tree-sql';
 import { ancestry } from './musicbrainz-work-tree';
 
 /** "Hold" is `heldWorkLinks`'s, everywhere. */
@@ -101,7 +101,7 @@ export async function findProviderTracksForComposer(
   workLimit = 12,
   database: DatabaseExecutor = db,
 ): Promise<string[]> {
-  const tree = sql`(with recursive tree(root, mbid) as (select mbid, mbid from mb_work where composer_mbid = ${composerMbid} and parent_mbid is null union select tree.root, child.mbid from mb_work child join tree on child.parent_mbid = tree.mbid) select root, mbid from tree)`;
+  const tree = sql`(with recursive tree(root, mbid) as (select mbid, mbid from mb_work where composer_mbid = ${composerMbid} and parent_mbid is null union select id, id from own_work where composer_mbid = ${composerMbid} and parent_id is null and +mb_work_mbid is null union select tree.root, child.mbid from mb_work child join tree on child.parent_mbid = tree.mbid union select tree.root, child.id from own_work child join tree on child.parent_id = tree.mbid where +child.mb_work_mbid is null) select root, mbid from tree)`;
   const held = heldWorkLinks({ works: sql`(select mbid from ${tree})` }, database);
   const rows = await database.all<{ root: string; spotifyTrackId: string }>(sql`
     select tree.root as root, held.spotify_track_id as spotifyTrackId
@@ -128,10 +128,10 @@ export async function readWorkLineage(
   workMbid: string,
   database: DatabaseExecutor = db,
 ): Promise<{ composerMbid: string | null; imslpUrl: string | null }> {
-  const lineage = await database
-    .select()
-    .from(mbWork)
-    .where(sql`${mbWork.mbid} in ${lineageOf(jsonList([workMbid]))}`);
+  const lineage = await selectWorks(
+    (id) => sql`${id} in ${lineageOf(jsonList([workMbid]))}`,
+    database,
+  );
   const chain = ancestry(workMbid, new Map(lineage.map((work) => [work.mbid, work])));
   return {
     composerMbid: chain.find((work) => work.composerMbid)?.composerMbid ?? null,

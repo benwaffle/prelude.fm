@@ -10,13 +10,12 @@ import {
   mbRelease,
   mbReleaseTrack,
   mbReleaseUrl,
-  mbWorkCatalogue,
   spotifyAlbum,
   spotifyArtist,
   spotifyTrack,
   trackRecording,
 } from './db/schema';
-import { readWorkNeighbourhood } from './db/work-tree-sql';
+import { readWorkCatalogue, readWorkNeighbourhood } from './db/work-tree-sql';
 import type {
   MbArtistFact,
   MbRecordingCreditFact,
@@ -202,10 +201,9 @@ export async function loadMusicBrainzLibraryFacts(
     forChunks(releaseMbids, (chunk) =>
       database.select().from(mbReleaseUrl).where(inArray(mbReleaseUrl.releaseMbid, chunk)),
     ),
-    forChunks(
+    readWorkCatalogue(
       workRows.map((work) => work.mbid),
-      (chunk) =>
-        database.select().from(mbWorkCatalogue).where(inArray(mbWorkCatalogue.workMbid, chunk)),
+      database,
     ),
     forChunks([...composerMbids, ...creditRows.map((credit) => credit.artistMbid)], (chunk) =>
       database

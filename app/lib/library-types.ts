@@ -70,6 +70,13 @@ export interface CatalogWork {
   genre: string | null;
   movementCount: number;
   recordingCount: number;
+  /**
+   * Playable on Spotify; or MusicBrainz has recordings and none is matched to a Spotify track
+   * ('unmatched'); or no recording is known ('unrecorded').
+   */
+  availability: 'playable' | 'unmatched' | 'unrecorded';
+  /** False for a work of ours MusicBrainz lacks. */
+  inMusicBrainz: boolean;
 }
 
 export interface CatalogRecording extends RecordingSummary {

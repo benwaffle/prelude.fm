@@ -578,6 +578,158 @@ test('the catalogue lists only works we can play, under the same identity as a c
   assert.equal(cards[0].workId, works[0].id);
 });
 
+test("a composer's works list the whole catalogue, each marked for what we hold", async () => {
+  await db.insert(schema.mbWork).values([
+    // Recorded on MusicBrainz, no recording matched to a Spotify track; its parts stay under it.
+    {
+      mbid: 'fantasia',
+      title: 'Fantasia in D minor, K. 397',
+      type: 'Fantasia',
+      parentMbid: null,
+      orderingKey: null,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+    {
+      mbid: 'fantasia-i',
+      title: 'Fantasia in D minor, K. 397: I. Andante',
+      type: null,
+      parentMbid: 'fantasia',
+      orderingKey: 1,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+    // No recording known anywhere.
+    {
+      mbid: 'minuet',
+      title: 'Minuet in G, K. 1',
+      type: 'Minuet',
+      parentMbid: null,
+      orderingKey: null,
+      composerMbid: 'mozart',
+      detail: 'full',
+    },
+  ]);
+  await db.insert(schema.mbWorkCatalogue).values([
+    {
+      workMbid: 'fantasia',
+      seriesMbid: 'series-k',
+      system: 'K.',
+      number: '397',
+      normalizedSystem: 'k',
+      normalizedNumber: '397',
+    },
+    {
+      workMbid: 'minuet',
+      seriesMbid: 'series-k',
+      system: 'K.',
+      number: '1',
+      normalizedSystem: 'k',
+      normalizedNumber: '1',
+    },
+  ]);
+  await db.insert(schema.mbRecording).values({
+    mbid: 'rec-fantasia',
+    title: 'Fantasia: Andante',
+    length: 1_000,
+    detail: 'full',
+  });
+  await db.insert(schema.mbRecordingWork).values({
+    recordingMbid: 'rec-fantasia',
+    workMbid: 'fantasia-i',
+  });
+  // Ours, which MusicBrainz lacks, and one MusicBrainz has since found, which reads as theirs.
+  await db.insert(schema.ownWork).values([
+    {
+      id: 'pfm-lost',
+      title: 'Sonata in B-flat, K. 1000',
+      type: 'Sonata',
+      composerMbid: 'mozart',
+      source: 'prelude',
+    },
+    {
+      id: 'pfm-found',
+      title: 'Minuet in G',
+      type: 'Minuet',
+      composerMbid: 'mozart',
+      source: 'prelude',
+      mbWorkMbid: 'minuet',
+    },
+  ]);
+  await db.insert(schema.ownWorkCatalogue).values({
+    workId: 'pfm-lost',
+    system: 'K.',
+    number: '1000',
+    normalizedSystem: 'k',
+    normalizedNumber: '1000',
+  });
+
+  const { getMusicBrainzCatalogWorks, getMusicBrainzCatalogWorkHeader } =
+    await import('@/app/actions/catalog-mb');
+  const works = await getMusicBrainzCatalogWorks('mozart');
+  assert.deepEqual(
+    works.map((work) => [
+      work.id,
+      work.catalog,
+      work.availability,
+      work.inMusicBrainz,
+      work.movementCount,
+      work.recordingCount,
+    ]),
+    // In catalogue order, by number: K. 1 before K. 397 before K. 1000.
+    [
+      ['minuet', 'K. 1', 'unrecorded', true, 0, 0],
+      ['fantasia', 'K. 397', 'unmatched', true, 1, 0],
+      ['sonata', 'K. 545', 'playable', true, 3, 2],
+      ['pfm-lost', 'K. 1000', 'unrecorded', false, 0, 0],
+    ],
+  );
+
+  const header = await getMusicBrainzCatalogWorkHeader('pfm-lost');
+  assert.equal(header?.title, 'Sonata in B-flat, K. 1000');
+  assert.equal(header?.catalog, 'K. 1000');
+  assert.equal(header?.composerName, 'Wolfgang Amadeus Mozart');
+});
+
+test('a track linked to a work of ours plays from the catalogue', async () => {
+  await db.insert(schema.ownWork).values({
+    id: 'pfm-lost',
+    title: 'Sonata in B-flat',
+    type: 'Sonata',
+    composerMbid: 'mozart',
+    source: 'prelude',
+  });
+  // MusicBrainz has no recording for it, so the link is ours.
+  await db.insert(schema.spotifyTrack).values({
+    spotifyId: 'track-lost',
+    title: 'Sonata in B-flat',
+    trackNumber: 9,
+    discNumber: 1,
+    durationMs: 100_000,
+    popularity: 1,
+    spotifyAlbumId: 'album-1',
+    isrc: null,
+  });
+  await db.insert(schema.trackWorkLink).values({
+    spotifyTrackId: 'track-lost',
+    workMbid: 'pfm-lost',
+    match: null,
+    requests: 1,
+  });
+
+  const { getMusicBrainzCatalogWorks } = await import('@/app/actions/catalog-mb');
+  const lost = (await getMusicBrainzCatalogWorks('mozart')).find((work) => work.id === 'pfm-lost');
+  assert.deepEqual(
+    [lost?.availability, lost?.inMusicBrainz, lost?.recordingCount],
+    ['playable', false, 1],
+  );
+  const { works } = await view(['track-lost']);
+  assert.deepEqual(
+    works.map((card) => [card.workId, card.title]),
+    [['pfm-lost', 'Sonata in B-flat']],
+  );
+});
+
 test('searching a catalogue reference finds the work it is filed against', async () => {
   const { searchMusicBrainzWorks } = await import('@/app/actions/catalog-mb');
   const hits = await searchMusicBrainzWorks('K. 545');
