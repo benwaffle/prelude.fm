@@ -2,23 +2,21 @@ import {
   hardViolations,
   latestInvariantResults,
   musicBrainzInvariantHealth,
-  recordInvariantResults,
-  runMusicBrainzInvariants,
+  sweepMusicBrainzInvariants,
 } from '@/lib/musicbrainz-invariants';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-// Same definitions as the CLI and admin page. The response carries health state so callers can tell
-// a clean sweep from a missed one.
+// Same definitions as the CLI and admin page, read a slice a day (see `sweepMusicBrainzInvariants`).
+// The response carries health state so callers can tell a clean sweep from a missed one.
 function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
   return Boolean(cronSecret && request.headers.get('authorization') === `Bearer ${cronSecret}`);
 }
 
 async function sweep() {
-  const results = await runMusicBrainzInvariants();
-  await recordInvariantResults(results);
+  const results = await sweepMusicBrainzInvariants();
   const failing = hardViolations(results);
   for (const broken of failing) {
     console.error(`MusicBrainz invariant broken: ${broken.name} (${broken.violations})`);
@@ -27,6 +25,22 @@ async function sweep() {
     checked: results.length,
     violations: Object.fromEntries(
       results.filter((result) => result.violations > 0).map((r) => [r.name, r.violations]),
+    ),
+    // Passes under way: how far through each check's table, and what they have found so far.
+    sweeping: Object.fromEntries(
+      results.flatMap((result) =>
+        result.sweep
+          ? [
+              [
+                result.name,
+                {
+                  through: `${result.sweep.cursor} of ${result.sweep.end}`,
+                  found: result.sweep.violations,
+                },
+              ],
+            ]
+          : [],
+      ),
     ),
     health: musicBrainzInvariantHealth(await latestInvariantResults()),
   };

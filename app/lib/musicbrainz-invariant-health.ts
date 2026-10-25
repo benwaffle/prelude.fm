@@ -9,10 +9,18 @@ export type GradedInvariant = {
   severity: InvariantSeverity;
   violations: number;
   checkedAt?: Date | null;
+  /** Found so far by the sweep's pass in progress; a hard one fails before the pass ends. */
+  sweepViolations?: number | null;
 };
 
-/** A page of zeroes from three months ago would read like one from this morning. */
-export const INVARIANT_STALE_AFTER_HOURS = 36;
+// The daily sweep reads 1/SWEEP_PASS_DAYS of each check's table, so a full pass over the cache
+// takes this many days: reading all of it daily would be ~50M rows a day once the dump is in.
+export const SWEEP_PASS_DAYS = 28;
+
+// A check is stale once its last full pass is older than a pass plus two missed days. A page of
+// zeroes from three months ago would read like one from this morning; one from a month ago is what
+// the sweep's budget buys, and the page says so.
+export const INVARIANT_STALE_AFTER_HOURS = (SWEEP_PASS_DAYS + 2) * 24;
 
 export type InvariantHealth = {
   failing: string[];
@@ -40,7 +48,8 @@ export function invariantHealth(
       neverRun.push(check.name);
       continue;
     }
-    if (check.severity === 'hard' && result.violations > 0) failing.push(check.name);
+    if (check.severity === 'hard' && (result.violations > 0 || (result.sweepViolations ?? 0) > 0))
+      failing.push(check.name);
     if ((now.getTime() - result.checkedAt.getTime()) / 3_600_000 > staleAfterHours) {
       stale.push(check.name);
     }

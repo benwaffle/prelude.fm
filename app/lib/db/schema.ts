@@ -637,6 +637,16 @@ export const mbInvariantResult = sqliteTable('mb_invariant_result', {
   checkedAt: integer('checked_at', { mode: 'timestamp_ms' })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
+  // The daily sweep's pass in progress: it has read the check's table up to rowid `sweep_cursor` of
+  // `sweep_end` (the last rowid when the pass began) and found `sweep_violations` so far. Null
+  // when no pass is under way; a finished pass moves its count into `violations`.
+  sweepCursor: integer('sweep_cursor'),
+  sweepEnd: integer('sweep_end'),
+  sweepViolations: integer('sweep_violations'),
+  sweepSamples: text('sweep_samples', { mode: 'json' }).$type<
+    { id: string; detail: string | null }[]
+  >(),
+  sweepStartedAt: integer('sweep_started_at', { mode: 'timestamp_ms' }),
 });
 
 // Cached because each stage costs live MusicBrainz requests. `seeded` is the form actually opened,

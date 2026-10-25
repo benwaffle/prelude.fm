@@ -10,12 +10,14 @@ let db: TestDatabase;
 let schema: typeof import('@/lib/db/schema');
 let hydrateProviderAlbum: typeof import('@/lib/provider-hydration').hydrateProviderAlbum;
 let invariants: typeof import('@/lib/musicbrainz-invariants').MUSICBRAINZ_INVARIANTS;
+let EVERYTHING: typeof import('@/lib/musicbrainz-invariants').EVERYTHING;
 
 before(async () => {
   db = await createTestDatabase();
   schema = await import('@/lib/db/schema');
   ({ hydrateProviderAlbum } = await import('@/lib/provider-hydration'));
-  ({ MUSICBRAINZ_INVARIANTS: invariants } = await import('@/lib/musicbrainz-invariants'));
+  ({ MUSICBRAINZ_INVARIANTS: invariants, EVERYTHING } =
+    await import('@/lib/musicbrainz-invariants'));
 });
 
 beforeEach(async () => {
@@ -49,7 +51,7 @@ async function storedTotal() {
 async function fullyQueuedViolations() {
   const check = invariants.find((c) => c.name === 'album-is-fully-queued');
   assert.ok(check);
-  return db.all<{ id: string; detail: string }>(check.query);
+  return db.all<{ id: string; detail: string }>(check.query(EVERYTHING));
 }
 
 test("hydrating an album stores Spotify's track total", async () => {

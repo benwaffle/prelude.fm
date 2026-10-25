@@ -142,6 +142,13 @@ export function HealthTab() {
                       {invariant.describes}
                     </span>
                   )}
+                  <span className="block text-[11px] text-[var(--ink-2)]">
+                    {invariant.checkedAt
+                      ? `Last full pass ended ${new Date(invariant.checkedAt).toLocaleDateString()}.`
+                      : 'No full pass has ended yet.'}
+                    {invariant.sweep &&
+                      ` A pass is under way: ${sweepShare(invariant.sweep)}% of the table read, ${invariant.sweep.violations} found so far.`}
+                  </span>
                 </span>
                 {invariant.violations > 0 && invariant.severity !== 'hard' && (
                   <span className="tag shrink-0">
@@ -155,6 +162,11 @@ export function HealthTab() {
       )}
     </div>
   );
+}
+
+// The daily sweep reads each check's table a slice a day (`sweepMusicBrainzInvariants`).
+function sweepShare(sweep: { cursor: number; end: number }): number {
+  return sweep.end === 0 ? 100 : Math.floor((sweep.cursor / sweep.end) * 100);
 }
 
 function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) {

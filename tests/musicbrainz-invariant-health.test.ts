@@ -82,3 +82,13 @@ test('a hard failure outranks staleness', () => {
 
   assert.equal(invariantHealth(CHECKS, results, NOW).state, 'red');
 });
+
+test('a pass that ended within the sweep cycle is not stale', () => {
+  // The sweep reads a slice a day, so a full pass is weeks apart.
+  const health = invariantHealth(
+    CHECKS,
+    recorded({ checkedAt: new Date('2026-09-01T00:00:00Z') }),
+    NOW,
+  );
+  assert.equal(health.state, 'green');
+});
