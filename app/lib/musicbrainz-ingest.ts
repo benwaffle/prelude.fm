@@ -1,6 +1,6 @@
 // Both steps refuse to guess: a wrong release attaches every track to the wrong recording,
 // invisibly.
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from './db';
 import { forChunks } from './db/chunked';
 import { normalizeIsrc } from './isrc';
@@ -369,21 +369,34 @@ export async function ingestAlbum(
 
 // An ISRC resolves without a release, reaching albums MusicBrainz lacks. Batched twenty at a time:
 // long Lucene OR queries make the server answer 503.
+//
+// Without an album, `limit` bounds the tracks looked at, not the ones found: nearly every crawled
+// track is anchored, so "the first 500 unanchored" could mean reading millions. The walk goes in
+// Spotify ID order from `after`; `next` is where the following page starts, null at the end.
 export async function anchorTracksByIsrc(
   source: MusicBrainzSource,
-  options: { limit?: number; albumId?: string } = {},
-): Promise<{ anchored: number; requests: number; searched: number }> {
-  const rows = await db
-    .select({ spotifyId: spotifyTrack.spotifyId, isrc: spotifyTrack.isrc })
+  options: { limit?: number; albumId?: string; after?: string } = {},
+): Promise<{ anchored: number; requests: number; searched: number; next: string | null }> {
+  const limit = options.limit ?? 500;
+  const examined = await db
+    .select({
+      spotifyId: spotifyTrack.spotifyId,
+      isrc: spotifyTrack.isrc,
+      anchored: sql<number>`exists (select 1 from ${trackRecording} where ${trackRecording.spotifyTrackId} = ${spotifyTrack.spotifyId})`,
+    })
     .from(spotifyTrack)
     .where(
-      and(
-        isNotNull(spotifyTrack.isrc),
-        options.albumId ? eq(spotifyTrack.spotifyAlbumId, options.albumId) : undefined,
-        sql`not exists (select 1 from ${trackRecording} where ${trackRecording.spotifyTrackId} = ${spotifyTrack.spotifyId})`,
-      ),
+      options.albumId
+        ? eq(spotifyTrack.spotifyAlbumId, options.albumId)
+        : options.after
+          ? gt(spotifyTrack.spotifyId, options.after)
+          : undefined,
     )
-    .limit(options.limit ?? 500);
+    .orderBy(spotifyTrack.spotifyId)
+    .limit(limit);
+  const rows = examined.filter((row) => row.isrc !== null && !row.anchored);
+  const next =
+    !options.albumId && examined.length === limit ? examined[examined.length - 1].spotifyId : null;
 
   const byIsrc = new Map<string, string[]>();
   for (const row of rows) {
@@ -421,7 +434,7 @@ export async function anchorTracksByIsrc(
     }
   }
 
-  return { anchored, requests, searched: isrcs.length };
+  return { anchored, requests, searched: isrcs.length, next };
 }
 
 async function worksReachedByAlbum(albumId: string): Promise<string[]> {

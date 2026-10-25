@@ -1,5 +1,5 @@
 // Usage: pnpm mb:ingest <albums|anchor|report|loose|recordings|works|artists|refresh|composers|scores|check>
-//   [--limit n] [--all] [--since <iso>]
+//   [--limit n] [--all] [--since <iso>] [--after <spotify track id>]
 // Resumable: the cache is the progress record.
 import { defineScript, UsageError } from './lib/cli';
 
@@ -10,6 +10,7 @@ defineScript(
       all: { type: 'boolean' },
       album: { type: 'string' },
       since: { type: 'string' },
+      after: { type: 'string' },
     },
     positionals: true,
   },
@@ -67,7 +68,12 @@ defineScript(
       for (const row of rows) {
         console.log(`${row.label.padEnd(width)}  ${String(row.n).padStart(6)}`);
       }
+      await requestsToday();
+    }
 
+    // The steps print only this: the totals above read whole tables, millions of rows once the dump
+    // is in, so they are their own step (`report`).
+    async function requestsToday() {
       const status = await gateway.musicbrainzGatewayStatus();
       console.log(
         `\nrequests today: ${status.total}/${status.globalCap} ` +
@@ -80,14 +86,33 @@ defineScript(
       return;
     }
 
+    // Walks tracks in Spotify ID order, a page at a time; `--limit` caps the tracks looked at (each
+    // costs about two rows read), and `--after` resumes where an earlier run stopped.
     if (options.step === 'loose') {
-      const result = await ingest.anchorTracksByIsrc(cachedFirst, {
-        limit: Number.isFinite(options.limit) ? options.limit : 10_000,
-      });
+      const budget = Number.isFinite(options.limit) ? options.limit : 10_000;
+      let after = flags.after;
+      let examined = 0;
+      let searched = 0;
+      let requests = 0;
+      let anchored = 0;
+      while (examined < budget) {
+        const limit = Math.min(1000, budget - examined);
+        const page = await ingest.anchorTracksByIsrc(cachedFirst, { limit, after });
+        examined += limit;
+        searched += page.searched;
+        requests += page.requests;
+        anchored += page.anchored;
+        if (page.next === null) {
+          after = undefined;
+          break;
+        }
+        after = page.next;
+      }
       console.log(
-        `searched ${result.searched} ISRCs in ${result.requests} requests, anchored ${result.anchored} tracks`,
+        `looked at up to ${examined} tracks, searched ${searched} ISRCs in ${requests} requests, anchored ${anchored} tracks`,
       );
-      await report();
+      console.log(after ? `resume with --after ${after}` : 'reached the last track');
+      await requestsToday();
       return;
     }
 
@@ -100,7 +125,7 @@ defineScript(
         `read ${result.recordings} recordings in ${result.requests} requests; ` +
           `${result.reachedWork} reached a work`,
       );
-      await report();
+      await requestsToday();
       return;
     }
 
@@ -110,7 +135,7 @@ defineScript(
         Number.isFinite(options.limit) ? options.limit : 10_000,
       );
       console.log(`read ${result.artists} artists in ${result.requests} requests`);
-      await report();
+      await requestsToday();
       return;
     }
 
@@ -120,7 +145,7 @@ defineScript(
         Number.isFinite(options.limit) ? options.limit : 10_000,
       );
       console.log(`re-read ${result.releases} releases in ${result.requests} requests`);
-      await report();
+      await requestsToday();
       return;
     }
 
@@ -237,7 +262,7 @@ defineScript(
         console.log(`  ${outcome}: ${n}`);
       }
       console.log();
-      await report();
+      await requestsToday();
       return;
     }
 
@@ -266,7 +291,7 @@ defineScript(
       );
       if (contested.length) console.log(`contested ISRCs: ${[...new Set(contested)].join(', ')}`);
       if (disagreements) console.log(`${disagreements} tracks where ISRC and position disagree`);
-      await report();
+      await requestsToday();
       return;
     }
 
@@ -283,7 +308,7 @@ defineScript(
           console.log(`  ${index + 1}/${pending.length} (${requests} req)`);
       }
       console.log(`${requests} requests`);
-      await report();
+      await requestsToday();
       return;
     }
 

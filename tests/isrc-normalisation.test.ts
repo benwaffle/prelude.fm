@@ -101,3 +101,38 @@ test('a track stored with a lowercase ISRC still anchors to the recording MusicB
   const [isrc] = await db.select().from(schema.mbRecordingIsrc);
   assert.equal(isrc.isrc, 'USDY42155415');
 });
+
+test('the loose ISRC walk reads a page of tracks, anchored or not, and says where to resume', async () => {
+  await db.insert(schema.spotifyAlbum).values({ spotifyId: 'album-1', title: 'An Album' });
+  await db.insert(schema.spotifyTrack).values(
+    ['track-1', 'track-2', 'track-3'].map((spotifyId, index) => ({
+      spotifyId,
+      title: spotifyId,
+      trackNumber: index + 1,
+      durationMs: 200_000,
+      spotifyAlbumId: 'album-1',
+      isrc: `USDY4215541${index}`,
+    })),
+  );
+  // Anchored already: it uses up its place in the page, but is not searched again.
+  await db.insert(schema.trackRecording).values({
+    spotifyTrackId: 'track-1',
+    recordingMbid: 'rec-1',
+    matchedBy: 'isrc',
+  });
+  const asked: string[][] = [];
+  const source = {
+    recordingsByIsrc: async (isrcs: string[]) => {
+      asked.push(isrcs);
+      return new Map<string, string>();
+    },
+  } as unknown as MusicBrainzSource;
+
+  const first = await anchorTracksByIsrc(source, { limit: 2 });
+  assert.deepEqual(asked, [['USDY42155411']]);
+  assert.equal(first.next, 'track-2');
+
+  const second = await anchorTracksByIsrc(source, { limit: 2, after: first.next! });
+  assert.deepEqual(asked.at(-1), ['USDY42155412']);
+  assert.equal(second.next, null);
+});
