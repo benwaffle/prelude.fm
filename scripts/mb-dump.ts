@@ -127,14 +127,21 @@ defineScript(
         fetchedAt: Date.now(),
         log,
       });
-      out.exec('vacuum');
       for (const table of DUMP_TABLES) {
         const row = out.prepare(`select count(*) as n from ${table}`).get() as { n: number };
         log(`${table}\t${row.n}`);
       }
+      // Not vacuumed (that needs the file's size again in free disk): count only used pages.
+      const pages = out
+        .prepare(
+          'select (select page_count from pragma_page_count) - (select freelist_count from pragma_freelist_count) as used, (select page_size from pragma_page_size) as size',
+        )
+        .get() as { used: number; size: number };
       out.close();
       log(JSON.stringify(stats));
-      log(`${options.db}: ${(statSync(options.db).size / 1e9).toFixed(2)} GB`);
+      log(
+        `${options.db}: ${((pages.used * pages.size) / 1e9).toFixed(2)} GB used (${(statSync(options.db).size / 1e9).toFixed(2)} GB on disk)`,
+      );
       return;
     }
 
