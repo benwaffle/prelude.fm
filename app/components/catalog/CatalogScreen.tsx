@@ -268,10 +268,19 @@ function SearchResults({
 const PANE =
   'thin-bar flex min-w-0 max-h-[calc(100vh-var(--nav-h)-var(--player-h))] flex-col overflow-y-auto border-r border-rule last:border-r-0 max-[900px]:max-h-none max-[900px]:overflow-y-visible max-[900px]:border-r-0';
 
-function PaneHead({ title, count }: { title: string; count?: string }) {
+function PaneHead({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: string;
+  children?: ReactNode;
+}) {
   return (
     <div className="sticky top-0 z-[3] flex items-baseline gap-[10px] border-b border-rule bg-paper px-[18px] pt-[14px] pb-[10px] max-[900px]:relative">
       <span className="font-meta text-[9.5px] tracking-[0.2em] text-muted uppercase">{title}</span>
+      {children}
       {count && (
         <span className="ml-auto font-meta text-[9.5px] text-muted tabular-nums">{count}</span>
       )}
@@ -323,7 +332,14 @@ function ComposerPane({
 
   return (
     <div className={`${PANE} ${hidden ? 'max-[900px]:hidden' : ''}`}>
-      <PaneHead title="Composers" count={`${list.length} · ${totalWorks} playable works`} />
+      <PaneHead title="Composers" count={`${list.length} · ${totalWorks} playable works`}>
+        <Link
+          href="/catalog/timeline"
+          className="font-meta text-[9.5px] tracking-[0.2em] text-ink-2 uppercase"
+        >
+          Timeline
+        </Link>
+      </PaneHead>
       {failure}
       {groups.map((g) => (
         // Keyed by the first composer, not the letter: an accented surname can split a letter in
